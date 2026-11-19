@@ -593,7 +593,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					) : tab === 'terminal' ? (
 						<TerminalTab box={box} csrf={csrf} />
 					) : tab === 'changes' ? (
-						<ChangesTab box={box} csrf={csrf} closed={value.state === 'closed'} seen={value.last_event_at ?? value.updated_at} />
+						<ChangesTab box={box} seen={value.last_event_at ?? value.updated_at} />
 					) : (
 						<Timeline detail={value} />
 					)}

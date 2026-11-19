@@ -227,7 +227,7 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-del { color: var(--moor-color-danger); }
 .t-tag { flex: none; padding: 0 0.4rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); font-size: var(--app-text-xs); color: var(--moor-color-text-muted); white-space: nowrap; }
 .t-changes { display: grid; gap: var(--moor-space-3); }
-.t-changes-old { display: flex; align-items: center; gap: var(--moor-space-3); justify-content: space-between; }
+.t-changes-old { margin: 0; font-size: var(--app-text-xs); }
 .t-repo-changes { display: grid; gap: var(--moor-space-2); }
 .t-repo-changes h3 { margin: var(--moor-space-2) 0 0; font-size: var(--app-text); }
 .t-files { list-style: none; margin: 0; padding: 0.3rem 0; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); }

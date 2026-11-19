@@ -74,6 +74,7 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
         collect(cx, store, &row);
         reports::collect(cx, store, &row);
         super::changes::note_turn(cx, store, &row);
+        super::changes::keep_diff(cx, store, &row);
         if let Err(e) = store.set_artifacts_through(id, cursor) {
             failed(cx, &e.to_string());
         }
