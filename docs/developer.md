@@ -74,6 +74,8 @@ A failed task shows a card with the reason.
   what failed.
 - **Start again** opens New task with the same repos, branch and prompt.
 
+![A failed task with the setup line, Retry setup and Start again](images/task-failed.png)
+
 ## Bring your own agent setup
 
 **Settings**, then **Agent profile**, takes a GitHub repo that every new Box of
