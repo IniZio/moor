@@ -1,5 +1,6 @@
 //! The account page: the built app at the gate root, and the JSON it reads and writes under
-//! `/account/api`. It links secrets, shows machines and Boxes, and starts a Box.
+//! `/account/api`. The app is served to anyone; without a session its first read answers `401`
+//! and the app sends the browser to sign in, keeping the address after `#`. It links secrets, shows machines and Boxes, and starts a Box.
 
 use std::io::Write as _;
 use std::net::TcpStream;
@@ -15,7 +16,7 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::routes::{page, read_body, redirect, Request};
+use super::routes::{page, read_body, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
 use super::{nodes, portal, repos, settings, workflows};
@@ -91,8 +92,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
     let session = login.session(req.cookies.iter().copied(), now);
     let path = req.target.split('?').next().unwrap_or_default();
     match (req.method, path, session) {
-        ("GET", "/", Some(_)) => file(&mut stream, "index.html", APP_HEADERS),
-        ("GET", "/", None) => redirect(&mut stream, "/auth/login?return=/", ""),
+        ("GET", "/", _) => file(&mut stream, "index.html", APP_HEADERS),
         ("GET", p, _) if p.starts_with(ASSETS) => {
             file(&mut stream, p.trim_start_matches("/account/"), "");
         }

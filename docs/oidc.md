@@ -46,7 +46,11 @@ moor-gate \
   setup, and machine pairing then answer 404.
 - If the gate cannot reach the issuer's discovery URL, pass `--jwks-url`.
 - With more than one gate replica, give every replica the same
-  `--cookie-key`, a secret of 32 or more characters.
+  `--cookie-key`, a secret of 32 or more characters. A lone gate without it
+  keeps a key in `$XDG_STATE_HOME/moor-gate/cookie-key`, so a restart signs
+  no one out.
+- A portal session lasts 12 hours after the person was last active, and at
+  most 24 hours from sign-in. Then the page asks them to sign in again.
 
 On Kubernetes, the chart's `authgear.issuer`, `authgear.clientId`,
 `mcp.resourceUrl`, and `gate.login` set the same flags.

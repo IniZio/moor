@@ -114,6 +114,6 @@ impl Seal {
 }
 
 /// `time` in whole seconds since the Unix epoch.
-fn unix(time: SystemTime) -> u64 {
+pub(super) fn unix(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }

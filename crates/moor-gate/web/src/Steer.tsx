@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, type Needs, type Progress, SignedOut } from './api';
+import { useDraft } from './session';
 import { boxSteer, InterruptedOnly, type Over, type Sent } from './steerApi';
 import './steer.css';
 
@@ -43,7 +44,7 @@ function queuedWhy(sent: Sent): string {
 /** The message box at the bottom of a Box page: Steer or Interrupt, Enter to send, Shift+Enter for a new line. */
 export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: string; onSent: () => void }) {
 	const [mode, setMode] = useState<Mode>('steer');
-	const [text, setText] = useState('');
+	const [text, setText] = useDraft(`steer:${detail.box}`);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [waiting, setWaiting] = useState<Waiting[]>([]);

@@ -52,11 +52,11 @@ fn save(w: &World, cookie: &str, name: &str, value: &str) -> Reply {
 }
 
 #[test]
-fn the_root_sends_a_signed_out_browser_to_sign_in_and_serves_the_app_to_a_signed_in_one() {
+fn the_root_serves_the_app_with_or_without_a_session() {
     let w = world(true, &[]);
     let out = get(&w.addr, "/", None);
-    assert_eq!(out.status, 302, "{}", out.body);
-    assert_eq!(out.location(), "/auth/login?return=/");
+    assert_eq!(out.status, 200, "{}", out.body);
+    assert!(out.body.contains("/account/assets/app-"), "{}", out.body);
     let cookie = sign_in(&w.addr);
     let page = get(&w.addr, "/", Some(&cookie));
     assert_eq!(page.status, 200, "{}", page.body);

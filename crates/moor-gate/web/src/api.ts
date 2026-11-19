@@ -1,5 +1,7 @@
 import * as v from 'valibot';
 
+import { announceSignedOut } from './session';
+
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
 
 const NodeSchema = v.object({
@@ -68,7 +70,10 @@ export class Conflict extends Error {}
 
 /** The gate's answer parsed as `schema`, or why it is not one. */
 async function answer<T extends v.GenericSchema>(res: Response, schema: T): Promise<v.InferOutput<T>> {
-	if (res.status === 401) throw new SignedOut();
+	if (res.status === 401) {
+		announceSignedOut();
+		throw new SignedOut();
+	}
 	const body: unknown = await res.json().catch(() => null);
 	if (!res.ok) {
 		const failure = v.safeParse(FailureSchema, body);

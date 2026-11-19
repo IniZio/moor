@@ -25,6 +25,7 @@ import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
+import { useDraft } from './session';
 import { Composer } from './Steer';
 import { MakeRecurring } from './WorkflowForm';
 import { TerminalTab } from './Terminal';
@@ -411,13 +412,14 @@ function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; cs
 function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
-	const [typed, setTyped] = useState('');
+	const [typed, setTyped, dropTyped] = useDraft(`ask:${box}:${needs.id}`);
 	const send = async (n: number, text?: string) => {
 		if (busy) return;
 		setBusy(true);
 		setError('');
 		try {
 			await boxAnswer(csrf, box, needs.id, n, text);
+			dropTyped();
 			onSent();
 		} catch (e) {
 			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
@@ -473,13 +475,14 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workflow: string; run: number; step: string }; csrf: string; onSent: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
-	const [note, setNote] = useState('');
+	const [note, setNote, dropNote] = useDraft(`approve:${run.workflow}:${run.run}`);
 	const send = async (yes: boolean) => {
 		if (busy) return;
 		setBusy(true);
 		setError('');
 		try {
 			await runAnswer(csrf, run.workflow, run.run, yes, note);
+			dropNote();
 			onSent();
 		} catch (e) {
 			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
@@ -624,7 +627,7 @@ function lastRepos(): string[] {
 /** The composer that starts a Box: the footer names the target before anything is sent. */
 export function NewBox({ account }: { account: Account }) {
 	const [again] = useState(takeAgain);
-	const [prompt, setPrompt] = useState(again?.prompt ?? '');
+	const [prompt, setPrompt, dropPrompt] = useDraft('new-task', again?.prompt);
 	const [chosen, setChosen] = useState<string[]>(() => (again?.repos.length ? again.repos : lastRepos()));
 	const [base, setBase] = useState(again?.base ?? '');
 	const [node, setNode] = useState('');
@@ -643,6 +646,7 @@ export function NewBox({ account }: { account: Account }) {
 		try {
 			const name = await boxStart(account.csrf, { repos: chosen, prompt, base, node, plan_first: planFirst });
 			localStorage.setItem(LAST_REPOS, JSON.stringify(chosen));
+			dropPrompt();
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
 			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
