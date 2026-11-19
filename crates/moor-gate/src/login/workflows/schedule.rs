@@ -56,6 +56,13 @@ pub(super) fn words(cron: &str) -> Option<String> {
     }
 }
 
+/// When `ms` falls in `zone`, with the zone named, such as "Fri 20 Nov, 08:30 (Asia/Hong_Kong)".
+pub(super) fn at_in_zone(ms: i64, zone: &str) -> Option<String> {
+    let tz = jiff::tz::TimeZone::get(zone).ok()?;
+    let at = jiff::Timestamp::from_millisecond(ms).ok()?.to_zoned(tz);
+    Some(format!("{} ({zone})", at.strftime("%a %-d %b, %H:%M")))
+}
+
 /// The next three firings of `cron` in `zone` after `now`, in Unix milliseconds, or why the
 /// schedule is refused.
 pub(super) fn next_three(cron: &str, zone: &str, now: Ts) -> Result<Vec<i64>, String> {
@@ -102,7 +109,21 @@ pub(crate) fn preview(stream: &mut TcpStream, query: &str) {
 mod tests {
     use moor_core::seam::clock::Ts;
 
-    use super::{next_three, words};
+    use super::{at_in_zone, next_three, words};
+
+    #[test]
+    fn a_firing_reads_in_its_own_zone_on_a_day_clock() {
+        let monday_9_hkt = 1_763_946_000_000;
+        assert_eq!(
+            at_in_zone(monday_9_hkt, "Asia/Hong_Kong").as_deref(),
+            Some("Mon 24 Nov, 09:00 (Asia/Hong_Kong)")
+        );
+        assert_eq!(
+            at_in_zone(monday_9_hkt + 13 * 3_600_000, "UTC").as_deref(),
+            Some("Mon 24 Nov, 14:00 (UTC)")
+        );
+        assert_eq!(at_in_zone(0, "Mars/Base"), None);
+    }
 
     #[test]
     fn the_form_shapes_read_as_words() {

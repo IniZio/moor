@@ -3016,6 +3016,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
+ "jiff",
  "jsonwebtoken",
  "moor-client",
  "moor-core",
