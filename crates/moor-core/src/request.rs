@@ -119,6 +119,8 @@ pub enum Request {
     Wake(BoxReq),
     /// Re-run setup on a Box whose setup failed.
     Retry(BoxReq),
+    /// The pull request on each of a Box's repos whose head is its branch, read from the forge.
+    Pulls(BoxReq),
     /// Close every Box whose setup failed that the caller may act on.
     CloseFailed(CloseFailedReq),
     /// Relay the agent's terminal on the Box both ways over this connection until either side

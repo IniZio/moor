@@ -26,6 +26,7 @@ mod again;
 mod answer;
 mod changes;
 mod inbox;
+mod pulls;
 mod retry;
 mod start;
 
@@ -51,6 +52,7 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/box"
                 | "/account/api/box/artifact"
                 | "/account/api/box/changes"
+                | "/account/api/box/pr"
                 | "/account/api/inbox"
         ) | (
             "POST",
@@ -97,6 +99,7 @@ pub(super) fn serve(
         (_, "/account/api/boxes") => list(stream, gate, session),
         (_, "/account/api/box") => read(stream, gate, session, query),
         (_, "/account/api/box/changes") => changes::changes(stream, gate, session, query),
+        (_, "/account/api/box/pr") => pulls::read(stream, gate, session, query),
         _ => artifact(stream, gate, session, query),
     }
 }

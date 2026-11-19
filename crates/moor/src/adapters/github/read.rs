@@ -158,7 +158,7 @@ struct Reply {
 
 /// One GraphQL error; only its type is kept, so no server text reaches an error.
 #[derive(Deserialize)]
-struct GqlError {
+pub(super) struct GqlError {
     /// GitHub's error type.
     #[serde(rename = "type")]
     kind: Option<String>,
@@ -366,8 +366,10 @@ fn author(viewer: Viewer) -> Result<GitAuthor, ForgeError> {
 }
 
 mod file;
+mod pull;
 mod spoof;
 pub(super) use file::read_file_at;
+pub(super) use pull::pull_of;
 use spoof::spoofs;
 
 #[cfg(test)]

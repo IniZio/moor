@@ -391,6 +391,7 @@ impl Cx {
 mod bounded;
 pub(crate) mod in_flight;
 pub(crate) mod owners;
+pub(crate) mod pulls;
 mod requester;
 mod shared;
 #[cfg(test)]

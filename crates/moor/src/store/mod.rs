@@ -139,6 +139,9 @@ pub(crate) struct BoxRow {
     pub(crate) prompt: Option<String>,
     /// Base ref.
     pub(crate) base: Option<String>,
+    /// The ref the person named as the base; none for the default branch, or a Box from before
+    /// it was kept.
+    pub(crate) base_ref: Option<String>,
     /// Branch name.
     pub(crate) branch: Option<String>,
     /// The agent's own session id.
@@ -353,6 +356,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         issue: row.get(const { at(Boxes::Issue) })?,
         prompt: row.get(const { state_at(BoxState::Prompt) })?,
         base: row.get(const { at(Boxes::Base) })?,
+        base_ref: row.get(const { at(Boxes::BaseRef) })?,
         branch: row.get(const { at(Boxes::Branch) })?,
         agent_session_id: row.get(const { select::session_at(Sessions::AgentSessionId) })?,
         lifecycle,

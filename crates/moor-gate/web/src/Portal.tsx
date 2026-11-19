@@ -19,6 +19,7 @@ import {
 	SignedOut,
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
+import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
@@ -539,16 +540,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 						{value.stale && ' · stale'}
 					</span>
 				</div>
-				<p class="t-prline">
-					{value.pr && value.pr.url.startsWith('https://github.com/') ? (
-						<>
-							<a class="t-mono" href={value.pr.url} rel="noopener">PR #{value.pr.number}</a>
-							<span class="muted"> · the agent named it</span>
-						</>
-					) : (
-						<span class="muted">PR: none yet</span>
-					)}
-				</p>
+				<PrHeader box={box} named={value.pr} />
 			</div>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<nav class="t-tabs" role="tablist">

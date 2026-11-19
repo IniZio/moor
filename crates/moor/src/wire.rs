@@ -25,6 +25,7 @@ use crate::adapters::rng::SystemRng;
 use crate::config_load::load_user;
 use crate::cx::in_flight::InFlight;
 use crate::cx::owners::Owners;
+use crate::cx::pulls::PullCache;
 use crate::cx::traffic::Traffic;
 use crate::cx::{Cx, CxParts, MachineLinks};
 use crate::env::{Env, CONTROLLER_ALIVE};
@@ -65,6 +66,7 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         .sharing(Arc::new(Owners::new(clock)))
         .sharing(Arc::new(InFlight::default()))
         .sharing(Arc::new(Traffic::default()))
+        .sharing(Arc::new(PullCache::default()))
         .sharing(Arc::new(SentEnvs::default())))
 }
 

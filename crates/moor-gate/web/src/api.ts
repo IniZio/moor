@@ -495,6 +495,26 @@ export async function boxWake(csrf: string, box: string): Promise<void> {
 	await answer(res, v.unknown());
 }
 
+const RepoPullSchema = v.object({
+	repo: v.string(),
+	state: v.picklist(['unpushed', 'none', 'draft', 'open', 'changes_requested', 'approved', 'merged', 'closed']),
+	number: v.nullable(v.number()),
+	checks: v.nullable(v.picklist(['passing', 'failing', 'pending'])),
+	/** The pull request's page, or before there is one, the page that opens it; none until the branch is pushed. */
+	url: v.nullable(v.string()),
+	/** Why GitHub could not be read; then the state says nothing. */
+	unread: v.nullish(v.string()),
+});
+
+const PullsSchema = v.object({ branch: v.nullable(v.string()), repos: v.array(RepoPullSchema) });
+
+export type RepoPull = v.InferOutput<typeof RepoPullSchema>;
+
+/** The pull request on each of a Box's repos, first repo first, as GitHub says now. */
+export async function boxPulls(box: string): Promise<RepoPull[]> {
+	return (await answer(await fetch(`/account/api/box/pr?box=${encodeURIComponent(box)}`), PullsSchema)).repos;
+}
+
 export async function boxGet(box: string): Promise<BoxDetail> {
 	return answer(await fetch(`/account/api/box?box=${encodeURIComponent(box)}`), BoxDetailSchema);
 }

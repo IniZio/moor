@@ -355,6 +355,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),
+            base_ref: req.base.clone().filter(|_| facts.repo.is_some()),
             branch: None,
             labels,
             config: override_text(req.config.clone()),

@@ -7,6 +7,7 @@ use crate::step;
 
 mod agent_reads;
 mod baseline;
+mod box_base_ref;
 mod box_config;
 mod box_deaths;
 mod box_hands;
@@ -102,4 +103,5 @@ pub const STEPS: &[Step] = &[
     step("V89__drop_box_deaths", drop_box_deaths::write),
     step("V90__user_inbox", user_inbox::write),
     step("V91__workflow_repo_set", workflow_repo_set::write),
+    step("V92__box_base_ref", box_base_ref::write),
 ];

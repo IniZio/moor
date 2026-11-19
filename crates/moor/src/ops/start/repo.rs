@@ -137,7 +137,7 @@ pub(crate) fn fetch(
 }
 
 /// `user`'s GitHub token from the vault; it never leaves this process except to the forge.
-pub(super) fn github_token(cx: &Cx, user: UserId) -> Result<Secret, CommandError> {
+pub(crate) fn github_token(cx: &Cx, user: UserId) -> Result<Secret, CommandError> {
     let name =
         SecretName::parse(GITHUB_SECRET).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
     let vault =

@@ -7,7 +7,7 @@ mod tests;
 
 use std::time::Duration;
 
-use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo, RepoAt};
+use moor_core::seam::forge::{BranchPull, Forge, ForgeError, ForgeRepo, RepoAt};
 use moor_core::{Secret, Sha};
 
 /// GitHub as a [`Forge`].
@@ -59,5 +59,14 @@ impl Forge for GitHub {
         token: &Secret,
     ) -> Result<(Sha, Option<String>), ForgeError> {
         read::read_file_at(&self.api, self.timeout, repo, at, path, token)
+    }
+
+    fn pull_of(
+        &self,
+        repo: &ForgeRepo,
+        branch: &str,
+        token: &Secret,
+    ) -> Result<BranchPull, ForgeError> {
+        read::pull_of(&self.api, self.timeout, repo, branch, token)
     }
 }

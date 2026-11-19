@@ -31,6 +31,7 @@ mod node_add;
 mod node_settings;
 mod nodes;
 mod open_session;
+pub(crate) mod pulls;
 mod repo_config;
 mod retry;
 mod run;
@@ -155,6 +156,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Retry(r) => to_value(&retry::run(cx, &r)?),
+        Request::Pulls(r) => to_value(&pulls::run(cx, &r)?),
         Request::CloseFailed(r) => to_value(&close_failed::run(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
