@@ -56,7 +56,7 @@ pub(super) fn words(cron: &str) -> Option<String> {
     }
 }
 
-/// When `ms` falls in `zone`, with the zone named, such as "Fri 20 Nov, 08:30 (Asia/Hong_Kong)".
+/// When `ms` falls in `zone`, with the zone named, such as "Fri 20 Nov, 08:30 (`Asia/Hong_Kong`)".
 pub(super) fn at_in_zone(ms: i64, zone: &str) -> Option<String> {
     let tz = jiff::tz::TimeZone::get(zone).ok()?;
     let at = jiff::Timestamp::from_millisecond(ms).ok()?.to_zoned(tz);
