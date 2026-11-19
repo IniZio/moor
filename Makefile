@@ -41,6 +41,8 @@ lint:
 	taplo fmt --check
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 	tools/file-cap.sh
+	tools/case-clash.sh
+	tools/case-clash.sh --selftest
 	tools/removed-names.sh
 	tools/release-features.sh
 	tools/box-key.sh

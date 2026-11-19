@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 
-import { type Inline, type MdBlock, parse } from './markdown';
+import { type Inline, type MdBlock, parse } from './markdownParse';
 
 function Marks({ marks }: { marks: Inline[] }) {
 	return (

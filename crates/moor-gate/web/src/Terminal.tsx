@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { Status } from './terminal';
+import type { Status } from './terminalSocket';
 
 const WORDS: Record<Status['kind'], string> = { opening: 'Connecting…', live: 'Live', ended: 'Ended' };
 
@@ -15,7 +15,7 @@ export function TerminalTab({ box, csrf }: { box: string; csrf: string }) {
 		let gone = false;
 		let close = () => {};
 		setStatus({ kind: 'opening' });
-		import('./terminal')
+		import('./terminalSocket')
 			.then(({ attach }) => attach(el, box, csrf, (s) => gone || setStatus(s)))
 			.then(
 				(closer) => (gone ? closer() : (close = closer)),
