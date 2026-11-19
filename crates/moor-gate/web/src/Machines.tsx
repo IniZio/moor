@@ -60,7 +60,7 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 			setSaved(true);
 			onChanged();
 		} catch (err) {
-			setProblem({ text: failure(err), stale: err instanceof Conflict });
+			setProblem({ text: failure(err as Error), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};

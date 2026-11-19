@@ -34,7 +34,7 @@ function Row({ account, name, linked, onLinked }: { account: Account; name: stri
 			setValue('');
 			onLinked();
 		} catch (err) {
-			setError(failure(err));
+			setError(failure(err as Error));
 		}
 		setBusy(false);
 	};

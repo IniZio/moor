@@ -37,7 +37,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 				const read = await planOf(detail);
 				if (live) setText(read);
 			} catch (e) {
-				if (live) setError(failure(e));
+				if (live) setError(failure(e as Error));
 			}
 		})();
 		return () => {
@@ -53,7 +53,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 			await boxAnswer(csrf, detail.box, needs.id, n, typed);
 			onSent();
 		} catch (e) {
-			setError(failure(e));
+			setError(failure(e as Error));
 			onSent();
 		} finally {
 			setBusy(false);

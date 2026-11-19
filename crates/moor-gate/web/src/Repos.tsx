@@ -77,7 +77,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setConfig(read);
 			setDraft(read.text ?? '');
 		} catch (err) {
-			setLoadError(failure(err));
+			setLoadError(failure(err as Error));
 		}
 	};
 	useEffect(() => {
@@ -106,7 +106,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setDraft(wrote.text ?? draft);
 			setSaved(true);
 		} catch (err) {
-			setProblem({ text: failure(err), stale: err instanceof Conflict });
+			setProblem({ text: failure(err as Error), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};

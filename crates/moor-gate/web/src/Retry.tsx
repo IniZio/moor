@@ -50,7 +50,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 			await go();
 			onDone();
 		} catch (e) {
-			setError(failure(e));
+			setError(failure(e as Error));
 		} finally {
 			setBusy(false);
 		}

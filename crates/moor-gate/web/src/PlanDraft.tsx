@@ -54,7 +54,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 			}
 			setDraft({ at: 'running', box: now.box, line: detail.line, quietSince });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: failure(e), box: now.box });
+			if (live.current) setDraft({ at: 'failed', text: failure(e as Error), box: now.box });
 		}
 	};
 	const start = async () => {
@@ -64,7 +64,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 			const box = await planDraft(csrf, repos, prompt);
 			if (live.current) setDraft({ at: 'running', box, line: 'Setting up…' });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: failure(e) });
+			if (live.current) setDraft({ at: 'failed', text: failure(e as Error) });
 		}
 	};
 	const cancel = async (box: string) => {
@@ -72,7 +72,7 @@ export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: str
 		try {
 			await boxClose(csrf, box);
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: failure(e), box });
+			if (live.current) setDraft({ at: 'failed', text: failure(e as Error), box });
 		}
 	};
 	const ready = repos.length > 0 && prompt.trim() !== '';

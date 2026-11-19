@@ -94,7 +94,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 					setNow(Date.now());
 				}
 			} catch (e) {
-				if (live) setError(failure(e));
+				if (live) setError(failure(e as Error));
 			}
 		};
 		setValue(null);
@@ -423,7 +423,7 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 			dropTyped();
 			onSent();
 		} catch (e) {
-			setError(failure(e));
+			setError(failure(e as Error));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -486,7 +486,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 			dropNote();
 			onSent();
 		} catch (e) {
-			setError(failure(e));
+			setError(failure(e as Error));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -650,7 +650,7 @@ export function NewBox({ account }: { account: Account }) {
 			dropPrompt();
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
-			setError(failure(e));
+			setError(failure(e as Error));
 			setBusy(false);
 		}
 	};

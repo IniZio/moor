@@ -120,7 +120,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 				onChanged();
 			}
 		} catch (err) {
-			setProblem(failure(err));
+			setProblem(failure(err as Error));
 		}
 		setBusy('');
 	};

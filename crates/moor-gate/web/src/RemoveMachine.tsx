@@ -16,7 +16,7 @@ export function RemoveMachine({ csrf, node, onRemoved }: { csrf: string; node: N
 			dialog.current?.close();
 			onRemoved();
 		} catch (err) {
-			setProblem(failure(err));
+			setProblem(failure(err as Error));
 		}
 		setBusy(false);
 	};

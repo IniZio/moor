@@ -72,7 +72,7 @@ export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: st
 			if (sent.delivery !== 'delivered') setWaiting((w) => [...w, { text: said, at: Date.now(), why: queuedWhy(sent) }]);
 		} catch (e) {
 			if (e instanceof InterruptedOnly) onSent();
-			setError(failure(e));
+			setError(failure(e as Error));
 		} finally {
 			setBusy(false);
 			onSent();

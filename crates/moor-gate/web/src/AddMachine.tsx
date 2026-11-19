@@ -41,7 +41,7 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 			const t = await machineToken(csrf);
 			setStep({ at: 'waiting', token: t.token, until: Date.now() + t.expires_in * 1000, before: onlineMine(nodes) });
 		} catch (err) {
-			setStep({ at: 'failed', why: failure(err) });
+			setStep({ at: 'failed', why: failure(err as Error) });
 		}
 	};
 

@@ -58,7 +58,7 @@ function useLoad<T>(load: () => Promise<T>, key: string) {
 		try {
 			setValue(await load());
 		} catch (err) {
-			setError(failure(err));
+			setError(failure(err as Error));
 		}
 	};
 	useEffect(() => {
@@ -89,7 +89,7 @@ function RunNowButton({ csrf, name, onRan, hint }: { csrf: string; name: string;
 			setNote({ ok: true, text: started.box ? `Started in ${started.box}.` : 'Started.' });
 			onRan();
 		} catch (err) {
-			setNote({ ok: false, text: failure(err) });
+			setNote({ ok: false, text: failure(err as Error) });
 		}
 		setBusy(false);
 	};
@@ -197,7 +197,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 		try {
 			adopt(await workflowGet(name));
 		} catch (err) {
-			setProblem({ text: failure(err), stale: false });
+			setProblem({ text: failure(err as Error), stale: false });
 		}
 	};
 	useEffect(() => {
@@ -220,7 +220,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 			setSaved(true);
 		} catch (err) {
 			if (err instanceof ClearsPlan) setConfirm(err.message);
-			else setProblem({ text: failure(err), stale: err instanceof Conflict });
+			else setProblem({ text: failure(err as Error), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -409,7 +409,7 @@ function Question({ run, csrf, onAnswered }: { run: Run; csrf: string; onAnswere
 		try {
 			onAnswered(await runAnswer(csrf, run.workflow, run.id, yes));
 		} catch (err) {
-			setProblem(failure(err));
+			setProblem(failure(err as Error));
 		}
 		setBusy(false);
 	};
