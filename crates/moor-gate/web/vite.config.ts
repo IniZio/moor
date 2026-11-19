@@ -10,8 +10,8 @@ export default defineConfig({
 		cssCodeSplit: false,
 		rollupOptions: {
 			output: {
-				entryFileNames: 'assets/app.js',
-				assetFileNames: (asset) => (asset.names.some((n) => n.endsWith('.css')) ? 'assets/app[extname]' : 'assets/[name]-[hash][extname]'),
+				entryFileNames: 'assets/app-[hash].js',
+				assetFileNames: (asset) => (asset.names.some((n) => n.endsWith('.css')) ? 'assets/app-[hash][extname]' : 'assets/[name]-[hash][extname]'),
 			},
 		},
 	},
