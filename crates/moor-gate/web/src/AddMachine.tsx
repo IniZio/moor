@@ -4,7 +4,7 @@ import { type Node, SignedOut } from './api';
 import { Command } from './Connect';
 import { machineToken } from './settingsApi';
 
-const INSTALL = 'curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent';
+const INSTALL = 'curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s -- --nightly moor-machine-agent';
 
 /** Where adding a machine stands: the dialog shows one of these. */
 type Step =

@@ -93,7 +93,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 		profileGet().then(
 			(c) => {
 				setCurrent(c);
-				setText(c.source ?? '');
+				setText((typed) => typed || (c.source ?? ''));
 			},
 			(e: Error) => setLoadError(reason(e)),
 		);
