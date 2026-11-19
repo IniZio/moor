@@ -99,6 +99,13 @@ gate:
     enabled: false
     className: ""
     annotations: {}
+  linkIngress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls:
+      secretName: ""
   resources: {}
 
 # /mcp for agents acting as a person; resourceUrl is the API resource the issuer mints tokens for.

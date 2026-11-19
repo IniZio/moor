@@ -133,9 +133,50 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ $.Release.Name }}-{{ if $.Values.runner.separate }}runner-agents{{ else if include "moor.gateSeparate" $ }}agents{{ else }}gate{{ end }}
+                name: {{ $.Release.Name }}-{{ include "moor.agentsService" $ }}
                 port: { name: agents }
           {{- end }}
+{{- end }}
+{{- with .Values.gate.linkIngress }}
+{{- if .enabled }}
+{{- if not $.Values.runner.enabled }}{{ fail "gate.linkIngress needs runner.enabled" }}{{ end }}
+---
+# Only the paths a machine agent dials, for a host on your private network: the agents' keyed
+# link and its pairing calls. Nothing else of the gate is reachable here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $.Release.Name }}-gate-link
+  labels: {{- include "moor.labels" $ | nindent 4 }}
+  {{- with .annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .tls.secretName }}
+  tls:
+    - hosts: [{{ required "gate.linkIngress.host is required" $.Values.gate.linkIngress.host | quote }}]
+      secretName: {{ . | quote }}
+  {{- end }}
+  rules:
+    - host: {{ required "gate.linkIngress.host is required" .host | quote }}
+      http:
+        paths:
+          - path: /machines/pair
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-gate
+                port: { name: gate }
+          - path: /machines/link
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-{{ include "moor.agentsService" $ }}
+                port: { name: agents }
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if include "moor.gateSeparate" . }}

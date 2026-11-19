@@ -94,6 +94,15 @@ To give each Box its own simulator, build folder, or port, add `prepare`,
 `suspend`, and `release` hooks on the machine.
 [Machine tools](machines.md#hooks) describes them, with an iOS example.
 
+## Link over a private network
+
+When the machine and moor's cluster share a network, your operator can offer a
+second address for the link. Each keystroke then skips the public ingress. The
+machine then needs its `server` in `state.json` changed, with no new pairing.
+[Keep machine links on your private network](kubernetes.md#keep-machine-links-on-your-private-network)
+has the steps. To change flags on a moved machine, run `up --server` with the
+link address, not the one the account page shows.
+
 ## Keep the agent current
 
 When moor needs a newer agent, the service exits and names the command:

@@ -32,6 +32,7 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `gate.ingress.enabled`, `gate.ingress.className` | off | Expose the gate's paths on `host`. |
+| `gate.linkIngress.enabled`, `.host`, `.className`, `.annotations`, `.tls.secretName` | off | A second Ingress on its own `host`. It routes only `/machines/link` and `/machines/pair`, so machines on your private network skip the public ingress. Needs `runner.enabled`. See [Keep machine links on your private network](kubernetes.md#keep-machine-links-on-your-private-network). |
 | `gate.login` | `false` | Browser sign-in at `/auth`. Needed by the account page, webhook setup, and machine pairing. |
 | `gate.cookieKey` | made on first install | Seals sign-in cookies. Comma-separate keys to rotate. |
 | `gate.jwksUrl` | empty | The issuer's keys, when discovery is unreachable. |
