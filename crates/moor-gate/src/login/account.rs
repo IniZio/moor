@@ -19,7 +19,7 @@ use super::{check_csrf, csrf_token, Login, Session};
 use super::{nodes, portal, repos, workflows};
 use crate::{log, tools, Gate};
 
-/// The app's built files: `index.html` and `assets/`. Rebuilt by `make web`.
+/// The app's built files: `index.html` and `assets/`. Built by `build.rs`, not committed.
 #[derive(RustEmbed)]
 #[folder = "web/dist"]
 struct Built;

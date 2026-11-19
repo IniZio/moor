@@ -1,5 +1,5 @@
 name: Rust toolchain, build cache and pinned tools
-description: Install the pinned toolchain, restore the target cache for a job, and install the pinned cargo tools.
+description: Install the pinned toolchain and bun (moor-gate's build script runs it), restore the target cache for a job, and install the pinned cargo tools.
 
 inputs:
   cache:
@@ -12,6 +12,8 @@ runs:
     - name: Install toolchain from rust-toolchain.toml
       shell: bash
       run: rustup show active-toolchain || rustup toolchain install
+
+    - uses: ./.github/actions/bun
 
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:

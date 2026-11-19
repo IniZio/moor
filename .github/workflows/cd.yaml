@@ -93,6 +93,7 @@ jobs:
           key: ${{ matrix.target }}
           # A pull request reads the develop cache but leaves the 10 GB budget to the pushes.
           save-if: ${{ github.event_name == 'push' }}
+      - uses: ./.github/actions/bun
       - name: Install a musl C compiler
         if: endsWith(matrix.target, '-linux-musl')
         run: |

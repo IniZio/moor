@@ -6,6 +6,7 @@ TYPOS_VERSION := 1.51.1
 BINSTALL_VERSION := 1.26.2
 LLVM_COV_VERSION := 0.9.1
 HELM_VERSION := 3.21.3
+BUN_VERSION := 1.3.14
 
 PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
@@ -40,6 +41,8 @@ lint:
 	taplo fmt --check
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 	tools/file-cap.sh
+	tools/case-clash.sh
+	tools/case-clash.sh --selftest
 	tools/removed-names.sh
 	tools/release-features.sh
 	tools/box-key.sh
@@ -73,7 +76,7 @@ docs-build:
 	bun run --cwd site build
 
 web:
-	@command -v bun >/dev/null || { echo "web: bun is not installed"; exit 1; }
+	@command -v bun >/dev/null || { echo "web: bun $(BUN_VERSION) is not installed"; exit 1; }
 	bun install --cwd crates/moor-gate/web --frozen-lockfile
 	bun run --cwd crates/moor-gate/web build
 
@@ -171,9 +174,12 @@ deploy:
 
 
 # Single source of the pins for CI's install-action step.
-.PHONY: print-tool-versions print-helm
+.PHONY: print-tool-versions print-helm print-bun
 print-helm:
 	@echo "$(HELM_VERSION)"
+
+print-bun:
+	@echo "$(BUN_VERSION)"
 
 print-tool-versions:
 	@echo "cargo-deny@$(DENY_VERSION),cargo-machete@$(MACHETE_VERSION),cargo-nextest@$(NEXTEST_VERSION),taplo@$(TAPLO_VERSION),typos@$(TYPOS_VERSION)"

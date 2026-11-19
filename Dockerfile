@@ -5,11 +5,25 @@
 
 ARG RUST_IMAGE=rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
 ARG NODE_IMAGE=node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+ARG BUN_IMAGE=oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f821d7d0477435ea04
 
 ARG CLAUDE_CODE_VERSION=2.1.312
 
 # Splits the dependency build from moor's own crates, so the dependencies stay a cached layer.
 ARG CARGO_CHEF_VERSION=0.1.78
+
+
+FROM ${BUN_IMAGE} AS bun
+
+
+FROM ${NODE_IMAGE} AS web
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+WORKDIR /src/crates/moor-gate/web
+COPY crates/moor-gate/web/package.json crates/moor-gate/web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY ui /src/ui
+COPY crates/moor-gate/web ./
+RUN bun run build
 
 
 # moor's own binaries.
@@ -43,6 +57,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cargo chef cook --release --locked --recipe-path recipe.json $pkgs
 
 COPY . .
+COPY --from=web /src/crates/moor-gate/web/dist crates/moor-gate/web/dist
+ENV MOOR_WEB_PREBUILT=1
 # The build context carries no .git, so the commit comes in as an argument.
 ARG MOOR_COMMIT=unknown
 ENV MOOR_COMMIT=${MOOR_COMMIT}
