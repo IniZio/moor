@@ -25,7 +25,7 @@ const WITHIN: Duration = Duration::from_secs(20);
 const RECEIPT: &str = "receipt";
 
 /// The work tree of each repo of `row`, first one first: the others sit beside the first.
-fn trees(row: &BoxRow, workdir: &BoxPath) -> Vec<Tree> {
+pub(crate) fn trees(row: &BoxRow, workdir: &BoxPath) -> Vec<Tree> {
     let Some(repo) = row.repo.as_ref() else {
         return Vec::new();
     };

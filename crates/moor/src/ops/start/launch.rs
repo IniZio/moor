@@ -11,7 +11,7 @@ use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::domain::session_state::SessionState;
-use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, HeldRepo, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, StartReq};
 
@@ -19,6 +19,7 @@ use super::{profile_env, restore};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
+use crate::ops::common::changes::trees;
 use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::step::timed;
@@ -313,6 +314,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         return None;
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
+    let workdir = recorded_workdir(b.workdir.as_deref()?)?;
     Some(LaunchReq {
         profile: None,
         mcp: crate::ops::users::mcp::for_box(cx, row.user)
@@ -323,7 +325,14 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
             .collect(),
         id: row.id,
         handle: b.handle.clone()?,
-        workdir: recorded_workdir(b.workdir.as_deref()?)?,
+        repos: trees(row, &workdir)
+            .into_iter()
+            .map(|t| HeldRepo {
+                repo: t.repo,
+                dir: t.dir,
+            })
+            .collect(),
+        workdir,
         box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
         resume: None,

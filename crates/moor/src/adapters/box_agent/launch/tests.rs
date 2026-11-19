@@ -52,6 +52,7 @@ fn req() -> LaunchReq {
         issue: None,
         setup_exit: None,
         repo_notes: None,
+        repos: Vec::new(),
         shape: None,
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),
@@ -98,7 +99,7 @@ fn delivers_the_brief_under_the_box_home() {
 }
 
 #[test]
-fn the_delivered_brief_carries_the_repo_notes_and_the_shape() {
+fn the_delivered_brief_carries_the_repo_notes_the_shape_and_every_repo() {
     let d = driver(FakeDriver::new());
     let mut r = req();
     r.repo_notes = Some("run make emu".to_owned());
@@ -106,12 +107,19 @@ fn the_delivered_brief_carries_the_repo_notes_and_the_shape() {
         cpus: 2,
         mem_mib: 4096,
     });
+    r.repos = [("o/app", "/work/box-1"), ("o/lib", "/work/lib")]
+        .map(|(repo, dir)| moor_core::seam::engine::HeldRepo {
+            repo: repo.to_owned(),
+            dir: dir.to_owned(),
+        })
+        .to_vec();
     agent(&d).launch(&r).unwrap();
     let (_, _, bytes, _) = d.puts().into_iter().next().unwrap();
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.contains("## This project's Box"), "{text}");
     assert!(text.contains("run make emu"), "{text}");
     assert!(text.contains("2 vCPUs and 4.0 GiB"), "{text}");
+    assert!(text.contains("- `o/lib` at `/work/lib`\n"), "{text}");
 }
 
 #[test]

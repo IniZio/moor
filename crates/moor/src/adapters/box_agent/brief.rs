@@ -2,7 +2,10 @@
 
 use std::fmt::Write;
 
+use moor_core::seam::engine::HeldRepo;
 use moor_core::shape::Shape;
+
+mod repos;
 
 /// What the brief says about one Box.
 pub(super) struct BriefInput<'a> {
@@ -18,6 +21,8 @@ pub(super) struct BriefInput<'a> {
     pub(super) repo_notes: Option<&'a str>,
     /// The CPUs and memory the Box delivers, when they are recorded.
     pub(super) shape: Option<Shape>,
+    /// Every repo the Box holds and its work tree, the agent's own first.
+    pub(super) repos: &'a [HeldRepo],
 }
 
 /// The brief text for a Box.
@@ -38,7 +43,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          commands. The network is open. When HTTPS_PROXY is set, it is a local proxy \
          that sends only the hosts that need moor's credentials through the moor Proxy and \
          every other host direct; do not unset or bypass it. GitHub access works for this Box's \
-         repo through git, and through gh when gh is on the PATH. Requests outside what the proxy rules allow go \
+         repos through git, and through gh when gh is on the PATH. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
          Write only in the working directory, your own tool state and the tools you install. \
          If a tool the work needs is missing, install it, then say which tool it was. \
@@ -58,6 +63,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          Decide on your own when you reasonably can, and ask a question only when the \
          choice is the owner's.\n\n"
     );
+    repos::section(b.repos, branch, &mut out);
     if let Some(n) = b.setup_exit {
         setup_failed(n, &mut out);
     }
@@ -134,7 +140,7 @@ printf '%s\n' \
   && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
 ```
 
-gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for other repos. `gh pr comment` is withheld too, so comment with `gh api repos/{owner}/{repo}/issues/<number>/comments -f body=<text>`.
+gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for repos outside this Box. `gh pr comment` is withheld too, so comment with `gh api repos/{owner}/{repo}/issues/<number>/comments -f body=<text>`.
 "#;
 
 #[cfg(test)]
@@ -149,6 +155,7 @@ mod tests {
             setup_exit: None,
             repo_notes: None,
             shape: None,
+            repos: &[],
         }
     }
 

@@ -60,6 +60,15 @@ pub struct GitSource {
 /// or reads there is the file the agent itself sees.
 pub const SHARED_TMP: &str = "/tmp";
 
+/// A repo a Box holds and its work tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldRepo {
+    /// The repo, as `OWNER/NAME`.
+    pub repo: String,
+    /// Its work tree.
+    pub dir: String,
+}
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -69,6 +78,8 @@ pub struct LaunchReq {
     pub handle: BoxHandle,
     /// The Box workdir the agent runs in.
     pub workdir: BoxPath,
+    /// Every repo the Box holds and its work tree, the first in `workdir`; none without a repo.
+    pub repos: Vec<HeldRepo>,
     /// The Box the agent works on.
     pub box_name: BoxName,
     /// The Box branch the agent pushes to.
@@ -128,6 +139,7 @@ impl PartialEq for LaunchReq {
         self.id == other.id
             && self.handle == other.handle
             && self.workdir == other.workdir
+            && self.repos == other.repos
             && self.box_name == other.box_name
             && self.branch == other.branch
             && self.resume == other.resume
