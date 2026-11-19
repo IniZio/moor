@@ -160,3 +160,28 @@ main.wide { max-width: 64rem; }
 .history { font-size: var(--moor-text-sm); display: grid; gap: var(--moor-space-1); }
 .history li { white-space: pre-wrap; overflow-wrap: anywhere; }
 .evidence { display: flex; gap: var(--moor-space-3); flex-wrap: wrap; margin-top: var(--moor-space-1); }
+
+/* workflow form */
+.wf-form { display: grid; gap: var(--moor-space-4); max-width: 44rem; }
+.wf-form h2 { margin: 0; }
+.wf-form > label, .wf-field, .wf-zone, .wf-form details label { display: grid; gap: var(--moor-space-1); font-size: var(--moor-text-sm); font-weight: var(--moor-weight-strong); }
+.wf-form .muted { font-weight: normal; }
+.wf-form input[aria-invalid='true'] { border-color: var(--moor-color-danger); }
+.wf-when { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-2); font-weight: normal; }
+.wf-when label { display: flex; align-items: center; gap: var(--moor-space-2); font-weight: normal; }
+.wf-when input.t-mono { min-width: 18rem; }
+select { font: inherit; font-size: var(--moor-text-sm); color: var(--moor-color-text); background: var(--moor-color-bg-raised); border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); padding: var(--moor-space-1) var(--moor-space-2); }
+.wf-zone { max-width: 20rem; }
+.wf-repos { display: flex; flex-wrap: wrap; gap: var(--moor-space-2); font-weight: normal; }
+.wf-next { font-weight: normal; }
+.wf-next ol { margin: var(--moor-space-1) 0 0; padding-left: var(--moor-space-6); font-family: var(--moor-font-mono); font-size: var(--moor-text-xs); }
+.wf-form details summary { cursor: pointer; font-size: var(--moor-text-sm); color: var(--moor-color-accent); }
+.wf-form details label { margin-top: var(--moor-space-2); max-width: 20rem; }
+.wf-head h2 { margin-bottom: 0; }
+.wf-head { align-items: flex-end; }
+.wf-actions { flex-wrap: wrap; align-items: center; margin: 0 0 var(--moor-space-3); }
+.wf-actions .button { text-decoration: none; }
+.wf-actions .button.quiet { background: transparent; color: var(--moor-color-accent); padding: var(--moor-space-1) var(--moor-space-2); }
+button.quiet.wf-danger { color: var(--moor-color-danger); }
+button.wf-danger-fill { background: var(--moor-color-danger); }
+.wf-confirm { padding: var(--moor-space-4) var(--moor-space-6); max-width: 26rem; }

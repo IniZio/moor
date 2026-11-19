@@ -19,6 +19,8 @@ import {
 } from './api';
 import { PlanEditor } from './PlanEditor';
 import { reviewed, sameText, textProblems } from './plan';
+import { scheduleText } from './schedule';
+import { WorkflowActions, WorkflowForm } from './WorkflowForm';
 
 const ICONS: Record<RunStatus, { glyph: string; word: string }> = {
 	queued: { glyph: '○', word: 'queued' },
@@ -136,8 +138,8 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 				<dd>
 					<RepoSet repos={w.repos} />
 				</dd>
-				<dt>Cron</dt>
-				<dd><code>{w.cron}</code> {w.timezone}</dd>
+				<dt>Schedule</dt>
+				<dd title={w.cron}>{scheduleText(w.words, w.cron, w.timezone)}</dd>
 				<dt>Last run</dt>
 				<dd>
 					{w.last ? (
@@ -155,7 +157,7 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 					)}
 				</dd>
 				<dt>Next due</dt>
-				<dd>{w.enabled ? when(w.next_due) : (w.disabled_reason ?? 'disabled')}</dd>
+				<dd>{w.enabled ? (w.next_text ?? when(w.next_due)) : (w.disabled_reason ?? 'disabled')}</dd>
 			</dl>
 			{w.last?.status !== 'failure' && (
 				<p class="run-now">
@@ -171,7 +173,7 @@ function List({ csrf }: { csrf: string }) {
 	if (error) return <Failed error={error} retry={reload} />;
 	if (!value) return <p class="muted" aria-busy="true">Loading workflows…</p>;
 	return value.length === 0 ? (
-		<p class="muted">No workflows yet. Add one with the <code>add_workflow</code> tool in Claude Code.</p>
+		<p class="muted">No workflows yet. Make one with New workflow, or from a finished task with Make this recurring.</p>
 	) : (
 		<ul class="cards">{value.map((w) => <Row key={w.name} w={w} csrf={csrf} onRan={() => void reload()} />)}</ul>
 	);
@@ -249,7 +251,8 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				</span>
 			</div>
 			<p class="muted">
-				<RepoSet repos={flow.repos} /> · <code>{flow.cron}</code> {flow.timezone} · {flow.enabled ? 'enabled' : 'disabled'}
+				<RepoSet repos={flow.repos} /> · <span title={flow.cron}>{scheduleText(flow.words, flow.cron, flow.timezone)}</span> ·{' '}
+				{flow.enabled ? `next run ${flow.next_text ?? when(flow.next_due)}` : (flow.disabled_reason ?? 'disabled')}
 			</p>
 			{flow.plan_stale && flow.plan && (
 				<div class="notice warn plan-stale" role="status">
@@ -328,12 +331,13 @@ function Runs({ flow }: { flow: Workflow | null }) {
 }
 
 function WorkflowPage({ csrf, name }: { csrf: string; name: string }) {
-	const { value } = useLoad(() => workflowGet(name), `runs:${name}`);
+	const { value, reload } = useLoad(() => workflowGet(name), `runs:${name}`);
 	return (
 		<>
 			<p><a href="#/workflows">All workflows</a></p>
+			{value && <WorkflowActions csrf={csrf} flow={value} onChanged={() => void reload()} />}
 			<ul class="cards">
-				<li><WorkflowEditor key={name} csrf={csrf} name={name} /></li>
+				<li><WorkflowEditor key={`${name}:${value?.enabled}`} csrf={csrf} name={name} /></li>
 			</ul>
 			<Runs flow={value} />
 		</>
@@ -457,15 +461,22 @@ function RunPage({ csrf, name, id }: { csrf: string; name: string; id: number })
 }
 
 /** What the address names under `#/workflows`: nothing, a workflow, or one of its runs. */
-export type At = { page: 'list' } | { page: 'workflow'; name: string } | { page: 'run'; name: string; id: number };
+export type At =
+	| { page: 'list' }
+	| { page: 'new' }
+	| { page: 'workflow'; name: string }
+	| { page: 'edit'; name: string }
+	| { page: 'run'; name: string; id: number };
 
 export function workflowsAt(hash: string): At | null {
 	const rest = hash.replace(/^#\/?/, '');
 	if (rest === 'workflows') return { page: 'list' };
+	if (rest === 'new-workflow') return { page: 'new' };
 	if (!rest.startsWith('workflows/')) return null;
 	const parts = rest.slice('workflows/'.length).split('/').map(decodeURIComponent);
 	const [name, runs, id] = parts;
 	if (name && runs === 'runs' && /^\d+$/.test(id ?? '')) return { page: 'run', name, id: Number(id) };
+	if (name && runs === 'edit') return { page: 'edit', name };
 	return name ? { page: 'workflow', name } : { page: 'list' };
 }
 
@@ -474,10 +485,15 @@ export function Workflows({ csrf, at }: { csrf: string; at: At }) {
 		<section>
 			{at.page === 'list' && (
 				<>
-					<h2>Workflows</h2>
+					<div class="row-head wf-head">
+						<h2>Workflows</h2>
+						<a class="button" href="#/new-workflow">New workflow</a>
+					</div>
 					<List csrf={csrf} />
 				</>
 			)}
+			{at.page === 'new' && <WorkflowForm csrf={csrf} />}
+			{at.page === 'edit' && <WorkflowForm key={at.name} csrf={csrf} editing={at.name} />}
 			{at.page === 'workflow' && <WorkflowPage csrf={csrf} name={at.name} />}
 			{at.page === 'run' && <RunPage csrf={csrf} name={at.name} id={at.id} />}
 		</section>

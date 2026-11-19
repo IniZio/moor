@@ -23,6 +23,7 @@ import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
+import { MakeRecurring } from './WorkflowForm';
 import { TerminalTab } from './Terminal';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
@@ -580,6 +581,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					<h3>Now</h3>
 					<p class="t-railline">{value.line}</p>
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
+					<MakeRecurring detail={value} />
 				</aside>
 			</div>
 		</div>

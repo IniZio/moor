@@ -14,14 +14,18 @@ use moor_core::view::workflow::{
 use serde_json::{json, Value};
 
 mod download;
+mod form;
 mod now;
 mod run;
 mod save;
+mod schedule;
 
 pub(super) use download::artifact;
+pub(super) use form::{create, edit, remove, switch};
 pub(super) use now::run_now;
 pub(super) use run::{answer, run};
 pub(super) use save::write;
+pub(super) use schedule::preview;
 
 use super::account::{failed, json};
 use super::repos::answered;
@@ -55,12 +59,21 @@ pub(super) enum Route<'a> {
     RunNow(&'a str),
     /// One artifact's bytes.
     Artifact,
+    /// A workflow's repos, prompt, schedule and timeout, replaced from the form.
+    Fields(&'a str),
+    /// Whether a workflow fires on its schedule.
+    Enabled(&'a str),
+    /// The words and next firings of a schedule, before it is saved.
+    Schedule,
 }
 
 /// The route `path` names, when it is one.
 pub(super) fn route(path: &str) -> Option<Route<'_>> {
     if path == "/account/api/artifact" {
         return Some(Route::Artifact);
+    }
+    if path == "/account/api/schedule" {
+        return Some(Route::Schedule);
     }
     let rest = path.strip_prefix(PREFIX)?;
     if rest.is_empty() {
@@ -72,6 +85,8 @@ pub(super) fn route(path: &str) -> Option<Route<'_>> {
         [name, "runs", id] => Some(Route::Run(name, id.parse().ok()?)),
         [name, "runs", id, "answer"] => Some(Route::Answer(name, id.parse().ok()?)),
         [name, "run"] => Some(Route::RunNow(name)),
+        [name, "fields"] => Some(Route::Fields(name)),
+        [name, "enabled"] => Some(Route::Enabled(name)),
         _ => None,
     }
 }
@@ -180,10 +195,12 @@ fn summary(w: &WorkflowView) -> Value {
         "name": w.name,
         "repos": w.repos,
         "cron": w.cron,
+        "words": schedule::words(&w.cron),
         "timezone": w.timezone,
         "enabled": w.enabled,
         "disabled_reason": w.disabled_reason,
         "next_due": w.next_due,
+        "next_text": w.next_due.and_then(|ms| schedule::at_in_zone(ms, &w.timezone)),
         "has_plan": w.plan.is_some(),
         "plan_stale": w.plan_stale,
         "last": last.map(|r| json!({
