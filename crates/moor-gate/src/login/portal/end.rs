@@ -4,6 +4,7 @@ use std::net::TcpStream;
 
 use moor_core::name::BoxName;
 use moor_core::request::{BoxReq, CloseReq, Request as ControllerRequest};
+use moor_core::response::{ErrorDetail, ExitClass, Response as ControllerResponse};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -45,6 +46,17 @@ fn request(how: How, body: Option<&[u8]>) -> Option<ControllerRequest> {
     })
 }
 
+/// A refused close with its kind and counts, so the page words it without the controller's commands.
+fn close_refusal(reply: &ControllerResponse) -> Option<serde_json::Value> {
+    let error = reply
+        .error
+        .as_ref()
+        .filter(|_| reply.class != ExitClass::Ok)?;
+    let detail = error.detail.as_ref()?;
+    matches!(detail, ErrorDetail::CloseRefused(_))
+        .then(|| json!({"error": error.message, "refusal": detail}))
+}
+
 /// Runs the ending as the session's person, through the request `sleep` or `close_box` sends.
 /// A refusal, such as a Box holding unpushed work, is for the person to read.
 pub(super) fn end(
@@ -63,7 +75,10 @@ pub(super) fn end(
         return json(stream, "400 Bad Request", &json!({"error": "name a Box"}));
     };
     match tools::ask_as(&gate.controller, &session.person, asked) {
-        Ok(reply) => answered(stream, &reply),
+        Ok(reply) => match close_refusal(&reply) {
+            Some(refusal) => json(stream, "403 Forbidden", &refusal),
+            None => answered(stream, &reply),
+        },
         Err(why) => failed(stream, "box end", &why),
     }
 }
@@ -71,6 +86,7 @@ pub(super) fn end(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moor_core::response::CloseRefusal;
 
     #[test]
     fn stop_parks_and_close_removes_and_only_a_close_can_be_forced() {
@@ -83,6 +99,37 @@ mod tests {
         assert!(matches!(forced, Some(ControllerRequest::Close(c)) if c.force));
         let plain = request(How::Close, Some(br#"{"box": "web-1"}"#.as_slice()));
         assert!(matches!(plain, Some(ControllerRequest::Close(c)) if !c.force));
+    }
+
+    #[test]
+    fn a_refused_close_carries_its_kind_and_counts_beside_the_text() {
+        let refused = |detail: Option<ErrorDetail>| ControllerResponse {
+            schema: moor_core::SCHEMA,
+            cmd: "close".to_owned(),
+            class: ExitClass::Refused,
+            value: None,
+            warnings: Vec::new(),
+            error: Some(moor_core::response::ErrorView {
+                kind: moor_core::response::ErrorKind::Refused,
+                message: "run `moor close --force`".to_owned(),
+                hints: Vec::new(),
+                context: Vec::new(),
+                detail,
+            }),
+        };
+        let unsaved = CloseRefusal::Unsaved {
+            branch: "b".to_owned(),
+            ahead: 2,
+            dirty: 1,
+        };
+        let got = close_refusal(&refused(Some(ErrorDetail::CloseRefused(unsaved))));
+        let want = json!({
+            "error": "run `moor close --force`",
+            "refusal": {"kind": "close_refused", "refusal": "unsaved", "branch": "b", "ahead": 2, "dirty": 1},
+        });
+        assert_eq!(got, Some(want));
+        assert!(close_refusal(&refused(Some(ErrorDetail::AgentGone))).is_none());
+        assert!(close_refusal(&refused(None)).is_none());
     }
 
     #[test]
