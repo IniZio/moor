@@ -156,7 +156,7 @@ function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 			<span class="t-title">{t.title}</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
-				{t.state === 'failed' && <span class="t-failword">failed </span>}
+				{t.failed && <span class="t-failword">failed </span>}
 				{t.line}
 			</span>
 			<span class="t-age">{age(t.last_event_at ?? t.updated_at, now)}</span>

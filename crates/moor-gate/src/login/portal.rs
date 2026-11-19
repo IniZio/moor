@@ -197,6 +197,7 @@ fn summary(row: &Row) -> Option<Value> {
         "plan_first": row.prompt.as_deref().and_then(split_plan_first).is_some(),
         "title": progress.title,
         "state": progress.state,
+        "failed": progress.failed,
         "stale": progress.stale,
         "line": progress.line,
         "last_event_at": progress.last_event_at,

@@ -35,16 +35,11 @@ function setupFailure(detail: BoxDetail): string | undefined {
 	return detail.retryable ? detail.timeline.filter((e) => e.kind === 'setup_failed').pop()?.text : undefined;
 }
 
-/** Whether the Box ended badly: it failed, or it closed after an error. */
-function failedBox(detail: BoxDetail): boolean {
-	return detail.state === 'failed' || (detail.state === 'closed' && detail.timeline.some((e) => e.class === 'error' && !e.tool));
-}
-
 /** What a person can do about a Box that failed: run its setup again, start it again, or run its workflow again. */
 export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: string; onDone: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
-	const failed = failedBox(detail);
+	const failed = detail.failed;
 	const flow = detail.workflow;
 	if (!failed && !flow) return null;
 	const act = async (go: () => Promise<void>) => {

@@ -1,14 +1,22 @@
 import { useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, SignedOut } from './api';
-import { boxClose, boxStop } from './steerApi';
+import { boxClose, boxStop, Refused, type Unsaved } from './steerApi';
 import './steer.css';
 
 /** The states in which the agent runs, so Stop has something to end. */
 const STOPPABLE = ['working', 'needs_you', 'done'];
 
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export function unsavedWords({ ahead, dirty }: Unsaved): string {
+	const held = [dirty > 0 && count(dirty, 'uncommitted file', 'uncommitted files'), ahead > 0 && count(ahead, 'unpushed commit', 'unpushed commits')].filter(Boolean);
+	return `This task has ${held.join(' and ')}. Push them from the terminal, or discard them and close.`;
+}
+
 function whyNot(e: Error): string {
-	return e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message;
+	if (e instanceof SignedOut) return 'Your session ended. Reload to sign in again.';
+	return e instanceof Refused && e.unsaved && (e.unsaved.ahead > 0 || e.unsaved.dirty > 0) ? unsavedWords(e.unsaved) : e.message;
 }
 
 /** Stop beside the state, and Close under a menu with a confirm; Close removes the Box. */

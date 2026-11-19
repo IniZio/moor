@@ -2,13 +2,27 @@ import * as v from 'valibot';
 
 import { SignedOut } from './api';
 
+export type Unsaved = { ahead: number; dirty: number };
+
 /** Thrown when the controller said no, such as a Box that holds work that is not pushed. */
-export class Refused extends Error {}
+export class Refused extends Error {
+	constructor(
+		why: string,
+		readonly unsaved?: Unsaved,
+	) {
+		super(why);
+	}
+}
 
 /** Thrown when an interrupt went through but the message after it did not. */
 export class InterruptedOnly extends Error {}
 
-const FailureSchema = v.object({ error: v.string(), interrupted: v.optional(v.boolean()) });
+const UnsavedSchema = v.object({ refusal: v.literal('unsaved'), ahead: v.number(), dirty: v.number() });
+const FailureSchema = v.object({
+	error: v.string(),
+	interrupted: v.optional(v.boolean()),
+	refusal: v.optional(v.looseObject({ refusal: v.string() })),
+});
 const SentSchema = v.object({
 	delivery: v.optional(v.picklist(['delivered', 'queued', 'in_doubt']), 'delivered'),
 	cause: v.nullish(v.string()),
@@ -34,7 +48,8 @@ async function post<T extends v.GenericSchema>(path: string, csrf: string, body:
 	const failure = v.safeParse(FailureSchema, reply);
 	const why = failure.success ? failure.output.error : `The gate answered ${res.status}.`;
 	if (failure.success && failure.output.interrupted) throw new InterruptedOnly(why);
-	throw res.status === 403 ? new Refused(why) : new Error(why);
+	const unsaved = v.safeParse(UnsavedSchema, failure.success ? failure.output.refusal : null);
+	throw res.status === 403 ? new Refused(why, unsaved.success ? unsaved.output : undefined) : new Error(why);
 }
 
 /** Sends the agent a message after its current tool call, or stops its turn first. */
