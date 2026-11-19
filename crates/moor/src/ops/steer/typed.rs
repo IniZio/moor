@@ -27,10 +27,13 @@ pub(super) fn shown_of(steer: &Steer, req: &SteerReq, before: Option<&AgentState
         return sent_of(steer, req);
     };
     let typed = req.text.as_deref().filter(|_| req.menu.is_some());
-    let label = usize::from(*n).checked_sub(1).and_then(|i| options.get(i));
+    let label = usize::from(*n)
+        .checked_sub(1)
+        .and_then(|i| options.get(i))
+        .map(|label| label.trim_end_matches(|c: char| c == '│' || c.is_whitespace()));
     match (label, typed) {
         (Some(label), Some(typed)) => format!("{label}: {typed}"),
-        (Some(label), None) => label.clone(),
+        (Some(label), None) => label.to_owned(),
         (None, Some(typed)) => typed.to_owned(),
         (None, None) => sent_of(steer, req),
     }
@@ -54,4 +57,30 @@ pub(super) fn type_after_menu(
     cx.clock().sleep(FIELD_OPENS);
     send(cx, sref, &Steer::Text(typed.to_owned()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_menu_label_read_from_a_wide_pane_loses_its_padding_and_border() {
+        let waiting = AgentState::NeedsInput {
+            question: None,
+            options: vec!["Yes".to_owned(), "No      │".to_owned()],
+            kind: None,
+            detail: None,
+        };
+        let req = SteerReq {
+            target: moor_core::name::BoxName::parse_allow_bare("web-1")
+                .unwrap()
+                .into(),
+            text: Some("use yarn".to_owned()),
+            menu: Some(2),
+            interrupt: false,
+            ask: None,
+        };
+        let shown = shown_of(&Steer::Menu(2), &req, Some(&waiting));
+        assert_eq!(shown, "No: use yarn");
+    }
 }

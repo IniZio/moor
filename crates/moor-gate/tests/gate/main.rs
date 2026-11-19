@@ -494,6 +494,7 @@ mod portal;
 mod repos;
 mod secrets;
 mod setup;
+mod steer;
 mod terminal;
 mod workflows;
 

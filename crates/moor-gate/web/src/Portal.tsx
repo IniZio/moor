@@ -19,10 +19,12 @@ import {
 	SignedOut,
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
+import { HeaderActions } from './Ending';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
+import { Composer } from './Steer';
 import { MakeRecurring } from './WorkflowForm';
 import { TerminalTab } from './Terminal';
 
@@ -282,7 +284,7 @@ function Line({ e }: { e: Entry }) {
 				<div class="t-ev t-you">
 					<span class="t-who">You</span>
 					<span class="t-when">{clock(e.at)}</span>
-					<span class="t-what">{e.text}</span>
+					<span class="t-what">{e.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : e.text}</span>
 					{e.step && <span class="t-step">Step: {e.step}</span>}
 				</div>
 			);
@@ -425,6 +427,7 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 					</button>
 				))}
 			</div>
+			{permission && <p class="muted t-wait-note">Or write to the agent below. A message denies this request and passes the message on.</p>}
 			{needs.other != null && (
 				<form
 					class="t-wait-own"
@@ -540,6 +543,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 						{s.glyph} {s.word}
 						{value.stale && ' · stale'}
 					</span>
+					<HeaderActions detail={value} csrf={csrf} onDone={reload} />
 				</div>
 				<PrHeader box={box} named={value.pr} />
 			</div>
@@ -584,6 +588,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					<MakeRecurring detail={value} />
 				</aside>
 			</div>
+			<Composer detail={value} csrf={csrf} onSent={reload} />
 		</div>
 	);
 }
