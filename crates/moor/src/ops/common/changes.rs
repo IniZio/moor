@@ -86,6 +86,9 @@ fn problem(said: Option<&String>) -> Option<String> {
 /// Records what the turns since the last receipt changed in each repo of `row`, as a
 /// `turn_changes` event. The caller holds the Box's turn. A failure only warns.
 pub(crate) fn note_turn(cx: &Cx, store: &Store, row: &BoxRow) {
+    let Some(turn) = turn_to_note(store, row) else {
+        return;
+    };
     let Some((handle, trees)) = place(cx, row) else {
         return;
     };
@@ -124,16 +127,26 @@ pub(crate) fn note_turn(cx: &Cx, store: &Store, row: &BoxRow) {
     if repos.is_empty() {
         return;
     }
-    let recorded = store.count_events_of(row.id, "turn_done").and_then(|turn| {
-        let event = ExtraEvent::Access(AccessEvent::TurnChanges { turn, repos });
-        store.apply(Decision::new(row.id).event(event))
-    });
+    let event = ExtraEvent::Access(AccessEvent::TurnChanges { turn, repos });
+    let recorded = store.apply(Decision::new(row.id).event(event));
     if let Err(e) = recorded {
         cx.warn(Warning {
             code: "turn_changes_failed".to_owned(),
             message: format!("the turn's changes were not recorded: {e}"),
         });
     }
+}
+
+/// The count of turns ended when one has ended since the last receipt; none otherwise, as for a
+/// pass that only a wake's idle made due.
+fn turn_to_note(store: &Store, row: &BoxRow) -> Option<u64> {
+    let turn = store.count_events_of(row.id, "turn_done").ok()?;
+    let last = store.newest_events_of(row.id, "turn_changes", 1).ok()?;
+    let noted = last
+        .first()
+        .and_then(|e| e.payload.get("turn")?.as_u64())
+        .unwrap_or(0);
+    (turn > noted).then_some(turn)
 }
 
 /// Each repo of `row` as its work tree holds it now, with its patch; none when the Box's machine
