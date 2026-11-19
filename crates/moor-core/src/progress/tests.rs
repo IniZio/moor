@@ -456,6 +456,13 @@ fn a_question_card_offers_its_options_as_plain_choices() {
     assert_eq!(needs.other, Some(3));
     let permission = asked("permission", "approve Bash: ls", &["Yes", "No"]);
     assert_eq!(derive(&permission, &[], ten()).needs.unwrap().other, None);
+    assert!(!needs.plan);
+    let plan = asked(
+        "question",
+        crate::workflow::PLAN_QUESTION,
+        &["Approve plan", "Revise"],
+    );
+    assert!(derive(&plan, &[], ten()).needs.unwrap().plan);
 }
 
 #[test]

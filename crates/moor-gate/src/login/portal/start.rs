@@ -2,6 +2,7 @@
 
 use std::net::TcpStream;
 
+use moor_core::workflow::plan_first_prompt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -20,6 +21,9 @@ struct NewBox {
     base: Option<String>,
     /// The machine to run on; the one a start picks when absent or empty.
     node: Option<String>,
+    /// Whether the agent proposes a plan and waits for it to be approved before changing anything.
+    #[serde(default)]
+    plan_first: bool,
 }
 
 /// Starts a Box as the session's person, through the same request `start_box` sends. Answers the
@@ -44,7 +48,11 @@ pub(super) fn start(
     let keep = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let asked = tools::NewBox {
         repos: new.repos.iter().map(|r| r.trim().to_owned()).collect(),
-        prompt: new.prompt,
+        prompt: if new.plan_first {
+            plan_first_prompt(&new.prompt)
+        } else {
+            new.prompt
+        },
         base: keep(new.base),
         node: keep(new.node),
     };

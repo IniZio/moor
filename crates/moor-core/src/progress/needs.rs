@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::view::{AgentView, ApprovalView};
+use crate::workflow::PLAN_QUESTION;
 
 /// What the agent asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +75,9 @@ pub struct Needs {
     /// For an approve card: the run its yes or no goes to. It has no picks.
     #[serde(default)]
     pub approve: Option<Approve>,
+    /// Whether a plan-first agent asks to approve the plan it left as evidence.
+    #[serde(default)]
+    pub plan: bool,
 }
 
 /// The name of the prompt that asks `question` with `detail` and `options`.
@@ -148,6 +152,7 @@ pub fn needs_of(agent: &AgentView) -> Option<Needs> {
         other: (kind == NeedKind::Question)
             .then(|| u32::try_from(agent.options.len() + 1).ok())
             .flatten(),
+        plan: kind == NeedKind::Question && agent.question.as_deref() == Some(PLAN_QUESTION),
         picks,
         approve: None,
     })
@@ -167,6 +172,7 @@ pub fn approve_needs(approval: &ApprovalView) -> Needs {
         detail: None,
         picks: Vec::new(),
         other: None,
+        plan: false,
         approve: Some(Approve {
             workflow: approval.workflow.clone(),
             run: approval.run,

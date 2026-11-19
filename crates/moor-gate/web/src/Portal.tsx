@@ -20,6 +20,7 @@ import {
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
+import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
@@ -569,7 +570,9 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 			<div class="t-body">
 				<section>
 					{value.state === 'needs_you' &&
-						(value.needs ? (
+						(value.needs?.plan ? (
+							<PlanCard detail={value} needs={value.needs} csrf={csrf} onSent={reload} key={value.needs.id} />
+						) : value.needs ? (
 							<NeedsCard box={box} needs={value.needs} csrf={csrf} onSent={reload} key={value.needs.id} />
 						) : (
 							<div class="t-wait" role="region" aria-label="Your input is needed">
@@ -596,6 +599,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					<h3>Now</h3>
 					<p class="t-railline">{value.line}</p>
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
+					<PlanRail detail={value} />
 					<MakeRecurring detail={value} />
 				</aside>
 			</div>
@@ -624,6 +628,7 @@ export function NewBox({ account }: { account: Account }) {
 	const [chosen, setChosen] = useState<string[]>(() => (again?.repos.length ? again.repos : lastRepos()));
 	const [base, setBase] = useState(again?.base ?? '');
 	const [node, setNode] = useState('');
+	const [planFirst, setPlanFirst] = useState(false);
 	const [repos, setRepos] = useState<string[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
@@ -636,7 +641,7 @@ export function NewBox({ account }: { account: Account }) {
 		setBusy(true);
 		setError('');
 		try {
-			const name = await boxStart(account.csrf, { repos: chosen, prompt, base, node });
+			const name = await boxStart(account.csrf, { repos: chosen, prompt, base, node, plan_first: planFirst });
 			localStorage.setItem(LAST_REPOS, JSON.stringify(chosen));
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
@@ -689,6 +694,10 @@ export function NewBox({ account }: { account: Account }) {
 								</option>
 							))}
 						</select>
+					</label>
+					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
+						<input type="checkbox" class="pf-check" checked={planFirst} onChange={(e) => setPlanFirst(e.currentTarget.checked)} />
+						Plan first
 					</label>
 					<span class="grow" />
 					<button class="btn primary" type="submit" disabled={!ready}>

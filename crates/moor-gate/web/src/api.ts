@@ -300,8 +300,8 @@ function send(csrf: string, method: string, path: string, body: Body) {
 }
 
 /** Makes a workflow. A taken name is refused as a conflict; `copyOf` lends its plan and config. */
-export async function workflowCreate(csrf: string, name: string, fields: WorkflowFields, copyOf?: string): Promise<Workflow> {
-	return answer(await send(csrf, 'POST', '/account/api/workflows', { name, ...fields, copy_of: copyOf }), WorkflowSchema);
+export async function workflowCreate(csrf: string, name: string, fields: WorkflowFields, copyOf?: string, plan?: string): Promise<Workflow> {
+	return answer(await send(csrf, 'POST', '/account/api/workflows', { name, ...fields, copy_of: copyOf, plan }), WorkflowSchema);
 }
 
 /** Replaces a workflow's fields, against the revision the page read; its plan stays. */
@@ -359,6 +359,8 @@ const NeedsSchema = v.object({
 	other: v.nullish(v.number()),
 	/** For an approve card: the workflow run its yes or no goes to. */
 	approve: v.nullish(v.object({ workflow: v.string(), run: v.number(), step: v.string() })),
+	/** Whether a plan-first agent asks to approve the plan it left as evidence. */
+	plan: v.optional(v.boolean(), false),
 });
 
 const BoxRowSchema = v.object({
@@ -436,6 +438,8 @@ const BoxDetailSchema = v.object({
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
 	workflow: v.nullish(v.object({ name: v.string() })),
+	/** Whether the person asked for a plan first; its approved plan is the newest plan.json. */
+	plan_first: v.optional(v.boolean(), false),
 	/** Whether a workflow run made this Box. */
 	from_workflow: v.optional(v.boolean(), false),
 });
@@ -458,7 +462,7 @@ export async function boxList(): Promise<BoxRow[]> {
 /** Starts a Box as the signed-in person; answers the Box's name once it exists. */
 export async function boxStart(
 	csrf: string,
-	body: { repos: string[]; prompt: string; base: string; node: string },
+	body: { repos: string[]; prompt: string; base: string; node: string; plan_first?: boolean },
 ): Promise<string> {
 	const res = await fetch('/account/api/boxes', {
 		method: 'POST',

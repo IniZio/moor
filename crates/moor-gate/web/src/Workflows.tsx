@@ -17,6 +17,7 @@ import {
 	workflowRunNow,
 	workflowSet,
 } from './api';
+import { GeneratePlan } from './PlanDraft';
 import { PlanEditor } from './PlanEditor';
 import { reviewed, sameText, textProblems } from './plan';
 import { scheduleText } from './schedule';
@@ -278,7 +279,10 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 						onInput={(e) => setPrompt(e.currentTarget.value)}
 					/>
 				</label>
-				<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
+				<div>
+					<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
+					<GeneratePlan csrf={csrf} repos={flow.repos} prompt={prompt} dirty={sameText(plan) !== sameText(flow.plan ?? '')} onPlan={setPlan} />
+				</div>
 			</div>
 			{goesStale && (
 				<p class="notice warn" role="status">Saving a changed prompt with this plan marks the plan stale.</p>

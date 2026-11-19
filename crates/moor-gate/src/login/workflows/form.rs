@@ -45,6 +45,10 @@ struct Create {
     /// A workflow of the person's whose plan and config the new one copies.
     #[serde(default)]
     copy_of: Option<String>,
+    /// The plan's JSON text, such as one an agent drafted; it replaces a copied plan. None when
+    /// absent or blank.
+    #[serde(default)]
+    plan: Option<String>,
 }
 
 /// The body of an edit.
@@ -173,7 +177,10 @@ pub(crate) fn create(
     if copied.is_some_and(|c| c.is_none()) {
         return not_found(stream);
     }
-    let request = add(&name, new.fields, copied.flatten());
+    let mut request = add(&name, new.fields, copied.flatten());
+    if let Some(plan) = new.plan.filter(|p| !p.trim().is_empty()) {
+        request.plan = Some(plan);
+    }
     match tools::ask_as(
         &gate.controller,
         &session.person,

@@ -1,0 +1,16 @@
+.pd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-2) var(--moor-space-3); margin: var(--moor-space-2) 0; font-size: var(--moor-text-sm); }
+.pd-running { padding: var(--moor-space-2) var(--moor-space-3); border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); background: var(--moor-color-bg); }
+.t-chip input.pf-check { width: auto; margin: 0; accent-color: var(--moor-color-accent); }
+.pd-note { flex-basis: 100%; margin: 0; }
+.pd a { color: var(--moor-color-accent); font-weight: var(--moor-weight-strong); text-decoration: none; }
+.pd a:hover { text-decoration: underline; }
+.pd-spin { width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 2px solid var(--moor-color-border); border-top-color: var(--moor-color-accent); animation: pd-turn 0.9s linear infinite; }
+@keyframes pd-turn { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .pd-spin { animation: none; } }
+.pc-steps { margin: 0.25rem 0 0.6rem; padding-left: 1.4rem; display: grid; gap: 0.3rem; font-size: var(--moor-text-sm); }
+.pc-steps .kind { margin-left: var(--moor-space-1); }
+.pc-steps p { margin: 0; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
+.pc-note { display: grid; gap: var(--moor-space-2); margin-top: 0.6rem; }
+.pc-note textarea { width: 100%; }
+.pc-rail { margin: 0 0 var(--moor-space-3); padding-left: 1.2rem; display: grid; gap: 0.25rem; font-size: var(--moor-text-sm); }
+.pc-rail .kind { margin-left: var(--moor-space-1); font-size: var(--app-text-xs); }

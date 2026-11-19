@@ -8,7 +8,7 @@ use crate::changes::{RepoReceipt, Tally};
 use crate::progress::transcript::{Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
-use crate::workflow::split_start_prompt;
+use crate::workflow::{split_plan_first, split_start_prompt};
 
 /// How a front treats one timeline entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -244,7 +244,7 @@ fn words(e: &EventView) -> String {
     let p = &e.payload;
     let own = match e.kind.as_str() {
         "agent_said" | "agent_doing" => field(p, &["text"]).map(str::to_owned),
-        "steered" => field(p, &["message"]).map(str::to_owned),
+        "steered" => field(p, &["message"]).map(|m| split_plan_first(m).unwrap_or(m).to_owned()),
         "needs_input" => Some(
             field(p, &["question"]).map_or_else(|| "Needs your input".to_owned(), str::to_owned),
         ),
