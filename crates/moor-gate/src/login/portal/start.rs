@@ -12,8 +12,8 @@ use crate::{tools, Gate};
 /// What a new Box asks for.
 #[derive(Deserialize)]
 struct NewBox {
-    /// The repo, as `owner/name`.
-    repo: String,
+    /// The repos, each as `owner/name`, first one first: the agent works in the first.
+    repos: Vec<String>,
     /// What the agent should do.
     prompt: String,
     /// The revision to branch from; the repo's default branch when absent or empty.
@@ -37,13 +37,13 @@ pub(super) fn start(
         return json(stream, "403 Forbidden", &error);
     }
     let new = body.and_then(|b| serde_json::from_slice::<NewBox>(b).ok());
-    let Some(new) = new.filter(|t| !t.prompt.trim().is_empty() && !t.repo.trim().is_empty()) else {
-        let error = json!({"error": "say what the agent should do, and on which repo"});
+    let Some(new) = new.filter(|t| !t.prompt.trim().is_empty() && !t.repos.is_empty()) else {
+        let error = json!({"error": "say what the agent should do, and on which repos"});
         return json(stream, "400 Bad Request", &error);
     };
     let keep = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let asked = tools::NewBox {
-        repo: new.repo.trim().to_owned(),
+        repos: new.repos.iter().map(|r| r.trim().to_owned()).collect(),
         prompt: new.prompt,
         base: keep(new.base),
         node: keep(new.node),

@@ -100,14 +100,14 @@ fn waiting_run(held: &Held) -> Value {
             "outcome": {"outcome": "delivered", "result": "PR 5"}}}),
         );
     }
-    json!({"id": 7, "repo": "acme/web", "due_at": 1000, "outcome": outcome, "phase": phase,
+    json!({"id": 7, "due_at": 1000, "outcome": outcome, "phase": phase,
         "step": if held.waiting { json!("major") } else { Value::Null },
         "result": if held.waiting { Value::Null } else { json!("PR 5") },
         "box": "weekly-deps-1", "history": history})
 }
 
 fn delivered_run() -> Value {
-    json!({"id": 6, "repo": "acme/api", "due_at": 500, "outcome": "finished", "phase": "done",
+    json!({"id": 6, "due_at": 500, "outcome": "finished", "phase": "done",
         "result": "ok", "history": [
             {"at": 100, "entry": {"kind": "queued"}},
             {"at": 400_100, "entry": {"kind": "ended", "phase_before": "running",
@@ -128,10 +128,10 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
     let held = all.entry(who.to_owned()).or_insert_with(fresh);
     let view = |held: &Held| {
         json!({"name": "weekly-deps", "cron": "0 6 * * 1", "timezone": "UTC",
-            "repos": ["acme/web"], "also": [], "prompt": held.prompt, "enabled": held.enabled,
+            "repos": ["acme/web"], "prompt": held.prompt, "enabled": held.enabled,
             "timeout_minutes": 180, "next_due": 9_999_000, "plan": held.plan,
             "plan_stale": false, "revision": held.revision,
-            "last_runs": [waiting_run(held)]})
+            "last_run": waiting_run(held)})
     };
     match cmd {
         "workflow-list" => Response::ok("x", Some(json!({"workflows": [view(held)]}))),
@@ -182,8 +182,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             held.waiting = false;
             Response::ok(
                 "x",
-                Some(json!({"workflow": "weekly-deps", "repo": "acme/web",
-                "next": "went on"})),
+                Some(json!({"workflow": "weekly-deps", "next": "went on"})),
             )
         }
         "workflow-run-now" => run_now::reply(held.waiting),
@@ -245,7 +244,7 @@ fn plan_text() -> String {
 }
 
 #[test]
-fn the_list_shows_each_workflow_with_its_last_runs_status() {
+fn the_list_shows_each_workflow_with_its_last_run_s_status() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-1");
     let reply = get(&w.addr, "/account/api/workflows", Some(&cookie));
@@ -260,7 +259,7 @@ fn the_list_shows_each_workflow_with_its_last_runs_status() {
 }
 
 #[test]
-fn the_page_lists_runs_with_icon_repo_time_duration_and_outcome() {
+fn the_page_lists_runs_with_icon_time_duration_and_outcome() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-2");
     let flow = json_of(&get(
@@ -273,7 +272,7 @@ fn the_page_lists_runs_with_icon_repo_time_duration_and_outcome() {
     let runs = flow["runs"].as_array().unwrap();
     assert_eq!(runs[0]["id"], 7);
     assert_eq!(runs[1]["status"], "success");
-    assert_eq!(runs[1]["repo"], "acme/api");
+    assert_eq!(runs[1].get("repo"), None);
     assert_eq!(runs[1]["duration_ms"], 400_000);
     assert_eq!(runs[1]["label"], "finished");
     assert_eq!(runs[0]["duration_ms"], Value::Null);
@@ -514,7 +513,7 @@ fn yes_answers_the_waiting_run_as_the_session_person_and_the_run_goes_on() {
         .unwrap();
     assert_eq!(sent["who"], "authgear:alice-11");
     assert_eq!(sent["request"]["workflow"], "weekly-deps");
-    assert_eq!(sent["request"]["repo"], "acme/web");
+    assert_eq!(sent["request"].get("repo"), None);
     assert_eq!(sent["request"]["answer"], "yes");
     assert!(sent["request"].get("identity").is_none_or(Value::is_null));
 }

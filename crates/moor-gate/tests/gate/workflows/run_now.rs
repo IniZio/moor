@@ -1,4 +1,4 @@
-//! Run now on the workflows routes: one repo of a workflow fired by its owner.
+//! Run now on the workflows routes: a workflow fired by its owner.
 
 use moor_core::response::Response;
 use serde_json::{json, Value};
@@ -10,16 +10,14 @@ use super::{answer_run, as_user, csrf, json_of, world};
 /// What the fake controller answers a run now: a refusal while the workflow's run waits, else a
 /// started run.
 pub(super) fn reply(open: bool) -> Response {
-    let line = if open {
-        json!({"repo": "acme/web", "status": "refused",
-            "reason": "a run for acme/web is still open (waiting, Box weekly-deps-1)"})
+    let value = if open {
+        json!({"workflow": "weekly-deps", "status": "refused",
+            "reason": "a run of weekly-deps is still open (waiting, Box weekly-deps-1)"})
     } else {
-        json!({"repo": "acme/web", "status": "started", "box": "web/w1-weekly-deps-m20260101000000"})
+        json!({"workflow": "weekly-deps", "status": "started",
+            "box": "weekly-deps/w1-m20260101000000"})
     };
-    Response::ok(
-        "x",
-        Some(json!({"workflow": "weekly-deps", "runs": [line]})),
-    )
+    Response::ok("x", Some(value))
 }
 
 fn run_now(w: &World, cookie: &str, token: &str, body: &str) -> super::Reply {
@@ -35,12 +33,12 @@ fn run_now(w: &World, cookie: &str, token: &str, body: &str) -> super::Reply {
 }
 
 #[test]
-fn run_now_asks_for_one_repo_as_the_session_person_and_a_started_run_is_ok() {
+fn run_now_asks_as_the_session_person_and_a_started_run_is_ok() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-31");
     assert_eq!(answer_run(&w, &cookie, "yes", true).status, 200);
-    let body = json!({"repo": "acme/web"}).to_string();
-    let reply = run_now(&w, &cookie, &csrf(&w, &cookie), &body);
+    let body = "{}";
+    let reply = run_now(&w, &cookie, &csrf(&w, &cookie), body);
     assert_eq!(reply.status, 200, "{}", reply.body);
     assert_eq!(json_of(&reply)["status"], "started");
     let seen = w.seen.lock().unwrap().clone();
@@ -50,39 +48,38 @@ fn run_now_asks_for_one_repo_as_the_session_person_and_a_started_run_is_ok() {
         .unwrap();
     assert_eq!(sent["who"], "authgear:alice-31");
     assert_eq!(sent["request"]["name"], "weekly-deps");
-    assert_eq!(sent["request"]["repos"], json!(["acme/web"]));
+    assert_eq!(sent["request"].get("repos"), None);
     assert!(sent["request"].get("identity").is_none_or(Value::is_null));
 }
 
 #[test]
-fn a_repo_with_an_open_run_is_a_conflict_that_says_why() {
+fn a_workflow_with_an_open_run_is_a_conflict_that_says_why() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-32");
-    let body = json!({"repo": "acme/web"}).to_string();
-    let reply = run_now(&w, &cookie, &csrf(&w, &cookie), &body);
+    let body = "{}";
+    let reply = run_now(&w, &cookie, &csrf(&w, &cookie), body);
     assert_eq!(reply.status, 409, "{}", reply.body);
     let error = json_of(&reply)["error"].as_str().unwrap().to_owned();
     assert!(error.contains("still open"), "{error}");
 }
 
 #[test]
-fn a_forged_page_a_missing_repo_or_a_stranger_send_nothing() {
+fn a_forged_page_or_a_stranger_send_nothing() {
     let w = world(true, &[]);
     let alice = as_user(&w, "alice-33");
-    let body = json!({"repo": "acme/web"}).to_string();
-    assert_eq!(run_now(&w, &alice, "forged", &body).status, 403);
-    assert_eq!(run_now(&w, &alice, &csrf(&w, &alice), "{}").status, 400);
+    let body = "{}";
+    assert_eq!(run_now(&w, &alice, "forged", body).status, 403);
     assert!(!w.cmds().contains(&"workflow-run-now".to_owned()));
     let none = send(
         &w.addr,
         "POST",
         "/account/api/workflows/weekly-deps/run",
         "",
-        &body,
+        body,
     );
     assert_eq!(none.status, 401);
     let bob = as_user(&w, "bob-33");
-    let reply = run_now(&w, &bob, &csrf(&w, &bob), &body);
+    let reply = run_now(&w, &bob, &csrf(&w, &bob), body);
     assert_eq!(reply.status, 404, "{}", reply.body);
 }
 

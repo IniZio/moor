@@ -43,11 +43,11 @@ fn failed_box(name: &str) -> Response {
 
 /// A workflow whose latest run was refused for the failed Box.
 fn workflows() -> Response {
-    let run = json!({"repo": "acme/web", "due_at": 1, "outcome": "failed", "phase": "done",
-        "planned_box": "web/failed"});
+    let run = json!({"due_at": 1, "outcome": "failed", "phase": "done",
+        "planned_box": "nightly/w1-202611190600"});
     let flow = json!({"name": "nightly", "cron": "0 6 * * *", "timezone": "UTC",
         "repos": ["acme/web"], "prompt": "p", "enabled": true, "timeout_minutes": 60,
-        "last_runs": [run]});
+        "last_run": run});
     Response::ok("x", Some(json!({"workflows": [flow]})))
 }
 
@@ -96,9 +96,11 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
                          "created_at": "2026-11-18T10:00:00Z"}]})),
             )
         }
-        ("show", Some(name)) if mine && name == "web/failed" => failed_box(name),
+        ("show", Some(name)) if mine && name == "nightly/w1-202611190600" => failed_box(name),
         ("show", Some(name)) => refusal(&format!("no Box {name}")),
-        ("retry", Some("web/failed")) if mine => Response::ok("x", Some(json!({"retried": true}))),
+        ("retry", Some("nightly/w1-202611190600")) if mine => {
+            Response::ok("x", Some(json!({"retried": true})))
+        }
         ("retry", _) => refusal("only a Box whose setup failed can be retried"),
         ("workflow-list", _) => workflows(),
         ("artifacts", _) => Response::ok("x", Some(json!([]))),
@@ -237,14 +239,15 @@ fn csrf_of(w: &super::secrets::World, cookie: &str) -> String {
 fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a_repo() {
     let w = world(true, &[]);
     let cookie = user(&w, "portal-alice-6");
-    let ok = json!({"repo": "acme/web", "prompt": "Fix the typo"}).to_string();
+    let ok = json!({"repos": ["acme/web"], "prompt": "Fix the typo"}).to_string();
     assert_eq!(post(&w, &cookie, None, &ok).status, 403);
     assert_eq!(post(&w, &cookie, Some("wrong"), &ok).status, 403);
     let csrf = csrf_of(&w, &cookie);
     for bad in [
         "not json",
-        r#"{"repo":"acme/web","prompt":"  "}"#,
-        r#"{"repo":"","prompt":"x"}"#,
+        r#"{"repos":["acme/web"],"prompt":"  "}"#,
+        r#"{"repos":[],"prompt":"x"}"#,
+        r#"{"repo":"acme/web","prompt":"x"}"#,
     ] {
         let reply = post(&w, &cookie, Some(&csrf), bad);
         assert_eq!(reply.status, 400, "{bad}: {}", reply.body);
@@ -268,8 +271,7 @@ fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_reada
     let w = world(true, &[]);
     let cookie = user(&w, "portal-alice-7");
     let csrf = csrf_of(&w, &cookie);
-    let body =
-        json!({"repo": "acme/web", "prompt": "Fix the typo", "base": "main", "node": "engine-03"});
+    let body = json!({"repos": ["acme/web", "acme/lib"], "prompt": "Fix the typo", "base": "main", "node": "engine-03"});
     let reply = post(&w, &cookie, Some(&csrf), &body.to_string());
     assert_eq!(reply.status, 400, "{}", reply.body);
     let why = json_of(&reply)["error"].as_str().unwrap().to_owned();
@@ -283,6 +285,7 @@ fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_reada
         .cloned()
         .expect("a start");
     assert_eq!(start["request"]["repo"], "acme/web");
+    assert_eq!(start["request"]["also"], json!(["acme/lib"]));
     assert_eq!(start["request"]["prompt"], "Fix the typo");
     assert_eq!(start["request"]["base"], "main");
     assert_eq!(start["request"]["node"], "engine-03");
@@ -294,15 +297,12 @@ fn a_box_whose_setup_failed_says_so_and_names_the_workflow_run_that_made_it() {
     let cookie = user(&w, "portal-alice-8");
     let failed = json_of(&get(
         &w.addr,
-        "/account/api/box?box=web%2Ffailed",
+        "/account/api/box?box=nightly%2Fw1-202611190600",
         Some(&cookie),
     ));
     assert_eq!(failed["state"], "failed");
     assert_eq!(failed["retryable"], true);
-    assert_eq!(
-        failed["workflow"],
-        json!({"name": "nightly", "repo": "acme/web"})
-    );
+    assert_eq!(failed["workflow"], json!({"name": "nightly"}));
     let asking = json_of(&get(
         &w.addr,
         "/account/api/box?box=web%2Fask",
@@ -322,7 +322,7 @@ fn a_portal_retry_needs_the_csrf_token_and_a_box_and_sends_the_retry_request() {
     let cookie = user(&w, "portal-alice-9");
     let retry =
         |csrf: Option<&str>, body: &str| post_to(&w, "/account/api/box/retry", &cookie, csrf, body);
-    let ok = json!({"box": "web/failed"}).to_string();
+    let ok = json!({"box": "nightly/w1-202611190600"}).to_string();
     assert_eq!(retry(None, &ok).status, 403);
     assert_eq!(retry(Some("wrong"), &ok).status, 403);
     let csrf = csrf_of(&w, &cookie);
@@ -341,10 +341,10 @@ fn a_portal_retry_sends_the_retry_request_and_a_refusal_is_readable() {
     let cookie = user(&w, "portal-alice-10");
     let csrf = csrf_of(&w, &cookie);
     let retry = |body: &str| post_to(&w, "/account/api/box/retry", &cookie, Some(&csrf), body);
-    let ok = json!({"box": "web/failed"}).to_string();
+    let ok = json!({"box": "nightly/w1-202611190600"}).to_string();
     let reply = retry(&ok);
     assert_eq!(reply.status, 200, "{}", reply.body);
-    assert_eq!(json_of(&reply)["box"], "web/failed");
+    assert_eq!(json_of(&reply)["box"], "nightly/w1-202611190600");
     let sent = w
         .seen
         .lock()
@@ -352,7 +352,10 @@ fn a_portal_retry_sends_the_retry_request_and_a_refusal_is_readable() {
         .iter()
         .find(|r| r["request"]["cmd"] == "retry")
         .cloned();
-    assert_eq!(sent.expect("a retry")["request"]["box"], "web/failed");
+    assert_eq!(
+        sent.expect("a retry")["request"]["box"],
+        "nightly/w1-202611190600"
+    );
     let refused = retry(r#"{"box": "web/done"}"#);
     assert_eq!(refused.status, 400, "{}", refused.body);
     assert!(json_of(&refused)["error"]

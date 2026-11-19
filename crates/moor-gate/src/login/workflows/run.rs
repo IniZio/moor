@@ -292,7 +292,6 @@ fn run_view(workflow: &str, row: &RunRowView) -> Value {
     json!({
         "workflow": workflow,
         "id": row.id,
-        "repo": run.repo,
         "due_at": run.due_at,
         "started_at": started,
         "ended_at": ended,
@@ -353,7 +352,6 @@ pub(crate) fn answer(
     let request = ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
         identity: None,
         workflow: name.clone(),
-        repo: row.run.repo,
         answer,
         note,
     });
