@@ -25,6 +25,7 @@ use crate::env::Env;
 use crate::error::CommandError;
 
 mod exec;
+mod follow;
 pub mod forward;
 mod interrupt;
 mod redial;
@@ -70,6 +71,8 @@ pub enum ClientError {
     },
     /// The controller broke the protocol or refused the session.
     Protocol(String),
+    /// The session ended after the request was sent, so the request may have run.
+    Cut(String),
     /// The client's own settings are malformed.
     Usage(String),
 }
@@ -78,7 +81,7 @@ impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unreachable { target, detail } => write!(f, "{target} is unreachable: {detail}"),
-            Self::Protocol(msg) => write!(f, "controller protocol error: {msg}"),
+            Self::Protocol(msg) | Self::Cut(msg) => write!(f, "controller protocol error: {msg}"),
             Self::Usage(msg) => f.write_str(msg),
         }
     }
@@ -257,7 +260,9 @@ fn session(
 pub fn failure_response(cmd: &str, err: &ClientError) -> Response {
     let kind = match err {
         ClientError::Usage(_) => ErrorKind::Usage,
-        ClientError::Unreachable { .. } | ClientError::Protocol(_) => ErrorKind::Failed,
+        ClientError::Unreachable { .. } | ClientError::Protocol(_) | ClientError::Cut(_) => {
+            ErrorKind::Failed
+        }
     };
     let mut e = CommandError::new(kind, err.to_string());
     if let ClientError::Unreachable { target, .. } = err {
@@ -302,9 +307,9 @@ fn parse_frame(line: &str) -> Result<ServerFrame, ClientError> {
         .map_err(|e| ClientError::Protocol(format!("malformed frame from controller: {e}")))
 }
 
-/// Read and parse the next frame; EOF is a protocol error.
+/// Read and parse the next frame; a lost connection is a cut.
 fn next_frame(reader: &mut impl BufRead) -> Result<ServerFrame, ClientError> {
-    parse_frame(&read_line(reader).map_err(ClientError::Protocol)?)
+    parse_frame(&read_line(reader).map_err(ClientError::Cut)?)
 }
 
 /// [`unexpected`], except that a `restarting` frame means the request did not run.

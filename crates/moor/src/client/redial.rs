@@ -49,7 +49,7 @@ fn gave_up(target: &Target, e: GaveUp<ClientError>) -> ClientError {
         GaveUp::Budget { budget, last } => {
             let last = match last {
                 ClientError::Unreachable { detail, .. } => detail,
-                ClientError::Protocol(msg) | ClientError::Usage(msg) => msg,
+                ClientError::Protocol(msg) | ClientError::Usage(msg) | ClientError::Cut(msg) => msg,
             };
             ClientError::Unreachable {
                 target: target.clone(),

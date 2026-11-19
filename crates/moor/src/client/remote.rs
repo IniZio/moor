@@ -35,7 +35,8 @@ pub fn run(env: &Env, target: &Target, request: &Request, opts: &GlobalOpts) -> 
     let result = super::call(env, target, request, progress, output);
     match result {
         Ok(resp) => resp,
-        Err(e) => super::failure_response(request.cmd(), &e),
+        Err(e) => super::follow::start(env, target, request, &e, progress)
+            .unwrap_or_else(|| super::failure_response(request.cmd(), &e)),
     }
 }
 
