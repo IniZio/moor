@@ -24,6 +24,8 @@ const HOME: &str = "/home/agent";
 pub(super) const KEY_LABEL: &str = "moor.cache";
 /// The label of a cache volume that is a Box's private copy of a canonical one: the canonical name.
 const COPY_LABEL: &str = "moor.cache.of";
+/// The label of the marker volume that says a private copy finished.
+const MARK_LABEL: &str = "moor.cache.mark";
 /// The length of a repo scope's hash; a group longer than it carries the suffix of a work tree, an agent
 /// directory or a volume with restore steps.
 const SCOPE_LEN: usize = 16;
@@ -216,6 +218,44 @@ fn key_of(canonical: &str) -> &str {
     canonical.strip_prefix("moor-cache-").unwrap_or(canonical)
 }
 
+/// The marker volume that says the copy into `private` finished.
+fn marker(private: &str) -> String {
+    format!("{private}.ok")
+}
+
+/// What to do with a private volume, by whether it and its marker exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Private {
+    /// A finished copy; use it as it is.
+    Trust,
+    /// None yet; make it.
+    Make,
+    /// A copy a crash cut short; remove it and make it again.
+    Redo,
+}
+
+/// How a private volume stands, from whether it and its marker exist.
+const fn standing(volume: bool, marked: bool) -> Private {
+    match (volume, marked) {
+        (true, true) => Private::Trust,
+        (false, _) => Private::Make,
+        (true, false) => Private::Redo,
+    }
+}
+
+/// Whether `private` is a finished copy; one a crash cut short is removed so it is made again.
+async fn settle(private: &str, mark: &str) -> Result<bool, ProvideError> {
+    let there = Cli::passes(["volume", "inspect", private]).await;
+    let marked = Cli::passes(["volume", "inspect", mark]).await;
+    match standing(there, marked) {
+        Private::Trust => Ok(true),
+        Private::Redo => Cli::ok(["volume", "rm", "-f", private])
+            .await
+            .map(|_| false),
+        Private::Make => Ok(false),
+    }
+}
+
 /// Makes one mount's volumes ready; whether it holds a save from an earlier Box.
 async fn prepare_one(
     locks: &Locks,
@@ -229,9 +269,25 @@ async fn prepare_one(
         create(&m.canonical, &[key]).await?;
         return Ok(had);
     };
-    if Cli::passes(["volume", "inspect", private]).await {
+    let mark = marker(private);
+    if settle(private, &mark).await? {
         return Ok(true);
     }
+    fill(locks, image, slug, m, private, had).await
+}
+
+/// Makes the private volume and fills it from the canonical one, then marks it finished. Whether it
+/// holds a save.
+async fn fill(
+    locks: &Locks,
+    image: &str,
+    slug: &Slug,
+    m: &Mount,
+    private: &str,
+    had: bool,
+) -> Result<bool, ProvideError> {
+    let key = format!("{KEY_LABEL}={}", key_of(&m.canonical));
+    let mark = marker(private);
     let labels = [
         format!("{SLUG_LABEL}={}", slug.as_str()),
         key.clone(),
@@ -239,13 +295,21 @@ async fn prepare_one(
     ];
     create(private, &labels).await?;
     create(&m.canonical, &[key]).await?;
+    let marks = [
+        format!("{SLUG_LABEL}={}", slug.as_str()),
+        format!("{MARK_LABEL}=1"),
+    ];
     if !had {
+        create(&mark, &marks).await?;
         return Ok(false);
     }
     let lock = locks.of(&m.canonical);
     let _read = lock.read().await;
     match copy(image, &m.canonical, private, COPY_IN).await {
-        Ok(said) => Ok(said.ends_with("copied")),
+        Ok(said) => {
+            create(&mark, &marks).await?;
+            Ok(said.ends_with("copied"))
+        }
         Err(e) => {
             drop(Cli::ok(["volume", "rm", "-f", private]).await);
             Err(e)
@@ -298,7 +362,9 @@ pub(super) async fn save(locks: &Locks, image: &str, slug: &Slug) -> Result<(), 
         let Some((private, canonical)) = line.split_once(' ') else {
             continue;
         };
-        if !canonical.starts_with("moor-cache-") {
+        if !canonical.starts_with("moor-cache-")
+            || !Cli::passes(["volume", "inspect", &marker(private)]).await
+        {
             continue;
         }
         let lock = locks.of(canonical);
@@ -317,18 +383,20 @@ pub(super) async fn save(locks: &Locks, image: &str, slug: &Slug) -> Result<(), 
 
 /// Removes the private cache volumes of Box `slug`; the canonical volumes stay.
 pub(super) async fn drop_private(slug: &Slug) -> Result<(), ProvideError> {
-    let listed = Cli::ok([
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        &format!("label={SLUG_LABEL}={}", slug.as_str()),
-        "--filter",
-        &format!("label={COPY_LABEL}"),
-    ])
-    .await?;
-    for name in listed.lines().filter(|n| n.starts_with(slug.as_str())) {
-        Cli::ok(["volume", "rm", "-f", name]).await?;
+    for label in [COPY_LABEL, MARK_LABEL] {
+        let listed = Cli::ok([
+            "volume",
+            "ls",
+            "-q",
+            "--filter",
+            &format!("label={SLUG_LABEL}={}", slug.as_str()),
+            "--filter",
+            &format!("label={label}"),
+        ])
+        .await?;
+        for name in listed.lines().filter(|n| n.starts_with(slug.as_str())) {
+            Cli::ok(["volume", "rm", "-f", name]).await?;
+        }
     }
     Ok(())
 }

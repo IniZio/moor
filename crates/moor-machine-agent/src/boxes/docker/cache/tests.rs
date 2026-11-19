@@ -9,7 +9,7 @@
 
 use moor_client::link::lease::{Cache, CacheVolume};
 
-use super::{args, mounts};
+use super::{args, marker, mounts, standing, Private};
 use crate::boxes::Slug;
 
 const SLUG: &str = "moor-3b3b3b3b-9001";
@@ -127,4 +127,19 @@ fn the_volume_names_hold_the_key_and_so_never_collide_across_repos() {
     )
     .unwrap();
     assert_ne!(a[0].canonical, b[0].canonical);
+}
+
+#[test]
+fn a_private_copy_without_its_marker_is_made_again() {
+    assert_eq!(standing(false, false), Private::Make);
+    assert_eq!(standing(true, false), Private::Redo);
+    assert_eq!(standing(true, true), Private::Trust);
+}
+
+#[test]
+fn the_marker_is_its_own_volume_named_from_the_private_one() {
+    let m = mounts(&slug(), Some(&cache(vec![vol(G, "mine", &["~/data"])]))).unwrap();
+    let private = m[0].private.as_deref().unwrap();
+    assert_eq!(marker(private), format!("{private}.ok"));
+    assert_ne!(marker(private), private);
 }
