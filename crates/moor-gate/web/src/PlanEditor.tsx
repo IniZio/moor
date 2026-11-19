@@ -129,9 +129,6 @@ function StepFields({ step, at, edit }: { step: StepDoc; at: number; edit: Edit 
 					/>
 				</>
 			)}
-			<p class="muted">
-				Step id <code>{step.id}</code>
-			</p>
 		</div>
 	);
 }
