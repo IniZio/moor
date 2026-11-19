@@ -178,7 +178,11 @@ pub(crate) fn read_now(cx: &Cx, row: &BoxRow) -> Option<Vec<RepoChanges>> {
                 files,
                 patch: Some(patch),
                 cut,
-                problem: problem(out.first().and_then(Option::as_ref)),
+                problem: problem(out.first().and_then(Option::as_ref)).or_else(|| {
+                    out.iter()
+                        .any(Option::is_none)
+                        .then(|| "the Box did not answer in time".to_owned())
+                }),
             }
         })
         .collect();
