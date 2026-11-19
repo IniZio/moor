@@ -119,6 +119,12 @@ until its plan is right, and enable it after.
 - The Workflows page of the account portal has a **Run now** button per
   workflow.
 
+The portal's workflow page shows the plan as numbered steps. Edit a step in
+place, add, remove or reorder steps, and pick where ok and fail lead by title.
+"Edit as JSON" shows the same plan as text. A save that a person made marks the
+plan edited. A stale plan offers **Mark reviewed**, which saves it as made from
+the current prompt.
+
 A run fired by hand is an ordinary run. It freezes the plan, starts a Box as you,
 walks the steps and has the workflow's timeout. `list_workflow_runs` shows it
 with `trigger` `manual`. Its Box is named

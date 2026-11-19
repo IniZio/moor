@@ -277,3 +277,27 @@ a.t-path:hover { text-decoration: underline; }
 .t-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .t-file { display: block; padding: var(--moor-space-6) var(--moor-space-4); text-align: center; color: var(--moor-color-accent); }
 .t-more { flex: none; margin-left: 0.3rem; padding: 0 0.4rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); font-size: 0.75rem; color: var(--moor-color-text-muted); white-space: nowrap; }
+
+.plan { display: grid; gap: var(--moor-space-2); align-content: start; min-width: 0; }
+.plan > button { justify-self: start; }
+.plan-bar { display: flex; align-items: center; gap: var(--moor-space-2); font-size: var(--moor-text-sm); }
+.plan-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--moor-space-2); }
+.plan .plan-step { display: grid; gap: var(--moor-space-1); padding: var(--moor-space-2) var(--moor-space-3); border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); background: var(--moor-color-bg); box-shadow: none; }
+.plan .plan-step.bad { border-color: var(--moor-color-danger); }
+.plan-step p { margin: 0; overflow-wrap: anywhere; }
+.plan-head { display: flex; align-items: baseline; gap: var(--moor-space-2); }
+.plan-n { color: var(--moor-color-text-muted); font-variant-numeric: tabular-nums; }
+.plan-gist { font-size: var(--moor-text-sm); }
+.plan-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-1); }
+.plan-tools button { padding: var(--moor-space-1) var(--moor-space-2); font-size: var(--app-text-xs); }
+.plan select { padding: var(--moor-space-1) var(--moor-space-2); font: inherit; font-size: var(--moor-text-sm); color: inherit; background: var(--moor-color-bg); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-sm); }
+.plan-tools select { font-size: var(--app-text-xs); }
+.plan-errors { margin: 0; padding-left: 1.1rem; color: var(--moor-color-danger); font-size: var(--moor-text-sm); }
+.plan .plan-errors li { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.plan-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--moor-space-2) var(--moor-space-3); padding-top: var(--moor-space-2); border-top: 1px solid var(--moor-color-border); }
+.plan-fields > p { grid-column: 1 / -1; margin: 0; }
+.plan .plan-field { display: grid; align-content: start; gap: 0.2rem; font-size: var(--app-text-xs); font-weight: var(--moor-weight-strong); color: var(--moor-color-text-muted); }
+.plan-field:has(textarea) { grid-column: 1 / -1; }
+.plan-field input, .plan-field select, .plan-field textarea { margin: 0; font-weight: var(--moor-weight-body); color: var(--moor-color-text); }
+.plan-stale { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-3); }
+.plan-stale p { flex: 1; margin: 0; }

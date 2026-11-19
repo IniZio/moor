@@ -17,6 +17,8 @@ import {
 	workflowRunNow,
 	workflowSet,
 } from './api';
+import { PlanEditor } from './PlanEditor';
+import { reviewed, sameText, textProblems } from './plan';
 
 const ICONS: Record<RunStatus, { glyph: string; word: string }> = {
 	queued: { glyph: '○', word: 'queued' },
@@ -209,13 +211,13 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 	if (error) return <Failed error={error} retry={reload} />;
 	if (!flow) return <p class="muted" aria-busy="true">Loading {name}…</p>;
 
-	const save = async (clearPlan: boolean) => {
+	const save = async (clearPlan: boolean, draft = { prompt, plan }) => {
 		setBusy(true);
 		setProblem(null);
 		setConfirm('');
 		setSaved(false);
 		try {
-			adopt(await workflowSet(csrf, name, { prompt, plan, revision: flow.revision, clearPlan }));
+			adopt(await workflowSet(csrf, name, { ...draft, revision: flow.revision, clearPlan }));
 			setSaved(true);
 		} catch (err) {
 			if (err instanceof ClearsPlan) setConfirm(err.message);
@@ -233,7 +235,8 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				: 'The plan is empty, so it would be cleared and every run would deliver the prompt in one step.',
 		);
 	};
-	const dirty = prompt !== flow.prompt || plan !== (flow.plan ?? '');
+	const dirty = prompt !== flow.prompt || sameText(plan) !== sameText(flow.plan ?? '');
+	const planProblems = textProblems(plan);
 	const goesStale = prompt !== flow.prompt && plan.trim() !== '';
 	return (
 		<form onSubmit={submit}>
@@ -248,10 +251,18 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 			<p class="muted">
 				<RepoSet repos={flow.repos} /> · <code>{flow.cron}</code> {flow.timezone} · {flow.enabled ? 'enabled' : 'disabled'}
 			</p>
-			{flow.plan_stale && (
-				<p class="notice warn" role="status">
-					The plan was made from a different prompt. It still runs. Review it against the prompt.
-				</p>
+			{flow.plan_stale && flow.plan && (
+				<div class="notice warn plan-stale" role="status">
+					<p>The plan was made from a different prompt. It still runs. Review its steps against the prompt.</p>
+					<button
+						type="button"
+						disabled={busy || dirty}
+						title={dirty ? 'Save or reload your changes first' : undefined}
+						onClick={() => void save(false, { prompt: flow.prompt, plan: reviewed(flow.plan ?? '') })}
+					>
+						Mark reviewed
+					</button>
+				</div>
 			)}
 			<div class="sides">
 				<label>
@@ -264,17 +275,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 						onInput={(e) => setPrompt(e.currentTarget.value)}
 					/>
 				</label>
-				<label>
-					Plan (JSON)
-					<textarea
-						aria-label="Plan"
-						rows={16}
-						spellcheck={false}
-						placeholder="No plan: each run delivers the prompt in one step."
-						value={plan}
-						onInput={(e) => setPlan(e.currentTarget.value)}
-					/>
-				</label>
+				<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
 			</div>
 			{goesStale && (
 				<p class="notice warn" role="status">Saving a changed prompt with this plan marks the plan stale.</p>
@@ -291,7 +292,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 			{problem && <pre class="notice danger" role="alert">{problem.text}</pre>}
 			{saved && <p class="notice ok" role="status">Saved. The workflow is at revision {flow.revision}.</p>}
 			<div class="actions">
-				<button disabled={busy || !dirty}>Save</button>
+				<button disabled={busy || !dirty || planProblems.length > 0}>Save</button>
 				<button type="button" class="quiet" disabled={busy} onClick={load}>
 					{problem?.stale ? 'Discard mine and load theirs' : 'Reload'}
 				</button>
