@@ -151,7 +151,7 @@ PR: none yet                                                   [Stop] [⋯]
 
 - **The header** is a breadcrumb of repo, task, branch and machine, then the state. Below it sits the PR as a state machine. It moves through none yet, draft, open with checks, approved and merged. The button always names the next step.
 - **Timeline** is the default tab. It folds routine tool calls into one line and never folds errors. Each turn ends with a receipt that moor computes from git, not from the agent's words.
-- **Terminal** is the Box's real Claude session, live, with keyboard. It uses ghostty-web, pinned to one version, which needs `'wasm-unsafe-eval'` in the page's script policy. xterm.js has the same API and is the fallback. It is where a developer takes over. It closes nothing when the tab closes.
+- **Terminal** is the Box's real Claude session, live, with keyboard. It uses xterm.js with the WebGL renderer, pinned to one version. ghostty-web was tried first and dropped, because it cannot report the mouse to Claude. Claude stays full-screen, so the wheel scrolls Claude's own view back to its first line. It is where a developer takes over. It closes nothing when the tab closes.
 - **Changes** is the diff against the base branch, file by file.
 - **Evidence** is the artifact gallery. It holds screenshots, videos, logs and step reports.
 - **The right rail** shows the plan's steps when there is one, and the background jobs.
@@ -255,3 +255,4 @@ Each step ends in a check someone can rerun. The first step is useful alone.
 5. "Plan first" is offered on one-off tasks, off by default.
 6. A clickable mockup of Home and the Task page comes before portal code, with the design system chosen alongside it. No Tailwind.
 7. A task and a workflow each hold an ordered set of repos in one Box. The first is the starting point. This replaces one Box per repo and `also`. Decided on 2026-11-19.
+8. The browser terminal uses xterm.js, and Claude stays full-screen. Scrollback is Claude's own, reached with the wheel. Decided on 2026-11-19.
