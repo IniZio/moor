@@ -17,17 +17,13 @@ use crate::{tools, Gate};
 /// What a person says to the agent.
 #[derive(Deserialize)]
 struct Say {
-    /// The Box.
     #[serde(rename = "box")]
     boxed: String,
-    /// The message.
     text: String,
     /// Stop the agent's turn now, then send the message.
     #[serde(default)]
     interrupt: bool,
-    /// The prompt the page shows open, as its card names it.
     ask: Option<String>,
-    /// The menu entry that turns the open prompt down and takes words.
     pick: Option<u32>,
 }
 

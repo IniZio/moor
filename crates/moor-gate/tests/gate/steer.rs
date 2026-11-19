@@ -135,7 +135,7 @@ fn stop_sleeps_the_box_and_close_is_refused_on_unpushed_work_until_forced() {
     assert_eq!(sent(&w, "sleep")[0]["box"], "web/ask");
     let close = "/account/api/box/close";
     let refused = stop(close, json!({"box": "web/done"}));
-    assert_eq!(refused.status, 502, "{}", refused.body);
+    assert_eq!(refused.status, 403, "{}", refused.body);
     assert!(json_of(&refused)["error"]
         .as_str()
         .unwrap()
