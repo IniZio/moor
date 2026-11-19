@@ -154,7 +154,7 @@ fn hello_mismatch_is_protocol_error() {
 }
 
 #[test]
-fn eof_before_response_is_protocol_error() {
+fn eof_before_response_is_a_cut() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("c.sock");
     let server = serve(&sock, vec![vec![hello()], vec![]]);
@@ -166,7 +166,7 @@ fn eof_before_response_is_protocol_error() {
         |_| {},
     )
     .unwrap_err();
-    assert!(matches!(err, ClientError::Protocol(_)), "{err}");
+    assert!(matches!(err, ClientError::Cut(_)), "{err}");
     server.join().unwrap();
 }
 

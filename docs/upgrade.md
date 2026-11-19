@@ -29,7 +29,8 @@ default:
 - It stops accepting connections. New ones wait in the backlog.
 - A `wait`, `wait-events`, or `watch` ends with a `restarting` error, and the
   client dials again.
-- A `start` or `retry` is cut. The new controller picks up its setup.
+- A `start` or `retry` is cut. The new controller picks up its setup, and a
+  cut `moor start` reads its Box until the agent launches or setup fails.
 - Any other request in flight runs to its end.
 
 Keep `TimeoutStopSec` in `moor.service` above `drain_timeout_secs`, so systemd

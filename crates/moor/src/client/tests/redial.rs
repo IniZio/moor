@@ -120,7 +120,7 @@ fn a_session_cut_after_the_request_is_an_error_and_not_resent() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, ClientError::Protocol(m) if m.contains("closed the connection")),
+        matches!(&err, ClientError::Cut(m) if m.contains("closed the connection")),
         "{err}"
     );
     assert_eq!(lines.lock().unwrap().len(), 1);
@@ -426,4 +426,102 @@ fn over_ssh_a_missing_remote_socket_or_a_failed_ssh_fails_at_once() {
         );
         assert_eq!(runs(&count), 1, "exit {code} was dialed again");
     }
+}
+
+fn start_req() -> Request {
+    serde_json::from_value(serde_json::json!({"cmd": "start", "name": "b1"})).unwrap()
+}
+
+fn cut_after_progress() -> Script {
+    Box::new(|peer: &mut Peer| {
+        peer.take_request();
+        peer.writer.write_all(PROGRESS).unwrap();
+    })
+}
+
+fn show_answer(value: Option<serde_json::Value>) -> Script {
+    Box::new(move |peer: &mut Peer| {
+        peer.take_request();
+        let resp = value.map_or_else(
+            || {
+                crate::error::CommandError::new(ErrorKind::Failed, "no Box b1")
+                    .into_response("show", Vec::new())
+            },
+            |v| moor_core::Response::ok("show", Some(v)),
+        );
+        let envelope = serde_json::to_string(&resp).unwrap();
+        peer.say(&format!(
+            r#"{{"frame":"response","id":"1","envelope":{envelope}}}"#
+        ));
+    })
+}
+
+fn run_start(sock: &Path) -> moor_core::Response {
+    let opts = crate::cli::GlobalOpts {
+        json: true,
+        ..Default::default()
+    };
+    crate::client::remote::run(
+        &redial_env("10"),
+        &Target::Socket(sock.to_owned()),
+        &start_req(),
+        &opts,
+    )
+}
+
+#[test]
+fn a_cut_start_follows_its_box_until_the_agent_launched() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let setting_up = serde_json::json!({"box": {"name": "b1", "lifecycle": "setting_up"}});
+    let launched = serde_json::json!({"box": {"name": "b1", "lifecycle": "ready", "agent": {"launched": true}}});
+    let lines = controller(
+        &sock,
+        vec![
+            cut_after_progress(),
+            show_answer(Some(setting_up)),
+            show_answer(Some(launched)),
+        ],
+    );
+    let resp = run_start(&sock);
+    assert_eq!(
+        (resp.cmd.as_str(), resp.class),
+        ("start", ExitClass::Ok),
+        "{resp:?}"
+    );
+    assert_eq!(resp.value.unwrap()["box"]["lifecycle"], "ready");
+    let lines = lines.lock().unwrap().clone();
+    assert_eq!(lines.len(), 3);
+    assert!(
+        lines[1..].iter().all(|l| l.contains(r#""cmd":"show""#)),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_cut_start_whose_setup_failed_fails_with_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let failed = serde_json::json!({
+        "box": {"name": "b1", "lifecycle": "setup_failed"},
+        "events": [{"kind": "setup_failed", "payload": {"why": "exit 137"}}],
+    });
+    controller(&sock, vec![cut_after_progress(), show_answer(Some(failed))]);
+    let resp = run_start(&sock);
+    let error = resp.error.unwrap();
+    assert_eq!(error.message, "b1 is setup_failed: exit 137");
+    assert_eq!(resp.cmd, "start");
+}
+
+#[test]
+fn a_cut_start_with_no_box_keeps_the_cut() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    controller(&sock, vec![cut_after_progress(), show_answer(None)]);
+    let resp = run_start(&sock);
+    assert!(resp
+        .error
+        .unwrap()
+        .message
+        .contains("closed the connection"),);
 }
