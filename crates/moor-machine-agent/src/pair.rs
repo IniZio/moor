@@ -1,6 +1,7 @@
 //! Pairing this machine with its owner by a code they confirm in any browser, so a host with
 //! no browser of its own pairs too. The gate's side follows RFC 8628's device authorization.
 
+use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -26,7 +27,40 @@ pub struct Ask {
     pub pool: Option<String>,
 }
 
-/// The gate's answer to a pairing.
+/// The one-time token a portal minted, which enrolls this machine with no confirm page. It goes
+/// only into the pairing request: never into state, the service, or output.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Token(String);
+
+impl Token {
+    /// A token as the person pasted it.
+    #[must_use]
+    pub const fn new(token: String) -> Self {
+        Self(token)
+    }
+}
+
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Token(..)")
+    }
+}
+
+/// The gate's answer to a pairing: the enrollment when a token paired the machine, else a code
+/// for its owner to confirm.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Answer {
+    /// A token enrolled the machine.
+    Enrolled {
+        /// The controller's enrollment.
+        enrolled: Enrolled,
+    },
+    /// A code to confirm.
+    Started(Started),
+}
+
+/// The gate's answer to a pairing with no token.
 #[derive(Deserialize)]
 struct Started {
     /// The secret to poll with.
@@ -67,14 +101,17 @@ pub fn check_server(server: &str) -> Result<(), String> {
     }
 }
 
-/// Pairs this machine with `server` as `ask`, keeping its key in `dir`: shows the person where
-/// to confirm through `say`, polls until they do, and saves the controller's answer.
+/// Pairs this machine with `server` as `ask`, keeping its key in `dir`.
+///
+/// With `token` the server enrolls it at once. Without, it shows the person where to confirm
+/// through `say` and polls until they do. Either way it saves the controller's answer.
 ///
 /// # Errors
 /// The key or state cannot be kept, the server refuses, or the code expires unconfirmed.
 pub fn pair(
     server: &str,
     ask: &Ask,
+    token: Option<&Token>,
     dir: &Path,
     say: &mut dyn FnMut(&str),
 ) -> Result<State, String> {
@@ -84,11 +121,32 @@ pub fn pair(
         .to_openssh()
         .map_err(|e| format!("cannot encode the public key: {e}"))?;
     let http = Http::new();
-    let body = json!({"pubkey": pubkey, "name": ask.name, "labels": ask.labels,
+    let mut body = json!({"pubkey": pubkey, "name": ask.name, "labels": ask.labels,
         "slots": SLOTS, "pool": ask.pool});
-    let started: Started = http
+    if let (Some(Token(token)), Some(fields)) = (token, body.as_object_mut()) {
+        fields.insert("token".to_owned(), json!(token));
+    }
+    let answer: Answer = http
         .post_json_found(&format!("{server}/machines/pair"), &body)?
         .ok_or_else(|| takes_no_machines(server))?;
+    let got = match answer {
+        Answer::Enrolled { enrolled } => {
+            say(&format!("added {} to your machines", enrolled.name));
+            enrolled
+        }
+        Answer::Started(started) => confirmed(&http, server, ask, &started, say)?,
+    };
+    keep(got, server, ask, dir)
+}
+
+/// Shows where `started`'s code is confirmed and polls until it is; the enrollment it gets.
+fn confirmed(
+    http: &Http,
+    server: &str,
+    ask: &Ask,
+    started: &Started,
+    say: &mut dyn FnMut(&str),
+) -> Result<Enrolled, String> {
     say(&format!(
         "to add {} to your machines, open {} on any device and check it shows {} ({} minutes left)",
         ask.name,
@@ -111,6 +169,11 @@ pub fn pair(
                 Err(e) => return Err(e),
             }
         };
+    Ok(got)
+}
+
+/// Saves the machine's state under `dir`, as `got` enrolled it.
+fn keep(got: Enrolled, server: &str, ask: &Ask, dir: &Path) -> Result<State, String> {
     let Enrolled {
         machine_id,
         name,

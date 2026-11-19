@@ -11,7 +11,7 @@ use std::time::Duration;
 use chacha20poly1305::aead::rand_core::RngCore;
 use chacha20poly1305::aead::OsRng;
 use moor_client::Client;
-use moor_core::request::{MachinePairReq, PairOp, Request as ControllerRequest};
+use moor_core::request::{MachineEnrollReq, MachinePairReq, PairOp, Request as ControllerRequest};
 use moor_core::response::ExitClass;
 use moor_core::view::user::MachinePairValue;
 use oauth2::CsrfToken;
@@ -20,7 +20,8 @@ use serde_json::{json, Value};
 
 use super::{Login, RANDOM_BYTES};
 use crate::http::respond;
-use crate::Gate;
+use crate::token::Person;
+use crate::{tools, Gate};
 
 pub(crate) mod page;
 
@@ -119,9 +120,14 @@ pub(crate) fn agent(
     gate: &Gate,
     login: Option<&Login>,
 ) {
-    let asked = read_json(&mut stream, leftover, length).and_then(|body| {
+    let asked = read_json(&mut stream, leftover, length).and_then(|mut body| {
+        let token = if path == "/machines/pair" {
+            take_token(&mut body)?
+        } else {
+            None
+        };
         if path == "/machines/pair" {
-            serde_json::from_value(body).map(Asked::Pair)
+            serde_json::from_value(body).map(|ask| Asked::Pair(ask, token))
         } else {
             serde_json::from_value(body).map(Asked::Poll)
         }
@@ -133,7 +139,8 @@ pub(crate) fn agent(
             "501 Not Implemented",
             json!({"error": "this server pairs machines only with browser sign-in on; its operator must start the gate with --public-url"}),
         ),
-        (Ok(Asked::Pair(ask)), Some(login)) => start(&gate.controller, login, &ask),
+        (Ok(Asked::Pair(ask, None)), Some(login)) => start(&gate.controller, login, &ask),
+        (Ok(Asked::Pair(ask, Some(token))), Some(_)) => redeem(gate, &ask, token),
         (Ok(Asked::Poll(polled)), Some(_)) => poll(&gate.controller, polled.device_code),
     };
     respond(&mut stream, status, "application/json", &body.to_string());
@@ -141,8 +148,8 @@ pub(crate) fn agent(
 
 /// What an agent posts.
 enum Asked {
-    /// A new code for this ask.
-    Pair(Ask),
+    /// A new code for this ask, or an enrollment at once for the portal token it carries.
+    Pair(Ask, Option<String>),
     /// Whether this code is confirmed.
     Poll(Poll),
 }
@@ -152,6 +159,51 @@ enum Asked {
 struct Poll {
     /// The secret [`start`] handed out.
     device_code: String,
+}
+
+/// Takes the portal token off a pairing body, so it never reaches the stored [`Ask`].
+fn take_token(body: &mut Value) -> Result<Option<String>, String> {
+    match body.as_object_mut().and_then(|o| o.remove("token")) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(token)) => Ok(Some(token)),
+        Some(_) => Err("the token must be a string".to_owned()),
+    }
+}
+
+/// The `machine-enroll` that adds the machine `ask` describes.
+pub(crate) fn enroll_request(ask: &Ask) -> ControllerRequest {
+    ControllerRequest::MachineEnroll(MachineEnrollReq {
+        identity: None,
+        email: None,
+        name: ask.name.clone(),
+        pubkey: ask.pubkey.clone(),
+        labels: ask.labels.clone(),
+        capacity: ask.slots,
+        pool: ask.pool.clone(),
+    })
+}
+
+/// Enrolls `ask`'s machine as the person whose grant `token` redeems, with no confirm page. The
+/// controller lets one redeem take a grant, so a token enrolls once.
+fn redeem(gate: &Gate, ask: &Ask, token: String) -> (&'static str, Value) {
+    match step(&gate.controller, PairOp::Redeem { token }) {
+        Ok(MachinePairValue::Granted { owner }) => {
+            let person = Person {
+                identity: owner.identity,
+                email: owner.email,
+            };
+            match tools::act_as(&gate.controller, &person, enroll_request(ask)) {
+                Ok(enrolled) => ("200 OK", json!({ "enrolled": enrolled })),
+                Err(why) => unreachable_controller(&why),
+            }
+        }
+        Ok(MachinePairValue::Gone) => (
+            "400 Bad Request",
+            json!({"error": "this token is unknown, used or expired; make a new one on the Machines page"}),
+        ),
+        Ok(other) => unreachable_controller(&format!("moor answered {other:?}")),
+        Err(why) => unreachable_controller(&why),
+    }
 }
 
 /// Hands out a code for `ask`, kept by the controller.

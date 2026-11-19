@@ -9,7 +9,7 @@ use moor_core::config::BOXES_HOST;
 use std::time::Duration;
 
 use crate::linked;
-use crate::pair::{self, Ask};
+use crate::pair::{self, Ask, Token};
 use crate::service::{Manager, Service};
 use crate::{read_key, Host, State, KEY};
 
@@ -51,6 +51,9 @@ pub struct Up {
     pub labels: Vec<String>,
     /// What the machine offers.
     pub runtime: Runtime,
+    /// A portal-minted token that pairs the machine with no confirm page; used only when the
+    /// machine is not paired yet.
+    pub token: Option<Token>,
 }
 
 /// Brings this machine to linked with `up.server`, keeping its key and state in `dir` and its
@@ -88,7 +91,7 @@ pub fn up(
             say(&format!("{} is already paired with {server}", state.name));
             state
         }
-        None => pair::pair(&server, &ask, dir, say)?,
+        None => pair::pair(&server, &ask, up.token.as_ref(), dir, say)?,
     };
     let service = service(&up.runtime, dir, manager)?;
     let linked = dir.join(linked::FILE);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::box_key::ControllerId;
 use crate::name::ProfileSource;
-use crate::request::SecretValue;
+use crate::request::{PairOwner, SecretValue};
 use crate::user::{Email, Identity, SecretName, UserId};
 
 mod profile_check;
@@ -187,6 +187,11 @@ pub enum MachinePairValue {
     Settled,
     /// Nobody has confirmed the code yet.
     Pending,
+    /// `redeem` took the grant: the person to enroll the machine as.
+    Granted {
+        /// Who the grant enrolls machines as.
+        owner: PairOwner,
+    },
     /// The controller's enrollment, handed out this once.
     Enrolled {
         /// The `machine-enroll` value.

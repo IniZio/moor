@@ -57,6 +57,7 @@ const LOGINCTL: &str = "#!/bin/sh\necho Linger=yes\n";
 struct World {
     gate: String,
     enrolled: Arc<Mutex<Vec<Value>>>,
+    pairings: Arc<Mutex<Pairings>>,
     home: tempfile::TempDir,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
@@ -71,6 +72,7 @@ fn world() -> World {
     let enrolled: Arc<Mutex<Vec<Value>>> = Arc::default();
     let kept = Arc::clone(&enrolled);
     let pairings: Arc<Mutex<Pairings>> = Arc::default();
+    let held = Arc::clone(&pairings);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let kept = Arc::clone(&kept);
@@ -90,6 +92,7 @@ fn world() -> World {
     World {
         gate,
         enrolled,
+        pairings: held,
         home: home(),
         _issuer: issuer,
         _dir: dir,
@@ -257,6 +260,9 @@ impl World {
         self.agent(&["up", "--server", &self.gate, "--name", "hv"])
     }
 }
+
+#[path = "up/token.rs"]
+mod token;
 
 fn last_line(said: &str) -> &str {
     said.lines().last().unwrap_or_default()

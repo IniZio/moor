@@ -60,7 +60,7 @@ pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 mod step_report;
 pub use step_report::StepReportReq;
 mod machine_pair;
-pub use machine_pair::{MachinePairReq, PairOp};
+pub use machine_pair::{MachinePairReq, PairOp, PairOwner};
 mod webhook_outbox;
 pub use webhook_outbox::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 

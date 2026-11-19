@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use moor_machine_agent::pair::Token;
 use moor_machine_agent::service::Manager;
 use moor_machine_agent::up::{self, down, Runtime, Up};
 use moor_machine_agent::{
@@ -62,6 +63,14 @@ struct UpFlags {
     /// The moor server, such as `https://moor.example.com`.
     #[arg(long, env = "MOOR_SERVER")]
     server: String,
+    /// A one-time token from the portal's Machines page; adds this machine with no browser step.
+    #[arg(
+        long,
+        env = "MOOR_PAIR_TOKEN",
+        hide_env_values = true,
+        value_name = "TOKEN"
+    )]
+    token: Option<String>,
     /// The machine's name, unique among your machines; this host's name by default.
     #[arg(long)]
     name: Option<String>,
@@ -96,6 +105,7 @@ fn up_here(flags: UpFlags) -> ExitCode {
         name: flags.name.unwrap_or_else(host_name),
         labels: flags.labels,
         runtime,
+        token: flags.token.map(Token::new),
     };
     done(up::up(
         &req,

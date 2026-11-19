@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::net::TcpStream;
 use std::time::SystemTime;
 
-use moor_core::request::{MachineEnrollReq, PairOp, Request as ControllerRequest};
+use moor_core::request::PairOp;
 use moor_core::view::user::MachinePairValue;
 use oauth2::url::form_urlencoded;
 use serde_json::Value;
 
 use super::super::routes::{escape, page, read_form, redirect, Request};
 use super::super::{check_csrf, csrf_token, Login, Session};
-use super::{normalize, step, Ask, PATH};
+use super::{enroll_request, normalize, step, Ask, PATH};
 use crate::{log, tools, Gate};
 
 /// Serves the confirm page: `GET` shows what a code would add, `POST` adds it.
@@ -88,16 +88,8 @@ fn confirm(
         Ok(None) => return gone(stream),
         Err(why) => return failed(stream, &why),
     };
-    let request = ControllerRequest::MachineEnroll(MachineEnrollReq {
-        identity: None,
-        email: None,
-        name: ask.name.clone(),
-        pubkey: ask.pubkey.clone(),
-        labels: ask.labels.clone(),
-        capacity: ask.slots,
-        pool: ask.pool.clone(),
-    });
-    let enrolled: Result<Value, String> = tools::act_as(&gate.controller, &session.person, request);
+    let enrolled: Result<Value, String> =
+        tools::act_as(&gate.controller, &session.person, enroll_request(&ask));
     let settle = PairOp::Settle {
         code,
         enrolled: enrolled.as_ref().ok().cloned(),

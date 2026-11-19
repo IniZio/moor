@@ -16,6 +16,8 @@ use serde_json::{json, Value};
 use super::login::{csrf, get, send, sign_in, Reply};
 use super::CLIENT_ID;
 
+mod token;
+
 /// The cookie key every replica shares.
 const KEYS: &str = "a-cookie-key-every-replica-shares-0123456789";
 
@@ -27,6 +29,8 @@ struct World {
     gates: Vec<Replica>,
     /// Every `machine-enroll` the controller got, with the identity it came as.
     enrolled: Arc<Mutex<Vec<Value>>>,
+    /// The controller's codes and grants.
+    pairings: Arc<Mutex<Pairings>>,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
 }
@@ -52,6 +56,7 @@ fn world(login: bool) -> World {
 
 /// `replicas` gates in front of one controller that enrolls every machine as id 7, all sharing
 /// one public URL and one cookie key; with browser sign-in when `login`.
+#[expect(clippy::too_many_lines, reason = "a fake controller and its gates")]
 fn world_of(login: bool, replicas: usize) -> World {
     let issuer = Issuer::start(CLIENT_ID);
     let dir = tempfile::tempdir().unwrap();
@@ -60,6 +65,7 @@ fn world_of(login: bool, replicas: usize) -> World {
     let enrolled: Arc<Mutex<Vec<Value>>> = Arc::default();
     let kept = Arc::clone(&enrolled);
     let pairings: Arc<Mutex<Pairings>> = Arc::default();
+    let held = Arc::clone(&pairings);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let kept = Arc::clone(&kept);
@@ -110,6 +116,7 @@ fn world_of(login: bool, replicas: usize) -> World {
     World {
         gates,
         enrolled,
+        pairings: held,
         _issuer: issuer,
         _dir: dir,
     }

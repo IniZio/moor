@@ -15,6 +15,10 @@ const WAITING: &str = "waiting";
 const ENROLLING: &str = "enrolling";
 /// A code whose enrollment waits for the agent's next poll.
 const ENROLLED: &str = "enrolled";
+/// A portal-minted token's grant, which no code query may see.
+const GRANTED: &str = "granted";
+/// What a grant's code starts with, then its owner's identity.
+const GRANT_CODE: &str = "grant:";
 
 /// A code to keep.
 pub(crate) struct Pairing<'a> {
@@ -167,6 +171,7 @@ impl Store {
                     .column(MachinePairings::Code)
                     .from(MachinePairings::Table)
                     .and_where(Expr::col(MachinePairings::DeviceHash).eq(device_hash))
+                    .and_where(Expr::col(MachinePairings::Stage).is_in([WAITING, ENROLLING]))
                     .and_where(Expr::col(MachinePairings::ExpiresAt).gt(now)),
                 |r| r.get::<_, String>(0),
             )
@@ -177,6 +182,81 @@ impl Store {
         } else {
             Polled::Expired
         })
+    }
+}
+
+impl Store {
+    /// Keeps a grant of `owner` (as JSON) for the token that hashes to `token_hash`, replacing
+    /// the one that owner held: whether it was kept, none when `most` other rows wait.
+    pub(crate) fn grant_pairing(
+        &self,
+        (identity, owner): (&str, &str),
+        token_hash: &str,
+        ttl: Duration,
+        most: usize,
+    ) -> Result<bool, StoreError> {
+        let now = self.now();
+        let code = format!("{GRANT_CODE}{identity}");
+        self.writer().run(
+            Query::delete()
+                .from_table(MachinePairings::Table)
+                .and_where(Expr::col(MachinePairings::ExpiresAt).lte(now.as_millis())),
+        )?;
+        let others: i64 = self.writer().row(
+            Query::select()
+                .expr(Expr::col(MachinePairings::Code).count())
+                .from(MachinePairings::Table)
+                .and_where(Expr::col(MachinePairings::Code).ne(code.as_str())),
+            |r| r.get(0),
+        )?;
+        if usize::try_from(others).unwrap_or(usize::MAX) >= most {
+            return Ok(false);
+        }
+        self.writer().run(
+            Query::insert()
+                .into_table(MachinePairings::Table)
+                .columns([
+                    MachinePairings::Code,
+                    MachinePairings::DeviceHash,
+                    MachinePairings::Ask,
+                    MachinePairings::Stage,
+                    MachinePairings::ExpiresAt,
+                ])
+                .values_panic([
+                    code.into(),
+                    token_hash.into(),
+                    owner.into(),
+                    GRANTED.into(),
+                    now.saturating_add(ttl).as_millis().into(),
+                ])
+                .on_conflict(
+                    OnConflict::column(MachinePairings::Code)
+                        .update_columns([
+                            MachinePairings::DeviceHash,
+                            MachinePairings::Ask,
+                            MachinePairings::Stage,
+                            MachinePairings::ExpiresAt,
+                        ])
+                        .to_owned(),
+                ),
+        )?;
+        Ok(true)
+    }
+
+    /// Takes the unexpired grant whose token hashes to `token_hash`, once: its owner as JSON.
+    pub(crate) fn redeem_pairing(&self, token_hash: &str) -> Result<Option<String>, StoreError> {
+        Ok(self
+            .writer()
+            .row(
+                Query::delete()
+                    .from_table(MachinePairings::Table)
+                    .and_where(Expr::col(MachinePairings::DeviceHash).eq(token_hash))
+                    .and_where(Expr::col(MachinePairings::Stage).eq(GRANTED))
+                    .and_where(Expr::col(MachinePairings::ExpiresAt).gt(self.now().as_millis()))
+                    .returning(Query::returning().column(MachinePairings::Ask)),
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 }
 

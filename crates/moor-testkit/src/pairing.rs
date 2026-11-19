@@ -1,5 +1,5 @@
 //! A stand-in for the controller's `machine-pair` request, for gate tests whose fake controller
-//! answers it: codes kept in memory, and nothing expires. The controller's own tests cover expiry.
+//! answers it: codes and grants kept in memory, and nothing expires. The controller's own tests cover expiry.
 
 use std::collections::HashMap;
 
@@ -17,9 +17,14 @@ struct Code {
     enrolled: Value,
 }
 
-/// The codes, by code.
+/// The codes, by code, and the grants, each with the owner it names, by token.
 #[derive(Default)]
-pub struct Pairings(HashMap<String, Code>);
+pub struct Pairings {
+    /// The codes by code.
+    codes: HashMap<String, Code>,
+    /// Each grant's owner by token.
+    grants: HashMap<String, Value>,
+}
 
 /// `op`'s string field `key`; empty when it has none.
 fn field<'a>(op: &'a Value, key: &str) -> &'a str {
@@ -30,8 +35,24 @@ impl Pairings {
     /// Answers one `machine-pair` op, the request's `op` object, the way the controller does.
     pub fn step(&mut self, op: &Value) -> Value {
         let gone = json!({"pairing": "gone"});
+        match field(op, "do") {
+            "grant" => {
+                let owner = op.get("owner").cloned().unwrap_or_default();
+                self.grants
+                    .retain(|_, held| held.get("identity") != owner.get("identity"));
+                self.grants.insert(field(op, "token").to_owned(), owner);
+                return json!({"pairing": "started"});
+            }
+            "redeem" => {
+                return self
+                    .grants
+                    .remove(field(op, "token"))
+                    .map_or(gone, |owner| json!({"pairing": "granted", "owner": owner}));
+            }
+            _ => {}
+        }
         let code = field(op, "code").to_owned();
-        let waiting = self.0.get_mut(&code).filter(|c| c.stage == "waiting");
+        let waiting = self.codes.get_mut(&code).filter(|c| c.stage == "waiting");
         match field(op, "do") {
             "start" => {
                 let pairing = Code {
@@ -40,7 +61,7 @@ impl Pairings {
                     stage: "waiting",
                     enrolled: Value::Null,
                 };
-                self.0.insert(code, pairing);
+                self.codes.insert(code, pairing);
                 json!({"pairing": "started"})
             }
             "show" => waiting.map_or(gone, |c| json!({"pairing": "waiting", "ask": c.ask})),
@@ -50,7 +71,7 @@ impl Pairings {
             }),
             "settle" => {
                 let enrolled = op.get("enrolled").cloned().unwrap_or_default();
-                let Some(c) = self.0.get_mut(&code).filter(|c| c.stage == "enrolling") else {
+                let Some(c) = self.codes.get_mut(&code).filter(|c| c.stage == "enrolling") else {
                     return gone;
                 };
                 c.stage = if enrolled.is_null() {
@@ -69,7 +90,7 @@ impl Pairings {
     /// What a poll with `device` finds; an enrollment is handed out once.
     fn poll(&mut self, device: &str) -> Value {
         let Some((code, stage)) = self
-            .0
+            .codes
             .iter()
             .find(|(_, c)| c.device == device)
             .map(|(code, c)| (code.clone(), c.stage))
@@ -79,7 +100,11 @@ impl Pairings {
         if stage != "enrolled" {
             return json!({"pairing": "pending"});
         }
-        let enrolled = self.0.remove(&code).map(|c| c.enrolled).unwrap_or_default();
+        let enrolled = self
+            .codes
+            .remove(&code)
+            .map(|c| c.enrolled)
+            .unwrap_or_default();
         json!({"pairing": "enrolled", "enrolled": enrolled})
     }
 }

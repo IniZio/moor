@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use moor_core::request::{MachinePairReq, PairOp};
+use moor_core::request::{MachinePairReq, PairOp, PairOwner};
 use moor_core::user::Caller;
 use moor_core::view::user::MachinePairValue;
 use moor_core::ErrorKind;
@@ -58,6 +58,12 @@ pub(crate) fn run(store: &Store, req: &MachinePairReq) -> Result<Value, CommandE
                 MachinePairValue::Gone
             }
         }
+        PairOp::Grant {
+            owner,
+            token,
+            ttl_secs,
+        } => grant(store, owner, token, *ttl_secs)?,
+        PairOp::Redeem { token } => redeem(store, token)?,
         PairOp::Poll { device_code } => {
             match store.poll_pairing(&token_hash(device_code.as_bytes()))? {
                 Polled::Pending => MachinePairValue::Pending,
@@ -77,6 +83,42 @@ fn waiting(ask: Option<String>) -> Result<MachinePairValue, CommandError> {
         Some(ask) => MachinePairValue::Waiting { ask: parse(&ask)? },
         None => MachinePairValue::Gone,
     })
+}
+
+/// `Started` once `owner`'s grant for `token` is kept, or `Full` when too many rows wait.
+fn grant(
+    store: &Store,
+    owner: &PairOwner,
+    token: &str,
+    ttl_secs: u64,
+) -> Result<MachinePairValue, CommandError> {
+    let kept = store.grant_pairing(
+        (owner.identity.as_str(), &json_of(owner)?),
+        &token_hash(token.as_bytes()),
+        Duration::from_secs(ttl_secs),
+        MOST_WAITING,
+    )?;
+    Ok(if kept {
+        MachinePairValue::Started
+    } else {
+        MachinePairValue::Full
+    })
+}
+
+/// `Granted` with the owner when `token` names a live grant, which it takes; else `Gone`.
+fn redeem(store: &Store, token: &str) -> Result<MachinePairValue, CommandError> {
+    Ok(match store.redeem_pairing(&token_hash(token.as_bytes()))? {
+        Some(owner) => MachinePairValue::Granted {
+            owner: serde_json::from_str(&owner)
+                .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))?,
+        },
+        None => MachinePairValue::Gone,
+    })
+}
+
+/// `owner` as the JSON a grant keeps.
+fn json_of(owner: &PairOwner) -> Result<String, CommandError> {
+    serde_json::to_string(owner).map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))
 }
 
 /// A JSON column read back.
