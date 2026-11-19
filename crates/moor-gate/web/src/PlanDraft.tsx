@@ -16,9 +16,10 @@ const EVERY_MS = 3000;
 /** How long a quiet Box may go without leaving a plan before the page gives up on it. */
 const GRACE_MS = 60_000;
 
-function why(e: unknown): string {
-	if (e instanceof SignedOut) return 'Your session ended. Reload to sign in again.';
-	return e instanceof Error ? e.message : 'Something went wrong.';
+const SOMETHING = new Error('Something went wrong.');
+
+function why(e: Error): string {
+	return e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message;
 }
 
 /** Generate plan: a short Box reads the repos and drafts a plan for the prompt, which lands in the editor for review. */
@@ -58,7 +59,7 @@ export function GeneratePlan({ csrf, repos, prompt, onPlan }: { csrf: string; re
 			}
 			setDraft({ at: 'running', box: now.box, line: detail.line, quietSince });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: why(e), box: now.box });
+			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING), box: now.box });
 		}
 	};
 	const start = async () => {
@@ -67,12 +68,16 @@ export function GeneratePlan({ csrf, repos, prompt, onPlan }: { csrf: string; re
 			const box = await planDraft(csrf, repos, prompt);
 			if (live.current) setDraft({ at: 'running', box, line: 'Setting up…' });
 		} catch (e) {
-			if (live.current) setDraft({ at: 'failed', text: why(e) });
+			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING) });
 		}
 	};
 	const cancel = async (box: string) => {
 		setDraft({ at: 'idle', note: 'Cancelled. The plan in the editor is unchanged.' });
-		await boxClose(csrf, box).catch((e: unknown) => live.current && setDraft({ at: 'failed', text: why(e), box }));
+		try {
+			await boxClose(csrf, box);
+		} catch (e) {
+			if (live.current) setDraft({ at: 'failed', text: why(e instanceof Error ? e : SOMETHING), box });
+		}
 	};
 	const ready = repos.length > 0 && prompt.trim() !== '';
 	if (running) {

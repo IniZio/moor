@@ -9,9 +9,10 @@ import './plandraft.css';
 const APPROVE = 'Approve plan';
 const REVISE = 'Revise';
 
-function why(e: unknown): string {
-	if (e instanceof SignedOut) return 'Your session ended. Reload to sign in again.';
-	return e instanceof Error ? e.message : 'Something went wrong.';
+const SOMETHING = new Error('Something went wrong.');
+
+function why(e: Error): string {
+	return e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message;
 }
 
 function Steps({ doc }: { doc: PlanDoc }) {
@@ -37,10 +38,14 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 	const newest = detail.artifacts.filter((a) => a.name === 'plan.json').reduce((n, a) => Math.max(n, a.version), 0);
 	useEffect(() => {
 		let live = true;
-		planOf(detail).then(
-			(read) => live && setText(read),
-			(e: unknown) => live && setError(why(e)),
-		);
+		void (async () => {
+			try {
+				const read = await planOf(detail);
+				if (live) setText(read);
+			} catch (e) {
+				if (live) setError(why(e instanceof Error ? e : SOMETHING));
+			}
+		})();
 		return () => {
 			live = false;
 		};
@@ -54,7 +59,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 			await boxAnswer(csrf, detail.box, needs.id, n, typed);
 			onSent();
 		} catch (e) {
-			setError(why(e));
+			setError(why(e instanceof Error ? e : SOMETHING));
 			onSent();
 		} finally {
 			setBusy(false);
