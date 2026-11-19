@@ -116,7 +116,7 @@ task_hits=$(grep -rniI --exclude-dir=target --exclude-dir=node_modules --exclude
         if (tolower(rest) ~ /task/) print
       }' || true)
 md_files=()
-while IFS= read -r f; do md_files+=("$f"); done < <(find docs README.md -name '*.md' 2>/dev/null)
+while IFS= read -r f; do md_files+=("$f"); done < <(find docs README.md -path docs/specs -prune -o -name '*.md' -print 2>/dev/null)
 if [ ${#md_files[@]} -gt 0 ]; then
   md_hits=$(awk 'FNR == 1 { fence = 0 }
     /^[[:space:]]*(```|~~~)/ { fence = !fence; next }

@@ -120,6 +120,11 @@ removed_names removed-names-docs-fence fail README.md <<'MD'
 moor task list
 ```
 MD
+removed_names removed-names-spec-mockup pass docs/specs/portal.md <<'MD'
+```
+moor   [+ New task]   inbox 2
+```
+MD
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS
