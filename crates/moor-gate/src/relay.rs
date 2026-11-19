@@ -137,7 +137,7 @@ fn is_blocked(e: Option<&Error>) -> bool {
 }
 
 /// Waits until `probe` is ready for `flags`; false when the wait failed.
-pub(crate) fn wait(probe: &TcpStream, flags: PollFlags) -> bool {
+fn wait(probe: &TcpStream, flags: PollFlags) -> bool {
     poll(&mut [PollFd::new(probe, flags)], None).is_ok()
 }
 

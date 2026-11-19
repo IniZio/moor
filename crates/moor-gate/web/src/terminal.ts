@@ -42,7 +42,9 @@ export async function attach(host: HTMLElement, box: string, csrf: string, onSta
 	ws.binaryType = 'arraybuffer';
 	const keys = new TextEncoder();
 	let why: string | null = null;
+	let opened = false;
 	ws.onopen = () => {
+		opened = true;
 		onStatus({ kind: 'live' });
 		term.focus();
 	};
@@ -51,8 +53,8 @@ export async function attach(host: HTMLElement, box: string, csrf: string, onSta
 		const said = v.safeParse(EndedSchema, e.data);
 		if (said.success) why = said.output.ended;
 	};
-	ws.onclose = (e) => {
-		const fallback = e.code === 1006 && !e.wasClean ? 'The terminal could not open. Reload the page and try again.' : 'The terminal closed.';
+	ws.onclose = () => {
+		const fallback = opened ? 'The connection dropped. The task keeps running.' : 'The terminal could not open.';
 		onStatus({ kind: 'ended', why: why ?? fallback });
 	};
 	const typed = term.onData((data) => {

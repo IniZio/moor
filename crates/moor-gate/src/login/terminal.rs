@@ -13,6 +13,8 @@ use moor_client::AttachKeys;
 use moor_core::name::BoxName;
 use moor_core::request::AttachReq;
 use oauth2::url::{form_urlencoded, Url};
+use rustix::event::{poll, PollFd, PollFlags, Timespec};
+use rustix::io::Errno;
 use serde::Deserialize;
 use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
@@ -20,12 +22,16 @@ use tungstenite::{Message, WebSocket};
 
 use super::{check_csrf, Login};
 use crate::http::{header, headers_named, respond, unavailable};
-use crate::relay::{deliver, lock, wait, Ws};
+use crate::relay::{deliver, lock, Ws};
 use crate::streams::Streams;
 use crate::{log, Gate};
 
 /// Where the portal opens a terminal: `?box=<name>&cols=<n>&rows=<n>&csrf=<token>`.
 pub(crate) const PATH: &str = "/account/api/box/terminal";
+
+/// Seconds of browser silence before the gate pings. Cloudflare closes a WebSocket idle for
+/// 100 seconds.
+const PING_EVERY: i64 = 30;
 
 /// A size the browser sends once its terminal is resized.
 #[derive(Deserialize)]
@@ -185,11 +191,29 @@ fn show(mut screen: impl Read, ws: &Ws, probe: &TcpStream) {
     let _ = probe.shutdown(Shutdown::Read);
 }
 
-/// Browser to agent: keystrokes and sizes, until the browser closes or the socket fails.
+/// Waits for the browser; true when it stayed quiet for [`PING_EVERY`], none when the wait failed.
+fn quiet(probe: &TcpStream) -> Option<bool> {
+    let every = Timespec {
+        tv_sec: PING_EVERY,
+        tv_nsec: 0,
+    };
+    loop {
+        match poll(&mut [PollFd::new(probe, PollFlags::IN)], Some(&every)) {
+            Ok(n) => return Some(n == 0),
+            Err(Errno::INTR) => {}
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Browser to agent: keystrokes and sizes, until the browser closes or the socket fails. A
+/// browser quiet for [`PING_EVERY`] gets a ping, so a proxy that closes idle sockets keeps it.
 fn take(ws: &Ws, probe: &TcpStream, keys: &mut AttachKeys) {
     loop {
-        if !wait(probe, rustix::event::PollFlags::IN) {
-            return;
+        match quiet(probe) {
+            Some(true) if deliver(ws, probe, Some(Message::Ping(Vec::new().into()))) => continue,
+            Some(false) => {}
+            _ => return,
         }
         loop {
             let read = lock(ws).read();
