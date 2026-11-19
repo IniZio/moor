@@ -295,6 +295,7 @@ function Line({ e }: { e: Entry }) {
 					<span class="t-when">{clock(e.at)}</span>
 					<span class="t-what">{e.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : e.text}</span>
 					{e.step && <span class="t-step">Step: {e.step}</span>}
+					{e.kind === 'typed' && <span class="t-step">typed in the terminal</span>}
 				</div>
 			);
 		case 'asked':

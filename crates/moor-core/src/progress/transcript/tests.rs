@@ -67,7 +67,7 @@ fn tools(lines: &[Line]) -> Vec<&Tool> {
         .iter()
         .filter_map(|l| match &l.what {
             What::Tool(t) => Some(t),
-            What::Said { .. } => None,
+            What::Said { .. } | What::Typed { .. } => None,
         })
         .collect()
 }
@@ -344,4 +344,62 @@ fn the_stored_lines_stay_under_their_cap_at_their_worst() {
         .collect();
     let stored = serde_json::to_vec(&read(&records)).unwrap();
     assert!((stored.len() as u64) < STORED_MAX, "{} bytes", stored.len());
+}
+
+fn typed(s: u32, uuid: &str, text: &str) -> String {
+    json!({"type": "user", "uuid": uuid, "timestamp": at(s), "message": {"content": text}})
+        .to_string()
+}
+
+fn typed_rows(events: &[(i64, EventView)]) -> Vec<(Class, String)> {
+    let lines = read(&[
+        typed(5, "p1", "Use the new label."),
+        typed(8, "p2", "Reply\n  ok"),
+    ]);
+    let transcript = Transcript {
+        lines: &lines,
+        saved_ms: ms(20),
+    };
+    timeline_with(events, transcript)
+        .into_iter()
+        .filter(|e| e.kind == "typed")
+        .map(|e| (e.class, e.text))
+        .collect()
+}
+
+#[test]
+fn what_the_person_typed_in_the_terminal_shows_as_a_you_row() {
+    let events = [(ms(0), ev(1, "started", json!({})))];
+    let words = [
+        (Class::You, "Use the new label."),
+        (Class::You, "Reply\n  ok"),
+    ];
+    assert_eq!(typed_rows(&events), words.map(|(c, t)| (c, t.to_owned())));
+}
+
+#[test]
+fn typed_words_a_steer_already_shows_are_left_out_however_the_white_space_fell() {
+    let events = [
+        (ms(0), ev(1, "started", json!({}))),
+        (ms(6), ev(2, "steered", json!({"message": "Reply ok"}))),
+    ];
+    assert_eq!(
+        typed_rows(&events),
+        [(Class::You, "Use the new label.".to_owned())]
+    );
+}
+
+#[test]
+fn the_typed_words_of_a_menu_choice_are_a_steer_too() {
+    let events = [
+        (ms(0), ev(1, "started", json!({}))),
+        (
+            ms(6),
+            ev(2, "steered", json!({"message": "2: Use the new label."})),
+        ),
+    ];
+    assert_eq!(
+        typed_rows(&events),
+        [(Class::You, "Reply\n  ok".to_owned())]
+    );
 }
