@@ -10,7 +10,7 @@ use moor_core::seam::engine::GitSource;
 
 use super::Codex;
 use crate::adapters::box_agent::profile_writer::{
-    git_sources, ProfileCtx, ProfileWriter, COPY_SKILLS, FAILURES_FILE, FAIL_FN,
+    git_sources, ProfileCtx, ProfileWriter, COPY_SKILLS, FAILURES_FILE, FAIL_FN, RETRY_FN,
 };
 
 #[cfg(test)]
@@ -131,9 +131,10 @@ fn toml_string(text: &str) -> String {
 }
 
 /// Adds each marketplace and installs each plugin through the Codex CLI, which clones the
-/// snapshot and writes its own tables outside the block; a failure is recorded and the rest run.
+/// snapshot and writes its own tables outside the block. Each is tried again after an upstream
+/// failure; a failure that lasts is recorded and the rest run.
 fn plugins(manifest: &Manifest) -> String {
-    let mut lines = Vec::new();
+    let mut lines = vec![RETRY_FN.to_owned()];
     for (name, source) in &manifest.codex.marketplaces {
         let url = format!("https://github.com/{}", source.repo);
         let pin = source
@@ -141,7 +142,7 @@ fn plugins(manifest: &Manifest) -> String {
             .as_ref()
             .map_or_else(String::new, |r| format!("--ref {} ", quote(r)));
         lines.push(format!(
-            "codex plugin marketplace add {pin}{} </dev/null >/dev/null 2>&1 || fail {} $?",
+            "moor_retry codex plugin marketplace add {pin}{} </dev/null >/dev/null 2>&1 || fail {} $?",
             quote(&url),
             quote(&format!("marketplace {name}")),
         ));
@@ -163,15 +164,18 @@ fn plugins(manifest: &Manifest) -> String {
         let what = quote(&format!("plugin {id}"));
         if plugin.marketplace == PROFILE_MARKETPLACE {
             lines.push(format!(
-                "if [ -n \"$pm\" ]; then codex plugin add {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
+                "if [ -n \"$pm\" ]; then moor_retry codex plugin add {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
                 quote(&plugin.name),
             ));
         } else {
             lines.push(format!(
-                "codex plugin add {} </dev/null >/dev/null 2>&1 || fail {what} $?",
+                "moor_retry codex plugin add {} </dev/null >/dev/null 2>&1 || fail {what} $?",
                 quote(&id),
             ));
         }
+    }
+    if lines.len() == 1 {
+        return String::new();
     }
     lines.join("\n")
 }

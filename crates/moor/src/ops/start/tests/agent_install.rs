@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::testing::agent;
 use moor_core::activity::Probe;
+use moor_core::boxscript::one_at_a_time;
 use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::agent_adapter::AgentInstall;
@@ -23,13 +24,13 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
 use crate::testing::proxy_host::FakeProxyHost;
 
-const SCRIPT: &str = "echo install-the-agent";
+pub(super) const SCRIPT: &str = "echo install-the-agent";
 
 fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-fn prompt_req() -> StartReq {
+pub(super) fn prompt_req() -> StartReq {
     StartReq {
         prompt: Some("ship it".into()),
         ..repo_req("demo")
@@ -47,7 +48,7 @@ fn installer() -> AgentInstall {
 
 /// A world over a repo with `yaml` whose engine installs its agent with [`SCRIPT`] when
 /// `install`.
-fn install_world(
+pub(super) fn install_world(
     yaml: &str,
     user: Option<bool>,
     install: bool,
@@ -77,7 +78,7 @@ pub(super) fn installs(w: &World) -> Vec<(ExecSpec, Deadline)> {
     w.driver
         .execs()
         .into_iter()
-        .filter(|e| unwrapped(e.1.argv.clone()) == ["sh", "-c", SCRIPT])
+        .filter(|e| unwrapped(e.1.argv.clone()) == ["sh", "-c", &one_at_a_time(SCRIPT)])
         .map(|e| (e.1, e.2))
         .collect()
 }
@@ -97,7 +98,10 @@ fn the_install_runs_after_setup_and_dotfiles_with_the_proxy_and_a_deadline() {
         "the install puts the agent in the agent place"
     );
     let (_, spec, deadline) = execs.last().unwrap();
-    assert_eq!(unwrapped(spec.argv.clone()), ["sh", "-c", SCRIPT]);
+    assert_eq!(
+        unwrapped(spec.argv.clone()),
+        ["sh", "-c", &one_at_a_time(SCRIPT)]
+    );
     assert!(spec
         .argv
         .get(2)
@@ -139,7 +143,7 @@ fn the_install_runs_after_the_dotfiles_so_a_user_who_installs_their_own_agent_wi
         .collect();
     assert_eq!(scripts.len(), 4, "clone, setup, dotfiles, install");
     assert!(scripts.get(2).is_some_and(|s| s.contains(".moor-dotfiles")));
-    assert_eq!(scripts.last().map(String::as_str), Some(SCRIPT));
+    assert_eq!(scripts.last(), Some(&one_at_a_time(SCRIPT)));
 }
 
 #[test]

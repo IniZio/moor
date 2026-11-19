@@ -77,7 +77,7 @@ impl CloneStep {
 /// reads it as an option.
 ///
 /// `git clone` needs an empty directory, so a workdir with no `.git` is cloned into a temp dir
-/// under `.moor/` whose
+/// under `.moor/`, after the partial clones of runs that were cut off are removed, whose
 /// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
 /// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
 /// and the script stops at the clone step. `.moor/` is excluded so moor's files never show as
@@ -109,7 +109,7 @@ case {branch} in -*) echo 'the branch starts with -' >&2; exit {checkout};; esac
 if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   if [ ! -d .git ]; then
     tmp=.moor/clone.$$
-    rm -rf -- "$tmp" && mkdir -p -- "$tmp" || exit {clone}
+    rm -rf -- .moor/clone.* && mkdir -p -- "$tmp" || exit {clone}
     git clone -q --filter=blob:none --no-checkout -- {url} "$tmp" && mv -- "$tmp/.git" .git &&
       [ ! -e .git/.git ]
     cloned=$?

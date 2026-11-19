@@ -10,7 +10,7 @@ use moor_core::seam::proc::Tool;
 use super::launch::{interpreters, parent};
 use super::Claude;
 use crate::adapters::box_agent::profile_writer::{
-    git_sources, ProfileCtx, ProfileWriter, FAILURES_FILE, FAIL_FN, MARKETPLACE_NAME_FN,
+    git_sources, ProfileCtx, ProfileWriter, FAILURES_FILE, FAIL_FN, MARKETPLACE_NAME_FN, RETRY_FN,
 };
 
 mod merge;
@@ -80,17 +80,18 @@ impl ProfileWriter for Claude {
     }
 }
 
-/// Adds each marketplace and installs each plugin; a failure is recorded and the rest still run.
+/// Adds each marketplace and installs each plugin, each tried again after an upstream failure; a
+/// failure that lasts is recorded and the rest still run.
 fn plugins(manifest: &Manifest) -> String {
     let claude = Tool::Agent.program();
-    let mut lines = Vec::new();
+    let mut lines = vec![RETRY_FN.to_owned()];
     for (name, source) in &manifest.claude.marketplaces {
         let mut url = format!("https://github.com/{}", source.repo);
         if let Some(r) = &source.git_ref {
             url = format!("{url}#{r}");
         }
         lines.push(format!(
-            "{claude} plugin marketplace add {} </dev/null >/dev/null 2>&1 || fail {} $?",
+            "moor_retry {claude} plugin marketplace add {} </dev/null >/dev/null 2>&1 || fail {} $?",
             quote(&url),
             quote(&format!("marketplace {name}")),
         ));
@@ -113,15 +114,18 @@ fn plugins(manifest: &Manifest) -> String {
         let what = quote(&format!("plugin {id}"));
         if plugin.marketplace == PROFILE_MARKETPLACE {
             lines.push(format!(
-                "if [ -n \"$pm\" ]; then {claude} plugin install {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
+                "if [ -n \"$pm\" ]; then moor_retry {claude} plugin install {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
                 quote(&plugin.name),
             ));
         } else {
             lines.push(format!(
-                "{claude} plugin install {} </dev/null >/dev/null 2>&1 || fail {what} $?",
+                "moor_retry {claude} plugin install {} </dev/null >/dev/null 2>&1 || fail {what} $?",
                 quote(&id),
             ));
         }
+    }
+    if lines.len() == 1 {
+        return String::new();
     }
     lines.join("\n")
 }

@@ -14,7 +14,8 @@ const FULL: &str =
     "codex:\n  model: gpt-5.5\n  marketplaces:\n    tools: https://github.com/acme/agent-tools\n  \
 plugins: [lint@tools, fmt@profile]\n";
 
-/// A Box laid out under a temp dir, with a `codex` on `PATH` that logs its arguments.
+/// A Box laid out under a temp dir, with a `codex` on `PATH` that logs its arguments, and a
+/// `sleep` that logs its pause and returns at once.
 struct Fixture {
     root: TempDir,
 }
@@ -28,9 +29,14 @@ impl Fixture {
         let codex = root.path().join("bin/codex");
         let script = "#!/bin/sh\necho \"$*\" >> \"$STUB_LOG\"\n\
 [ \"$*\" = \"plugin add $STUB_FAIL\" ] && exit 7\n\
-case \"$*\" in *--json*) echo '{\"marketplaceName\": \"local-mk\"}';; esac\nexit 0\n";
+if [ -n \"$STUB_FLAKY\" ] && [ \"$*\" = \"$STUB_FLAKY\" ]; then \
+n=$(cat \"$STUB_LOG.flaky\" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > \"$STUB_LOG.flaky\"; \
+[ $n -le 2 ] && exit 5; fi\ncase \"$*\" in *--json*) echo '{\"marketplaceName\": \"local-mk\"}';; esac\nexit 0\n";
         fs::write(&codex, script).unwrap();
         fs::set_permissions(&codex, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let sleep = root.path().join("bin/sleep");
+        fs::write(&sleep, "#!/bin/sh\necho \"sleep $*\" >> \"$STUB_LOG\"\n").unwrap();
+        fs::set_permissions(&sleep, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         Self { root }
     }
 
@@ -53,6 +59,11 @@ case \"$*\" in *--json*) echo '{\"marketplaceName\": \"local-mk\"}';; esac\nexit
     }
 
     fn run(&self, manifest: &Manifest, fail: &str) -> Output {
+        self.run_flaky(manifest, fail, "")
+    }
+
+    /// [`Self::run`] with the stub failing the first two calls whose arguments are `flaky`.
+    fn run_flaky(&self, manifest: &Manifest, fail: &str, flaky: &str) -> Output {
         let box_path = |rel| BoxPath::under(self.root.path().to_str().unwrap(), rel).unwrap();
         let (dir, workdir, home) = (box_path("profile"), box_path("work"), box_path("home"));
         let setup = Codex
@@ -77,6 +88,7 @@ case \"$*\" in *--json*) echo '{\"marketplaceName\": \"local-mk\"}';; esac\nexit
             .env("HOME", self.path("home"))
             .env("STUB_LOG", self.path("log"))
             .env("STUB_FAIL", fail)
+            .env("STUB_FLAKY", flaky)
             .stdin(Stdio::null())
             .output()
             .unwrap()
@@ -247,4 +259,17 @@ fn a_marketplace_ref_is_passed_as_ref() {
         f.read("log"),
         "plugin marketplace add --ref v2 https://github.com/acme/agent-tools\n"
     );
+}
+
+#[test]
+fn a_flaky_plugin_is_tried_again_and_passes() {
+    let f = Fixture::new();
+    let out = f.run_flaky(&profile::parse(FULL).unwrap(), "", "plugin add lint@tools");
+    assert!(out.status.success());
+    let log = f.read("log");
+    assert!(
+        log.contains("plugin add lint@tools\nsleep 10\nplugin add lint@tools\nsleep 30\nplugin add lint@tools\nplugin add fmt@local-mk\n"),
+        "{log}"
+    );
+    assert_eq!(f.read("work/.moor/profile-failures"), "");
 }
