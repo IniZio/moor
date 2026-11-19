@@ -24,7 +24,7 @@ pub(super) fn lose_waiting(
     if let Some(row) = &row {
         let facts = box_facts(store, row)?;
         if run_verdict(Some(&facts), now) == RunVerdict::Broken {
-            store.refuse_waiting_run(key, (at, try_n), &broken_detail(row), now)?;
+            store.refuse_waiting_run(key, (at, try_n), &broken_detail(store, row), now)?;
             return Ok(());
         }
     }

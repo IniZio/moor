@@ -444,7 +444,7 @@ function RunPage({ csrf, name, id }: { csrf: string; name: string; id: number })
 						{run.box && `, Box ${run.box}`}
 					</p>
 					{run.result && <p class="notice ok">{run.result}</p>}
-					{run.detail && <p class="notice danger">{run.detail}</p>}
+					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
 					<ol class="steps">{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}</ol>
 					{run.lines.length > 0 && <ul class="history">{run.lines.map((l) => <LineItem key={`${l.at}${l.kind}`} line={l} />)}</ul>}

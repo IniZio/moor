@@ -9,6 +9,7 @@ use moor_core::domain::deaths;
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
+use moor_core::view::progress::{failure, Happened};
 use moor_core::view::LaunchFailure;
 use moor_core::workflow::{
     box_name, HistoryEntry, RunId, RunOutcome, StepId, Workflow, WorkflowRun,
@@ -76,12 +77,13 @@ pub(super) fn fail_death_capped(
 }
 
 /// Why no agent will run in `row`, naming the Box and its recorded failure: the launch failure,
-/// else the reason on its state, which a failed setup sets to the line that failed.
-pub(super) fn broken_detail(row: &BoxRow) -> String {
+/// else what its `setup_failed` event says, else the reason on its state.
+pub(super) fn broken_detail(store: &Store, row: &BoxRow) -> String {
     let why = row
         .launch_failure
         .as_ref()
         .map(LaunchFailure::text)
+        .or_else(|| setup_failure(store, row))
         .or_else(|| row.state_reason.clone())
         .unwrap_or_else(|| "no reason recorded".to_owned());
     format!(
@@ -89,6 +91,19 @@ pub(super) fn broken_detail(row: &BoxRow) -> String {
         row.name.as_str(),
         row.lifecycle.as_str()
     )
+}
+
+/// The failed setup of `row` as its newest `setup_failed` event tells it.
+fn setup_failure(store: &Store, row: &BoxRow) -> Option<String> {
+    if row.lifecycle != BoxLifecycle::SetupFailed {
+        return None;
+    }
+    let e = store.newest_event_of(row.id, "setup_failed").ok()??;
+    failure(&[Happened {
+        kind: e.kind,
+        payload: e.payload,
+        ts: String::new(),
+    }])
 }
 
 /// Ends the agent session of each started run whose agent has worked past its timeout, keeps the Box, and records the

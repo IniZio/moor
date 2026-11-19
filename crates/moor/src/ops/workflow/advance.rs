@@ -59,7 +59,7 @@ pub(super) fn finish_runs(
         if verdict == RunVerdict::Broken {
             if let Some(row) = &row {
                 let key = (w.id, &run.repo, run.due_at);
-                store.refuse_run(key, (&broken_detail(row), false), now)?;
+                store.refuse_run(key, (&broken_detail(store, row), false), now)?;
             }
             continue;
         }

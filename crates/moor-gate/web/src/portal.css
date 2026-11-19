@@ -180,7 +180,7 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-btn-deny:hover:not(:disabled) { background: color-mix(in srgb, var(--moor-color-danger) 22%, var(--moor-color-danger-soft)); }
 .t-fail { border: 1.5px solid var(--moor-color-danger); background: var(--moor-color-danger-soft); border-radius: var(--moor-radius-md); padding: 0.85rem 1rem; margin-bottom: var(--moor-space-4); }
 .t-fail-h { font-weight: 650; color: var(--moor-color-danger); font-size: 0.8125rem; }
-.t-fail-q { margin: 0.35rem 0 0.6rem; overflow-wrap: anywhere; }
+.t-fail-q { margin: 0.35rem 0 0.6rem; overflow-wrap: anywhere; white-space: pre-wrap; }
 .t-stalebar { border: 1px solid var(--moor-color-warning); background: var(--moor-color-warning-soft); border-radius: var(--moor-radius-sm); padding: 0.45rem 0.7rem; margin: 0 0 var(--moor-space-3); }
 
 .t-events { display: grid; gap: 0.1rem; }

@@ -30,6 +30,11 @@ function promptOf(detail: BoxDetail): string {
 	return detail.timeline.find((e) => e.step)?.text ?? detail.prompt ?? '';
 }
 
+/** What the Box's failed setup said, as its event told it: the line, the exit code and the end of its output. */
+function setupFailure(detail: BoxDetail): string | undefined {
+	return detail.retryable ? detail.timeline.filter((e) => e.kind === 'setup_failed').pop()?.text : undefined;
+}
+
 /** Whether the Box ended badly: it failed, or it closed after an error. */
 function failedBox(detail: BoxDetail): boolean {
 	return detail.state === 'failed' || (detail.state === 'closed' && detail.timeline.some((e) => e.class === 'error'));
@@ -63,7 +68,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 	return (
 		<div class="t-fail" role="region" aria-label="This task failed">
 			<div class="t-fail-h">{failed ? 'This task failed' : 'The workflow run behind this task failed'}</div>
-			<p class="t-fail-q">{detail.line}</p>
+			<p class="t-fail-q">{setupFailure(detail) ?? detail.line}</p>
 			<div class="t-wait-btns">
 				{detail.retryable && (
 					<button type="button" class="t-btn" disabled={busy} onClick={() => void act(() => boxRetry(csrf, detail.box))}>

@@ -8,6 +8,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, ErrorKind, Warning};
 
 use super::attach::REFOLLOW_AFTER;
+use super::failed::container;
 use super::{Failure, SetupRun};
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -71,8 +72,15 @@ pub(crate) fn await_reachable(cx: &Cx, handle: &BoxHandle) -> Result<(), Release
 
 /// A setup the Box could not be reached for while `running` ran, if a line had begun; the reason
 /// is what the Box's event shows.
-pub(super) fn link_lost(cx: &Cx, reason: &str, ms: u64, running: Option<&str>) -> SetupRun {
+pub(super) fn link_lost(
+    cx: &Cx,
+    handle: &BoxHandle,
+    reason: &str,
+    ms: u64,
+    running: Option<&str>,
+) -> SetupRun {
     let secs = LINK_WAIT.as_secs();
+    let reason = container(cx, handle).unwrap_or_else(|| reason.to_owned());
     let (line, why, message) = running.map_or_else(
         || {
             let why = format!(

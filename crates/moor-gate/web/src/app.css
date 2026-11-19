@@ -158,4 +158,5 @@ main.wide { max-width: 64rem; }
 .state.failed { color: var(--moor-color-danger); }
 .state.waiting, .state.running { color: var(--moor-color-warning); }
 .history { font-size: var(--moor-text-sm); display: grid; gap: var(--moor-space-1); }
+.history li { white-space: pre-wrap; overflow-wrap: anywhere; }
 .evidence { display: flex; gap: var(--moor-space-3); flex-wrap: wrap; margin-top: var(--moor-space-1); }

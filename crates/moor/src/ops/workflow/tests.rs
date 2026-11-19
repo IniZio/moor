@@ -577,4 +577,5 @@ mod manual;
 mod plan;
 mod previous;
 mod report;
+mod setup_failed;
 mod start_limit;
