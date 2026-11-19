@@ -1,0 +1,13 @@
+name: Pinned bun
+description: Install the bun version the Makefile pins, which builds the account page and the docs site.
+
+runs:
+  using: composite
+  steps:
+    - id: bun
+      shell: bash
+      run: echo "version=$(make -s print-bun)" >> "$GITHUB_OUTPUT"
+
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: ${{ steps.bun.outputs.version }}

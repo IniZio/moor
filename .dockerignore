@@ -2,6 +2,8 @@
 .github
 target
 **/target
+**/node_modules
+crates/moor-gate/web/dist
 .worktrees
 .local
 canary.pid
