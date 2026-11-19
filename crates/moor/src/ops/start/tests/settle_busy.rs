@@ -59,6 +59,7 @@ fn show_leaves_a_box_while_an_op_holds_its_box() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     show::run(&w.cx, &list).unwrap();
     assert!(working(&row(&w, id)));

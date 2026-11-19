@@ -204,6 +204,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     match show(gate, session, all) {
         Ok(shown) => {
@@ -245,6 +246,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         reports: false,
         artifacts: true,
         pane: false,
+        transcript: true,
     };
     let shown = match show(gate, session, one) {
         Ok(shown) => shown,

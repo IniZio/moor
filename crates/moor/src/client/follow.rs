@@ -39,6 +39,7 @@ pub(super) fn start(
             reports: false,
             artifacts: false,
             pane: false,
+            transcript: false,
         }),
     );
     let mut told = false;

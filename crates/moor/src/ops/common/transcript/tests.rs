@@ -357,3 +357,33 @@ fn an_unreachable_blob_store_records_the_failure_and_stops_nothing() {
     let error = failed.payload.get("error").unwrap().as_str().unwrap();
     assert!(error.contains("blob store http"), "{error}");
 }
+
+#[test]
+fn an_archive_whose_lines_cannot_be_read_is_still_saved_with_a_warning() {
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (row, session) = ready(&cx);
+    assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).is_some());
+    let codes: Vec<String> = cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["transcript_lines_failed"]);
+}
+
+#[test]
+fn the_lines_kept_beside_the_newest_archive_are_read_back_with_its_time() {
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    assert_eq!(super::lines::of(&cx, store, row.id), None);
+    let taken = cx.clock().now();
+    let saved = save(&cx, store, &row, &session, Trigger::Turn).unwrap();
+    let record = json!({"type": "assistant", "uuid": "u", "timestamp": "2026-11-19T10:00:00Z",
+                        "message": {"content": [{"type": "text", "text": "Done."}]}})
+    .to_string();
+    let lines = moor_core::progress::transcript::extract([record.as_str()]);
+    let bytes = serde_json::to_vec(&lines).unwrap();
+    let key = BlobKey::lines_of(saved.key.as_str());
+    cx.blobs().unwrap().put(&key, &bytes).unwrap();
+    assert_eq!(
+        super::lines::of(&cx, store, row.id),
+        Some((lines, taken.as_millis()))
+    );
+}

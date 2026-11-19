@@ -10,6 +10,7 @@ croner = { version = "4.0.3", default-features = false, features = ["jiff"] }
 jiff = { version = "0.2", default-features = false, features = [
   "tzdb-bundle-always",
 ] }
+regex = "1"
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = "1.3.0"

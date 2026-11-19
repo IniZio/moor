@@ -262,6 +262,7 @@ fn a_held_box_lock_skips_the_collection() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     show::run(&cx, &list).unwrap();
     let reader = view(dir.path(), &driver);
@@ -297,6 +298,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     show::run(&cx, &list).unwrap();
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();

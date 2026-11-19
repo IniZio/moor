@@ -161,6 +161,7 @@ fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     show::run(&w.cx, &list).unwrap();
     assert!(idle(&row(&w, id)));

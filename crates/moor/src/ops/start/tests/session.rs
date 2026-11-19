@@ -151,6 +151,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();
     let t = shown.boxes.as_ref().unwrap().first().unwrap();

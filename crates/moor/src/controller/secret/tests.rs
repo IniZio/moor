@@ -110,6 +110,7 @@ fn show() -> Request {
         reports: true,
         artifacts: false,
         pane: true,
+        transcript: false,
     })
 }
 

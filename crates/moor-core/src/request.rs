@@ -378,6 +378,10 @@ pub struct ShowReq {
     /// Include pane contents.
     #[serde(default)]
     pub pane: bool,
+    /// Place the agent's saved transcript in the timeline: each tool call and message. Left out
+    /// when false, so a controller that predates it still reads every other `show`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub transcript: bool,
 }
 
 #[cfg(test)]

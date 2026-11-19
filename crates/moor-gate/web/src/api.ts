@@ -386,8 +386,27 @@ const ReceiptSchema = v.object({ turn: v.number(), changed: TallySchema, total: 
 
 const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
 
+/** A text moor kept of a tool call, cut to size; `cut` when part of it was left out. */
+const BodySchema = v.object({ text: v.string(), cut: v.optional(v.boolean(), false) });
+
+/** A tool call read from the agent's saved transcript. */
+const ToolSchema = v.object({
+	name: v.string(),
+	title: v.string(),
+	/** For a routine call: what it folds with. */
+	group: v.nullish(v.picklist(['read', 'search', 'plan'])),
+	/** It failed, exited non-zero or was refused: never folded. */
+	failed: v.optional(v.boolean(), false),
+	input: v.nullish(BodySchema),
+	diff: v.nullish(BodySchema),
+	output: v.nullish(BodySchema),
+});
+
 const EntrySchema = v.object({
 	id: v.number(),
+	/** For a line of the agent's transcript: its id there. */
+	key: v.nullish(v.string()),
+	tool: v.nullish(ToolSchema),
 	at: v.string(),
 	kind: v.string(),
 	class: EntryClassSchema,
@@ -425,6 +444,8 @@ export type Progress = v.InferOutput<typeof ProgressSchema>;
 export type BoxRow = v.InferOutput<typeof BoxRowSchema>;
 export type BoxDetail = v.InferOutput<typeof BoxDetailSchema>;
 export type Entry = v.InferOutput<typeof EntrySchema>;
+export type Tool = v.InferOutput<typeof ToolSchema>;
+export type Clipped = v.InferOutput<typeof BodySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
 export type Tally = v.InferOutput<typeof TallySchema>;
 

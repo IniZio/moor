@@ -23,6 +23,7 @@ fn show_pane(pane: bool, session: Option<&str>) -> moor_core::view::ShowView {
     let cx = engine_cx(dir.path(), &driver, &engine);
     let r = ShowReq {
         pane,
+        transcript: false,
         ..req(Some("a"), None)
     };
     let v = run(&cx, &r).unwrap();

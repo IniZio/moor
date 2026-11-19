@@ -23,6 +23,7 @@ fn show(w: &super::World) -> serde_json::Value {
         reports: false,
         artifacts: false,
         pane: false,
+        transcript: false,
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();
     let t = shown.boxed.as_ref().unwrap();

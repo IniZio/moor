@@ -25,6 +25,7 @@ import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
 import { MakeRecurring } from './WorkflowForm';
 import { TerminalTab } from './Terminal';
+import { routine, ToolFold, ToolLine } from './Transcript';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
 export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
@@ -226,6 +227,7 @@ export function Home({ boxes }: { boxes: Boxes }) {
 
 type Block =
 	| { kind: 'fold'; entries: Entry[] }
+	| { kind: 'tools'; entries: Entry[] }
 	| { kind: 'entry'; entry: Entry };
 
 /** Routine steps run together fold into one line; everything else, errors above all, stays. */
@@ -233,7 +235,12 @@ function blocks(entries: Entry[]): Block[] {
 	const out: Block[] = [];
 	for (const entry of entries) {
 		const last = out[out.length - 1];
-		if (entry.class === 'step' || entry.class === 'routine') {
+		if (routine(entry)) {
+			if (last?.kind === 'tools') last.entries.push(entry);
+			else out.push({ kind: 'tools', entries: [entry] });
+		} else if (entry.tool) {
+			out.push({ kind: 'entry', entry });
+		} else if (entry.class === 'step' || entry.class === 'routine') {
 			if (last?.kind === 'fold') last.entries.push(entry);
 			else out.push({ kind: 'fold', entries: [entry] });
 		} else {
@@ -324,10 +331,14 @@ function Timeline({ detail }: { detail: BoxDetail }) {
 			{blocks(detail.timeline).map((b) =>
 				b.kind === 'fold' ? (
 					<Fold entries={b.entries} key={b.entries[0]?.id} />
+				) : b.kind === 'tools' ? (
+					<ToolFold entries={b.entries} when={clock} key={b.entries[0]?.key ?? b.entries[0]?.id} />
+				) : b.entry.tool ? (
+					<ToolLine e={b.entry} when={clock(b.entry.at)} key={b.entry.key ?? b.entry.id} />
 				) : b.entry.class === 'turn' ? (
 					<TurnLine e={b.entry} entries={detail.timeline} href={`#/box/${encodeURIComponent(detail.box)}/changes`} key={b.entry.id} />
 				) : (
-					<Line e={b.entry} key={b.entry.id} />
+					<Line e={b.entry} key={b.entry.key ?? b.entry.id} />
 				),
 			)}
 		</div>

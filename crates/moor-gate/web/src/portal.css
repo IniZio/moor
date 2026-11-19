@@ -301,3 +301,25 @@ a.t-path:hover { text-decoration: underline; }
 .plan-field input, .plan-field select, .plan-field textarea { margin: 0; font-weight: var(--moor-weight-body); color: var(--moor-color-text); }
 .plan-stale { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-3); }
 .plan-stale p { flex: 1; margin: 0; }
+
+/* Tool calls read from the agent's transcript. */
+.t-tool > summary { display: grid; grid-template-columns: 3.5rem 3rem 1fr; gap: var(--moor-space-2); padding: 0.35rem 0; align-items: baseline; list-style: none; cursor: pointer; }
+.t-tool > summary::-webkit-details-marker { display: none; }
+.t-tool-title { min-width: 0; overflow-wrap: anywhere; color: var(--moor-color-text-muted); }
+.t-tool > summary:hover .t-tool-title { color: var(--moor-color-text); }
+.t-tool-title .t-mono { color: var(--moor-color-text); font-size: 0.8125rem; }
+.t-tool-body { display: grid; gap: var(--moor-space-2); margin: 0.1rem 0 0.6rem calc(6.5rem + 2 * var(--moor-space-2)); min-width: 0; }
+.t-tool-runs { margin: 0 0 0.3rem calc(3.5rem + var(--moor-space-2)); padding-left: 0.75rem; border-left: 2px solid var(--moor-color-border); }
+.t-tool-runs .t-tool-body { margin-left: calc(6.5rem + 2 * var(--moor-space-2)); }
+.t-tool-err { border-left: 3px solid var(--moor-color-danger); background: var(--moor-color-danger-soft); border-radius: var(--moor-radius-sm); padding: 0 0.6rem; margin: 0.25rem 0 0.25rem calc(-0.6rem - 3px); }
+.t-tool-err > summary .t-who, .t-tool-err > summary .t-tool-title, .t-tool-err > summary .t-mono { color: var(--moor-color-danger); }
+.t-clip { min-width: 0; }
+.t-clip-h { font-size: 0.75rem; color: var(--moor-color-text-muted); margin-bottom: 0.2rem; }
+.t-clip-text { margin: 0; padding: 0.45rem 0.6rem; background: var(--moor-color-bg-sunken); border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.t-clip-diff { padding: 0.3rem 0; }
+.t-tl { display: block; padding: 0 0.6rem; }
+.t-tl-add { background: var(--moor-color-success-soft); }
+.t-tl-del { background: var(--moor-color-danger-soft); }
+.t-tl-hunk { color: var(--moor-color-info); }
+.t-clip-all { font: inherit; font-size: 0.75rem; margin-top: 0.25rem; padding: 0; border: 0; background: none; color: var(--moor-color-accent); cursor: pointer; }
+.t-clip-note { margin: 0.25rem 0 0; font-size: 0.75rem; color: var(--moor-color-text-muted); }
