@@ -4,6 +4,7 @@
 //! the key can serve them, and a restart that keeps the key ends no session.
 
 pub(crate) mod account;
+mod cookie;
 mod kept;
 mod nodes;
 pub(crate) mod pair;
@@ -34,6 +35,7 @@ use ureq::Agent;
 
 use serde::{Deserialize, Serialize};
 
+use self::cookie::Issued;
 use self::seal::Seal;
 use crate::{Person, Verifier};
 
@@ -92,31 +94,6 @@ pub(crate) struct Session {
     /// Unix seconds of the issuer's last yes.
     #[serde(default)]
     vouched: u64,
-}
-
-/// A sealed session cookie and how long it lasts.
-pub(crate) struct Issued {
-    /// The cookie value.
-    sealed: String,
-    /// Its life from now.
-    ttl: Duration,
-}
-
-impl Issued {
-    /// Its life from now.
-    pub(crate) const fn ttl(&self) -> Duration {
-        self.ttl
-    }
-
-    /// The `Set-Cookie` header line that stores it, kept by the browser across restarts.
-    pub(crate) fn header(&self) -> String {
-        format!(
-            "Set-Cookie: {}={}; Max-Age={}; HttpOnly; Secure; SameSite=Lax; Path=/\r\n",
-            routes::COOKIE,
-            self.sealed,
-            self.ttl.as_secs()
-        )
-    }
 }
 
 /// Where the issuer signs people in and where codes become tokens.
