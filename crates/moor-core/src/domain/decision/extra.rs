@@ -244,6 +244,11 @@ pub enum ExtraEvent {
         /// The last error.
         error: String,
     },
+    /// The Box answered a read of its agent again after it was unreachable.
+    AgentLinkRestored {
+        /// The agent's terminal that answered.
+        pane: String,
+    },
     /// The agent's hook reported busy and then went quiet for too long.
     AgentStalled {
         /// What the agent was doing at its last report.

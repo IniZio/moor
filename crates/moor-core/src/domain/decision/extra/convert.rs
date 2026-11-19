@@ -117,6 +117,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentUnreachable { attempts, error } => {
                 Self::AgentUnreachable { attempts, error }
             }
+            ExtraEvent::AgentLinkRestored { pane } => Self::AgentLinkRestored { pane },
             ExtraEvent::AgentStalled { doing, quiet_secs } => {
                 Self::Stall(StallEvent::AgentStalled { doing, quiet_secs })
             }

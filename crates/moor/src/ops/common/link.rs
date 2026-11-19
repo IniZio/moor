@@ -16,7 +16,7 @@ const TRIES: u32 = 4;
 /// Time allowed for each try.
 const TRY_DEADLINE: Duration = Duration::from_secs(20);
 /// How long a Box may stay unreachable, over later tries, before its agent counts as ended.
-const UNREACHABLE_FOR: Duration = Duration::from_secs(300);
+pub(crate) const UNREACHABLE_FOR: Duration = Duration::from_secs(300);
 
 /// What became of a session's agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
