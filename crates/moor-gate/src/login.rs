@@ -43,7 +43,7 @@ const PENDING_TTL: Duration = Duration::from_mins(10);
 const SESSION_IDLE: Duration = Duration::from_hours(12);
 
 /// The most a session lasts from sign-in, however often it is renewed.
-const SESSION_MAX: Duration = Duration::from_hours(7 * 24);
+const SESSION_MAX: Duration = Duration::from_hours(24);
 
 /// The most a token response may hold.
 const BODY_LIMIT: u64 = 1 << 20;

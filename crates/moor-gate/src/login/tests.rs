@@ -122,17 +122,25 @@ fn a_session_lasts_twelve_hours_from_its_last_renewal() {
 }
 
 #[test]
-fn renewals_never_carry_a_session_past_seven_days() {
+fn renewals_never_carry_a_session_past_a_day_from_sign_in() {
     let (l, t0) = (login(), SystemTime::now());
     let first = format!("moor_session={}", l.open(alice(), t0).unwrap().sealed);
     let session = l.session([first.as_str()], t0).unwrap();
-    let near_end = t0 + SESSION_MAX - Duration::from_hours(1);
-    let last = l.renew(&session, near_end).unwrap();
-    assert_eq!(last.ttl, Duration::from_hours(1));
-    let cookie = format!("moor_session={}", last.sealed);
-    assert!(l
-        .session([cookie.as_str()], t0 + SESSION_MAX - Duration::from_secs(1))
-        .is_some());
+    assert_eq!(SESSION_MAX, Duration::from_hours(24));
+    let late = l.renew(&session, t0 + Duration::from_hours(20)).unwrap();
+    assert_eq!(
+        late.ttl,
+        Duration::from_hours(4),
+        "the cookie's Max-Age shrinks to the cap"
+    );
+    assert!(
+        late.header().contains("Max-Age=14400;"),
+        "{}",
+        late.header()
+    );
+    let cookie = format!("moor_session={}", late.sealed);
+    let just_before = t0 + SESSION_MAX - Duration::from_secs(1);
+    assert!(l.session([cookie.as_str()], just_before).is_some());
     assert!(l.session([cookie.as_str()], t0 + SESSION_MAX).is_none());
     assert!(l.renew(&session, t0 + SESSION_MAX).is_err());
 }

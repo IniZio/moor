@@ -50,7 +50,7 @@ moor-gate \
   keeps a key in `$XDG_STATE_HOME/moor-gate/cookie-key`, so a restart signs
   no one out.
 - A portal session lasts 12 hours after the person was last active, and at
-  most 7 days from sign-in. Then the page asks them to sign in again.
+  most 24 hours from sign-in. Then the page asks them to sign in again.
 
 On Kubernetes, the chart's `authgear.issuer`, `authgear.clientId`,
 `mcp.resourceUrl`, and `gate.login` set the same flags.
