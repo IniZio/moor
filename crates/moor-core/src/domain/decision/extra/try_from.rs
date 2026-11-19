@@ -44,7 +44,8 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Access(
                 e @ (AccessEvent::PortForwardOpened { .. }
                 | AccessEvent::PortForwardClosed { .. }
-                | AccessEvent::PortForwardRefused { .. }),
+                | AccessEvent::PortForwardRefused { .. }
+                | AccessEvent::TurnChanges { .. }),
             ) => Ok(Self::Access(e)),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),

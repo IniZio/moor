@@ -25,6 +25,7 @@ impl Request {
             Self::Sessions(_) => "sessions",
             Self::Show(_) => "show",
             Self::Inspect(_) => "inspect",
+            Self::Changes(_) => "changes",
             Self::Close(_) => "close",
             Self::Cp(_) => "cp",
             Self::BoxRsync(_) => "box-rsync",

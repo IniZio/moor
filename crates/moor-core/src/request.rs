@@ -22,7 +22,9 @@ pub use files::{BoxRsyncReq, CpReq};
 mod forward;
 pub use forward::{ForwardCloseReq, ForwardOpenReq, ForwardReq};
 mod inspect;
-pub use inspect::InspectReq;
+pub use inspect::{ChangesReq, InspectReq};
+mod placement;
+pub use placement::Placement;
 mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
@@ -100,6 +102,8 @@ pub enum Request {
     Show(ShowReq),
     /// Look at a stuck-looking Box: its pane, recent messages and why it is stuck.
     Inspect(InspectReq),
+    /// What a Box changed in git against its base, with each repo's patch.
+    Changes(ChangesReq),
     /// Close a box.
     Close(CloseReq),
     /// Copy a file into a box.
@@ -240,26 +244,6 @@ pub enum Request {
     As(ActAsReq),
     /// Print version information.
     Version {},
-}
-
-/// How far a start that names no node looks past its first candidate.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Placement {
-    /// Only the first candidate is tried: offline, it refuses. A person starting a Box by hand.
-    #[default]
-    FirstOnly,
-    /// The first online candidate is taken, so a workflow firing is not stopped by a node that
-    /// is down.
-    FirstOnline,
-}
-
-impl Placement {
-    /// Whether this is the strict default, for leaving it out of the JSON.
-    #[must_use]
-    pub const fn is_first_only(&self) -> bool {
-        matches!(self, Self::FirstOnly)
-    }
 }
 
 /// Arguments of `start`.

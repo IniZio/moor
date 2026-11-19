@@ -2,6 +2,7 @@
 
 pub mod box_state;
 pub mod box_steps;
+pub mod changes;
 pub mod deaths;
 pub mod decision;
 pub mod egress;

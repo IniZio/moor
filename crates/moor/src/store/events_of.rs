@@ -2,7 +2,7 @@
 
 use moor_core::BoxId;
 use moor_schema::tables::Events;
-use sea_query::{Expr, ExprTrait as _, Order};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::select::{events_of, limit};
 use super::{event_from_row, EventRow, Store, StoreError};
@@ -27,5 +27,17 @@ impl Store {
         let mut newest = rows.collect::<Result<Vec<_>, _>>()?;
         newest.reverse();
         Ok(newest)
+    }
+
+    /// How many events of `kind` a box has had.
+    pub(crate) fn count_events_of(&self, id: BoxId, kind: &str) -> Result<u64, StoreError> {
+        let q = Query::select()
+            .expr(Expr::col(Events::Id).count())
+            .from(Events::Table)
+            .and_where(Expr::col(Events::Box).eq(id.get()))
+            .and_where(Expr::col(Events::Kind).eq(kind))
+            .take();
+        let n: i64 = self.reader()?.row(q, |r| r.get(0))?;
+        Ok(u64::try_from(n).unwrap_or(0))
     }
 }

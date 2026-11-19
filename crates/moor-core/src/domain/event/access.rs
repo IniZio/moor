@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::domain::changes::RepoReceipt;
+
 /// Files copied out of a Box, a command run in it, or a port forwarded into it, by its user or
 /// the operator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -22,6 +24,13 @@ pub enum AccessEvent {
         exit: Option<i32>,
         /// True when it ran past its timeout and was killed.
         timed_out: bool,
+    },
+    /// moor read from git what the agent's turns changed, after they ended.
+    TurnChanges {
+        /// Turns ended so far.
+        turn: u64,
+        /// Each repo, the first one first.
+        repos: Vec<RepoReceipt>,
     },
     /// A person's port forward into the Box opened.
     PortForwardOpened {
@@ -57,6 +66,7 @@ impl AccessEvent {
         match self {
             Self::Copied { .. } => "copied",
             Self::ExecRan { .. } => "exec_ran",
+            Self::TurnChanges { .. } => "turn_changes",
             Self::PortForwardOpened { .. } => "port_forward_opened",
             Self::PortForwardClosed { .. } => "port_forward_closed",
             Self::PortForwardRefused { .. } => "port_forward_refused",
