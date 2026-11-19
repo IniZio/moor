@@ -22,7 +22,7 @@ async fn a_work_place_that_is_down_ends_exec_as_down_and_the_agent_place_runs_on
     assert_eq!(boxes[0].state, ReportState::Mending);
     assert_eq!(
         boxes[0].down.as_deref(),
-        Some("the work place is not running")
+        Some("the Box's container is not running")
     );
 }
 
@@ -41,10 +41,7 @@ async fn a_box_whose_places_died_is_listed_down_with_how_they_ended() {
     assert_eq!(boxes[0].state, ReportState::Mending);
     assert_eq!(
         boxes[0].down.as_deref(),
-        Some(
-            "the agent place was killed for memory (exit 137); \
-             the work place was killed for memory (exit 137)"
-        )
+        Some("the Box's container ran out of memory (exit 137)")
     );
     assert!(matches!(
         rig.one(&BoxOp::Wake { slug: s(SLUG) }).await,

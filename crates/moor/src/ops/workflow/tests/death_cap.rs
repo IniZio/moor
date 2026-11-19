@@ -13,7 +13,7 @@ use crate::ops::common::reconcile;
 use crate::ops::common::wake::wake_box_if_asleep;
 use crate::testing::driver::FakeDriver;
 
-const DIED: &str = "the work place exited with code 137, not for memory";
+const DIED: &str = "the Box's container stopped (exit 137)";
 
 /// A rig whose driver lists its Boxes by handle, so a reconcile can see their places die.
 fn rig_that_notices_deaths() -> Rig {

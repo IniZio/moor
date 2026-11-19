@@ -16,8 +16,7 @@ pub(super) fn container(cx: &Cx, handle: &BoxHandle) -> Option<String> {
         .list_handles(std::slice::from_ref(handle))
         .ok()?;
     let held = listing.listed.into_iter().find(|l| &l.handle == handle)?;
-    let down = held.down.filter(|d| !d.is_empty())?;
-    Some(format!("the Box's container stopped: {down}"))
+    held.down.filter(|d| !d.is_empty())
 }
 
 /// The setup line a failed run died at, or the forced close that stopped it.

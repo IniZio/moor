@@ -171,7 +171,7 @@ fn a_setup_cut_by_a_restart_says_so() {
     assert!(why.contains("controller restart"), "{why}");
 }
 
-const DIED: &str = "the work place exited with code 137, not for memory";
+const DIED: &str = "the Box's container stopped (exit 137)";
 
 fn cut_by_a_dying_container(driver: FakeDriver, died: bool) -> String {
     let w = super::world(driver.listed_by_handle());
@@ -195,8 +195,7 @@ fn ssh_drops() -> FakeDriver {
 #[test]
 fn a_setup_cut_by_a_stopped_container_says_the_container_stopped() {
     let why = cut_by_a_dying_container(ssh_drops(), true);
-    assert!(why.starts_with("the Box's container stopped: "), "{why}");
-    assert!(why.contains(DIED), "{why}");
+    assert!(why.starts_with(DIED), "{why}");
     assert!(!why.contains("exit 255"), "{why}");
     assert!(why.contains("closed by remote host"), "{why}");
 }
