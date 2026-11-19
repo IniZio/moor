@@ -50,6 +50,7 @@ fn req(proxy: bool) -> LaunchReq {
         issue: None,
         setup_exit: None,
         repo_notes: None,
+        repos: Vec::new(),
         shape: None,
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),

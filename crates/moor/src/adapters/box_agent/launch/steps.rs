@@ -140,6 +140,7 @@ impl Launch<'_> {
             setup_exit: req.setup_exit,
             repo_notes: req.repo_notes.as_deref(),
             shape: req.shape,
+            repos: &req.repos,
         });
         let path = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         let bytes = brief.into_bytes();
