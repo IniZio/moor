@@ -139,7 +139,6 @@ export async function nodeSet(
 const StatusSchema = v.picklist(['queued', 'running', 'waiting', 'success', 'failure', 'stopped', 'skipped']);
 
 const LastRunSchema = v.object({
-	repo: v.string(),
 	status: StatusSchema,
 	label: v.string(),
 	due_at: v.number(),
@@ -162,7 +161,6 @@ const WorkflowListSchema = v.object({ workflows: v.array(WorkflowRowSchema) });
 
 const RunRowSchema = v.object({
 	id: v.number(),
-	repo: v.string(),
 	due_at: v.number(),
 	trigger: v.string(),
 	started_at: v.nullish(v.number()),
@@ -175,7 +173,6 @@ const RunRowSchema = v.object({
 
 const WorkflowSchema = v.object({
 	...WorkflowRowSchema.entries,
-	also: v.array(v.string()),
 	timeout_minutes: v.number(),
 	prompt: v.string(),
 	plan: v.nullish(v.string()),
@@ -208,7 +205,6 @@ const StepSchema = v.object({
 const RunSchema = v.object({
 	workflow: v.string(),
 	id: v.number(),
-	repo: v.string(),
 	due_at: v.number(),
 	started_at: v.nullish(v.number()),
 	duration_ms: v.nullish(v.number()),
@@ -250,12 +246,12 @@ export async function workflowGet(name: string): Promise<Workflow> {
 
 const RunNowSchema = v.object({ status: v.string(), box: v.nullable(v.string()) });
 
-/** Fires the workflow once, now, for one repo. A repo with an open run is refused as a conflict. */
-export async function workflowRunNow(csrf: string, name: string, repo: string) {
+/** Fires the workflow once, now, in one Box with all its repos. A workflow with an open run is refused as a conflict. */
+export async function workflowRunNow(csrf: string, name: string) {
 	const res = await fetch(`${workflowPath(name)}/run`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: JSON.stringify({ repo }),
+		body: '{}',
 	});
 	return answer(res, RunNowSchema);
 }
@@ -366,7 +362,7 @@ const BoxDetailSchema = v.object({
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
-	workflow: v.nullish(v.object({ name: v.string(), repo: v.string() })),
+	workflow: v.nullish(v.object({ name: v.string() })),
 });
 
 export type Needs = v.InferOutput<typeof NeedsSchema>;
@@ -384,7 +380,7 @@ export async function boxList(): Promise<BoxRow[]> {
 /** Starts a Box as the signed-in person; answers the Box's name once it exists. */
 export async function boxStart(
 	csrf: string,
-	body: { repo: string; prompt: string; base: string; node: string },
+	body: { repos: string[]; prompt: string; base: string; node: string },
 ): Promise<string> {
 	const res = await fetch('/account/api/boxes', {
 		method: 'POST',

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import * as v from 'valibot';
 
 import {
 	type Account,
@@ -17,6 +18,7 @@ import {
 	SignedOut,
 } from './api';
 import { Markdown } from './Markdown';
+import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
@@ -557,13 +559,23 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 }
 
 /** Where the last start went, so the next one starts there. */
-const LAST_REPO = 'moor.lastRepo';
+const LAST_REPOS = 'moor.lastRepos';
+
+/** The repos the last start used, first one first. */
+function lastRepos(): string[] {
+	try {
+		const read = v.safeParse(v.array(v.string()), JSON.parse(localStorage.getItem(LAST_REPOS) ?? '[]'));
+		return read.success ? read.output : [];
+	} catch {
+		return [];
+	}
+}
 
 /** The composer that starts a Box: the footer names the target before anything is sent. */
 export function NewBox({ account }: { account: Account }) {
 	const [again] = useState(takeAgain);
 	const [prompt, setPrompt] = useState(again?.prompt ?? '');
-	const [repo, setRepo] = useState(() => again?.repo || (localStorage.getItem(LAST_REPO) ?? ''));
+	const [chosen, setChosen] = useState<string[]>(() => (again?.repos.length ? again.repos : lastRepos()));
 	const [base, setBase] = useState(again?.base ?? '');
 	const [node, setNode] = useState('');
 	const [repos, setRepos] = useState<string[]>([]);
@@ -578,15 +590,15 @@ export function NewBox({ account }: { account: Account }) {
 		setBusy(true);
 		setError('');
 		try {
-			const name = await boxStart(account.csrf, { repo, prompt, base, node });
-			localStorage.setItem(LAST_REPO, repo);
+			const name = await boxStart(account.csrf, { repos: chosen, prompt, base, node });
+			localStorage.setItem(LAST_REPOS, JSON.stringify(chosen));
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
 			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
 			setBusy(false);
 		}
 	};
-	const ready = prompt.trim() !== '' && repo.trim() !== '' && !busy;
+	const ready = prompt.trim() !== '' && chosen.length > 0 && !busy;
 	return (
 		<div class="t-new">
 			<h1>New task</h1>
@@ -609,18 +621,7 @@ export function NewBox({ account }: { account: Account }) {
 					}}
 				/>
 				<div class="t-target">
-					<label class="t-chip">
-						<span class="muted">repo</span>
-						<input
-							class="t-mono"
-							list="t-repos"
-							placeholder="owner/name"
-							value={repo}
-							onInput={(e) => setRepo(e.currentTarget.value)}
-							aria-label="Repo"
-						/>
-					</label>
-					<datalist id="t-repos">{repos.map((r) => <option value={r} key={r} />)}</datalist>
+					<RepoPicker repos={chosen} known={repos} onChange={setChosen} />
 					<label class="t-chip">
 						<span class="muted">from</span>
 						<input
@@ -651,7 +652,7 @@ export function NewBox({ account }: { account: Account }) {
 			</form>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			<p class="muted t-foot">
-				The agent works on a new branch. You can watch it from the task page.
+				The agent works on a new branch in the first repo. The others are cloned with it. You can watch it from the task page.
 			</p>
 		</div>
 	);

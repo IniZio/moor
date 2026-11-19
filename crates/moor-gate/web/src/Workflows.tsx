@@ -76,15 +76,15 @@ function Failed({ error, retry }: { error: string; retry: () => void }) {
 	);
 }
 
-/** The button that fires a workflow once for a repo, with the answer beside it. */
-function RunNowButton({ csrf, name, repo, onRan, hint }: { csrf: string; name: string; repo: string; onRan: () => void; hint?: string }) {
+/** The button that fires a workflow once, in one Box with all its repos, with the answer beside it. */
+function RunNowButton({ csrf, name, onRan, hint }: { csrf: string; name: string; onRan: () => void; hint?: string }) {
 	const [busy, setBusy] = useState(false);
 	const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 	const run = async () => {
 		setBusy(true);
 		setNote(null);
 		try {
-			const started = await workflowRunNow(csrf, name, repo);
+			const started = await workflowRunNow(csrf, name);
 			setNote({ ok: true, text: started.box ? `Started in ${started.box}.` : 'Started.' });
 			onRan();
 		} catch (err) {
@@ -94,7 +94,7 @@ function RunNowButton({ csrf, name, repo, onRan, hint }: { csrf: string; name: s
 	};
 	return (
 		<>
-			<button type="button" disabled={busy} aria-label={`Run now for ${repo}${hint ?? ''}`} onClick={() => void run()}>
+			<button type="button" disabled={busy} aria-label={`Run ${name} now${hint ?? ''}`} onClick={() => void run()}>
 				Run now
 			</button>
 			{note && (
@@ -106,12 +106,16 @@ function RunNowButton({ csrf, name, repo, onRan, hint }: { csrf: string; name: s
 	);
 }
 
-function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo: string; onRan: () => void }) {
+/** A workflow's repos in order: the agent starts in the first, and the rest are cloned with it. */
+function RepoSet({ repos }: { repos: string[] }) {
 	return (
-		<li>
-			<span class="grow">{repo}</span>
-			<RunNowButton csrf={csrf} name={name} repo={repo} onRan={onRan} />
-		</li>
+		<span class="repo-set">
+			{repos.map((r, i) => (
+				<span key={r} class={i === 0 ? 'pill ok' : 'pill'} title={i === 0 ? 'The agent starts here' : undefined}>
+					{r}
+				</span>
+			))}
+		</span>
 	);
 }
 
@@ -127,18 +131,20 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 			</div>
 			<dl class="facts">
 				<dt>Repos</dt>
-				<dd>{w.repos.join(', ')}</dd>
+				<dd>
+					<RepoSet repos={w.repos} />
+				</dd>
 				<dt>Cron</dt>
 				<dd><code>{w.cron}</code> {w.timezone}</dd>
 				<dt>Last run</dt>
 				<dd>
 					{w.last ? (
 						<>
-							<StatusIcon status={w.last.status} /> {w.last.repo}, {w.last.label}
+							<StatusIcon status={w.last.status} /> {w.last.label}
 							{w.last.status === 'failure' && (
 								<>
 									{' '}
-									<RunNowButton csrf={csrf} name={w.name} repo={w.last.repo} onRan={onRan} hint=" after its failed last run" />
+									<RunNowButton csrf={csrf} name={w.name} onRan={onRan} hint=" after its failed last run" />
 								</>
 							)}
 						</>
@@ -149,9 +155,11 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 				<dt>Next due</dt>
 				<dd>{w.enabled ? when(w.next_due) : (w.disabled_reason ?? 'disabled')}</dd>
 			</dl>
-			<ul class="run-now">
-				{w.repos.map((repo) => <RunNow key={repo} csrf={csrf} name={w.name} repo={repo} onRan={onRan} />)}
-			</ul>
+			{w.last?.status !== 'failure' && (
+				<p class="run-now">
+					<RunNowButton csrf={csrf} name={w.name} onRan={onRan} />
+				</p>
+			)}
 		</li>
 	);
 }
@@ -238,7 +246,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				</span>
 			</div>
 			<p class="muted">
-				{flow.repos.join(', ')} · <code>{flow.cron}</code> {flow.timezone} · {flow.enabled ? 'enabled' : 'disabled'}
+				<RepoSet repos={flow.repos} /> · <code>{flow.cron}</code> {flow.timezone} · {flow.enabled ? 'enabled' : 'disabled'}
 			</p>
 			{flow.plan_stale && (
 				<p class="notice warn" role="status">
@@ -305,8 +313,7 @@ function Runs({ flow }: { flow: Workflow | null }) {
 						<li key={r.id}>
 							<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
 								<StatusIcon status={r.status} />
-								<span class="grow">{r.repo}</span>
-								<span class="muted">{r.trigger}</span>
+								<span class="grow">{r.trigger}</span>
 								<span class="muted">{when(r.due_at)}</span>
 								<span class="muted">{duration(r.duration_ms)}</span>
 								<span class="outcome">{r.label}</span>
@@ -424,11 +431,11 @@ function RunPage({ csrf, name, id }: { csrf: string; name: string; id: number })
 				<>
 					<div class="row-head">
 						<h2 class="run-title">
-							<StatusIcon status={run.status} /> {run.repo}
+							<StatusIcon status={run.status} /> Run {run.id}
 						</h2>
 						<span class="pill">{run.label}</span>
 						{run.status === 'failure' && (
-							<RunNowButton csrf={csrf} name={run.workflow} repo={run.repo} onRan={reload} hint=" after this failed run" />
+							<RunNowButton csrf={csrf} name={run.workflow} onRan={reload} hint=" after this failed run" />
 						)}
 					</div>
 					<p class="muted">
