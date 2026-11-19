@@ -335,6 +335,16 @@ fn user_verbs_assert_no_identity_so_the_socket_supplies_local() {
             "profile-set",
         ),
         (&["user", "profile", "show"][..], "profile-show"),
+        (&["user", "profile", "check"][..], "profile-check"),
+        (
+            &[
+                "user",
+                "profile",
+                "check",
+                "https://github.com/alice/agent#v2",
+            ][..],
+            "profile-check",
+        ),
         (&["user", "profile", "rm"][..], "profile-remove"),
     ] {
         let req = parsed_request(args);

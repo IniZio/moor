@@ -7,6 +7,11 @@ use crate::name::ProfileSource;
 use crate::request::SecretValue;
 use crate::user::{Email, Identity, SecretName, UserId};
 
+mod profile_check;
+pub use profile_check::{
+    AgentInstalls, NamedRepo, ProfileCheckValue, ProfileLastFailed, ProfileProblem, ProfileResolved,
+};
+
 /// One of a user's MCP servers as `mcp-list` shows it; never its key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerView {

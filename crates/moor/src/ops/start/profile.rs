@@ -10,8 +10,10 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
+use moor_core::boxscript::profile::SETUP_FILE;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{ProfileStep, ResolvedSource};
+use moor_core::name::ProfileSource;
 use moor_core::profile::{self, MANIFEST_FILE};
 use moor_core::seam::engine::GitSource;
 use moor_core::user::UserId;
@@ -33,13 +35,15 @@ const LOOKUP_BOUND: Duration = Duration::from_secs(5);
 /// What the forge said about the requester's profile.
 pub(crate) struct Gathered {
     /// The profile at its resolved commit; `None` when the ref did not resolve.
-    resolved: Option<BoxProfile>,
+    pub(crate) resolved: Option<BoxProfile>,
     /// The commit each repo it installs from resolved to.
     sources: Vec<ResolvedSource>,
     /// Why a repo it installs from did not resolve, one per repo.
-    unresolved: Vec<String>,
+    pub(crate) unresolved: Vec<String>,
     /// Each step that failed, with why.
-    failures: Vec<(ProfileStep, String)>,
+    pub(crate) failures: Vec<(ProfileStep, String)>,
+    /// Whether `setup.sh` exists at the commit; only a read that asked for it knows.
+    pub(crate) setup: Option<bool>,
 }
 
 /// Resolves `user`'s profile, if one is set; changes nothing.
@@ -50,15 +54,22 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
     let Some(source) = cx.store()?.user_profile(user)? else {
         return Ok(None);
     };
+    Ok(Some(read(cx, user, source, false)))
+}
+
+/// Reads `source` through the forge as `user`, changing nothing; `with_setup` also asks
+/// whether it holds a `setup.sh`. Every failure is in the answer, none ends the read.
+pub(crate) fn read(cx: &Cx, user: UserId, source: ProfileSource, with_setup: bool) -> Gathered {
     let failed = |detail: String| Gathered {
         resolved: None,
         sources: Vec::new(),
         unresolved: Vec::new(),
         failures: vec![(ProfileStep::Resolve, detail)],
+        setup: None,
     };
     let token = match github_token(cx, user) {
         Ok(token) => token,
-        Err(e) => return Ok(Some(failed(e.error.to_string()))),
+        Err(e) => return failed(e.error.to_string()),
     };
     let at = source.git_ref.as_deref();
     let (sha, manifest) = match cx
@@ -66,9 +77,21 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
         .read_file_at(&source.repo, at, MANIFEST_FILE, &token)
     {
         Ok(found) => found,
-        Err(e) => return Ok(Some(failed(format!("{}: {e}", source.repo)))),
+        Err(e) => return failed(format!("{}: {e}", source.repo)),
     };
     let mut failures = Vec::new();
+    let setup = with_setup.then(|| {
+        match cx
+            .forge()
+            .read_file_at(&source.repo, Some(sha.as_str()), SETUP_FILE, &token)
+        {
+            Ok((_, found)) => found.is_some(),
+            Err(e) => {
+                failures.push((ProfileStep::Setup, format!("{SETUP_FILE}: {e}")));
+                false
+            }
+        }
+    });
     let mut listed = Vec::new();
     match manifest.as_deref().map(profile::parse) {
         Some(Err(e)) => failures.push((ProfileStep::Manifest, e.to_string())),
@@ -81,12 +104,13 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
         sha,
         manifest,
     };
-    Ok(Some(Gathered {
+    Gathered {
         resolved: Some(resolved),
         sources,
         unresolved,
         failures,
-    }))
+        setup,
+    }
 }
 
 /// The commit of each of `listed`, and why for each that has none. A ref that is a whole commit id

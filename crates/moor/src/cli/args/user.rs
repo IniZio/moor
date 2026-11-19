@@ -5,7 +5,7 @@ use moor_core::config::OAuthCallback;
 use moor_core::name::ProfileSource;
 use moor_core::request::{
     AsReq, EnrollReq, MachineRemoveReq, MachineStatusReq, McpAddReq, McpOAuthFinishReq,
-    McpRemoveReq, ProfileSetReq, SecretDeleteReq, WebhookAddReq, WebhookRemoveReq,
+    McpRemoveReq, ProfileCheckReq, ProfileSetReq, SecretDeleteReq, WebhookAddReq, WebhookRemoveReq,
     WebhookSetupShowReq,
 };
 use moor_core::user::SecretName;
@@ -80,6 +80,9 @@ pub(super) enum ProfileCli {
     Set(ProfileSetArg),
     /// Show your profile repo.
     Show,
+    /// Resolve your profile, or URL instead, through GitHub and report what it installs and
+    /// what failed; nothing is written.
+    Check(ProfileCheckArg),
     /// Clear your profile repo.
     Rm,
 }
@@ -90,6 +93,14 @@ pub(super) struct ProfileSetArg {
     /// The repo, as `https://github.com/OWNER/NAME`, then `#` and a branch, tag or sha to pin.
     #[arg(value_parser = ProfileSource::parse)]
     source: ProfileSource,
+}
+
+/// Arguments of `user profile check`.
+#[derive(Debug, Args)]
+pub(super) struct ProfileCheckArg {
+    /// The repo to check instead of your own, as `user profile set` takes it.
+    #[arg(value_parser = ProfileSource::parse)]
+    source: Option<ProfileSource>,
 }
 
 /// Subcommands of `user secret`.
@@ -205,6 +216,10 @@ impl UserCli {
                 source: a.source,
             }),
             Self::Profile(ProfileCli::Show) => Request::ProfileShow(AS_CALLER),
+            Self::Profile(ProfileCli::Check(a)) => Request::ProfileCheck(ProfileCheckReq {
+                identity: None,
+                source: a.source,
+            }),
             Self::Profile(ProfileCli::Rm) => Request::ProfileRemove(AS_CALLER),
             Self::Webhook(cli) => return cli.into_action(),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {

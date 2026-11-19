@@ -109,6 +109,7 @@ impl Request {
             | Self::McpList(_)
             | Self::ProfileSet(_)
             | Self::ProfileShow(_)
+            | Self::ProfileCheck(_)
             | Self::ProfileRemove(_)
             | Self::WebhookAdd(_)
             | Self::WebhookSetupShow(_)

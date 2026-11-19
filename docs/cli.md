@@ -104,7 +104,7 @@ These act as your local identity through the controller.
 | `moor user mcp add NAME URL` | Adds an MCP server of yours. `--header` names the header for its key. |
 | `moor user mcp finish URL`, `ls`, `rm NAME` | Finishes an OAuth sign-in, lists servers, or removes one. |
 | `moor user machine ls`, `status NAME`, `rm NAME` | Lists your machines, asks one for its state, or removes one. |
-| `moor user profile set URL[#REF]`, `show`, `rm` | Sets, shows, or clears your agent profile repo. |
+| `moor user profile set URL[#REF]`, `show`, `check [URL]`, `rm` | Sets, shows, or clears your agent profile repo. `check` reads it, or URL, through GitHub and reports what it installs and what failed. It writes nothing. |
 | `moor user webhook add URL` | Adds a webhook. `--event KIND` and `--header NAME` narrow it. |
 | `moor user webhook setup ID`, `finish ID`, `ls`, `rm ID` | Shows the setup with its key, finishes it, lists, or removes. |
 | `moor whoami` | Shows your identity, its user, and the user's linked identities. |

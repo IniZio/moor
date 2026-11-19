@@ -48,8 +48,8 @@ mod user;
 mod workflow;
 pub use user::{
     ActAsReq, AsReq, EnrollReq, InboxOp, InboxReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
-    ProfileSetReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
-    WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+    ProfileCheckReq, ProfileSetReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq,
+    UserCmd, WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
@@ -171,6 +171,9 @@ pub enum Request {
     ProfileSet(ProfileSetReq),
     /// Show the caller's user's agent profile repo.
     ProfileShow(AsReq),
+    /// Resolve the caller's user's agent profile, or a given one, through the forge and report
+    /// what it holds and what failed; writes nothing.
+    ProfileCheck(ProfileCheckReq),
     /// Clear the caller's user's agent profile repo.
     ProfileRemove(AsReq),
     /// Add a webhook for the caller's user, waiting for its person to set it up.
