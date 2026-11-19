@@ -71,6 +71,7 @@ pub(super) fn render(b: &BriefInput) -> String {
     );
     out.push_str(PUBLISH);
     out.push_str(ATTACH);
+    out.push_str(GH_INSTALL);
     out
 }
 
@@ -118,8 +119,23 @@ const ATTACH: &str = "When gh is on the PATH, attach a published file to a pull 
     `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces \
     it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and \
     webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 \
-    files. An upload cannot be deleted. When gh is not on the PATH, push the branch with git \
-    and say you could not open the pull request.\n";
+    files. An upload cannot be deleted.\n\n";
+
+/// How to get gh when the Box image lacks it: a pinned release, checked against its sha256.
+const GH_INSTALL: &str = r#"When `command -v gh` finds nothing, install gh into `~/.local/bin` with this, then run gh as usual:
+
+```sh
+v=2.105.0; f=gh_${v}_linux_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz
+curl -fsSL --retry 3 -o /tmp/$f https://github.com/cli/cli/releases/download/v$v/$f
+printf '%s\n' \
+  '79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f  gh_2.105.0_linux_amd64.tar.gz' \
+  'b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02  gh_2.105.0_linux_arm64.tar.gz' \
+  | grep " $f" | (cd /tmp && sha256sum -c --quiet) \
+  && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
+```
+
+gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for other repos. `gh pr comment` is withheld too, so comment with `gh api repos/{owner}/{repo}/issues/<number>/comments -f body=<text>`.
+"#;
 
 #[cfg(test)]
 mod tests {
@@ -189,12 +205,35 @@ mod tests {
 
     #[test]
     fn says_how_to_attach_artifacts_to_a_pull_request_right_after_publishing() {
-        let attach = "When gh is on the PATH, attach a published file to a pull request with `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted. When gh is not on the PATH, push the branch with git and say you could not open the pull request.\n";
+        let attach = "When gh is on the PATH, attach a published file to a pull request with `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted.\n\n";
         let out = render(&input(None));
         assert!(
             out.contains(&format!("in your final message.\n\n{attach}")),
             "{out}"
         );
+    }
+
+    #[test]
+    fn says_how_to_install_a_pinned_gh_that_signs_in_through_the_proxy() {
+        let out = render(&input(None));
+        let recipe = out
+            .split("```sh\n")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .expect("an sh block");
+        let check = std::process::Command::new("bash")
+            .args(["-n", "-c", recipe])
+            .status()
+            .expect("bash");
+        assert!(check.success(), "{recipe}");
+        for arch in ["amd64", "arm64"] {
+            assert!(
+                recipe.contains(&format!("  gh_2.105.0_linux_{arch}.tar.gz'")),
+                "{recipe}"
+            );
+        }
+        assert!(recipe.contains("sha256sum -c"), "{recipe}");
+        assert!(out.contains("Do not run `gh auth login`"), "{out}");
     }
 
     #[test]
