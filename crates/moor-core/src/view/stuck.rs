@@ -124,7 +124,7 @@ fn detail(kind: &str, p: &Value) -> String {
             )
         }),
         "agent_unreachable" => match (number(p, "attempts"), text(p, "error")) {
-            (Some(n), Some(e)) => Some(format!("unreachable after {n} tries: {e}")),
+            (Some(n), Some(e)) if n > 1 => Some(format!("unreachable after {n} tries: {e}")),
             _ => text(p, "error").map(str::to_owned),
         },
         "death_capped" => text(p, "reason").map(deaths::sentence),

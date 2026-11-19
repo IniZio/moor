@@ -124,6 +124,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::AgentUnreachable { attempts, error } => {
                 Ok(Self::AgentUnreachable { attempts, error })
             }
+            Event::AgentLinkRestored { pane } => Ok(Self::AgentLinkRestored { pane }),
             Event::Stall(StallEvent::AgentStalled { doing, quiet_secs }) => {
                 Ok(Self::AgentStalled { doing, quiet_secs })
             }
@@ -218,7 +219,6 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::ArtifactPublished { .. }
             | Event::SessionEnded { .. }
             | Event::AgentLinkLost { .. }
-            | Event::AgentLinkRestored { .. }
             | Event::Machine(_)
             | Event::TurnDone { .. }
             | Event::SteerUnconfirmed { .. }

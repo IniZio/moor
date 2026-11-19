@@ -295,20 +295,6 @@ impl Store {
         Ok(())
     }
 
-    /// Keep that the agent of live launch `id` answered a read at `at`.
-    pub(crate) fn note_agent_read(&self, id: LaunchId, at: Ts) -> Result<(), StoreError> {
-        let conn = self.writer();
-        conn.run(
-            Query::update()
-                .table(Launches::Table)
-                .value(Launches::AgentReadAt, at.as_millis())
-                .and_where(Expr::col(Launches::Id).eq(id.get()))
-                .and_where(Expr::col(Launches::EndedAt).is_null()),
-        )?;
-        drop(conn);
-        Ok(())
-    }
-
     /// Keep that a `needs_input` was written for the status of live launch `id` set at `at`, on
     /// the Box's clock; whether one was written for it already.
     pub(crate) fn note_asked(&self, id: LaunchId, at: Ts) -> Result<bool, StoreError> {
@@ -346,28 +332,7 @@ impl Store {
         drop(conn);
         Ok(changed == 0)
     }
-
-    /// Whether the live agent of `box_id` has answered a read, but none for so long that it may
-    /// have started a turn unseen.
-    pub(crate) fn agent_unread(&self, box_id: BoxId, now: Ts) -> Result<bool, StoreError> {
-        let Some(live) = self.live_launch(box_id)? else {
-            return Ok(false);
-        };
-        let conn = self.reader()?;
-        let at: Option<i64> = conn.row(
-            Query::select()
-                .column(Launches::AgentReadAt)
-                .from(Launches::Table)
-                .and_where(Expr::col(Launches::Id).eq(live.id.get())),
-            |r| r.get(0),
-        )?;
-        let ttl = i64::try_from(AGENT_READ_TTL.as_millis()).unwrap_or(i64::MAX);
-        Ok(at.is_some_and(|at| now.as_millis().saturating_sub(at) >= ttl))
-    }
 }
-
-/// How long a read of an agent stands for a dropped one.
-const AGENT_READ_TTL: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// A launch from its `launches` row.
 fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
@@ -390,6 +355,7 @@ fn launch_from_row(r: &Row<'_>) -> db::Result<Launch> {
 }
 
 mod end;
+mod read;
 
 use end::end_launching;
 pub(crate) use end::LaunchEnd;

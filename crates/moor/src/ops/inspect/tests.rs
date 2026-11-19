@@ -98,11 +98,20 @@ fn numbered(n: usize) -> String {
 
 /// Box `a` over a pane of `n` numbered lines.
 fn with_pane(n: usize) -> (tempfile::TempDir, Cx, BoxId) {
+    with_pane_unread(n, 0)
+}
+
+/// [`with_pane`] whose first `unread` reads time out.
+fn with_pane_unread(n: usize, unread: usize) -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let setup = cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&setup, &driver);
-    let engine = Arc::new(FakeEngine::new().probes("s-a", pane(&numbered(n))));
+    let mut engine = FakeEngine::new().probes("s-a", pane(&numbered(n)));
+    for _ in 0..unread {
+        engine = engine.then_probes("s-a", Probe::TimedOut);
+    }
+    let engine = Arc::new(engine);
     let cx = cx(dir.path(), &driver, &engine);
     (dir, cx, id)
 }
@@ -195,7 +204,7 @@ fn said_is_the_newest_messages_oldest_first() {
 
 #[test]
 fn stuck_follows_the_events() {
-    let (_dir, cx, id) = with_pane(1);
+    let (_dir, cx, id) = with_pane_unread(1, 3);
     assert!(run(&cx, &req("a", None, None)).unwrap().stuck.is_none());
     put(
         &cx,
@@ -223,6 +232,22 @@ fn stuck_follows_the_events() {
     );
     put(&cx, id, ExtraEvent::AgentResumed { quiet_secs: 800 });
     assert!(run(&cx, &req("a", None, None)).unwrap().stuck.is_none());
+}
+
+#[test]
+fn a_read_that_answers_restores_an_unreachable_box() {
+    let (_dir, cx, id) = with_pane(1);
+    put(
+        &cx,
+        id,
+        ExtraEvent::AgentUnreachable {
+            attempts: 3,
+            error: "timed out".into(),
+        },
+    );
+    assert!(run(&cx, &req("a", None, None)).unwrap().stuck.is_none());
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    assert!(events.iter().any(|e| e.kind == "agent_link_restored"));
 }
 
 #[test]
