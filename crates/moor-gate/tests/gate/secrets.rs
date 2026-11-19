@@ -85,7 +85,9 @@ fn answer(
         "node-list" => Response::ok("x", Some(nodes::list(node))),
         "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
         "start-needs" | "start" => needs(vault, who, inner),
-        cmd @ ("show" | "artifacts") if who.contains(portal::PREFIX) => {
+        cmd @ ("show" | "artifacts" | "retry" | "workflow-list")
+            if who.contains(portal::PREFIX) =>
+        {
             portal::answer(who, cmd, inner)
         }
         cmd if cmd.starts_with("workflow-") => workflows::answer(who, cmd, inner),

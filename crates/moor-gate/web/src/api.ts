@@ -334,6 +334,8 @@ const BoxRowSchema = v.object({
 	updated_at: v.string(),
 	pr: v.nullable(PrSchema),
 	needs: v.nullish(NeedsSchema),
+	/** Whether setup failed, so it can be run again. */
+	retryable: v.optional(v.boolean(), false),
 });
 
 const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
@@ -363,6 +365,8 @@ const BoxDetailSchema = v.object({
 	...BoxRowSchema.entries,
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
+	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
+	workflow: v.nullish(v.object({ name: v.string(), repo: v.string() })),
 });
 
 export type Needs = v.InferOutput<typeof NeedsSchema>;
@@ -419,6 +423,16 @@ export async function inboxRead(csrf: string, ids: number[]): Promise<Inbox> {
 		body: JSON.stringify({ ids }),
 	});
 	return answer(res, InboxSchema);
+}
+
+/** Runs setup again on a Box whose setup failed. */
+export async function boxRetry(csrf: string, box: string): Promise<void> {
+	const res = await fetch('/account/api/box/retry', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ box }),
+	});
+	await answer(res, v.object({ box: v.string() }));
 }
 
 /** Answers what a Box's agent asks: menu entry `n` of the prompt named `ask`. */

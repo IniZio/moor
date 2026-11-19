@@ -76,7 +76,8 @@ function Failed({ error, retry }: { error: string; retry: () => void }) {
 	);
 }
 
-function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo: string; onRan: () => void }) {
+/** The button that fires a workflow once for a repo, with the answer beside it. */
+function RunNowButton({ csrf, name, repo, onRan, hint }: { csrf: string; name: string; repo: string; onRan: () => void; hint?: string }) {
 	const [busy, setBusy] = useState(false);
 	const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 	const run = async () => {
@@ -92,9 +93,8 @@ function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo:
 		setBusy(false);
 	};
 	return (
-		<li>
-			<span class="grow">{repo}</span>
-			<button type="button" disabled={busy} aria-label={`Run now for ${repo}`} onClick={() => void run()}>
+		<>
+			<button type="button" disabled={busy} aria-label={`Run now for ${repo}${hint ?? ''}`} onClick={() => void run()}>
 				Run now
 			</button>
 			{note && (
@@ -102,6 +102,15 @@ function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo:
 					{note.text}
 				</span>
 			)}
+		</>
+	);
+}
+
+function RunNow({ csrf, name, repo, onRan }: { csrf: string; name: string; repo: string; onRan: () => void }) {
+	return (
+		<li>
+			<span class="grow">{repo}</span>
+			<RunNowButton csrf={csrf} name={name} repo={repo} onRan={onRan} />
 		</li>
 	);
 }
@@ -126,6 +135,12 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 					{w.last ? (
 						<>
 							<StatusIcon status={w.last.status} /> {w.last.repo}, {w.last.label}
+							{w.last.status === 'failure' && (
+								<>
+									{' '}
+									<RunNowButton csrf={csrf} name={w.name} repo={w.last.repo} onRan={onRan} hint=" after its failed last run" />
+								</>
+							)}
 						</>
 					) : (
 						'none yet'
@@ -412,6 +427,9 @@ function RunPage({ csrf, name, id }: { csrf: string; name: string; id: number })
 							<StatusIcon status={run.status} /> {run.repo}
 						</h2>
 						<span class="pill">{run.label}</span>
+						{run.status === 'failure' && (
+							<RunNowButton csrf={csrf} name={run.workflow} repo={run.repo} onRan={reload} hint=" after this failed run" />
+						)}
 					</div>
 					<p class="muted">
 						Due {when(run.due_at)}

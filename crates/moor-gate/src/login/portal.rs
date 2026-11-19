@@ -22,8 +22,10 @@ use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
 
+mod again;
 mod answer;
 mod inbox;
+mod retry;
 mod start;
 
 /// The events a Box page reads: the most the controller keeps in one window.
@@ -50,7 +52,10 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/inbox"
         ) | (
             "POST",
-            "/account/api/boxes" | "/account/api/box/answer" | "/account/api/inbox/read"
+            "/account/api/boxes"
+                | "/account/api/box/answer"
+                | "/account/api/box/retry"
+                | "/account/api/inbox/read"
         )
     )
 }
@@ -74,6 +79,9 @@ pub(super) fn serve(
     match (req.method, path) {
         ("POST", "/account/api/box/answer") => {
             answer::answer(stream, gate, login, session, req.csrf, body.as_deref());
+        }
+        ("POST", "/account/api/box/retry") => {
+            retry::retry(stream, gate, login, session, req.csrf, body.as_deref());
         }
         ("POST", "/account/api/inbox/read") => {
             inbox::read(stream, gate, session, req.csrf, body.as_deref());
@@ -101,6 +109,8 @@ struct Row {
     prompt: Option<String>,
     /// RFC 3339 UTC last update.
     updated_at: String,
+    /// The lifecycle, as `show` names it.
+    lifecycle: Option<String>,
     /// The derived state.
     progress: Option<ProgressView>,
 }
@@ -144,6 +154,7 @@ fn summary(row: &Row) -> Option<Value> {
         "updated_at": row.updated_at,
         "pr": pr_json(progress.pr.as_ref()),
         "needs": progress.needs,
+        "retryable": row.lifecycle.as_deref() == Some("setup_failed"),
     }))
 }
 
@@ -249,6 +260,8 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
     if let Some(map) = view.as_object_mut() {
         map.insert("timeline".to_owned(), shown.timeline.unwrap_or(json!([])));
         map.insert("artifacts".to_owned(), json!(artifacts));
+        let run_again = again::failed_run_of(gate, session, shown.boxed.as_ref());
+        map.insert("workflow".to_owned(), run_again);
     }
     json(stream, "200 OK", &view);
 }
