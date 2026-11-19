@@ -117,7 +117,8 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-glyph.t-stale, .t-warn { color: var(--moor-color-warning); animation: none; }
 @keyframes t-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .t-working .t-glyph { animation: none; } }
-.t-repo { color: var(--moor-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-repo { display: flex; align-items: center; min-width: 0; color: var(--moor-color-text-muted); white-space: nowrap; }
+.t-repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .t-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now { color: var(--moor-color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-now.t-ask { color: var(--moor-color-text); }
@@ -220,4 +221,4 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-foot { margin-top: var(--moor-space-3); }
 .t-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .t-file { display: block; padding: var(--moor-space-6) var(--moor-space-4); text-align: center; color: var(--moor-color-accent); }
-.t-more { margin-left: 0.3rem; padding: 0 0.4rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); font-size: 0.75rem; color: var(--moor-color-text-muted); white-space: nowrap; }
+.t-more { flex: none; margin-left: 0.3rem; padding: 0 0.4rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-pill); font-size: 0.75rem; color: var(--moor-color-text-muted); white-space: nowrap; }

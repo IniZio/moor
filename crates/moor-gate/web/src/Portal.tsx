@@ -137,7 +137,7 @@ function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
 			<span class="t-repo t-mono">
-				{t.repo ?? ''}
+				<span class="t-repo-name">{t.repo ?? ''}</span>
 				{t.other_repos.length > 0 && (
 					<span class="t-more" title={t.other_repos.join(', ')}>
 						+{t.other_repos.length}
