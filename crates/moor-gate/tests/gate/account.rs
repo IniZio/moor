@@ -74,7 +74,6 @@ fn the_built_assets_are_served_without_a_session() {
     let w = world(true, &[]);
     let cookie = sign_in(&w.addr);
     let page = get(&w.addr, "/", Some(&cookie)).body;
-    // The names carry a content hash, so a cache in front of the gate never serves an old build.
     let named = |ext: &str| {
         page.split('"')
             .find(|s| s.starts_with("/account/assets/app-") && s.ends_with(ext))
