@@ -28,6 +28,8 @@ const AccountSchema = v.object({
 	secrets: v.array(SecretSchema),
 	machines: v.object({ nodes: v.array(NodeSchema), at: v.number() }),
 	connect: v.object({ mcp_url: v.nullable(v.string()), server_url: v.string() }),
+	/** The agent profile repo, `https://github.com/OWNER/NAME[#REF]`, when one is set. */
+	profile: v.nullish(v.string()),
 });
 
 const RepoConfigSchema = v.object({

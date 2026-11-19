@@ -10,6 +10,7 @@ mod repos;
 pub(crate) mod routes;
 mod seal;
 pub(crate) mod secrets;
+mod settings;
 pub(crate) mod setup;
 pub(crate) mod terminal;
 #[cfg(test)]

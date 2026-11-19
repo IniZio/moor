@@ -186,6 +186,7 @@ success, else `{kind, message, hints, context}`.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--server URL` | `MOOR_SERVER` | The moor server. |
+| `--token TOKEN` | `MOOR_PAIR_TOKEN` | Pair with a one-use token from Settings, Machines, with no code to confirm. |
 | `--name NAME` | the host name | The machine's name. |
 | `--labels a,b` | none | Labels a Box can ask for. |
 | `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |

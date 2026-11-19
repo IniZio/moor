@@ -103,8 +103,10 @@ oauth:
 
 ### Per-user agent profile
 
-A person names a GitHub repo as their agent profile with
-`moor user profile set https://github.com/OWNER/NAME[#REF]`. Each new Box of
+A person names a GitHub repo as their agent profile in the portal, under
+Settings, Agent profile, or with
+`moor user profile set https://github.com/OWNER/NAME[#REF]`. The portal checks
+the repo through GitHub and saves it only when it resolves. Each new Box of
 theirs applies it. The repo may hold:
 
 | Path | What it does |

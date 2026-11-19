@@ -11,8 +11,9 @@ team's moor, written here as `HOST`. You install nothing else.
 
 Open `https://HOST` in your browser and sign in with your team account.
 
-The account page opens. It shows your secrets, your machines, and the commands
-that connect your tools.
+The portal opens. Home shows a short checklist until your first Box starts. Settings
+holds your machines, agent profile, secrets, repos, and the commands that
+connect your tools.
 
 ## 2. Link your secrets
 

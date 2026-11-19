@@ -12,6 +12,13 @@ A machine serves in one of two ways:
 
 ## Pair a personal node
 
+The quickest way is from the portal. Open Settings, then Machines, and choose
+**Add a machine**. It shows one line that installs the agent and pairs the
+machine with a one-use token. Run it on the machine. The dialog waits until the
+machine checks in. The token lasts 10 minutes, and a new one replaces it.
+
+To pair by hand instead:
+
 1. Install Docker, and let your user run it without `sudo`. On Linux that
    means your user is in the `docker` group. `docker info` must work.
 
@@ -112,5 +119,8 @@ A machine paired for another kind of Box pairs again the next time you run `up`.
 
 ## Remove a machine
 
-`moor-machine-agent down` stops and removes the user service. The machine stays
-paired.
+Remove it in Settings, then Machines. New Boxes stop going there. The portal
+refuses while Boxes run on it.
+
+`moor-machine-agent down` stops and removes the user service. Run it on the
+machine too.
