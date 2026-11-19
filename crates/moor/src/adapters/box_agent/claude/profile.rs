@@ -91,7 +91,7 @@ fn plugins(manifest: &Manifest) -> String {
             url = format!("{url}#{r}");
         }
         lines.push(format!(
-            "moor_retry {claude} plugin marketplace add {} </dev/null >/dev/null 2>&1 || fail {} $?",
+            "moor_retry {claude} plugin marketplace add {} </dev/null || fail {} $?",
             quote(&url),
             quote(&format!("marketplace {name}")),
         ));
@@ -105,7 +105,7 @@ fn plugins(manifest: &Manifest) -> String {
         lines.push(MARKETPLACE_NAME_FN.to_owned());
         lines.push(format!(
             "pm=$(mkt_name \"$d/.claude-plugin/marketplace.json\") && [ -n \"$pm\" ] || pm=\n\
-[ -n \"$pm\" ] && {{ {claude} plugin marketplace add \"$d\" </dev/null >/dev/null 2>&1 || fail {} $?; }}",
+[ -n \"$pm\" ] && {{ {claude} plugin marketplace add \"$d\" </dev/null >\"${{moor_out:-/dev/null}}\" 2>&1 || fail {} $?; }}",
             quote(&format!("marketplace {PROFILE_MARKETPLACE}")),
         ));
     }
@@ -114,12 +114,12 @@ fn plugins(manifest: &Manifest) -> String {
         let what = quote(&format!("plugin {id}"));
         if plugin.marketplace == PROFILE_MARKETPLACE {
             lines.push(format!(
-                "if [ -n \"$pm\" ]; then moor_retry {claude} plugin install {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
+                "if [ -n \"$pm\" ]; then moor_retry {claude} plugin install {}\"@$pm\" </dev/null || fail {what} $?; else fail {what} 1; fi",
                 quote(&plugin.name),
             ));
         } else {
             lines.push(format!(
-                "moor_retry {claude} plugin install {} </dev/null >/dev/null 2>&1 || fail {what} $?",
+                "moor_retry {claude} plugin install {} </dev/null || fail {what} $?",
                 quote(&id),
             ));
         }

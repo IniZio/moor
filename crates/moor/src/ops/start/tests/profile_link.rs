@@ -127,3 +127,25 @@ fn a_retry_once_the_link_is_back_fetches_the_profile_and_launches() {
     assert_eq!(again.failed_step, None);
     assert_eq!(engine.launches().len(), 1);
 }
+
+#[test]
+fn a_failed_install_says_why_in_its_event_and_in_why_setup_failed() {
+    let why =
+        "marketplace tools exit 1: Failed to clone marketplace repository: Git clone timed out";
+    let (w, _) = profiled(FakeDriver::new());
+    let driver = w.driver.clone();
+    w.driver.on_exec_of(PLUGINS, move || {
+        driver.push_exec_stdout(format!("moor: profile: {why}\n"));
+    });
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    let id = BoxId::new(v.boxed.id);
+    let events = w.cx.store().unwrap().events(id, 200).unwrap();
+    let failed = events.iter().find(|e| e.kind == "profile_failed").unwrap();
+    assert_eq!(failed.payload.get("detail"), Some(&serde_json::json!(why)));
+    let line = setup_failed_line(&w, id);
+    assert_eq!(
+        line,
+        format!("agent profile: was only partly installed: {why}")
+    );
+}

@@ -1,6 +1,9 @@
 {
 d='/box/home/.moor-profile/person'; w='/box/work'; c='/box/home/.claude'; f='/box/work/.moor/profile-failures'
-fail() { echo "moor: profile: $1 exit $2" >&2; printf '%s exit %s\n' "$1" "$2" >> "$f"; }
+fail() {
+  why=; [ -s "${moor_out:-}" ] && why=": $(grep -v '^[[:space:]]*$' "$moor_out" | tail -n 4 | tr -s '\r\n\t' '   ' | head -c 500)"; [ -n "${moor_out:-}" ] && : > "$moor_out"
+  echo "moor: profile: $1 exit $2${why% }" >&2; printf '%s exit %s%s\n' "$1" "$2" "${why% }" >> "$f"
+}
 mkdir -p '/box/work/.moor' "$c/skills" && : > "$f"
 [ -f "$d/AGENTS.md" ] && { cp "$d/AGENTS.md" "$c/CLAUDE.md" || fail instructions $?; }
 for s in "$d"/skills/*/; do

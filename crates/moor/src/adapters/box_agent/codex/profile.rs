@@ -142,7 +142,7 @@ fn plugins(manifest: &Manifest) -> String {
             .as_ref()
             .map_or_else(String::new, |r| format!("--ref {} ", quote(r)));
         lines.push(format!(
-            "moor_retry codex plugin marketplace add {pin}{} </dev/null >/dev/null 2>&1 || fail {} $?",
+            "moor_retry codex plugin marketplace add {pin}{} </dev/null || fail {} $?",
             quote(&url),
             quote(&format!("marketplace {name}")),
         ));
@@ -164,12 +164,12 @@ fn plugins(manifest: &Manifest) -> String {
         let what = quote(&format!("plugin {id}"));
         if plugin.marketplace == PROFILE_MARKETPLACE {
             lines.push(format!(
-                "if [ -n \"$pm\" ]; then moor_retry codex plugin add {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
+                "if [ -n \"$pm\" ]; then moor_retry codex plugin add {}\"@$pm\" </dev/null || fail {what} $?; else fail {what} 1; fi",
                 quote(&plugin.name),
             ));
         } else {
             lines.push(format!(
-                "moor_retry codex plugin add {} </dev/null >/dev/null 2>&1 || fail {what} $?",
+                "moor_retry codex plugin add {} </dev/null || fail {what} $?",
                 quote(&id),
             ));
         }
