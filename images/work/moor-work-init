@@ -107,6 +107,22 @@ chown "$uid:$uid" "$home" 2>/dev/null || true
 mkdir -p "$home/.agents" "$home/.claude/skills"
 chown "$uid:$uid" "$home/.agents" "$home/.claude" "$home/.claude/skills" 2>/dev/null || true
 
+IFS=:
+for dir in ${MOOR_CACHE_DIRS:-}; do
+  case $dir in
+    /var/lib/*) continue ;;
+    "$home"/*)
+      p=$dir
+      while [ "$p" != "$home" ] && [ -n "$p" ]; do
+        [ "$(stat -c %u "$p" 2>/dev/null)" = 0 ] && chown "$uid:$uid" "$p"
+        p=${p%/*}
+      done
+      ;;
+    *) [ "$(stat -c %u "$dir" 2>/dev/null)" = 0 ] && chown "$uid:$uid" "$dir" ;;
+  esac
+done
+unset IFS
+
 write_profile
 install_ca
 start_dockerd

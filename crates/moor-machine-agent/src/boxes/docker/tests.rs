@@ -58,7 +58,7 @@ fn the_release_images_are_the_default() {
 
 #[test]
 fn the_agent_place_is_unprivileged_and_never_restarted_by_docker() {
-    let a = agent_run(&settings(), &slug(), &Names::of(&slug())).join(" ");
+    let a = agent_run(&settings(), &slug(), &Names::of(&slug()), &[]).join(" ");
     assert!(a.starts_with("run -d --name moor-3b3b3b3b-9001-agent --hostname moor-3b3b3b3b-9001"));
     assert!(a.contains("--network net --restart no"));
     assert!(a.contains("--add-host moor-host:host-gateway"));
@@ -70,7 +70,7 @@ fn the_agent_place_is_unprivileged_and_never_restarted_by_docker() {
 #[test]
 fn the_work_place_joins_the_agent_places_network_and_is_privileged() {
     let n = Names::of(&slug());
-    let w = work_run(&settings(), &slug(), &n, 4096, None).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, None, &[]).join(" ");
     assert!(w.contains("--network container:moor-3b3b3b3b-9001-agent"));
     assert!(w.contains("--privileged --restart no"));
     assert!(w.contains("--memory 4096m --memory-swap 4096m"));
@@ -83,7 +83,7 @@ fn the_work_place_joins_the_agent_places_network_and_is_privileged() {
 #[test]
 fn the_work_place_joins_the_group_of_a_hosts_kvm_device() {
     let n = Names::of(&slug());
-    let w = work_run(&settings(), &slug(), &n, 4096, Some(994)).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, Some(994), &[]).join(" ");
     assert!(w.contains("--privileged --restart no -e MOOR_KVM_GID=994 --memory"));
 }
 
@@ -130,8 +130,8 @@ fn docker_ps_lines_become_each_boxes_two_places() {
 #[test]
 fn both_places_mount_the_shared_skills_volumes_and_nothing_else_of_the_home() {
     let n = Names::of(&slug());
-    let a = agent_run(&settings(), &slug(), &n).join(" ");
-    let w = work_run(&settings(), &slug(), &n, 4096, None).join(" ");
+    let a = agent_run(&settings(), &slug(), &n, &[]).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, None, &[]).join(" ");
     for argv in [&a, &w] {
         assert!(argv.contains("-v moor-3b3b3b3b-9001-agents:/home/agent/.agents "));
         assert!(argv.contains("-v moor-3b3b3b3b-9001-skills:/home/agent/.claude/skills "));
@@ -170,4 +170,24 @@ fn inspect_lines_say_how_each_container_ended_and_odd_lines_are_left_out() {
             oom: true
         })
     );
+}
+
+#[test]
+fn the_docker_provider_keeps_cache_volumes_and_the_work_place_mounts_them() {
+    use crate::boxes::provider::BoxProvider;
+    assert!(super::Docker::new(Images::default(), None).keeps_caches());
+    let cache = vec![
+        "-v".to_owned(),
+        "moor-cache-0123456789abcdef-go-0:/home/agent/go/pkg/mod".to_owned(),
+    ];
+    let w = work_run(
+        &settings(),
+        &slug(),
+        &Names::of(&slug()),
+        4096,
+        None,
+        &cache,
+    )
+    .join(" ");
+    assert!(w.contains("-v moor-cache-0123456789abcdef-go-0:/home/agent/go/pkg/mod work:dev"));
 }

@@ -20,6 +20,7 @@ use cli::{parse_ps, Cli, State};
 use names::Names;
 
 mod args;
+mod cache;
 mod cli;
 mod egress;
 #[cfg(test)]
@@ -79,6 +80,8 @@ pub(crate) struct Docker {
     network: Arc<tokio::sync::Mutex<()>>,
     /// The hosts each Box reached.
     egress: Arc<egress::Watches>,
+    /// What keeps a save of a cache volume and a copy of it apart.
+    caches: Arc<cache::Locks>,
 }
 
 impl Docker {
@@ -88,6 +91,7 @@ impl Docker {
             settings: Arc::new(Settings::new(images, network.unwrap_or(NETWORK))),
             network: Arc::default(),
             egress: Arc::default(),
+            caches: Arc::default(),
         }
     }
 
@@ -115,6 +119,15 @@ impl Docker {
             let label = format!("{SLUG_LABEL}={}", slug.as_str());
             Cli::ok(["volume", "create", "--label", &label, volume]).await?;
         }
+        let mounts = cache::mounts(slug, spec.cache.as_ref())?;
+        cache::prepare(
+            &self.caches,
+            &self.settings.agent_image,
+            slug,
+            &mounts,
+            note,
+        )
+        .await?;
         note.say("starting the Box");
         self.start_places(slug, Some(spec)).await?;
         self.await_work(&names).await
@@ -125,7 +138,10 @@ impl Docker {
     /// that are missing are made; without it a missing place is [`ProvideError::Missing`].
     async fn start_places(&self, slug: &Slug, create: Option<&Spec>) -> Result<(), ProvideError> {
         let names = Names::of(slug);
-        let fresh = self.start_agent(slug, &names, create.is_some()).await?;
+        let mounts = cache::mounts(slug, create.and_then(|s| s.cache.as_ref()))?;
+        let fresh = self
+            .start_agent(slug, &names, create.is_some(), &mounts)
+            .await?;
         // A running agent place may be one an open cut off by a restart made, not ready yet.
         self.await_agent(&names).await?;
         if fresh {
@@ -141,7 +157,16 @@ impl Docker {
             }
             (None, Some(spec)) => {
                 let mem = work_memory_mib(spec.class.as_deref());
-                Cli::ok(work_run(&self.settings, slug, &names, mem, kvm_gid())).await?;
+                let cache = cache::args(&mounts, true);
+                Cli::ok(work_run(
+                    &self.settings,
+                    slug,
+                    &names,
+                    mem,
+                    kvm_gid(),
+                    &cache,
+                ))
+                .await?;
             }
             (None, None) => return Err(ProvideError::Missing),
         }
@@ -155,6 +180,7 @@ impl Docker {
         slug: &Slug,
         names: &Names,
         create: bool,
+        mounts: &[cache::Mount],
     ) -> Result<bool, ProvideError> {
         match Cli::state(&names.agent).await? {
             Some(State::Running) => Ok(false),
@@ -163,7 +189,13 @@ impl Docker {
                 Ok(true)
             }
             None if create => {
-                Cli::ok(agent_run(&self.settings, slug, names)).await?;
+                Cli::ok(agent_run(
+                    &self.settings,
+                    slug,
+                    names,
+                    &cache::args(mounts, false),
+                ))
+                .await?;
                 Ok(true)
             }
             None => Err(ProvideError::Missing),
@@ -203,6 +235,22 @@ impl Docker {
         Err(ProvideError::Failed(
             "the work place did not answer over ssh".to_owned(),
         ))
+    }
+
+    /// Stops the work place so nothing writes while its private cache volumes are read, then saves
+    /// them to the canonical ones. A save that fails is said and never keeps a Box open.
+    #[allow(clippy::print_stderr, reason = "the agent has no log but its stderr")]
+    async fn keep_caches(&self, slug: &Slug, names: &Names) -> Result<(), ProvideError> {
+        if Cli::state(&names.work).await? == Some(State::Running) {
+            Cli::ok(["stop", "-t", STOP_SECONDS, &names.work]).await?;
+        }
+        if let Err(e) = cache::save(&self.caches, &self.settings.agent_image, slug).await {
+            eprintln!(
+                "moor-machine-agent: cache of {} not saved: {e}",
+                slug.as_str()
+            );
+        }
+        Ok(())
     }
 
     /// Writes `content` to `path` in the agent place, through a rename so a reader never sees half.
@@ -271,6 +319,7 @@ impl BoxProvider for Docker {
 
     async fn remove(&self, slug: &Slug) -> Result<(), ProvideError> {
         let names = Names::of(slug);
+        self.keep_caches(slug, &names).await?;
         for place in [&names.work, &names.agent] {
             if Cli::state(place).await?.is_some() {
                 Cli::ok(["rm", "-f", place]).await?;
@@ -279,7 +328,11 @@ impl BoxProvider for Docker {
         for volume in names.volumes() {
             Cli::ok(["volume", "rm", "-f", volume]).await?;
         }
-        Ok(())
+        cache::drop_private(slug).await
+    }
+
+    fn keeps_caches(&self) -> bool {
+        true
     }
 
     /// Sealing, a `docker commit` of the work place, is not built yet; nothing starts a repair

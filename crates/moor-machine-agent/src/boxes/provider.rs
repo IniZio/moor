@@ -106,6 +106,11 @@ pub(crate) trait BoxProvider: Send + Sync + 'static {
     /// How it provides Boxes, for the offer; people read it and nothing branches on it.
     fn provides(&self) -> &'static str;
 
+    /// Whether it keeps a Box's cache volumes across Boxes, which the machine then reports.
+    fn keeps_caches(&self) -> bool {
+        false
+    }
+
     /// Makes what is missing of `slug` and starts what is stopped; repeating it finds the same
     /// Box. The workdir.
     fn open(
