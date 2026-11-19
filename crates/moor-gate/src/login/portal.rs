@@ -11,6 +11,7 @@ use moor_core::progress::{PrLink, ProgressView};
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
 use moor_core::view::ArtifactView;
+use moor_core::workflow::split_plan_first;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -27,6 +28,7 @@ mod answer;
 mod changes;
 mod end;
 mod inbox;
+mod plan;
 mod pulls;
 mod retry;
 mod start;
@@ -60,6 +62,7 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
             "POST",
             "/account/api/boxes"
                 | "/account/api/box/answer"
+                | "/account/api/plan/draft"
                 | "/account/api/box/retry"
                 | "/account/api/box/wake"
                 | "/account/api/box/steer"
@@ -118,6 +121,9 @@ pub(super) fn serve(
                 body.as_deref(),
                 end::How::Close,
             );
+        }
+        ("POST", "/account/api/plan/draft") => {
+            plan::draft(stream, gate, login, session, req.csrf, body.as_deref());
         }
         ("POST", "/account/api/inbox/read") => {
             inbox::read(stream, gate, session, req.csrf, body.as_deref());
@@ -187,7 +193,7 @@ fn summary(row: &Row) -> Option<Value> {
         "other_repos": row.other_repos,
         "branch": row.branch,
         "base": row.base,
-        "prompt": row.prompt,
+        "prompt": row.prompt.as_deref().map(|p| split_plan_first(p).unwrap_or(p)),
         "title": progress.title,
         "state": progress.state,
         "stale": progress.stale,

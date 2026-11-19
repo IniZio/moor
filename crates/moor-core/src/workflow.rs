@@ -263,8 +263,9 @@ mod tests;
 pub use box_name::box_name;
 pub use history::HistoryEntry;
 pub use plan::{
-    split_start_prompt, CheckSays, Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError,
-    PromptHash, StartStep, Step, StepDoc, StepId, StepKind, Tries,
+    draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt, CheckSays, Evidence,
+    EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, StartStep, Step, StepDoc, StepId,
+    StepKind, Tries, APPROVE_PLAN, PLAN_FILE, PLAN_QUESTION, REVISE_PLAN,
 };
 pub use report::{
     Answer, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,

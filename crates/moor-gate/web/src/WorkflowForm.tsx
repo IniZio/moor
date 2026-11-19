@@ -14,6 +14,9 @@ import {
 	workflowRunNow,
 	workflowSwitch,
 } from './api';
+import { textProblems } from './plan';
+import { GeneratePlan } from './PlanDraft';
+import { PlanEditor } from './PlanEditor';
 import { RepoPicker } from './RepoPicker';
 import { browserZone, DAYS, EVERY, FIRST, fromCron, type Schedule, toCron, zones } from './schedule';
 
@@ -160,6 +163,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 	const [draft, setDraft] = useState<Draft>(() => blank(opened));
 	const [known, setKnown] = useState<string[]>([]);
 	const [busy, setBusy] = useState(false);
+	const [plan, setPlan] = useState('');
 	const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
 	const load = () => {
 		if (!editing) return;
@@ -183,7 +187,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 	const cron = toCron(draft.schedule);
 	const timeout = draft.timeout.trim() === '' ? undefined : Number(draft.timeout);
 	const nameOk = NAME.test(draft.name);
-	const ready = nameOk && draft.repos.length > 0 && draft.prompt.trim() !== '' && cron !== '' && !busy;
+	const ready = nameOk && draft.repos.length > 0 && draft.prompt.trim() !== '' && cron !== '' && !busy && textProblems(plan).length === 0;
 	const submit = async (e: Event) => {
 		e.preventDefault();
 		if (!ready) return;
@@ -191,7 +195,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 		setProblem(null);
 		const fields = { repos: draft.repos, prompt: draft.prompt, cron, timezone: draft.timezone.trim(), timeout_minutes: timeout };
 		try {
-			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf);
+			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf, plan.trim() || undefined);
 			location.hash = `#/workflows/${encodeURIComponent(saved.name)}`;
 		} catch (err) {
 			setProblem({ text: reason(err instanceof Error ? err : SOMETHING), stale: flow != null && err instanceof Conflict });
@@ -232,7 +236,13 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 					This workflow has a plan made for the old prompt. Saving keeps the plan and marks it stale, so review it on the workflow page.
 				</p>
 			)}
-			{opened.copyOf && <p class="muted">The copy keeps the plan of {opened.copyOf}, if it has one.</p>}
+			{opened.copyOf && <p class="muted">The copy keeps the plan of {opened.copyOf}, if it has one, unless you write one here.</p>}
+			{!flow && (
+				<div class="wf-field">
+					<PlanEditor text={plan} onText={setPlan} prompt={draft.prompt} />
+					<GeneratePlan csrf={csrf} repos={draft.repos} prompt={draft.prompt} onPlan={setPlan} />
+				</div>
+			)}
 			<div class="wf-field">
 				<span>Schedule</span>
 				<SchedulePicker value={draft.schedule} onChange={(schedule) => set({ schedule })} />
