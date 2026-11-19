@@ -81,12 +81,13 @@ impl From<Failure> for Saved {
     }
 }
 
-/// A plan with `edited` and nothing else dropped, for comparing a person's change to the
-/// stored plan.
-fn without_edited(plan: &Value) -> Value {
+/// A plan's steps alone, for comparing a person's change to the stored plan. Marking a plan
+/// reviewed drops `made_from`, which is not an edit.
+fn steps_of(plan: &Value) -> Value {
     let mut plan = plan.clone();
     if let Some(map) = plan.as_object_mut() {
         map.remove("edited");
+        map.remove("made_from");
     }
     plan
 }
@@ -174,7 +175,7 @@ fn plan_to_store(stored: &WorkflowView, write: &Write) -> Result<Option<String>,
     let same = stored
         .plan
         .as_ref()
-        .is_some_and(|p| without_edited(p) == without_edited(&Value::Object(map.clone())));
+        .is_some_and(|p| steps_of(p) == steps_of(&Value::Object(map.clone())));
     let was_edited = stored
         .plan
         .as_ref()
