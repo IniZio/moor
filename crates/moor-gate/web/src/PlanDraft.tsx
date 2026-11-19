@@ -23,8 +23,9 @@ function why(e: Error): string {
 }
 
 /** Generate plan: a short Box reads the repos and drafts a plan for the prompt, which lands in the editor for review. */
-export function GeneratePlan({ csrf, repos, prompt, onPlan }: { csrf: string; repos: string[]; prompt: string; onPlan: (text: string) => void }) {
+export function GeneratePlan({ csrf, repos, prompt, dirty, onPlan }: { csrf: string; repos: string[]; prompt: string; dirty: boolean; onPlan: (text: string) => void }) {
 	const [draft, setDraft] = useState<Draft>({ at: 'idle' });
+	const [confirming, setConfirming] = useState(false);
 	const live = useRef(true);
 	useEffect(
 		() => () => {
@@ -63,6 +64,7 @@ export function GeneratePlan({ csrf, repos, prompt, onPlan }: { csrf: string; re
 		}
 	};
 	const start = async () => {
+		setConfirming(false);
 		setDraft({ at: 'running', box: '', line: 'Starting a task to read the repos…' });
 		try {
 			const box = await planDraft(csrf, repos, prompt);
@@ -102,10 +104,23 @@ export function GeneratePlan({ csrf, repos, prompt, onPlan }: { csrf: string; re
 	}
 	return (
 		<div class="pd">
-			<button type="button" disabled={!ready} title={ready ? 'Replaces the plan in the editor; nothing is saved until you save.' : 'Write the prompt and pick a repo first.'} onClick={() => void start()}>
+			<button type="button" disabled={!ready || confirming} title={ready ? 'Replaces the plan in the editor; nothing is saved until you save.' : 'Write the prompt and pick a repo first.'} onClick={() => (dirty ? setConfirming(true) : void start())}>
 				Generate plan
 			</button>
 			<span class="muted grow">An agent reads the repos and the prompt, then drafts the steps. It changes nothing.</span>
+			{confirming && (
+				<div class="notice warn pd-note" role="alertdialog" aria-label="Replace your plan edits?">
+					<p>A drafted plan replaces the plan in the editor, and your unsaved edits are lost.</p>
+					<div class="actions">
+						<button type="button" onClick={() => void start()}>
+							Replace my edits
+						</button>
+						<button type="button" class="quiet" onClick={() => setConfirming(false)}>
+							Keep editing
+						</button>
+					</div>
+				</div>
+			)}
 			{draft.at === 'idle' && draft.note && <p class="notice ok pd-note" role="status">{draft.note}</p>}
 			{draft.at === 'failed' && (
 				<p class="notice danger pd-note" role="alert">

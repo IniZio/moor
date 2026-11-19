@@ -436,6 +436,8 @@ const BoxDetailSchema = v.object({
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
 	workflow: v.nullish(v.object({ name: v.string() })),
+	/** Whether the person asked for a plan first; its approved plan is the newest plan.json. */
+	plan_first: v.optional(v.boolean(), false),
 	/** Whether a workflow run made this Box. */
 	from_workflow: v.optional(v.boolean(), false),
 });

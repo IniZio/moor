@@ -102,3 +102,37 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 		</div>
 	);
 }
+
+/** The plan a plan-first one-off's person approved, in the rail beside the timeline. */
+export function PlanRail({ detail }: { detail: BoxDetail }) {
+	const [doc, setDoc] = useState<PlanDoc | null>(null);
+	const newest = detail.artifacts.filter((a) => a.name === 'plan.json').reduce((n, a) => Math.max(n, a.version), 0);
+	useEffect(() => {
+		let live = true;
+		void (async () => {
+			try {
+				const text = await planOf(detail);
+				const read = text === null ? null : readPlan(text);
+				if (live) setDoc(read && 'doc' in read ? read.doc : null);
+			} catch {
+				if (live) setDoc(null);
+			}
+		})();
+		return () => {
+			live = false;
+		};
+	}, [newest]);
+	if (!detail.plan_first || detail.needs?.plan || !doc) return null;
+	return (
+		<>
+			<h3>Plan</h3>
+			<ol class="pc-rail">
+				{doc.steps.map((s) => (
+					<li key={s.id}>
+						{s.title} <span class={`kind ${s.kind}`}>{s.kind}</span>
+					</li>
+				))}
+			</ol>
+		</>
+	);
+}

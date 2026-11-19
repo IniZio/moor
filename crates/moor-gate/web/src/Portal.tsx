@@ -20,7 +20,7 @@ import {
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
-import { PlanCard } from './PlanCard';
+import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
 import { RepoPicker } from './RepoPicker';
@@ -599,6 +599,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					<h3>Now</h3>
 					<p class="t-railline">{value.line}</p>
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
+					<PlanRail detail={value} />
 					<MakeRecurring detail={value} />
 				</aside>
 			</div>

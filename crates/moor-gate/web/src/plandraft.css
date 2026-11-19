@@ -12,3 +12,5 @@
 .pc-steps p { margin: 0; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
 .pc-note { display: grid; gap: var(--moor-space-2); margin-top: 0.6rem; }
 .pc-note textarea { width: 100%; }
+.pc-rail { margin: 0 0 var(--moor-space-3); padding-left: 1.2rem; display: grid; gap: 0.25rem; font-size: var(--moor-text-sm); }
+.pc-rail .kind { margin-left: var(--moor-space-1); font-size: var(--app-text-xs); }

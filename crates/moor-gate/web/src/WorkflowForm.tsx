@@ -240,7 +240,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			{!flow && (
 				<div class="wf-field">
 					<PlanEditor text={plan} onText={setPlan} prompt={draft.prompt} />
-					<GeneratePlan csrf={csrf} repos={draft.repos} prompt={draft.prompt} onPlan={setPlan} />
+					<GeneratePlan csrf={csrf} repos={draft.repos} prompt={draft.prompt} dirty={plan.trim() !== ''} onPlan={setPlan} />
 				</div>
 			)}
 			<div class="wf-field">

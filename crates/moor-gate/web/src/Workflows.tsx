@@ -281,7 +281,7 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				</label>
 				<div>
 					<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
-					<GeneratePlan csrf={csrf} repos={flow.repos} prompt={prompt} onPlan={setPlan} />
+					<GeneratePlan csrf={csrf} repos={flow.repos} prompt={prompt} dirty={sameText(plan) !== sameText(flow.plan ?? '')} onPlan={setPlan} />
 				</div>
 			</div>
 			{goesStale && (

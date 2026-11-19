@@ -32,12 +32,20 @@ fn how_to_write() -> String {
     )
 }
 
+/// How a draft prompt opens, so a front can tell a drafting Box from a person's own.
+const DRAFT_HEAD: &str = "Draft a plan for this workflow prompt.";
+
+/// Whether `text` is a prompt `draft_prompt` made.
+#[must_use]
+pub fn is_draft_prompt(text: &str) -> bool {
+    text.starts_with(DRAFT_HEAD)
+}
+
 /// What a short Box that drafts a workflow's plan is asked, for the workflow prompt `prompt`.
 #[must_use]
 pub fn draft_prompt(prompt: &str) -> String {
     format!(
-        "Draft a plan for this workflow prompt. Only read: change no file, branch or pull \
-         request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\nRead the repos to see what the \
+        "{DRAFT_HEAD} Only read: change no file, branch or pull request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\nRead the repos to see what the \
          prompt needs, then write its plan. Each run starts a new Box on its own branch, so name no \
          branch, Box or folder of this one.\n\n{}\n\nWrite the plan as .moor/artifacts/{PLAN_FILE} \
          and nothing else, then end your turn.",
@@ -90,5 +98,6 @@ mod tests {
         assert!(asked.contains("\"\"\"\nBump the deps.\n\"\"\""));
         assert!(asked.contains("\"done_when\"") && asked.contains("\"evidence\""));
         assert!(asked.contains(".moor/artifacts/plan.json"));
+        assert!(is_draft_prompt(&asked) && !is_draft_prompt("Bump the deps."));
     }
 }

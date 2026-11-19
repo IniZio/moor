@@ -11,7 +11,7 @@ use moor_core::progress::{PrLink, ProgressView};
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
 use moor_core::view::ArtifactView;
-use moor_core::workflow::split_plan_first;
+use moor_core::workflow::{is_draft_prompt, split_plan_first};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -194,6 +194,7 @@ fn summary(row: &Row) -> Option<Value> {
         "branch": row.branch,
         "base": row.base,
         "prompt": row.prompt.as_deref().map(|p| split_plan_first(p).unwrap_or(p)),
+        "plan_first": row.prompt.as_deref().and_then(split_plan_first).is_some(),
         "title": progress.title,
         "state": progress.state,
         "stale": progress.stale,
@@ -242,7 +243,9 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
     };
     match show(gate, session, all) {
         Ok(shown) => {
-            let rows: Vec<Value> = shown.boxes.iter().flatten().filter_map(summary).collect();
+            let own = |r: &&Row| !r.prompt.as_deref().is_some_and(is_draft_prompt);
+            let rows = shown.boxes.iter().flatten().filter(own);
+            let rows: Vec<Value> = rows.filter_map(summary).collect();
             json(stream, "200 OK", &json!({"boxes": rows}));
         }
         Err(Failure::Reply(reply)) => answered(stream, &reply),
