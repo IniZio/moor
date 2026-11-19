@@ -194,3 +194,8 @@ true
 true
 {{- end -}}
 {{- end -}}
+
+{{/* The Service, beside the release name, that serves the machine agents' link on its agents port. */}}
+{{- define "moor.agentsService" -}}
+{{- if .Values.runner.separate }}runner-agents{{ else if include "moor.gateSeparate" . }}agents{{ else }}gate{{ end }}
+{{- end }}

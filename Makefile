@@ -94,6 +94,10 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.stepReports=true --set gate.enabled=false 2>&1 | grep -q 'gate.stepReports needs gate.enabled'
 	helm template moor $(CHART) $(CHART_VALUES) | grep -q 'command: \[moor-machine-runner\]'
 	! helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false | grep -q 'moor-machine-runner'
+	! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -q 'gate-link'
+	test "$$(helm template moor $(CHART) $(CHART_VALUES) --set gate.linkIngress.enabled=true --set gate.linkIngress.host=link.example.internal | awk '/name: moor-gate-link/{p=1} p&&/path:/' | tr -d ' ' | tr '\n' ' ')" = '-path:/machines/pair -path:/machines/link '
+	helm template moor $(CHART) $(CHART_VALUES) --set gate.linkIngress.enabled=true 2>&1 | grep -q 'gate.linkIngress.host is required'
+	helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false --set gate.linkIngress.enabled=true --set gate.linkIngress.host=h 2>&1 | grep -q 'gate.linkIngress needs runner.enabled'
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx | grep -q 'path: /machines/pair'
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx --set gate.login=true | grep -q 'path: /pair$$'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \

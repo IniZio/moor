@@ -78,6 +78,82 @@ runner:
 `podDisruptionBudget.enabled` adds a budget for the gate and runner replicas.
 It needs RBAC on `policy/v1`, which some installs do not grant.
 
+## Keep machine links on your private network
+
+A paired machine holds one WebSocket to `/machines/link` for as long as it is
+up, and every terminal keystroke to it crosses that link. When your machines
+and the cluster share a network, send the link over that network instead of out
+through the public ingress and back. A tunnel or CDN in front of `host` adds
+its round trip to each crossing. This is optional and off by default.
+
+```yaml
+gate:
+  linkIngress:
+    enabled: true
+    className: internal
+    host: LINK_HOST
+    tls:
+      secretName: link-tls
+```
+
+`LINK_HOST` is a name your machines resolve to this ingress, such as through
+your private DNS. The chart renders a second Ingress, `<release>-gate-link`.
+It routes only `/machines/link` and `/machines/pair`, to the same Services as
+the main ingress. The sign-in, portal, MCP and egress paths are not on it. It
+needs `runner.enabled`. `className` empty uses the cluster's default class.
+`tls.secretName` empty serves `LINK_HOST` without TLS. The link carries
+terminal traffic, so give it TLS unless you trust every hop of the network.
+
+The agent checks a certificate against the public web roots only. It does not
+read the system store, so a certificate from a private CA fails the link. Use a
+public CA, such as an ACME DNS-01 certificate for a name in your own domain
+whose private DNS record points at the ingress. Or serve `http://` on a network
+you trust.
+
+### Hold the link open
+
+The link is a WebSocket that lasts hours, and the agent sends a keepalive every
+5 s. Check these on the ingress that serves `LINK_HOST`:
+
+- No auth middleware on this host. Agents prove themselves with their signed
+  key at the handshake, and they carry no cookie or token for a proxy to check.
+  A Traefik `forwardAuth` middleware, an nginx `auth-url` annotation or
+  `global-auth-url`, or an oauth2-proxy in front would answer every link with a
+  redirect.
+- Timeouts that outlast the session. For ingress-nginx, set
+  `nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"` and
+  `proxy-send-timeout: "3600"` in `gate.linkIngress.annotations`, and add
+  `nginx.ingress.kubernetes.io/enable-global-auth: "false"` when a global auth
+  is set. nginx upgrades WebSockets without further settings. Traefik sets
+  its timeouts on the entry point, not the Ingress. Raise `readTimeout`,
+  `writeTimeout` and `idleTimeout` under `transport.respondingTimeouts`. A
+  value of 0 turns one off. Keep any default middleware off that entry point.
+- No cap on a connection's age, such as a maximum lifetime on a load balancer
+  or a service mesh. The agent dials again within seconds when a cap cuts the
+  link, so a cap shows as a link that drops every N minutes.
+
+Test it by leaving a machine linked past your longest timeout and checking that
+its `linked` line in the agent's log has not changed.
+
+### Point a machine at the link host
+
+The agent dials the server in its `state.json`, and pairing and the link use
+that one address. The link host takes both, since the Ingress carries
+`/machines/pair` too. The browser step of a new pairing still opens on `host`.
+
+To move a machine that is already paired, without pairing again, edit
+`server` in `~/.local/state/moor-machine-agent/state.json` to
+`https://LINK_HOST` (`http://` when you left TLS off). Then restart the
+service with `systemctl --user restart moor-machine-agent`, or the launch
+agent on macOS. The machine id and key stay, and the controller sees the same
+machine. The service reads `state.json` and holds no server address of its own.
+
+Do not run `moor-machine-agent up --server https://HOST` on that machine
+afterwards. `up` compares the address with the one in `state.json` and
+pairs again when they differ. To pair a new machine on the link host, run
+`up --server https://LINK_HOST` and confirm the code as usual. The agent
+keeps one address for both, so the public portal needs no change.
+
 ## Step reports
 
 `gate.stepReports: true` lets the agent in a Box report its workflow steps. The
