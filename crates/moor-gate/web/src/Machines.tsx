@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
-import { type Account, Conflict, type Node, nodeSet, failure } from './api';
+import { type Account, Conflict, type Node, nodeSet, failure, toError } from './api';
 import { RemoveMachine } from './RemoveMachine';
 
 function state(n: Node): string {
@@ -60,7 +60,7 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 			setSaved(true);
 			onChanged();
 		} catch (err) {
-			setProblem({ text: failure(err as Error), stale: err instanceof Conflict });
+			setProblem({ text: failure(toError(err)), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};

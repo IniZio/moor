@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-import { type BoxDetail, boxRetry, failure, workflowRunNow } from './api';
+import { type BoxDetail, boxRetry, failure, workflowRunNow, toError } from './api';
 
 /** What the composer opens with when a person starts a failed Box again. */
 export type Draft = { repos: string[]; base: string; prompt: string };
@@ -50,7 +50,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 			await go();
 			onDone();
 		} catch (e) {
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 		} finally {
 			setBusy(false);
 		}

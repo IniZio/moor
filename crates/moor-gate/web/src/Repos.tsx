@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { Conflict, type RepoConfig, repoGet, repoList, repoSet, failure } from './api';
+import { Conflict, type RepoConfig, repoGet, repoList, repoSet, failure, toError } from './api';
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 
@@ -77,7 +77,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setConfig(read);
 			setDraft(read.text ?? '');
 		} catch (err) {
-			setLoadError(failure(err as Error));
+			setLoadError(failure(toError(err)));
 		}
 	};
 	useEffect(() => {
@@ -106,7 +106,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			setDraft(wrote.text ?? draft);
 			setSaved(true);
 		} catch (err) {
-			setProblem({ text: failure(err as Error), stale: err instanceof Conflict });
+			setProblem({ text: failure(toError(err)), stale: err instanceof Conflict });
 		}
 		setBusy(false);
 	};

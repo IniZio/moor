@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 
-import { type Node, failure } from './api';
+import { type Node, failure, toError } from './api';
 import { machineRemove } from './settingsApi';
 
 /** Remove, behind a confirm: the machine leaves the account; its agent keeps running until stopped there. */
@@ -16,7 +16,7 @@ export function RemoveMachine({ csrf, node, onRemoved }: { csrf: string; node: N
 			dialog.current?.close();
 			onRemoved();
 		} catch (err) {
-			setProblem(failure(err as Error));
+			setProblem(failure(toError(err)));
 		}
 		setBusy(false);
 	};

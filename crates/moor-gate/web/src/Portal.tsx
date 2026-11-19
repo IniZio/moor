@@ -17,6 +17,7 @@ import {
 	repoList,
 	runAnswer,
 	failure,
+	toError,
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
@@ -94,7 +95,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 					setNow(Date.now());
 				}
 			} catch (e) {
-				if (live) setError(failure(e as Error));
+				if (live) setError(failure(toError(e)));
 			}
 		};
 		setValue(null);
@@ -423,7 +424,7 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 			dropTyped();
 			onSent();
 		} catch (e) {
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -486,7 +487,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 			dropNote();
 			onSent();
 		} catch (e) {
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -650,7 +651,7 @@ export function NewBox({ account }: { account: Account }) {
 			dropPrompt();
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 			setBusy(false);
 		}
 	};

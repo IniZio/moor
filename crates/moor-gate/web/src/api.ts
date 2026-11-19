@@ -70,6 +70,11 @@ export function failure(e: Error): string {
 	return e instanceof SignedOut ? '' : e.message;
 }
 
+/** What a catch caught, as an Error: the one place a thrown value of unknown type is read. */
+export function toError(e: unknown): Error {
+	return e instanceof Error ? e : new Error('Something went wrong.');
+}
+
 /** Thrown when a save was made against a revision that is no longer the stored one. */
 export class Conflict extends Error {}
 

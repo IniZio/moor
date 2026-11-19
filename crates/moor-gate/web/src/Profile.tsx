@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import * as v from 'valibot';
 
-import { failure } from './api';
+import { failure, toError } from './api';
 import { type Installs, type ProfileCheck, profileCheck, profileGet, profileRemove, profileSet, SourceInput } from './settingsApi';
 
 const STEP_WORDS = {
@@ -120,7 +120,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 				onChanged();
 			}
 		} catch (err) {
-			setProblem(failure(err as Error));
+			setProblem(failure(toError(err)));
 		}
 		setBusy('');
 	};

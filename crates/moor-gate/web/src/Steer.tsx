@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { type BoxDetail, type Needs, type Progress, failure } from './api';
+import { type BoxDetail, type Needs, type Progress, failure, toError } from './api';
 import { useDraft } from './session';
 import { boxSteer, InterruptedOnly, type Over, type Sent } from './steerApi';
 import './steer.css';
@@ -72,7 +72,7 @@ export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: st
 			if (sent.delivery !== 'delivered') setWaiting((w) => [...w, { text: said, at: Date.now(), why: queuedWhy(sent) }]);
 		} catch (e) {
 			if (e instanceof InterruptedOnly) onSent();
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 		} finally {
 			setBusy(false);
 			onSent();

@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
-import { type Account, link, failure } from './api';
+import { type Account, link, failure, toError } from './api';
 
 const HINTS = {
 	claude: (
@@ -34,7 +34,7 @@ function Row({ account, name, linked, onLinked }: { account: Account; name: stri
 			setValue('');
 			onLinked();
 		} catch (err) {
-			setError(failure(err as Error));
+			setError(failure(toError(err)));
 		}
 		setBusy(false);
 	};

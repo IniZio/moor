@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { boxAnswer, type BoxDetail, type Needs, failure } from './api';
+import { boxAnswer, type BoxDetail, type Needs, failure, toError } from './api';
 import { planOf } from './draft';
 import { gist, readPlan, type PlanDoc } from './plan';
 import './plandraft.css';
@@ -37,7 +37,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 				const read = await planOf(detail);
 				if (live) setText(read);
 			} catch (e) {
-				if (live) setError(failure(e as Error));
+				if (live) setError(failure(toError(e)));
 			}
 		})();
 		return () => {
@@ -53,7 +53,7 @@ export function PlanCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; n
 			await boxAnswer(csrf, detail.box, needs.id, n, typed);
 			onSent();
 		} catch (e) {
-			setError(failure(e as Error));
+			setError(failure(toError(e)));
 			onSent();
 		} finally {
 			setBusy(false);

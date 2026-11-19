@@ -13,6 +13,7 @@ import {
 	workflowRemove,
 	workflowRunNow,
 	workflowSwitch,
+	toError,
 } from './api';
 import { textProblems } from './plan';
 import { GeneratePlan } from './PlanDraft';
@@ -192,7 +193,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf, plan.trim() || undefined);
 			location.hash = `#/workflows/${encodeURIComponent(saved.name)}`;
 		} catch (err) {
-			setProblem({ text: failure(err as Error), stale: flow != null && err instanceof Conflict });
+			setProblem({ text: failure(toError(err)), stale: flow != null && err instanceof Conflict });
 		}
 		setBusy(false);
 	};
@@ -284,7 +285,7 @@ export function WorkflowActions({ csrf, flow, onChanged }: { csrf: string; flow:
 		try {
 			await go();
 		} catch (e) {
-			setProblem(failure(e as Error));
+			setProblem(failure(toError(e)));
 		}
 		setBusy(false);
 	};
