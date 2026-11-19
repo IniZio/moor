@@ -397,3 +397,21 @@ async fn both_ends_close_within_three_keepalives_once_the_path_goes_silent_mid_t
         ]
     );
 }
+
+#[tokio::test]
+async fn a_dialed_link_sends_each_write_at_once() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let _ws = super::accept(stream).await.unwrap();
+        std::future::pending::<()>().await;
+    });
+    let ws = super::dial(&format!("http://127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    let tokio_tungstenite::MaybeTlsStream::Plain(tcp) = ws.get_ref() else {
+        panic!("a plain address dialed TLS");
+    };
+    assert!(tcp.nodelay().unwrap());
+}

@@ -32,7 +32,7 @@ pub(crate) const RESTARTING: &str = "the controller is restarting; retry shortly
 
 /// Serves one HTTP connection.
 pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, streams: &Streams) {
-    if stream.set_read_timeout(Some(HEAD_TIMEOUT)).is_err() {
+    if stream.set_nodelay(true).is_err() || stream.set_read_timeout(Some(HEAD_TIMEOUT)).is_err() {
         return;
     }
     let mut reader = BufReader::new(stream);
