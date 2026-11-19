@@ -82,14 +82,16 @@ fn postgres_folds_also_and_refuses_two_repos() {
         Ok(client.query(ROWS, &[])?.iter().map(|r| r.get(0)).collect())
     };
     let folded = apply(ONE_REPO_EACH);
-    let refused = apply(TWO_REPOS).map_err(|e| e.to_string());
+    let refused = apply(TWO_REPOS).map_err(|e| format!("{e:?}"));
+    // The refused step leaves its transaction aborted, so end it before cleaning up.
+    let _ = client.batch_execute("ROLLBACK");
     client
         .batch_execute(&format!("DROP SCHEMA IF EXISTS {name} CASCADE"))
         .unwrap();
     assert_eq!(folded.unwrap(), FOLDED);
     let why = refused.unwrap_err();
     assert!(
-        why.contains("a_stored_workflow_has_more_than_one_repo") || why.contains("check"),
+        why.contains("a_stored_workflow_has_more_than_one_repo"),
         "{why}"
     );
 }
