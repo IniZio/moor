@@ -75,10 +75,14 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
             Some(session) => me(&mut stream, &session),
             None => redirect(&mut stream, "/auth/login?return=/auth/me", ""),
         },
-        ("POST", "/auth/renew") => renew(&mut stream, login, session, req.csrf, now),
+        ("POST", "/auth/renew") => refresh(&mut stream, (gate, login), &req, true, now),
+        ("POST", "/auth/check") => refresh(&mut stream, (gate, login), &req, false, now),
         ("POST", "/auth/logout") => {
+            let stale = login
+                .opened(req.cookies.iter().copied(), now)
+                .map(|(s, _)| s);
             let form = read_form(&mut stream, req.leftover, req.length);
-            logout(&mut stream, session, form.as_ref());
+            logout(&mut stream, stale, form.as_ref());
         }
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
     }
@@ -116,22 +120,34 @@ fn callback(
     }
 }
 
-/// Seals the session again so it lasts from now, when the request carries its CSRF token in
-/// `X-Moor-Csrf`. The page posts this while the person is active.
-fn renew(
+/// Asks the issuer about the session, then seals it again: to last from now for `/auth/renew`,
+/// which the page posts while the person is active, with its CSRF token in `X-Moor-Csrf`; or to
+/// end when it would have for `/auth/check`, which the page posts when a request found the check
+/// due. A check needs no token: the cookie is `SameSite=Lax`, so no other site's post carries it.
+/// A refusal never clears the cookie, since another tab may already hold a newer one.
+fn refresh(
     stream: &mut TcpStream,
-    login: &Login,
-    session: Option<Session>,
-    csrf: Option<&str>,
+    (gate, login): (&Gate, &Login),
+    req: &Request<'_>,
+    active: bool,
     now: SystemTime,
 ) {
-    let Some(session) = session else {
+    let Some((mut session, until)) = login.opened(req.cookies.iter().copied(), now) else {
         return signed_out(stream);
     };
-    if !csrf.is_some_and(|c| check_csrf(&session, c)) {
+    if active && !req.csrf.is_some_and(|c| check_csrf(&session, c)) {
         return json(stream, "403 Forbidden", &json!({"error": "bad csrf token"}));
     }
-    match login.renew(&session, now) {
+    if let Err(why) = login.recheck(&gate.verifier, &mut session, now) {
+        log(&format!("a session ended at its check: {why}"));
+        return signed_out(stream);
+    }
+    let issued = if active {
+        login.renew(&session, now)
+    } else {
+        login.keep(&session, until, now)
+    };
+    match issued {
         Ok(issued) => {
             let body = json!({"expires_in": issued.ttl().as_secs()}).to_string();
             let _ = write!(
