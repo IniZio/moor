@@ -37,9 +37,9 @@ const BODY_MAX: usize = 8192;
 /// The repo config routes: this alone lists the repos, this and `owner/name` reads and writes one.
 const REPOS: &str = "/account/api/repos";
 
-/// Headers on the app page: its own script and styles, the terminal's WebAssembly, requests to
-/// itself, nothing framing it and nothing cached.
-const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
+/// Headers on the app page: its own script and styles, requests to itself, nothing framing it
+/// and nothing cached.
+const APP_HEADERS: &str = "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n";
 
 /// Whether `path` belongs to the account page.
 pub(crate) fn serves(path: &str) -> bool {
@@ -216,7 +216,6 @@ fn file(stream: &mut TcpStream, name: &str, headers: &str) {
         Some("js") => "text/javascript",
         Some("css") => "text/css",
         Some("woff2") => "font/woff2",
-        Some("wasm") => "application/wasm",
         _ => "text/html; charset=utf-8",
     };
     let cache = if headers.is_empty() {

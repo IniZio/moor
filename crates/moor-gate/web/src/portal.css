@@ -158,7 +158,8 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-term-state { font-size: var(--app-text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; }
 .t-term-live { color: var(--state-working); }
 .t-term-ended { color: var(--moor-color-text-muted); }
-.t-term-screen { height: min(70vh, 40rem); padding: 0.5rem; background: var(--moor-peat-950); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); overflow: hidden; }
+.t-term-screen { height: min(70vh, 40rem); background: var(--moor-peat-950); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); overflow: hidden; }
+.t-term-screen .xterm { padding: 0.5rem; }
 .t-body { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: var(--moor-space-8); }
 @media (max-width: 48rem) { .t-body { grid-template-columns: 1fr; } }
 .t-rail h3 { font: 650 0.75rem/1 var(--moor-font-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--moor-color-text-muted); margin: 0.4rem 0 0.6rem; }
