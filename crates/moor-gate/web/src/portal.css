@@ -153,6 +153,12 @@ details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-tab[aria-selected='true'] { color: var(--moor-color-text); border-bottom-color: var(--moor-color-accent); }
 a.t-tab:hover { color: var(--moor-color-text); }
 .t-disabled { opacity: 0.45; cursor: default; }
+.t-term { display: grid; gap: var(--moor-space-2); }
+.t-term-bar { display: flex; align-items: center; gap: var(--moor-space-3); min-height: 2rem; }
+.t-term-state { font-size: var(--app-text-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; }
+.t-term-live { color: var(--state-working); }
+.t-term-ended { color: var(--moor-color-text-muted); }
+.t-term-screen { height: min(70vh, 40rem); padding: 0.5rem; background: var(--moor-peat-950); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); overflow: hidden; }
 .t-body { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: var(--moor-space-8); }
 @media (max-width: 48rem) { .t-body { grid-template-columns: 1fr; } }
 .t-rail h3 { font: 650 0.75rem/1 var(--moor-font-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--moor-color-text-muted); margin: 0.4rem 0 0.6rem; }

@@ -11,6 +11,7 @@ pub(crate) mod routes;
 mod seal;
 pub(crate) mod secrets;
 pub(crate) mod setup;
+pub(crate) mod terminal;
 #[cfg(test)]
 mod tests;
 mod workflows;

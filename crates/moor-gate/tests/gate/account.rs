@@ -62,7 +62,10 @@ fn the_root_sends_a_signed_out_browser_to_sign_in_and_serves_the_app_to_a_signed
     assert_eq!(page.status, 200, "{}", page.body);
     assert!(page.body.contains("/account/assets/app-"), "{}", page.body);
     let policy = page.header("content-security-policy").unwrap();
-    assert!(policy.contains("script-src 'self'"), "{policy}");
+    assert!(
+        policy.contains("script-src 'self' 'wasm-unsafe-eval';"),
+        "{policy}"
+    );
     assert!(policy.contains("connect-src 'self'"), "{policy}");
     assert!(!policy.contains("unsafe-inline'; form"), "{policy}");
     assert_eq!(page.header("cache-control"), Some("no-store"));

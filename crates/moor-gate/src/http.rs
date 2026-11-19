@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::{account, pair, routes, setup};
+use crate::login::{account, pair, routes, setup, terminal};
 use crate::streams::Streams;
 use crate::tools::client_down;
 use crate::{log, relay, Gate, Login};
@@ -74,6 +74,9 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
         }
         (Some("GET"), p) if p.starts_with(crate::artifacts_http::PREFIX) && gate.mcp.is_some() => {
             crate::artifacts_http::serve(stream, p, &req, gate);
+        }
+        (Some("GET"), terminal::PATH) => {
+            terminal::serve(stream, leftover, &req, (gate, login), streams);
         }
         (_, p) if behind_sign_in(p) && login.is_some() => {
             browser(stream, leftover, &req, gate, login);
@@ -250,7 +253,7 @@ pub(crate) fn header<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Opti
 }
 
 /// Every value of header `name`, matched without case.
-fn headers_named<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Vec<&'a str> {
+pub(crate) fn headers_named<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Vec<&'a str> {
     req.headers
         .iter()
         .filter(|h| h.name.eq_ignore_ascii_case(name))

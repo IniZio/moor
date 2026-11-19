@@ -139,7 +139,8 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 	const [theme, setThemeState] = useState<Theme>(currentTheme());
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {
-			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			const inTerminal = e.target instanceof Element && e.target.closest('.t-term-screen');
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !inTerminal) {
 				e.preventDefault();
 				setFinding(true);
 			}
