@@ -75,7 +75,7 @@ database back.
 
 ## Build and test
 
-Building moor-gate also needs [bun](https://bun.sh) at the version `BUN_VERSION` pins in the [Makefile](../Makefile), because its [build script](../crates/moor-gate/build.rs) builds the account page the gate embeds. The page's `dist/` is not in git. The script reruns only when the page's sources change, so a build with the page unchanged adds no time. Without bun the build stops and says so. `MOOR_WEB_PREBUILT=1` skips bun and uses a `dist/` you put in place, as the release image does.
+Building moor-gate also needs [bun](https://bun.sh) at the version `BUN_VERSION` pins in the [Makefile](../Makefile), because its [build script](../crates/moor-gate/build.rs) builds the portal the gate embeds. The page's `dist/` is not in git. The script reruns only when the page's sources change, so a build with the page unchanged adds no time. Without bun the build stops and says so. `MOOR_WEB_PREBUILT=1` skips bun and uses a `dist/` you put in place, as the release image does.
 
 `make setup` installs the pinned tools as prebuilt binaries with `cargo-binstall`, and builds one from source only when its release has no binary. `make setup` also runs [tools/install-tools.sh](../tools/install-tools.sh), which installs the pinned `helm` and `herdr-core` into `~/.cargo/bin`, checking each download's SHA-256. CI calls the same script. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
 
@@ -87,7 +87,7 @@ In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](
 | `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering, test-children, and migration-number checks, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make prepush` | `make audit`, then `make lint`. These are the two gates that CI runs before any test. |
 | `make hooks` | Opts in to a pre-push hook. It sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs `make prepush`. A push that deletes a branch skips it. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. Run `git config --unset core.hooksPath` to opt out. |
-| `make web` | Type-checks and builds the account page in [crates/moor-gate/web](../crates/moor-gate/web) with bun, the same steps the gate's build script runs. CI runs it as its own job. |
+| `make web` | Type-checks and builds the portal in [crates/moor-gate/web](../crates/moor-gate/web) with bun, the same steps the gate's build script runs. CI runs it as its own job. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
 | `make test` | The same as `make unit`. |

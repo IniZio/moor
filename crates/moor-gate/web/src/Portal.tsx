@@ -16,7 +16,8 @@ import {
 	type Progress,
 	repoList,
 	runAnswer,
-	SignedOut,
+	failure,
+	toError,
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
@@ -94,7 +95,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 					setNow(Date.now());
 				}
 			} catch (e) {
-				if (live) setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+				if (live) setError(failure(toError(e)));
 			}
 		};
 		setValue(null);
@@ -295,6 +296,7 @@ function Line({ e }: { e: Entry }) {
 					<span class="t-when">{clock(e.at)}</span>
 					<span class="t-what">{e.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : e.text}</span>
 					{e.step && <span class="t-step">Step: {e.step}</span>}
+					{e.kind === 'typed' && <span class="t-step">typed in the terminal</span>}
 				</div>
 			);
 		case 'asked':
@@ -422,7 +424,7 @@ function AskCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf
 			dropTyped();
 			onSent();
 		} catch (e) {
-			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setError(failure(toError(e)));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -485,7 +487,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 			dropNote();
 			onSent();
 		} catch (e) {
-			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setError(failure(toError(e)));
 			onSent();
 		} finally {
 			setBusy(false);
@@ -649,7 +651,7 @@ export function NewBox({ account }: { account: Account }) {
 			dropPrompt();
 			location.hash = `#/box/${encodeURIComponent(name)}`;
 		} catch (e) {
-			setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : String((e as Error).message));
+			setError(failure(toError(e)));
 			setBusy(false);
 		}
 	};

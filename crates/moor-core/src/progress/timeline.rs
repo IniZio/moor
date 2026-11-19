@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::changes::{RepoReceipt, Tally};
-use crate::progress::transcript::{Tool, Transcript};
+use crate::progress::transcript::{Sent, Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
 use crate::workflow::{split_plan_first, split_start_prompt};
@@ -289,12 +289,13 @@ fn build<'e>(
 ) -> Vec<TimelineEntry> {
     let mut out: Vec<TimelineEntry> = Vec::new();
     let mut open_turn: Option<usize> = None;
-    let mut events = events.peekable();
-    let first = events.peek().map(|(ms, _)| *ms);
+    let events: Vec<(i64, &EventView)> = events.collect();
+    let first = events.first().map(|(ms, _)| *ms);
+    let sent = Sent::of(events.iter().map(|(_, e)| *e));
     let mut lines = transcript
         .lines
         .iter()
-        .filter(|l| first.is_none_or(|f| l.ms >= f))
+        .filter(|l| first.is_none_or(|f| l.ms >= f) && !sent.has_sent(l))
         .peekable();
     for (ms, e) in events {
         if transcript.covers(e, ms) {

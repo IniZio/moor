@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { boxChanges, type Changes, type Entry, type FileChange, type RepoChanges, SignedOut, type Tally } from './api';
+import { boxChanges, type Changes, type Entry, type FileChange, type RepoChanges, failure, type Tally } from './api';
 
 /** A file diff longer than this many lines starts folded. */
 const FOLD_LINES = 400;
@@ -187,7 +187,7 @@ export function ChangesTab({ box, seen }: { box: string; seen: string }) {
 		let live = true;
 		boxChanges(box).then(
 			(c) => live && (setChanges(c), setError('')),
-			(e: Error) => live && setError(e instanceof SignedOut ? 'Your session ended. Reload to sign in again.' : e.message),
+			(e: Error) => live && setError(failure(e)),
 		);
 		return () => {
 			live = false;

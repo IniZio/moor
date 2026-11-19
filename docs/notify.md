@@ -4,6 +4,13 @@ Find out when a Box needs you without asking over and over. Pick the way that
 fits where you work. [Events](events.md) lists the event kinds and the exact
 shapes each way delivers.
 
+## In the portal
+
+The portal needs no setup. A task that needs you moves to the top of Home under
+**Needs you**. The **Inbox** keeps everything that needed you, newest first,
+and survives a reload. An unread item lights its count. See
+[For PMs](pm.md#answer-what-needs-you).
+
 ## In Claude Code
 
 The moor plugin for Claude Code watches each Box it starts and each Box you

@@ -9,7 +9,7 @@ its issuer and client.
 Create one client for moor at your provider. Note its issuer URL and client
 id. Then:
 
-1. Add the redirect URI `https://HOST/auth/callback`. The account page, the
+1. Add the redirect URI `https://HOST/auth/callback`. The portal, the
    webhook setup page, and machine pairing sign in through it.
 2. Add the redirect URI `http://localhost:53682/callback`. `moor login` signs in
    through it.
@@ -42,7 +42,7 @@ moor-gate \
 ```
 
 - Without `--mcp-resource-url`, `/mcp` is off.
-- Without `--public-url`, browser sign-in is off. The account page, webhook
+- Without `--public-url`, browser sign-in is off. The portal, webhook
   setup, and machine pairing then answer 404.
 - If the gate cannot reach the issuer's discovery URL, pass `--jwks-url`.
 - With more than one gate replica, give every replica the same

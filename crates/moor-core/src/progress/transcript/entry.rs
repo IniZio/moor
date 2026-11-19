@@ -1,6 +1,10 @@
 //! A transcript's lines in the timeline, among the Box's own events.
 
-use super::{Line, What};
+use std::collections::HashSet;
+
+use serde_json::Value;
+
+use super::{scrub, Line, What};
 use crate::progress::timeline::{Class, TimelineEntry};
 use crate::view::EventView;
 
@@ -31,6 +35,7 @@ impl Line {
     pub(crate) fn entry(&self) -> TimelineEntry {
         let (kind, class, text, tool) = match &self.what {
             What::Said { text } => ("said", Class::Message, text.clone(), None),
+            What::Typed { text } => ("typed", Class::You, text.clone(), None),
             What::Tool(t) => (
                 "tool",
                 if t.failed { Class::Error } else { Class::Step },
@@ -51,4 +56,37 @@ impl Line {
             tool,
         }
     }
+}
+
+/// The words moor sent the agent, as the Box's `steered` events record them.
+pub(crate) struct Sent(HashSet<String>);
+
+impl Sent {
+    /// The words of the steered events among `events`, and of a menu choice's typed text.
+    pub(crate) fn of<'e>(events: impl Iterator<Item = &'e EventView>) -> Self {
+        let mut words = HashSet::new();
+        for e in events.filter(|e| e.kind == "steered") {
+            let Some(message) = e.payload.get("message").and_then(Value::as_str) else {
+                continue;
+            };
+            words.insert(norm(message));
+            if let Some((n, typed)) = message.split_once(": ") {
+                if n.parse::<u8>().is_ok() {
+                    words.insert(norm(typed));
+                }
+            }
+        }
+        Self(words)
+    }
+
+    /// Whether `line` is typed words moor sent itself, so a steer already shows them.
+    pub(crate) fn has_sent(&self, line: &Line) -> bool {
+        matches!(&line.what, What::Typed { text } if self.0.contains(&norm(text)))
+    }
+}
+
+/// `text` as lines keep it, with each run of white space as one space, so a paste and a steer
+/// compare equal.
+fn norm(text: &str) -> String {
+    scrub(text).split_whitespace().collect::<Vec<_>>().join(" ")
 }
