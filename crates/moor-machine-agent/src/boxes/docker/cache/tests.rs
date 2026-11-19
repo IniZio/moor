@@ -9,7 +9,8 @@
 
 use moor_client::link::lease::{Cache, CacheVolume};
 
-use super::{args, marker, mounts, standing, Private};
+use super::marker::{marker, standing, Private};
+use super::{args, mounts};
 use crate::boxes::Slug;
 
 const SLUG: &str = "moor-3b3b3b3b-9001";

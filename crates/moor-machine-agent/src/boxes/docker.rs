@@ -13,10 +13,10 @@ use moor_client::link::ops;
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
-use super::provider::{BoxProvider, Env, Notes, Observed, PlaceState, ProvideError, Spec};
+use super::provider::{BoxProvider, Env, Notes, Observed, ProvideError, Spec};
 use super::Slug;
-use args::{agent_run, kvm_gid, work_memory_mib, work_run, PLACE_LABEL, SLUG_LABEL, WORKDIR};
-use cli::{parse_ps, Cli, State};
+use args::{agent_run, kvm_gid, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
+use cli::{Cli, State};
 use names::Names;
 
 mod args;
@@ -27,6 +27,7 @@ mod egress;
 mod live;
 mod names;
 mod net;
+mod observe;
 #[cfg(test)]
 mod tests;
 
@@ -375,45 +376,7 @@ impl BoxProvider for Docker {
     }
 
     async fn observe(&self) -> Result<Vec<Observed>, ProvideError> {
-        let format = format!(
-            "{{{{.Label \"{SLUG_LABEL}\"}}}} {{{{.Label \"{PLACE_LABEL}\"}}}} {{{{.State}}}}"
-        );
-        let listed = Cli::ok([
-            "ps",
-            "-a",
-            "--filter",
-            &format!("label={SLUG_LABEL}"),
-            "--format",
-            &format,
-        ])
-        .await?;
-        let mut boxes = Vec::new();
-        let listed = parse_ps(&listed);
-        self.egress
-            .keep_only(&listed.keys().cloned().collect::<Vec<_>>());
-        let ended = cli::ended(&listed).await;
-        let ended_as = |name: &str, place| match ended.get(name) {
-            Some(e) if place == PlaceState::Down => PlaceState::Exited(*e),
-            _ => place,
-        };
-        for (slug, (agent, work)) in listed {
-            let names = Names::of(&slug);
-            let (agent, work) = (ended_as(&names.agent, agent), ended_as(&names.work, work));
-            let oom_kills = if agent == PlaceState::Up {
-                self.egress.read_when_due(&slug, &self.settings.agent_image);
-                self.oom_kills(&names).await
-            } else {
-                0
-            };
-            boxes.push(Observed {
-                slug,
-                agent,
-                work,
-                oom_kills,
-                mem_mib: None,
-            });
-        }
-        Ok(boxes)
+        self.observe_all().await
     }
 
     fn carrier(&self, slug: &Slug, place: Place, tty: bool) -> Command {

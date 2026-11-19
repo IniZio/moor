@@ -89,11 +89,6 @@ impl<P: BoxProvider> Boxes<P> {
         }
     }
 
-    /// Whether the provider keeps cache volumes across Boxes.
-    pub(crate) fn keeps_caches(&self) -> bool {
-        self.provider.keeps_caches()
-    }
-
     /// Serves the one request on `stream`: reads its line, answers, and for an exec or a forward
     /// carries the stream. Anything that is not a Box request is refused.
     pub(crate) async fn serve<S: Wire>(self: &Arc<Self>, mut stream: S) {

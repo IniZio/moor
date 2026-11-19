@@ -33,7 +33,7 @@ impl<P: BoxProvider> Serving for Boxes<P> {
     }
 
     fn keeps_caches(&self) -> bool {
-        Self::keeps_caches(self)
+        self.provider.keeps_caches()
     }
 
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()> {

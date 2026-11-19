@@ -186,18 +186,6 @@ impl Store {
         Ok(mib(stored.flatten()))
     }
 
-    /// The stored link of machine `machine_id`, whoever it belongs to.
-    pub(crate) fn machine_link(&self, machine_id: i64) -> Result<Option<MachineLink>, StoreError> {
-        let conn = self.reader()?;
-        let rows = conn.rows(
-            link_select().and_where(
-                Expr::col((MachineLinks::Table, MachineLinks::MachineId)).eq(machine_id),
-            ),
-            link_row,
-        )?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?.into_iter().next())
-    }
-
     /// The stored link of each of `user`'s machines that has one, by machine name.
     pub(crate) fn user_machine_links(
         &self,

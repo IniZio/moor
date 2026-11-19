@@ -218,31 +218,6 @@ fn key_of(canonical: &str) -> &str {
     canonical.strip_prefix("moor-cache-").unwrap_or(canonical)
 }
 
-/// The marker volume that says the copy into `private` finished.
-fn marker(private: &str) -> String {
-    format!("{private}.ok")
-}
-
-/// What to do with a private volume, by whether it and its marker exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Private {
-    /// A finished copy; use it as it is.
-    Trust,
-    /// None yet; make it.
-    Make,
-    /// A copy a crash cut short; remove it and make it again.
-    Redo,
-}
-
-/// How a private volume stands, from whether it and its marker exist.
-const fn standing(volume: bool, marked: bool) -> Private {
-    match (volume, marked) {
-        (true, true) => Private::Trust,
-        (false, _) => Private::Make,
-        (true, false) => Private::Redo,
-    }
-}
-
 /// Whether `private` is a finished copy; one a crash cut short is removed so it is made again.
 async fn settle(private: &str, mark: &str) -> Result<bool, ProvideError> {
     let there = Cli::passes(["volume", "inspect", private]).await;
@@ -400,6 +375,9 @@ pub(super) async fn drop_private(slug: &Slug) -> Result<(), ProvideError> {
     }
     Ok(())
 }
+
+mod marker;
+use marker::{marker, standing, Private};
 
 #[cfg(test)]
 mod tests;

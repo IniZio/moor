@@ -114,7 +114,7 @@ fn the_route_device_is_read_from_ip_route_get() {
 
 #[test]
 fn docker_ps_lines_become_each_boxes_two_places() {
-    use super::parse_ps;
+    use super::cli::parse_ps;
     use crate::boxes::provider::PlaceState::{Down, Up};
     let listed = "moor-3b3b3b3b-9001 agent running\n\
                   moor-3b3b3b3b-9001 work exited\n\
