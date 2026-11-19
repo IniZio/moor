@@ -81,7 +81,7 @@ fn a_ready_box_listed_stopped_sleeps_and_keeps_its_machine() {
 fn a_ready_box_listed_down_sleeps_saying_why_its_holder_gave() {
     let rows = [fact(1, HandsState::Ready, Some("a"))];
     let mut down = listed("a", true);
-    down.down = Some("the work place exited with code 143, not for memory".to_owned());
+    down.down = Some("the Box's container stopped (exit 143)".to_owned());
     let out = stopped(&rows, &[down]);
     let reason = match out.first().and_then(|d| d.lifecycle_input.as_ref()) {
         Some(BoxLifecycleInput::Sleep { reason, .. }) => reason.clone(),
@@ -89,7 +89,7 @@ fn a_ready_box_listed_down_sleeps_saying_why_its_holder_gave() {
     };
     assert_eq!(
         reason.as_deref(),
-        Some("it stopped on its machine: the work place exited with code 143, not for memory")
+        Some("it stopped on its machine: the Box's container stopped (exit 143)")
     );
 }
 

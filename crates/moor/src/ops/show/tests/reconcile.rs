@@ -55,7 +55,7 @@ fn reconcile_only_sleeps_a_quiet_box_its_host_stopped() {
 }
 
 /// Why the fake host says a Box's places died.
-const DIED: &str = "the work place exited with code 143, not for memory";
+const DIED: &str = "the Box's container stopped (exit 143)";
 
 #[test]
 fn reconcile_leaves_a_working_box_whose_places_died_asleep_and_stuck_saying_why() {

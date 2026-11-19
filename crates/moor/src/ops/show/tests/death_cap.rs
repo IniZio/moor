@@ -8,7 +8,7 @@ use crate::ops::common::reconcile;
 use crate::ops::common::wake::wake_box_if_asleep;
 use moor_core::name::NodeName;
 
-const DIED: &str = "the work place exited with code 137, not for memory";
+const DIED: &str = "the Box's container stopped (exit 137)";
 
 /// A working Box placed on the test node, with its machine up.
 fn placed(cx: &Cx, driver: &FakeDriver) -> BoxId {

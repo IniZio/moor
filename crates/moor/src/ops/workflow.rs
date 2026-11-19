@@ -330,7 +330,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             (Some(row), Some(w)) => {
                 match box_facts(store, &row).map(|f| run_verdict(Some(&f), now)) {
                     Ok(RunVerdict::Broken) => RunState::Done(RunEnd::Refused {
-                        detail: broken_detail(&row),
+                        detail: broken_detail(store, &row),
                     }),
                     _ => RunState::Running {
                         box_id: row.id,

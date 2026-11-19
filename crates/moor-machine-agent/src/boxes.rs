@@ -344,10 +344,11 @@ fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
     };
     let down = match (&state, seen) {
         (ReportState::Mending, Some(o)) => {
-            let said: Vec<String> = [("agent", o.agent), ("work", o.work)]
+            let mut said: Vec<String> = [o.agent, o.work]
                 .into_iter()
-                .filter_map(|(name, place)| place_down(name, place))
+                .filter_map(place_down)
                 .collect();
+            said.dedup();
             Some(said.join("; "))
         }
         _ => None,
@@ -363,16 +364,16 @@ fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
     }
 }
 
-/// How the place called `name` is down, worded for people; none when it runs.
-fn place_down(name: &str, place: PlaceState) -> Option<String> {
+/// How a place is down, worded for people; none when it runs.
+fn place_down(place: PlaceState) -> Option<String> {
     Some(match place {
         PlaceState::Up => return None,
-        PlaceState::Down => format!("the {name} place is not running"),
+        PlaceState::Down => "the Box's container is not running".to_owned(),
         PlaceState::Exited(Ended { code, oom: true }) => {
-            format!("the {name} place was killed for memory (exit {code})")
+            format!("the Box's container ran out of memory (exit {code})")
         }
         PlaceState::Exited(Ended { code, oom: false }) => {
-            format!("the {name} place exited with code {code}, not for memory")
+            format!("the Box's container stopped (exit {code})")
         }
     })
 }

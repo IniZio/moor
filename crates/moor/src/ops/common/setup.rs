@@ -18,6 +18,7 @@ use crate::ops::common::box_exec::{BoxProxy, Site};
 
 use attach::follow;
 pub(crate) use attach::run_id;
+use failed::container;
 pub(crate) use link::{await_reachable, out_of_reach, Released, LINK_WAIT};
 use link::{link_lost, Left};
 
@@ -164,7 +165,7 @@ pub(crate) fn run_setup(
             let line = running
                 .checked_sub(1)
                 .and_then(|i| cfg.setup.get(usize::try_from(i).ok()?));
-            return Ok(link_lost(cx, &reason, ms, line.map(String::as_str)));
+            return Ok(link_lost(cx, handle, &reason, ms, line.map(String::as_str)));
         }
     };
     if let Some(stop) = read_stop(&output) {
@@ -185,14 +186,8 @@ pub(crate) fn run_setup(
         Err(Failure::Prepare(e)) => (e, None),
         Err(Failure::Exec(e)) => (format!("exec failed: {e}"), None),
     };
-    let line = if cx.env().cancel().is_cancelled() {
-        FORCED_CLOSE.to_owned()
-    } else {
-        cfg.setup
-            .get(failed_step(&log, running, cfg.setup.len()))
-            .cloned()
-            .unwrap_or_default()
-    };
+    let (reason, exit) = container(cx, handle).map_or((reason, exit), |why| (why, None));
+    let line = failed::line(cx, cfg, (&log, running));
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
         message: failure_message(&line, &reason, workdir, &log),
@@ -379,6 +374,7 @@ fn failed_step(log: &str, running: u32, steps: usize) -> usize {
 }
 
 mod attach;
+mod failed;
 mod lines;
 mod link;
 

@@ -3,6 +3,7 @@
 use moor_core::domain::event::Event;
 use moor_core::domain::hands::HandsInc;
 use moor_core::view::progress::{failure, Happened};
+use moor_core::BoxHandle;
 use moor_core::BoxId;
 
 use super::setup::{exit, start_with};
@@ -168,4 +169,40 @@ fn a_setup_cut_by_a_restart_says_so() {
     fail_interrupted(&w.cx, store).unwrap();
     let (_, why) = failed_with(&happened(&w, id));
     assert!(why.contains("controller restart"), "{why}");
+}
+
+const DIED: &str = "the Box's container stopped (exit 137)";
+
+fn cut_by_a_dying_container(driver: FakeDriver, died: bool) -> String {
+    let w = super::world(driver.listed_by_handle());
+    super::script_repo(&w, Some("setup: [a]\n"));
+    let dying = w.driver.clone();
+    w.driver.on_copy_out(move || {
+        if died {
+            dying.die_behind(&BoxHandle::new("box-1"), DIED);
+        }
+    });
+    let v = crate::ops::start::run(&w.cx, &super::setup::start_req()).unwrap();
+    failed_with(&happened(&w, BoxId::new(v.boxed.id))).1
+}
+
+fn ssh_drops() -> FakeDriver {
+    FakeDriver::new()
+        .exec_results([Ok(exit(0)), Ok(exit(255))])
+        .copy_text("moor setup: $ a\nConnection to 127.0.0.1 closed by remote host.\n")
+}
+
+#[test]
+fn a_setup_cut_by_a_stopped_container_says_the_container_stopped() {
+    let why = cut_by_a_dying_container(ssh_drops(), true);
+    assert!(why.starts_with(DIED), "{why}");
+    assert!(!why.contains("exit 255"), "{why}");
+    assert!(why.contains("closed by remote host"), "{why}");
+}
+
+#[test]
+fn a_dropped_connection_to_a_running_container_keeps_its_exit_code() {
+    let why = cut_by_a_dying_container(ssh_drops(), false);
+    assert!(why.starts_with("exit 255"), "{why}");
+    assert!(!why.contains("container stopped"), "{why}");
 }
