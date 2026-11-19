@@ -60,11 +60,7 @@ fn the_root_sends_a_signed_out_browser_to_sign_in_and_serves_the_app_to_a_signed
     let cookie = sign_in(&w.addr);
     let page = get(&w.addr, "/", Some(&cookie));
     assert_eq!(page.status, 200, "{}", page.body);
-    assert!(
-        page.body.contains("/account/assets/app.js"),
-        "{}",
-        page.body
-    );
+    assert!(page.body.contains("/account/assets/app-"), "{}", page.body);
     let policy = page.header("content-security-policy").unwrap();
     assert!(policy.contains("script-src 'self'"), "{policy}");
     assert!(policy.contains("connect-src 'self'"), "{policy}");
@@ -76,10 +72,19 @@ fn the_root_sends_a_signed_out_browser_to_sign_in_and_serves_the_app_to_a_signed
 #[test]
 fn the_built_assets_are_served_without_a_session() {
     let w = world(true, &[]);
+    let cookie = sign_in(&w.addr);
+    let page = get(&w.addr, "/", Some(&cookie)).body;
+    let named = |ext: &str| {
+        page.split('"')
+            .find(|s| s.starts_with("/account/assets/app-") && s.ends_with(ext))
+            .map(str::to_owned)
+            .expect(ext)
+    };
     for (path, kind) in [
-        ("/account/assets/app.js", "text/javascript"),
-        ("/account/assets/app.css", "text/css"),
+        (named(".js"), "text/javascript"),
+        (named(".css"), "text/css"),
     ] {
+        let path = path.as_str();
         let asset = get(&w.addr, path, None);
         assert_eq!(asset.status, 200, "{path}");
         assert!(asset.header("content-type").unwrap().starts_with(kind));
