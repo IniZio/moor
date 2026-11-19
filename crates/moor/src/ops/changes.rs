@@ -53,3 +53,6 @@ pub(crate) fn run(cx: &Cx, req: &ChangesReq) -> Result<ChangesView, CommandError
             .collect(),
     })
 }
+
+#[cfg(test)]
+mod tests;
