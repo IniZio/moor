@@ -2,8 +2,8 @@
 
 This page explains where a new Box runs, when it waits, and why moor sometimes
 puts a Box to sleep that nobody asked to sleep. The short answer is that moor
-admits Boxes by free memory, not by size, and makes room by suspending idle
-Boxes to disk.
+admits Boxes by free memory, not by size, and makes room by putting idle
+Boxes to sleep.
 
 ## Which node a start gets
 
@@ -18,7 +18,7 @@ labels.
 
 ## Why memory, not size
 
-A Box's size sets its VM's memory ceiling, but what the agent actually uses is
+A Box's size sets its containers' memory ceiling, but what the agent actually uses is
 not predictable. A Box with a 23 GiB ceiling may use 6 GiB. Counting ceilings
 would leave most of a host idle, so moor counts what the host has free.
 
@@ -44,11 +44,11 @@ other wakes, then new starts, each oldest first. A small Box never passes a big
 one ahead of it, so the head cannot starve.
 
 To make room, the node suspends its longest-idle Box, at most one every 30
-seconds. A suspended Box keeps its whole state on disk and wakes later as if
-nothing happened. A Box that is working, waiting on a question, or still
+seconds. A suspended Box stops its containers and keeps its files. When it wakes,
+the agent resumes its Claude session and the Box's processes start again. A Box that is working, waiting on a question, or still
 starting is never suspended to admit another.
 
-A woken Box needs what its VM held when it slept, which the provider reports.
+A woken Box needs what it held when it slept, which the provider reports.
 It passes the same checks as a new Box before it resumes.
 
 ## Pressure relief
@@ -67,8 +67,8 @@ and that open network connections dropped. Every Box still finishes. Pressure
 only decides when it runs.
 
 This is a trade we prefer to the alternative. Killing a Box loses work, and
-letting the host swap stalls every Box on it. Suspending one to disk costs that
-Box some minutes and nothing else.
+letting the host swap stalls every Box on it. Suspending one costs that Box
+some minutes and its running processes, and keeps its files and its session.
 
 ## Disk
 

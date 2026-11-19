@@ -1,7 +1,7 @@
 # moor
 
 moor runs coding agents in Boxes. A Box is one piece of work. It has a branch
-of a GitHub repo, a VM to work in, and an agent working there. You hand it work
+of a GitHub repo, two containers to work in, and an agent working there. You hand it work
 from Claude Code and check on it from the same place. You get a pushed
 branch and a pull request back.
 
