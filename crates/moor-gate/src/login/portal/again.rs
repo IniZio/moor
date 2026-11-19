@@ -9,7 +9,7 @@ use super::Row;
 use crate::Gate;
 
 /// Whether `name` is shaped like the Box of a workflow run, `<workflow>/w<id>-<due time>`.
-fn names_a_run(name: &str) -> bool {
+pub(super) fn names_a_run(name: &str) -> bool {
     let Some(label) = BoxName::parse(name).ok().map(|n| n.label().to_owned()) else {
         return false;
     };

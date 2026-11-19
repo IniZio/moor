@@ -276,6 +276,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         map.insert("artifacts".to_owned(), json!(artifacts));
         let run_again = again::failed_run_of(gate, session, shown.boxed.as_ref());
         map.insert("workflow".to_owned(), run_again);
+        map.insert("from_workflow".to_owned(), json!(again::names_a_run(boxed)));
     }
     json(stream, "200 OK", &view);
 }

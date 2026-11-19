@@ -134,7 +134,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
     }
 }
 
-/// Serves one request of the workflows pages: reads, a plan write and an answer.
+/// Serves one request of the workflows pages: reads, the form's writes, a plan write and an answer.
 fn workflow_route(
     stream: &mut TcpStream,
     (method, path, query): (&str, &str, &str),
@@ -169,6 +169,15 @@ fn workflow_route(
             workflows::run_now(stream, gate, session, csrf, name);
         }
         ("GET", Route::Artifact) => workflows::artifact(stream, gate, session, query),
+        ("GET", Route::Schedule) => workflows::preview(stream, query),
+        ("POST", Route::List) => workflows::create(stream, gate, session, csrf, body.as_deref()),
+        ("PUT", Route::Fields(name)) => {
+            workflows::edit(stream, gate, session, csrf, name, body.as_deref());
+        }
+        ("POST", Route::Enabled(name)) => {
+            workflows::switch(stream, gate, session, csrf, name, body.as_deref());
+        }
+        ("DELETE", Route::One(name)) => workflows::remove(stream, gate, session, csrf, name),
         _ => page(stream, "404 Not Found", "", "Not found."),
     }
 }

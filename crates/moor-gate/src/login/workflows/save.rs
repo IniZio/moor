@@ -187,7 +187,7 @@ fn plan_to_store(stored: &WorkflowView, write: &Write) -> Result<Option<String>,
 }
 
 /// Answers `409`: the workflow is no longer at the revision the page wrote against.
-fn changed(stream: &mut TcpStream, now: Option<u64>) {
+pub(super) fn changed(stream: &mut TcpStream, now: Option<u64>) {
     let error = now.map_or_else(
         || "This workflow was removed. Reload to see what is left.".to_owned(),
         |_| {
