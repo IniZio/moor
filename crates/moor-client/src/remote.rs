@@ -262,7 +262,8 @@ pub(super) fn dial(host: &str, port: u16, limit: Duration) -> Result<TcpStream, 
     for addr in addrs {
         match TcpStream::connect_timeout(&addr, limit) {
             Ok(tcp) => {
-                tcp.set_read_timeout(Some(limit))
+                tcp.set_nodelay(true)
+                    .and_then(|()| tcp.set_read_timeout(Some(limit)))
                     .and_then(|()| tcp.set_write_timeout(Some(limit)))
                     .map_err(|e| e.to_string())?;
                 return Ok(tcp);

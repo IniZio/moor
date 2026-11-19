@@ -136,6 +136,7 @@ pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<(
     } = agents;
     loop {
         let (stream, _) = listener.accept().await?;
+        let _ = stream.set_nodelay(true);
         let (client, links, routes) = (client.clone(), Arc::clone(&links), Arc::clone(&routes));
         tokio::spawn(async move { serve_link(stream, &client, links, routes).await });
     }

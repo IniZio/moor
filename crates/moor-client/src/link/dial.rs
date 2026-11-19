@@ -31,7 +31,9 @@ pub async fn dial(server: &str) -> Result<Dialed, String> {
 pub async fn dial_found(server: &str) -> Result<Option<Dialed>, String> {
     let url = url(server)?;
     let tls = Connector::Rustls(Arc::new(crate::remote::tls_config()?));
-    let dialing = tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(tls));
+    let disable_nagle = true;
+    let dialing =
+        tokio_tungstenite::connect_async_tls_with_config(&url, None, disable_nagle, Some(tls));
     let ws = tokio::time::timeout(DIAL_TIMEOUT, dialing)
         .await
         .map_err(|_| {

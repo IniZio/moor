@@ -85,10 +85,13 @@ async fn pump<S>(
         let mut buf = vec![0u8; 16 * 1024];
         loop {
             let sent = tokio::select! {
-                n = from_yamux.read(&mut buf) => match n.ok().and_then(|n| buf.get(..n)) {
-                    Some(bytes) if !bytes.is_empty() => sink.send(Message::binary(bytes.to_vec())).await,
-                    _ => break,
-                },
+                n = from_yamux.read(&mut buf) => {
+                    let n = n.map_or(0, |n| ready(&mut from_yamux, &mut buf, n));
+                    match buf.get(..n) {
+                        Some(bytes) if !bytes.is_empty() => sink.send(Message::binary(bytes.to_vec())).await,
+                        _ => break,
+                    }
+                }
                 Some(frame) = told.recv() => match serde_json::to_string(&frame) {
                     Ok(text) => sink.send(Message::text(text)).await,
                     Err(_) => continue,
@@ -136,6 +139,22 @@ async fn quiet(heard: &Mutex<Instant>, keepalive: Duration, say: impl Fn(&str)) 
         warned = silent >= warn_after;
         tokio::time::sleep_until(last + if warned { dead_after } else { warn_after }).await;
     }
+}
+
+/// Adds to the `n` bytes in `buf` what yamux has already written, so a frame's header and body
+/// leave in one message.
+fn ready(from: &mut tokio::io::ReadHalf<DuplexStream>, buf: &mut [u8], mut n: usize) -> usize {
+    use futures_util::FutureExt;
+    while n > 0 && n < buf.len() {
+        match buf
+            .get_mut(n..)
+            .and_then(|rest| from.read(rest).now_or_never())
+        {
+            Some(Ok(more)) if more > 0 => n += more,
+            _ => break,
+        }
+    }
+    n
 }
 
 /// Writes each queued message's bytes to yamux, then ends yamux's input.
