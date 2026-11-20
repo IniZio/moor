@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::files::{write, Layout};
+use super::gate;
 use crate::doctor::Check;
 use crate::env::Env;
+use crate::front_dir;
 
 /// The service unit's name.
 pub(crate) const SERVICE: &str = "moor.service";
@@ -23,6 +25,8 @@ pub(crate) const RUNNER: &str = "moor-runner.service";
 pub(crate) const AGENT: &str = "moor-agent.service";
 /// The unit of the egress relay inside a rootless daemon's namespace.
 pub(crate) const RELAY: &str = "moor-relay.service";
+/// The template socket unit of each front: `moor-front@<namespace>.socket`.
+pub(crate) const FRONT_TEMPLATE: &str = "moor-front@.socket";
 
 /// What the service runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +110,34 @@ DirectoryMode=0700
 WantedBy=sockets.target
 ",
         unit.socket.display().to_string().replace('%', "%%")
+    )
+}
+
+/// The socket of front `<namespace>`, the template's instance.
+pub(crate) fn front_socket(namespace: &str) -> String {
+    format!("moor-front@{namespace}.socket")
+}
+
+/// The front socket template: each front's socket under `state_dir`, passed to the controller
+/// named `front-<namespace>`.
+pub(crate) fn front_socket_unit(state_dir: &Path) -> String {
+    let root = front_dir::root(state_dir).display().to_string();
+    format!(
+        "[Unit]
+Description=moor socket for the %i front
+
+[Socket]
+ListenStream={}/%i/{}
+FileDescriptorName=front-%i
+Service={SERVICE}
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target
+",
+        root.replace('%', "%%"),
+        front_dir::FRONT_SOCKET
     )
 }
 
@@ -197,12 +229,26 @@ pub(crate) fn unit_dir(env: &Env) -> Option<PathBuf> {
     env.xdg("XDG_CONFIG_HOME", ".config", "systemd/user")
 }
 
-/// Writes both units, enables them and starts the service: anew when its unit changed.
-pub(crate) fn install(dir: &Path, unit: &Unit) -> Result<Check, Check> {
-    let files = [
+/// Writes both units, and the front socket template when there are `fronts`, enables them and
+/// starts the service after every socket: anew when a unit changed.
+pub(crate) fn install(
+    dir: &Path,
+    unit: &Unit,
+    layout: &Layout,
+    fronts: &[&str],
+) -> Result<Check, Check> {
+    let mut files = vec![
         (dir.join(SOCKET), socket_unit(unit)),
         (dir.join(SERVICE), service_unit(unit)),
     ];
+    if !fronts.is_empty() {
+        files.push((
+            dir.join(FRONT_TEMPLATE),
+            front_socket_unit(&layout.state_dir),
+        ));
+    }
+    let instances: Vec<String> = fronts.iter().map(|ns| front_socket(ns)).collect();
+    let instances: Vec<&str> = instances.iter().map(String::as_str).collect();
     let mut changed = false;
     for (path, text) in &files {
         if fs::read_to_string(path).ok().as_deref() != Some(text.as_str()) {
@@ -213,8 +259,8 @@ pub(crate) fn install(dir: &Path, unit: &Unit) -> Result<Check, Check> {
     if changed {
         systemctl(&["daemon-reload"])?;
     }
-    systemctl(&["enable", SOCKET, SERVICE])?;
-    systemctl(&["start", SOCKET])?;
+    systemctl(&[&["enable", SOCKET, SERVICE], instances.as_slice()].concat())?;
+    systemctl(&[&["start", SOCKET], instances.as_slice()].concat())?;
     systemctl(&[if changed { "restart" } else { "start" }, SERVICE])?;
     Ok(Check::ok(
         "service",
@@ -251,7 +297,19 @@ pub(crate) fn install_one(
 /// Stops and disables every unit `up` wrote, the gate and the agent first, and removes their files; whether
 /// any was there.
 pub(crate) fn remove(dir: &Path) -> Result<bool, Check> {
-    remove_units(dir, &[RELAY, GATE, AGENT, RUNNER, SERVICE, SOCKET])
+    let front = front_socket(gate::NAMESPACE);
+    remove_units(dir, &[RELAY, GATE, AGENT, RUNNER, SERVICE, &front, SOCKET])
+}
+
+/// The file of unit `name` in `dir`: its template's, for an instance.
+fn unit_file(dir: &Path, name: &str) -> PathBuf {
+    match name.split_once('@') {
+        Some((prefix, rest)) => {
+            let kind = rest.rsplit_once('.').map_or("", |(_, kind)| kind);
+            dir.join(format!("{prefix}@.{kind}"))
+        }
+        None => dir.join(name),
+    }
 }
 
 /// Stops and disables those of `units` whose files are in `dir`, in order, and removes the files;
@@ -260,13 +318,13 @@ pub(crate) fn remove_units(dir: &Path, units: &[&str]) -> Result<bool, Check> {
     let names: Vec<&str> = units
         .iter()
         .copied()
-        .filter(|n| dir.join(n).exists())
+        .filter(|n| unit_file(dir, n).exists())
         .collect();
     if names.is_empty() {
         return Ok(false);
     }
     systemctl(&[&["disable", "--now"], names.as_slice()].concat())?;
-    let files: Vec<PathBuf> = names.iter().map(|n| dir.join(n)).collect();
+    let files: Vec<PathBuf> = names.iter().map(|n| unit_file(dir, n)).collect();
     for f in &files {
         match fs::remove_file(f) {
             Ok(()) => {}

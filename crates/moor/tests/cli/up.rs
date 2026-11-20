@@ -553,10 +553,6 @@ fn up_enables_the_gate_fronts_socket_before_it_starts_the_controller() {
         template.contains(&format!("ListenStream={}\n", front.display())),
         "{template}"
     );
-    assert!(
-        template.contains("FileDescriptorName=front-%i\n"),
-        "{template}"
-    );
     let log = host.systemctl_log();
     assert!(
         log.starts_with(

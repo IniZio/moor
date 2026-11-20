@@ -16,12 +16,14 @@ mod tests;
 
 use std::io::{BufRead, Write};
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use moor_core::request::EnrollReq;
+use moor_core::seam::clock::Clock as _;
 use moor_core::view::user::EnrollValue;
 use moor_core::Request;
 
+use crate::adapters::clock::SystemClock;
 use crate::cli::GlobalOpts;
 use crate::client::{self, ClientError, Target};
 use crate::doctor::{answer, line, Check, Status};
@@ -94,7 +96,7 @@ fn steps(
     say(&files::controller(&layout, gate.runs())?);
     say(&files::user(env, &layout)?);
     let unit = service::Unit::new(env, &layout, plan.egress, relay.is_some(), key_file)?;
-    say(&service::install(&dir, &unit)?);
+    say(&service::install(&dir, &unit, &layout, gate.fronts())?);
     if service::lingers(env) == Some(false) {
         say(&Check::warn(
             "service",
@@ -132,10 +134,11 @@ fn steps(
 /// Waits up to `wait` until the controller answers a hello on its socket. systemd holds the
 /// socket, so a connection alone succeeds even while the service fails to start.
 fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
-    let deadline = Instant::now() + wait;
+    let clock = SystemClock::real();
+    let deadline = clock.instant() + wait;
     let mut last = String::from("nothing tried");
     loop {
-        let left = deadline.saturating_duration_since(Instant::now());
+        let left = deadline.saturating_duration_since(clock.instant());
         if left.is_zero() {
             break;
         }
@@ -148,7 +151,7 @@ fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
             }
             Err(e) => last = e,
         }
-        std::thread::sleep(SOCKET_POLL);
+        clock.sleep(SOCKET_POLL);
     }
     Err(Check::fail(
         "controller",
