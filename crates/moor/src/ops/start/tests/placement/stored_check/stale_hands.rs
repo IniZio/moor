@@ -57,7 +57,7 @@ fn a_last_resort_suspend_of_replaced_hands_records_nothing_and_warns() {
     replaced_while_sleeping(&w, b);
     drop(warnings(&w));
 
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
 
     assert_eq!(lifecycle(&w, b), Ready);
     assert!(warnings(&w).contains(&"stale_hands_write".to_owned()));

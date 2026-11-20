@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Pending, Ready};
 
-use super::pressure::{tick, BELOW_RESERVE};
+use super::pressure::{tick, BELOW_RESERVE, CRITICAL};
 use super::stored_check::holds;
 use super::*;
 use crate::testing::agent;
@@ -133,11 +133,13 @@ fn working_then_unread() -> (World, i64, BoxId, BoxId) {
 fn an_unread_box_goes_only_as_a_last_resort() {
     let (w, hv, x, a) = working_then_unread();
     tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(lifecycle(&w, a), Ready, "unread counts as working");
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, a), Pending);
     assert_eq!(lifecycle(&w, x), Ready);
     assert_eq!(
         asleep_reason(&w, a).as_deref(),
-        Some("last-resort suspend: memory below the host reserve on hv")
+        Some("last-resort suspend: memory critical on hv")
     );
 }
 
@@ -152,7 +154,7 @@ fn the_only_box_is_left_running_when_it_is_unread_and_memory_is_critical() {
 fn nothing_is_stored_about_what_an_unread_box_holds() {
     let (w, hv, _, a) = working_then_unread();
     holds(&w, a, "ahead=0 dirty=0");
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, a), Pending);
     let check = w.cx.store().unwrap().suspend_check(a).unwrap();
     assert_eq!(check, None);

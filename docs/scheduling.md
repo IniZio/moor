@@ -64,10 +64,16 @@ a new Box before it resumes.
 Running Boxes can still exhaust a host. Each report checks for that:
 
 - **Sustained pressure.** PSI `some avg10` of 10 or more on three reports in a
-  row, or `MemAvailable` below the reserve, suspends the longest-idle Box.
+  row, or `MemAvailable` below the reserve, suspends the Box idle longest. Only
+  idle Boxes go. A working Box, one waiting on a question, and one still
+  starting keep running, however long the pressure lasts.
 - **Critical memory.** PSI `full avg10` of 5 or more, or `MemAvailable` below
-  1 GiB, may suspend a working Box once no idle Box is left. The most recently
-  started goes first. The only running Box is never suspended while it works.
+  1 GiB, still suspends an idle Box first. Once no idle Box is left, it may
+  suspend a working Box. The most recently started goes first, and one with a
+  run in flight goes last. The only running Box is never suspended while it
+  works.
+
+Each report suspends at most one Box, and none within 30 seconds of the last.
 
 A Box suspended at work says so in its status, waits first in line, and
 resumes with no one needing to act. Its agent is told how long it was paused
