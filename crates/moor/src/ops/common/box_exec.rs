@@ -130,6 +130,8 @@ fn keep_egress(
                 .flatten()
         })
         .and_then(|text| text.lines().last().map(str::to_owned))
+        .filter(|why| !why.is_empty())
+        .or_else(|| crate::ops::common::setup::failed::container(cx, handle))
         .unwrap_or_default();
     Err(format!(
         "the egress proxy could not start in the Box's agent place: {why}"

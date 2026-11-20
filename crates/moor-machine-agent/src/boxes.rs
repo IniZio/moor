@@ -297,7 +297,11 @@ impl<P: BoxProvider> Boxes<P> {
 
     /// The health of each Box held, or each of `controller`'s.
     async fn reports_of(&self, controller: Option<&ControllerId>) -> Vec<BoxReport> {
-        let seen = self.provider.observe().await.unwrap_or_default();
+        let (seen, lost) = match self.provider.observe().await {
+            Ok(seen) => (seen, None),
+            Err(ProvideError::Lost(why)) => (Vec::new(), Some(why)),
+            Err(_) => (Vec::new(), None),
+        };
         let mut reports = Vec::new();
         for slug in self.store.slugs() {
             if controller.is_some_and(|c| slug.controller().as_ref() != Some(c)) {
@@ -305,7 +309,7 @@ impl<P: BoxProvider> Boxes<P> {
             }
             if let Ok(Some(held)) = self.store.load(&slug) {
                 let observed = seen.iter().find(|o| o.slug == slug);
-                let mut said = report(&slug, &held, observed);
+                let mut said = report(&slug, &held, observed, lost.as_deref());
                 if self.in_flight(&slug) {
                     said.down = None;
                 }
@@ -335,8 +339,8 @@ impl<P: BoxProvider> Boxes<P> {
     }
 }
 
-/// One Box's health from what is held and what the provider sees.
-fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
+/// One Box's health from what is held and what the provider sees, or why it lost every Box.
+fn report(slug: &Slug, held: &Held, seen: Option<&Observed>, lost: Option<&str>) -> BoxReport {
     let up = seen.is_some_and(|o| o.agent == PlaceState::Up && o.work == PlaceState::Up);
     let state = match (&held.broken, held.want) {
         (Some(why), _) => ReportState::Broken { why: why.clone() },
@@ -353,6 +357,7 @@ fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
             said.dedup();
             Some(said.join("; "))
         }
+        (ReportState::Mending, None) => lost.map(str::to_owned),
         _ => None,
     };
     BoxReport {

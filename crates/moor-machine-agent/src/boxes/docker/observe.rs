@@ -51,7 +51,7 @@ impl Docker {
         let format = format!(
             "{{{{.Label \"{SLUG_LABEL}\"}}}} {{{{.Label \"{PLACE_LABEL}\"}}}} {{{{.State}}}}"
         );
-        let listed = Cli::ok([
+        let out = Cli::output([
             "ps",
             "-a",
             "--filter",
@@ -60,8 +60,13 @@ impl Docker {
             &format,
         ])
         .await?;
+        if !out.status.success() {
+            let host = std::env::var("DOCKER_HOST").ok();
+            let said = String::from_utf8_lossy(&out.stderr);
+            return Err(cli::listing_failed(&said, host.as_deref(), self.rootless));
+        }
         let mut boxes = Vec::new();
-        let listed = parse_ps(&listed);
+        let listed = parse_ps(&String::from_utf8_lossy(&out.stdout));
         self.egress
             .keep_only(&listed.keys().cloned().collect::<Vec<_>>());
         let ended = cli::ended(&listed).await;
