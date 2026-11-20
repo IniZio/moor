@@ -16,7 +16,8 @@ mod tests;
 
 use std::io::{BufRead, Write};
 use std::os::unix::net::UnixStream;
-use std::time::Duration;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use moor_core::request::EnrollReq;
 use moor_core::view::user::EnrollValue;
@@ -31,8 +32,8 @@ use files::Layout;
 
 /// Pause between looks at the controller socket after the service starts.
 const SOCKET_POLL: Duration = Duration::from_millis(100);
-/// Looks at the socket before giving up: 30 s in all.
-const SOCKET_POLLS: u32 = 300;
+/// How long the controller has to answer after the service starts.
+const SOCKET_WAIT: Duration = Duration::from_secs(30);
 
 /// The command `up` suggests once the host is ready.
 const NEXT: &str = "moor start hello --repo OWNER/NAME --prompt \"Say hello and stop\"";
@@ -100,7 +101,7 @@ fn steps(
             "run `loginctl enable-linger`",
         ));
     }
-    say(&wait_for(&layout)?);
+    say(&wait_for(&layout.socket, SOCKET_WAIT)?);
     say(&gate::converge(&dir, &gate)?);
     let target = Target::Socket(layout.socket.clone());
     let ask = |req: Request| -> Result<_, ClientError> {
@@ -127,20 +128,21 @@ fn steps(
     Ok(())
 }
 
-/// Waits until the controller socket takes a connection.
-fn wait_for(layout: &Layout) -> Result<Check, Check> {
-    for _ in 0..SOCKET_POLLS {
-        if UnixStream::connect(&layout.socket).is_ok() {
+/// Waits up to `wait` until the controller socket takes a connection.
+fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
+    let deadline = Instant::now() + wait;
+    while Instant::now() < deadline {
+        if UnixStream::connect(socket).is_ok() {
             return Ok(Check::ok(
                 "controller",
-                format!("answers at {}", layout.socket.display()),
+                format!("answers at {}", socket.display()),
             ));
         }
         std::thread::sleep(SOCKET_POLL);
     }
     Err(Check::fail(
         "controller",
-        format!("no answer at {}", layout.socket.display()),
+        format!("no answer at {}", socket.display()),
         format!("read `journalctl --user -u {}`", service::SERVICE),
     ))
 }

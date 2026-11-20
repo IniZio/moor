@@ -7,6 +7,7 @@ use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
 use super::relay::{relay_unit, Relay};
 use super::service::{service_unit, socket_unit, Unit};
+use super::wait_for;
 use crate::env::Env;
 use moor_client::rootless::Facts;
 
@@ -426,5 +427,18 @@ fn up_stops_on_a_rootless_daemon_that_opens_the_hosts_loopback() {
     assert!(
         stopped.detail.contains("nsenter"),
         "the relay needs nsenter: {stopped:?}"
+    );
+}
+
+#[test]
+fn the_wait_fails_on_a_socket_that_takes_connections_but_never_answers() {
+    let dir = moor_testkit::short_tempdir("held").unwrap();
+    let socket = dir.path().join("controller.sock");
+    let _held = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let failed = wait_for(&socket, std::time::Duration::from_millis(500)).unwrap_err();
+    assert!(failed.detail.contains("no answer at"), "{failed:?}");
+    assert!(
+        failed.fix.contains("journalctl --user -u moor.service"),
+        "{failed:?}"
     );
 }
