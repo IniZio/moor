@@ -108,6 +108,26 @@ function RunNowButton({ csrf, name, onRan, hint, pull, label = 'Run now' }: { cs
 	);
 }
 
+/** Marks a workflow that also runs on pull requests. */
+function PullTag() {
+	return (
+		<span class="pill ok" title="Runs on pull requests">
+			PR
+		</span>
+	);
+}
+
+/** A run's pull request, `OWNER/NAME#NUMBER`, as a link to it on GitHub. */
+function PullLink({ pull }: { pull: string }) {
+	const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(pull);
+	if (!m) return <span class="muted">{pull}</span>;
+	return (
+		<a class="run-pr" href={`https://github.com/${m[1]}/pull/${m[2]}`} target="_blank" rel="noopener noreferrer">
+			{pull}
+		</a>
+	);
+}
+
 /** A workflow's repos in order: the agent starts in the first, and the rest are cloned with it. */
 function RepoSet({ repos }: { repos: string[] }) {
 	return (
@@ -137,7 +157,15 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 					<RepoSet repos={w.repos} />
 				</dd>
 				<dt>Schedule</dt>
-				<dd title={w.cron}>{scheduleText(w.words, w.cron, w.timezone)}</dd>
+				<dd title={w.cron}>
+					{scheduleText(w.words, w.cron, w.timezone)}
+					{w.on_pull_request && (
+						<>
+							{' '}
+							<PullTag />
+						</>
+					)}
+				</dd>
 				<dt>Last run</dt>
 				<dd>
 					{w.last ? (
@@ -249,7 +277,14 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				</span>
 			</div>
 			<p class="muted">
-				<RepoSet repos={flow.repos} /> · <span title={flow.cron}>{scheduleText(flow.words, flow.cron, flow.timezone)}</span> ·{' '}
+				<RepoSet repos={flow.repos} /> · <span title={flow.cron}>{scheduleText(flow.words, flow.cron, flow.timezone)}</span>
+				{flow.on_pull_request && (
+					<>
+						{' '}
+						<PullTag />
+					</>
+				)}{' '}
+				·{' '}
 				{flow.enabled ? `next run ${flow.next_text ?? when(flow.next_due)}` : (flow.disabled_reason ?? 'disabled')}
 			</p>
 			{flow.plan_stale && flow.plan && (
@@ -315,7 +350,7 @@ function Runs({ flow }: { flow: Workflow | null }) {
 			) : (
 				<ul class="runs">
 					{flow.runs.map((r) => (
-						<li key={r.id}>
+						<li key={r.id} class={r.pull ? 'has-pr' : undefined}>
 							<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
 								<StatusIcon status={r.status} />
 								<span class="grow">{r.trigger}</span>
@@ -323,6 +358,7 @@ function Runs({ flow }: { flow: Workflow | null }) {
 								<span class="muted">{duration(r.duration_ms)}</span>
 								<span class="outcome">{r.label}</span>
 							</a>
+							{r.pull && <PullLink pull={r.pull} />}
 						</li>
 					))}
 				</ul>
