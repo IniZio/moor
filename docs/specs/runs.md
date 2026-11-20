@@ -680,6 +680,100 @@ The PR that needs the Proxy route comes after every PR that does not.
    - Check. Each run reaches `Done` with an outcome, without opening its Box.
      One row per run goes in the grading table.
 
+## Run now
+
+An author can only see a plan work by waiting for its cron. The live checks
+work around this with a one-minute cron and a lowered floor (see [PR
+stack](#pr-stack)). `run_workflow` fires a workflow once, now, through the same
+claim a cron firing uses.
+
+### The tool
+
+```text
+run_workflow(name, repos?, expected_revision?)
+```
+
+- `repos` defaults to every repo of the workflow. Each must be one of them.
+- `expected_revision` refuses the call when the workflow changed after the
+  author read it, so the run tries the plan they reviewed.
+- It works on a disabled workflow. To try a plan before its schedule starts,
+  the agent adds the workflow, disables it, runs it, and enables it once the
+  run is right.
+- The reply lists one line per repo, `started` with the Box name or
+  `refused` with the reason.
+- Needs the `moor:write` scope.
+
+The portal's Workflows page gets a **Run now** button per repo, which calls
+the same op.
+
+### What it does
+
+For each repo, the op calls `claim` with `due_at` set to now and the trigger
+`manual`. A manual claim checks for an open run in the same write that
+inserts its row. A run blocks while it is queued, running or waiting, or timed out with its
+Box open. When the repo's latest run of any trigger blocks, the call is
+refused with that run's Box name. Nothing is recorded. A read before the write would race
+the tick. The tick could claim a cron run with another `due_at` in between,
+and the unique key on `(workflow, repo, due_at)` would not stop it.
+
+When the insert finds the row already there, the reply says `refused` with
+that reason, never `started`.
+
+From there the run is a normal run. It freezes the plan, starts the Box as
+the owner, walks the steps, and has the workflow's timeout.
+
+`box_name` takes the trigger. A cron run keeps its stamp to the minute. A
+manual run gets `m` and a stamp to the second, such as `m20261118051230`.
+Without it, a manual run and a cron run due in the same minute share one Box
+name.
+
+### Store
+
+One migration adds a column to `workflow_runs`:
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `trigger` | text, not null, default `cron` | `cron` or `manual`. Old rows read as `cron`. |
+
+`WorkflowRun` and `NewRun` gain `trigger: RunTrigger`, an enum of `Cron` and
+`Manual`. The portal's runs list shows it in its trigger column.
+
+### Against the existing rules
+
+| Rule | A manual run |
+| --- | --- |
+| Overlap | Blocks the next cron firing while open, as any run does. Is refused, not skipped, when a run is open. |
+| `last_due` | Ignored. A manual run never swallows a missed due time. |
+| Overlap fact (`prior`) | Counted. A cron run that comes due while a manual run is open records `SkippedOverlap`. |
+| Breaker | A failure does not count. A delivery resets the streak, so a fix proven by hand clears the earlier failures. |
+| Start limit, expiry, check and approve steps | As for a cron run. |
+| Notifications | As for a cron run. |
+| Cron floor | Does not apply. One open run per repo already bounds it. |
+
+### PR
+
+**`feat(workflow): run a workflow now`**
+
+- The `trigger` column and `RunTrigger`.
+- The facts query splits. `last_due` reads cron runs only. `prior` reads the
+  latest run of any trigger.
+- `workflow_breaker` skips manual failures and resets on a manual delivery.
+- `box_name` takes the trigger.
+- The migration takes the next free number after V86.
+- The op, `run_workflow` in moor-gate, and the portal button.
+- The PR stack's live checks switch from the one-minute cron to
+  `run_workflow` on a workflow with a yearly cron.
+- Check. Decide tests in
+  [`moor-core/src/decide/workflow/tests.rs`](https://github.com/IniZio/moor/blob/8d10b84d2f70ea0e8f9473243e68c5cb5c096b2f/crates/moor-core/src/decide/workflow/tests.rs).
+  A manual run leaves `workflow_due` firing a missed due time. A cron run due
+  while a manual run is open records `SkippedOverlap`. Three failed manual
+  runs leave the breaker untripped. A manual and a cron run in the same minute
+  get different Box names. An ops test calls `run_workflow` on a repo with an
+  open run, which refuses and records nothing. Live. On verify-moor-live, add
+  a two-step workflow with cron `0 0 1 1 *`, disable it, call `run_workflow`,
+  and save the `list_workflow_runs` output showing the run `done` with
+  trigger `manual`.
+
 ## Open questions
 
 1. **The Proxy route.** `report_step` needs `moor.moor.internal` routed to the
@@ -714,3 +808,9 @@ The PR that needs the Proxy route comes after every PR that does not.
    until the egress work gives moor a typed list of what a repo grants. Then
    moor can check each step's declared needs against it without reading step
    text.
+
+9. **A manual delivery and the breaker.** An author sees two cron failures,
+   fixes the plan, and proves the fix with a manual run that delivers. If
+   manual runs never touch the streak, the next cron failure still trips the
+   breaker. Decided by the owner. A manual failure does not count, and a
+   manual delivery resets the streak.
