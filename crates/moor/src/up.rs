@@ -15,7 +15,6 @@ mod service;
 mod tests;
 
 use std::io::{BufRead, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -32,6 +31,8 @@ use files::Layout;
 
 /// Pause between looks at the controller socket after the service starts.
 const SOCKET_POLL: Duration = Duration::from_millis(100);
+/// How long one hello waits for its reply.
+const HELLO_WAIT: Duration = Duration::from_secs(5);
 /// How long the controller has to answer after the service starts.
 const SOCKET_WAIT: Duration = Duration::from_secs(30);
 
@@ -128,21 +129,30 @@ fn steps(
     Ok(())
 }
 
-/// Waits up to `wait` until the controller socket takes a connection.
+/// Waits up to `wait` until the controller answers a hello on its socket. systemd holds the
+/// socket, so a connection alone succeeds even while the service fails to start.
 fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
     let deadline = Instant::now() + wait;
-    while Instant::now() < deadline {
-        if UnixStream::connect(socket).is_ok() {
-            return Ok(Check::ok(
-                "controller",
-                format!("answers at {}", socket.display()),
-            ));
+    let mut last = String::from("nothing tried");
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        match client::hello(socket, left.min(HELLO_WAIT)) {
+            Ok(()) => {
+                return Ok(Check::ok(
+                    "controller",
+                    format!("answers at {}", socket.display()),
+                ))
+            }
+            Err(e) => last = e,
         }
         std::thread::sleep(SOCKET_POLL);
     }
     Err(Check::fail(
         "controller",
-        format!("no answer at {}", socket.display()),
+        format!("no answer at {}: {last}", socket.display()),
         format!("read `journalctl --user -u {}`", service::SERVICE),
     ))
 }
