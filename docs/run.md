@@ -7,8 +7,12 @@ use. You add those later, when teammates join.
 You need:
 
 - a Linux host with Docker that your user can run (`docker info` works)
-- `/dev/kvm`, only if a repo's Boxes run Android emulators
+- `/dev/kvm` that Boxes can open, since every Box gets KVM (see
+  [KVM](rootless-docker.md#kvm))
 - `claude` and `gh` on your own computer, signed in
+
+For rootless Docker, follow
+[Set up a rootless Docker host for Boxes](rootless-docker.md) first.
 
 Docker Boxes are privileged containers. Each Box's work place runs with
 `--privileged` so Docker works inside it, and a user who can run Docker is root
