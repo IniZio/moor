@@ -4,6 +4,7 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 
 use super::{Check, Inputs};
+use crate::proxy::forwarder::elf;
 use crate::proxy::route;
 
 /// Every host check that applies to this config.
@@ -21,6 +22,13 @@ pub(super) fn egress(i: &Inputs<'_>) -> Check {
     }
     let bin = route::binary(i.env);
     let runnable = fs::metadata(&bin).is_ok_and(|m| m.is_file() && m.mode() & 0o111 != 0);
+    let loader = runnable
+        .then(|| fs::read(&bin).ok())
+        .flatten()
+        .and_then(|bytes| elf::interpreter(&bytes));
+    if let Some(loader) = loader {
+        return Check::fail("egress", elf::dynamic(&bin, &loader), elf::STATIC);
+    }
     if runnable {
         return Check::ok(
             "egress",

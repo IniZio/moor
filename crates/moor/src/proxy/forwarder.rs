@@ -67,6 +67,13 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
             to.binary.display()
         )
     })?;
+    if let Some(loader) = elf::interpreter(&bin) {
+        return Err(format!(
+            "{}; {}",
+            elf::dynamic(to.binary, &loader),
+            elf::STATIC
+        ));
+    }
     let home = box_home(to.driver, handle)?;
     let put = |suffix: &str, bytes: &[u8], mode: u32| {
         let path = BoxPath::under(home.as_str(), &format!("{FORWARDER}{suffix}"))
@@ -137,5 +144,6 @@ fn box_home(driver: &dyn Driver, handle: &BoxHandle) -> Result<BoxPath, String> 
     BoxPath::restore(home).map_err(|e| e.to_string())
 }
 
+pub(crate) mod elf;
 #[cfg(test)]
 mod tests;
