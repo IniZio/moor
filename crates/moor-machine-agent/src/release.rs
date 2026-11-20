@@ -50,7 +50,9 @@ fn target(os: &str, arch: &str) -> Result<&'static str, String> {
         ("linux", "x86_64") => Ok("x86_64-unknown-linux-musl"),
         ("linux", "aarch64") => Ok("aarch64-unknown-linux-musl"),
         ("macos", "aarch64") => Ok("aarch64-apple-darwin"),
-        ("macos", "x86_64") => Ok("x86_64-apple-darwin"),
+        ("macos", "x86_64") => {
+            Err("moor has no Intel Mac build; use an Apple Silicon Mac or Linux".to_owned())
+        }
         _ => Err(format!("no release is published for {os} on {arch}")),
     }
 }

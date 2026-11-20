@@ -20,8 +20,13 @@ curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | 
 ```
 
 The script downloads the release for your OS and CPU, checks its SHA-256, and
-installs into `~/.local/bin`. Releases cover Linux and macOS on x86_64 and
-aarch64.
+installs into `~/.local/bin`. Releases cover Linux on x86_64 and aarch64, and
+macOS on aarch64 (Apple Silicon). There is no Intel Mac build. On one the script
+fails and prints this message:
+
+```text
+moor has no Intel Mac build; use an Apple Silicon Mac or Linux
+```
 
 Without arguments it installs `moor`, `moor-gate`, `moor-egress-forward`,
 `moor-machine-agent`, and `moor-machine-runner`.
