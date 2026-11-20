@@ -106,7 +106,8 @@ fn setup_failure(store: &Store, row: &BoxRow) -> Option<String> {
 }
 
 /// Ends the agent session of each started run whose agent has worked past its timeout, keeps the Box, and records the
-/// run as timed out whether or not a session was live to end.
+/// run as timed out whether or not a session was live to end. An asleep Box runs no agent, so its session ends in the
+/// store and the Box stays asleep: waking it would only queue it for room on its node.
 pub(super) fn expire_runs(
     cx: &Cx,
     store: &Store,
@@ -132,7 +133,9 @@ pub(super) fn expire_runs(
             let req = EndSessionReq {
                 box_name: row.name.as_str().to_owned(),
             };
-            if let Err(err) = cx.for_box(row.user, || end_session::run(cx, &req)) {
+            if row.asleep() {
+                store.end_current_session(row.id, "requested", None)?;
+            } else if let Err(err) = cx.for_box(row.user, || end_session::run(cx, &req)) {
                 out.push(format!(
                     "workflow {}: {}: {}",
                     w.name,
