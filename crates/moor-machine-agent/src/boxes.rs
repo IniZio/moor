@@ -299,8 +299,9 @@ impl<P: BoxProvider> Boxes<P> {
 
     /// The health of each Box held, or each of `controller`'s.
     async fn reports_of(&self, controller: Option<&ControllerId>) -> Vec<BoxReport> {
-        let (seen, lost) = match self.provider.observe().await {
-            Ok(seen) => (seen, None),
+        // Why a Box the provider does not list is down. A provider that could not look says nothing.
+        let (seen, unlisted) = match self.provider.observe().await {
+            Ok(seen) => (seen, Some(health::GONE.to_owned())),
             Err(ProvideError::Lost(why)) => (Vec::new(), Some(why)),
             Err(_) => (Vec::new(), None),
         };
@@ -311,7 +312,7 @@ impl<P: BoxProvider> Boxes<P> {
             }
             if let Ok(Some(held)) = self.store.load(&slug) {
                 let observed = seen.iter().find(|o| o.slug == slug);
-                let mut said = report(&slug, &held, observed, lost.as_deref());
+                let mut said = report(&slug, &held, observed, unlisted.as_deref());
                 if self.in_flight(&slug) {
                     said.down = None;
                 }

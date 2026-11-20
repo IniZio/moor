@@ -220,3 +220,35 @@ fn ready_box_whose_places_died_unseen_wakes_and_says_why_it_cannot() {
     assert!(err.error.to_string().contains(NOT_ANSWERING), "{err:?}");
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
 }
+
+#[test]
+fn ready_box_whose_containers_were_removed_says_they_are_gone_and_how_to_start_over() {
+    let gone = "the Box's containers are gone from its machine";
+    let f = fx_with(
+        FakeDriver::new()
+            .listed_by_handle()
+            .fail_wake(DriverError::NotFound),
+    );
+    let store = f.cx.store().unwrap();
+    let handle = store
+        .box_row(f.id)
+        .unwrap()
+        .unwrap()
+        .hands
+        .unwrap()
+        .handle
+        .unwrap();
+    f.driver.die_behind(&handle, gone);
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert_eq!(
+        err.error.to_string(),
+        "t's containers are gone from its machine, so it cannot wake"
+    );
+    assert_eq!(
+        err.hints,
+        [
+            "`moor close t` closes it",
+            "then `moor start t` with its repo starts it again in new containers",
+        ]
+    );
+}

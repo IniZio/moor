@@ -6,12 +6,16 @@ use super::held::{Held, Want};
 use super::provider::{Ended, Observed, PlaceState};
 use super::Slug;
 
-/// One Box's health from what is held and what the provider sees, or why it lost every Box.
+/// Why a Box meant to run is down when the provider lists every Box but that one's places.
+pub(super) const GONE: &str = "the Box's containers are gone from its machine";
+
+/// One Box's health from what is held and what the provider sees, with why a Box the provider
+/// does not list is down when that is known.
 pub(super) fn report(
     slug: &Slug,
     held: &Held,
     seen: Option<&Observed>,
-    lost: Option<&str>,
+    unlisted: Option<&str>,
 ) -> BoxReport {
     let up = seen.is_some_and(|o| o.agent == PlaceState::Up && o.work == PlaceState::Up);
     let state = match (&held.broken, held.want) {
@@ -29,7 +33,7 @@ pub(super) fn report(
             said.dedup();
             Some(said.join("; "))
         }
-        (ReportState::Mending, None) => lost.map(str::to_owned),
+        (ReportState::Mending, None) => unlisted.map(str::to_owned),
         _ => None,
     };
     BoxReport {
