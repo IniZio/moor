@@ -364,6 +364,29 @@ fn a_machines_box_may_dial_its_host_by_the_name_moor_host_over_plain_ws() {
 }
 
 #[test]
+fn a_box_may_dial_a_private_ip_literal_over_plain_ws_but_not_a_public_one() {
+    for ok in [
+        "10.0.2.100:8443",
+        "192.168.1.5:9",
+        "172.16.0.1:9",
+        "[fd00::1]:9",
+    ] {
+        let config =
+            format!(r#"{{"listen":"127.0.0.1:1","upstream":"ws://{ok}/egress","token":"t"}}"#);
+        assert!(Config::parse(&config).is_ok(), "{ok}");
+    }
+    for bad in ["8.8.8.8:9", "172.32.0.1:9", "0.0.0.0:9", "[2001:db8::1]:9"] {
+        let config =
+            format!(r#"{{"listen":"127.0.0.1:1","upstream":"ws://{bad}/egress","token":"t"}}"#);
+        let err = Config::parse(&config).err().unwrap();
+        assert!(
+            err.contains("only a loopback ws:// address or moor-host may"),
+            "{bad}: {err}"
+        );
+    }
+}
+
+#[test]
 fn a_config_with_no_token_is_refused() {
     assert!(
         Config::parse(r#"{"listen":"127.0.0.1:1","upstream":"wss://moor.example/egress"}"#)

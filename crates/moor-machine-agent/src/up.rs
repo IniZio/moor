@@ -8,6 +8,8 @@ use std::process::{Command, Stdio};
 use moor_core::config::BOXES_HOST;
 use std::time::Duration;
 
+use moor_client::rootless;
+
 use crate::linked;
 use crate::pair::{self, Ask, Token};
 use crate::service::{Manager, Service};
@@ -19,6 +21,9 @@ const DOCKER: &str = "docker";
 const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's work place runs with \
     --privileged so Docker works inside it, and a user who can run Docker is root on this host. \
     Only your own Boxes run here.";
+
+#[cfg(test)]
+mod tests;
 
 /// How many seconds `up` waits for the service's first link.
 const LINK_WAIT_SECS: u32 = 60;
@@ -78,7 +83,7 @@ pub fn up(
             Host::named(kind, dir)?;
             if kind == DOCKER {
                 docker_ready()?;
-                say(PRIVILEGED);
+                trust_docker(say)?;
             }
             Some(BOXES_HOST.to_owned())
         }
@@ -190,10 +195,13 @@ fn service(runtime: &Runtime, dir: &Path, manager: &Manager) -> Result<Service, 
     Ok(Service {
         exe,
         args,
-        env: vec![
+        env: [
             ("PATH".to_owned(), path.to_string_lossy().into_owned()),
             ("XDG_STATE_HOME".to_owned(), state_home),
-        ],
+        ]
+        .into_iter()
+        .chain(docker_env(&|name| std::env::var(name).ok()))
+        .collect(),
         log,
     })
 }
@@ -215,6 +223,41 @@ fn docker_ready() -> Result<(), String> {
          docker group and logging in again, then run moor-machine-agent up again",
         String::from_utf8_lossy(&out.stderr).trim()
     ))
+}
+
+/// The variables that point the person's `docker` at a daemon, for the service to keep: it
+/// would otherwise reach the system daemon, whatever the person chose.
+fn docker_env(get: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"]
+        .into_iter()
+        .filter_map(|name| Some((name.to_owned(), get(name).filter(|v| !v.is_empty())?)))
+        .collect()
+}
+
+/// Says what Docker Boxes are on this daemon. Under rootless Docker it first checks the daemon
+/// is set up for them, and says every check that fails.
+fn trust_docker(say: &mut dyn FnMut(&str)) -> Result<(), String> {
+    if !rootless::detect() {
+        say(PRIVILEGED);
+        return Ok(());
+    }
+    let user = std::env::var("USER").ok();
+    let facts = rootless::Facts::read(std::env::var("PATH").ok().as_deref(), user.as_deref());
+    let failed = rootless::failures(&facts, false);
+    if !failed.is_empty() {
+        return Err(format!(
+            "{}\nfix each, then run moor-machine-agent up again",
+            rootless::report(&failed)
+        ));
+    }
+    say(&rootless::notice(&facts.user));
+    for w in rootless::warnings(&facts) {
+        say(&format!(
+            "warning: {}: {}; fix: {}",
+            w.check, w.detail, w.fix
+        ));
+    }
+    Ok(())
 }
 
 /// Whether the person's services outlive their login; unknown counts as yes.

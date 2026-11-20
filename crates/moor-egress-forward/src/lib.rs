@@ -24,8 +24,10 @@ use tokio_tungstenite::tungstenite::http::{HeaderValue, StatusCode};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
+mod relay;
 mod target;
 mod upstream;
+pub use relay::relay;
 use target::plain_target;
 pub use upstream::Upstream;
 

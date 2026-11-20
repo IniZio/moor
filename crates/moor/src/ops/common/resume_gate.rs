@@ -94,7 +94,9 @@ fn resume_shortfall(
 
 /// Whether asleep `row` could not fit on `node` even with every Box running there gone. Boxes behind
 /// it may then pass, and none is suspended for it. As soon as stopping what runs would make room,
-/// neither holds, so passing Boxes cannot starve it.
+/// neither holds, so passing Boxes cannot starve it. Nor does it hold while a Box that stopped
+/// since `memory` was reported, often one suspended to make room for `row`, has freed memory the
+/// report does not show yet.
 pub(crate) fn beyond_reach(
     store: &Store,
     node: &Node,
@@ -108,6 +110,9 @@ pub(crate) fn beyond_reach(
     let Some(needed) = needed_to_resume(store.resume_memory_mib(row.id)?, guest) else {
         return Ok(false);
     };
+    if store.stopped_since(&node.name, memory.reported_at)? {
+        return Ok(false);
+    }
     let mut held = Some(0_u64);
     for id in store.ready_on(&node.name)? {
         let of_box = store.box_host_memory(id)?;

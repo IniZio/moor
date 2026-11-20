@@ -189,6 +189,68 @@ fn tunneled() -> EgressRoute {
 }
 
 #[test]
+fn a_relayed_proxy_is_dialed_like_a_bound_one_but_the_controller_never_binds_it() {
+    let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
+    let relayed = route(&[
+        ("MOOR_STATE_DIR", "/s"),
+        ("MOOR_EGRESS_RELAYED", "10.0.2.100:8443"),
+    ])
+    .unwrap();
+    assert_eq!(
+        relayed,
+        EgressRoute::Relayed {
+            socket: "/s/egress/egress.sock".into(),
+            host: "10.0.2.100:8443".parse().unwrap(),
+        }
+    );
+    assert_eq!(
+        relayed.upstream(),
+        Ok("ws://10.0.2.100:8443/egress".to_owned())
+    );
+    assert_eq!(relayed.socket(), Some(Path::new("/s/egress/egress.sock")));
+    assert_eq!(relayed.bind(), None);
+    let bound = route(&[
+        ("MOOR_STATE_DIR", "/s"),
+        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
+    ])
+    .unwrap();
+    assert_eq!(
+        bound.upstream(),
+        Ok("ws://moor-host:8443/egress".to_owned())
+    );
+    assert_eq!(bound.bind(), Some("172.17.0.1:8443".parse().unwrap()));
+}
+
+#[test]
+fn naming_both_a_bound_and_a_relayed_address_is_an_error_and_a_relayed_one_must_be_private() {
+    let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
+    let both = route(&[
+        ("MOOR_STATE_DIR", "/s"),
+        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
+        ("MOOR_EGRESS_RELAYED", "172.17.0.1:8443"),
+    ]);
+    let why = both.unwrap_err();
+    assert!(
+        why.contains("MOOR_EGRESS_LISTEN") && why.contains("MOOR_EGRESS_RELAYED"),
+        "{why}"
+    );
+    for bad in ["0.0.0.0:8443", "8.8.8.8:8443", "172.17.0.1:0", "172.17.0.1"] {
+        let why = route(&[("MOOR_STATE_DIR", "/s"), ("MOOR_EGRESS_RELAYED", bad)]).unwrap_err();
+        assert!(why.contains("MOOR_EGRESS_RELAYED"), "{bad}: {why}");
+    }
+    let url = route(&[
+        ("MOOR_STATE_DIR", "/s"),
+        ("MOOR_EGRESS_URL", "wss://moor.example/egress"),
+        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
+        ("MOOR_EGRESS_RELAYED", "172.17.0.1:8443"),
+    ]);
+    assert!(
+        url.is_ok(),
+        "a Direct route ignores both, as it ignored LISTEN before"
+    );
+}
+
+#[test]
 fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
     let env = |listen: &str| {
         EgressRoute::from_env(&Env::from_pairs([
