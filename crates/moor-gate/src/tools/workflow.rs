@@ -117,7 +117,7 @@ impl Tools {
         description = "Add a workflow: on its cron, moor starts one Box with your prompt that \
                        clones every repo in `repos`. The agent starts in the first repo, and the \
                        rest sit beside it. A workflow that needs a GitHub write the default Proxy \
-                       rules refuse, such as PATCH on its own comment or POST of a commit status, \
+                       rules refuse, such as POST or PATCH of an issue comment, or POST of a commit status, \
                        asks for it in `config`, under `proxy.allow` on the default rule `github-api`, \
                        for example `proxy: {allow: {github-api: [\"PATCH /repos/{repo}/issues/comments/*\"]}}`. \
                        The entries apply to this workflow's Boxes only. Each must be `METHOD /path` \
