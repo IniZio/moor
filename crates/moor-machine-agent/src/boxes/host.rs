@@ -19,6 +19,8 @@ type Later<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 trait Serving: Send + Sync {
     /// What the machine offers.
     fn offer(&self) -> BoxOffer;
+    /// Whether its Boxes keep cache volumes.
+    fn keeps_caches(&self) -> bool;
     /// Serves the one request on `stream`.
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()>;
     /// Every Box's health.
@@ -28,6 +30,10 @@ trait Serving: Send + Sync {
 impl<P: BoxProvider> Serving for Boxes<P> {
     fn offer(&self) -> BoxOffer {
         Self::offer(self)
+    }
+
+    fn keeps_caches(&self) -> bool {
+        self.provider.keeps_caches()
     }
 
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()> {
@@ -74,6 +80,12 @@ impl Host {
     #[must_use]
     pub fn offer(&self) -> BoxOffer {
         self.0.offer()
+    }
+
+    /// Whether its Boxes keep cache volumes across Boxes.
+    #[must_use]
+    pub fn keeps_caches(&self) -> bool {
+        self.0.keeps_caches()
     }
 
     /// Serves the one request on `stream`.
