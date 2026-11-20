@@ -80,6 +80,9 @@ impl Host {
         }
         write_executable(&bin.join("systemctl"), format!("#!/bin/sh\n{SYSTEMCTL}")).unwrap();
         write_executable(&bin.join("moor-egress-forward"), "#!/bin/sh\nexit 0\n").unwrap();
+        let kvm = bin.join("kvm");
+        fs::write(&kvm, "").unwrap();
+        fs::set_permissions(&kvm, fs::Permissions::from_mode(0o666)).unwrap();
         Self {
             home: fresh_dir("up-home"),
             state: moor_testkit::short_tempdir("up").unwrap(),
@@ -351,6 +354,28 @@ fn up_without_docker_says_what_to_fix_and_writes_nothing() {
         "{r:?}"
     );
     assert!(host.written().iter().all(|(_, t)| t.is_empty()));
+    assert_eq!(host.systemctl_log(), "");
+}
+
+#[test]
+fn up_on_a_host_whose_boxes_cannot_open_kvm_refuses_and_writes_nothing() {
+    let host = Host::new();
+    let missing = host.bin.join("no-kvm");
+    let r = host.moor_with(
+        &["up"],
+        "",
+        &[("MOOR_KVM_DEVICE", missing.to_str().unwrap())],
+    );
+    assert_eq!(r.code, 1, "{r:?}");
+    assert!(
+        r.stdout.starts_with(&format!(
+            "fail  kvm         {} is missing, and every Box gets KVM; fix: ",
+            missing.display()
+        )),
+        "{r:?}"
+    );
+    assert!(r.stdout.contains("docs/rootless-docker.md#kvm"), "{r:?}");
+    assert!(!host.units().exists());
     assert_eq!(host.systemctl_log(), "");
 }
 

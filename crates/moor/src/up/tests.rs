@@ -445,7 +445,6 @@ fn rootless_host() -> Facts {
             "--net=slirp4netns".to_owned(),
             "--disable-host-loopback".to_owned(),
         ]),
-        kvm_mode: Some(0o666),
         live_restore: Some(false),
     }
 }

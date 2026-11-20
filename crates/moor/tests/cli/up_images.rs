@@ -17,6 +17,7 @@ impl Host {
             .args(args)
             .current_dir(&self.home)
             .env_clear()
+            .env("MOOR_KVM_DEVICE", self.bin.join("kvm"))
             .envs(vars.iter().copied())
             .env("PATH", self.path())
             .env("HOME", &self.home)

@@ -96,7 +96,7 @@ pub fn failures(facts: &Facts, local_relay: bool) -> Vec<Failure> {
 /// Every finding for `facts` that leaves Docker Boxes working, so `up` says it and goes on.
 #[must_use]
 pub fn warnings(facts: &Facts) -> Vec<Failure> {
-    kvm(facts).into_iter().chain(live_restore(facts)).collect()
+    live_restore(facts).into_iter().collect()
 }
 
 /// The user's ids in `file` for the name or uid `user`: every range counts.
@@ -214,22 +214,6 @@ fn loopback(f: &Facts) -> Option<Failure> {
 fn loopback_closed(args: &[String]) -> bool {
     args.iter()
         .any(|a| a == LOOPBACK_FLAG || a == &format!("{LOOPBACK_FLAG}=true"))
-}
-
-/// A node that offers KVM, as any host with `/dev/kvm` does, can open it from the work place. A
-/// node that cannot still runs every Box but a KVM one, so this is a warning, not a failure.
-fn kvm(f: &Facts) -> Option<Failure> {
-    let mode = f.kvm_mode?;
-    (mode & 0o666 != 0o666).then(|| {
-        fail(
-            "kvm",
-            format!(
-                "KVM Boxes (Android emulators) will not work on this node until /dev/kvm is 0666; \
-                 it is mode {mode:04o}, and rootless Docker drops its group"
-            ),
-            "add a udev rule with MODE=\"0666\" for KERNEL==\"kvm\", such as in /etc/udev/rules.d/65-kvm.rules",
-        )
-    })
 }
 
 /// Rootlesskit makes a new network namespace per daemon, so live-restore cannot adopt old containers.

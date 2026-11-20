@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use moor_core::config::BOXES_HOST;
 use std::time::Duration;
 
-use moor_client::rootless;
+use moor_client::{kvm, rootless};
 
 use crate::linked;
 use crate::pair::{self, Ask, Token};
@@ -234,10 +234,16 @@ fn docker_env(get: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Says what Docker Boxes are on this daemon. Under rootless Docker it first checks the daemon
-/// is set up for them, and says every check that fails.
+/// Says what Docker Boxes are on this daemon, after checking Boxes can open the KVM device. Under
+/// rootless Docker it first checks the daemon is set up for them, and says every check that fails.
 fn trust_docker(say: &mut dyn FnMut(&str)) -> Result<(), String> {
-    if !rootless::detect() {
+    let rootless = rootless::detect();
+    let set = std::env::var(kvm::DEVICE_VAR).ok();
+    let device = kvm::device(set.as_deref());
+    if let Some(f) = kvm::refusal(rootless, device, kvm::mode_of(device)) {
+        return Err(format!("{}: {}; fix: {}", f.check, f.detail, f.fix));
+    }
+    if !rootless {
         say(PRIVILEGED);
         return Ok(());
     }

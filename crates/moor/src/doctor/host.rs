@@ -3,13 +3,34 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
+use moor_client::{kvm, rootless};
+
 use super::{Check, Inputs};
 use crate::proxy::forwarder::elf;
 use crate::proxy::route;
+use crate::up::service;
 
 /// Every host check that applies to this config.
 pub(super) fn checks(i: &Inputs<'_>) -> Vec<Check> {
-    vec![egress(i)]
+    let mut out = vec![egress(i)];
+    out.extend(kvm(i));
+    out
+}
+
+/// Whether the Boxes of the node `moor up` installed here can open the KVM device every Box
+/// gets; none on a host with no such node.
+pub(super) fn kvm(i: &Inputs<'_>) -> Option<Check> {
+    let dir = service::unit_dir(i.env)?;
+    if !dir.join(service::AGENT).exists() {
+        return None;
+    }
+    let device = kvm::device(i.env.get(kvm::DEVICE_VAR));
+    Some(
+        match kvm::refusal(rootless::detect(), device, kvm::mode_of(device)) {
+            Some(f) => Check::fail(f.check, f.detail, f.fix),
+            None => Check::ok("kvm", format!("Boxes can open {device}")),
+        },
+    )
 }
 
 /// The forwarder binary the controller delivers to each Box, when the Proxy runs on this host.
