@@ -1,6 +1,6 @@
 # Where moor sits
 
-Draft for the owner to read. Nothing here is decided until the questions at the end are answered.
+Draft for the owner to read. The Decided section lists what the owner settled. The rest waits on the open questions.
 
 moor is where a team hands work to coding agents and gets back a result it can trust. This page says what moor is for, who uses it, and which words explain it. It compares moor with three current patterns and sets the order of work after the portal.
 
@@ -228,10 +228,15 @@ Steps 1 to 9 of the experience spec and the egress work in [#1488](https://githu
 
 Five things stay out of the plan. They are a Slack front, auto-merge, a board, a model picker and hosting for other teams.
 
+## Decided
+
+The owner decided this on 2026-11-20.
+
+- "Run" folds into "task" for people. A run is a task that a workflow started.
+
 ## Open questions
 
-1. Does "run" fold into "task" for people?
-2. Do answers and previews come before the tracker trigger, or after it?
-3. Does moor design for anyone outside the team, such as a client?
-4. Does a task act as the person steering it, as Hopper does?
-5. Does an answer with no pull request count as a task, or does it need a lighter thing with no Box?
+1. Do answers and previews come before the tracker trigger, or after it?
+2. Does moor design for anyone outside the team, such as a client?
+3. Does a task act as the person steering it, as Hopper does?
+4. Does an answer with no pull request count as a task, or does it need a lighter thing with no Box?
