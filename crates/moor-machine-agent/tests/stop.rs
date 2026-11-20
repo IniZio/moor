@@ -7,6 +7,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 
 use moor_machine_agent::State;
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, Pid, Signal};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
@@ -40,14 +41,16 @@ fn stopped_with(signal: Signal) -> (Option<i32>, String) {
     )
     .unwrap();
 
-    let mut agent = Command::new(env!("CARGO_BIN_EXE_moor-machine-agent"))
-        .arg("run")
-        .env("HOME", home.path())
-        .env("XDG_STATE_HOME", home.path())
-        .env_remove("XDG_CONFIG_HOME")
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut agent = ChildGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_moor-machine-agent"))
+            .arg("run")
+            .env("HOME", home.path())
+            .env("XDG_STATE_HOME", home.path())
+            .env_remove("XDG_CONFIG_HOME")
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut lines = BufReader::new(agent.stderr.take().unwrap()).lines();
     let mut seen = String::new();
     // A dial that failed proves the signal handlers are already installed.
