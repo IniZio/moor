@@ -12,7 +12,7 @@ pub const CLOSE_REASON_PR_MERGED: &str = "pr_merged";
 /// The Box's pull request closed without a merge.
 pub const CLOSE_REASON_PR_CLOSED: &str = "pr_closed";
 
-/// A task Box saw no activity for the idle period.
+/// A one-off Box saw no activity for the idle period.
 pub const CLOSE_REASON_IDLE: &str = "idle";
 
 /// `close-failed` closed the Box.

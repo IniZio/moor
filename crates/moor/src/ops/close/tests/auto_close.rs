@@ -1,4 +1,4 @@
-//! The auto-close pass over a task Box: its pull request, its idle days, and work that holds it.
+//! The auto-close pass over a one-off Box: its pull request, its idle days, and work that holds it.
 #![allow(clippy::panic, reason = "a test names what it found when it fails")]
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
@@ -25,17 +25,21 @@ use crate::testing::forge::FakeForge;
 const BRANCH: &str = "moor/1-t";
 const DAY: u64 = 86_400;
 
-/// A Ready, quiet task Box on `BRANCH` whose probe reads `boxwork`.
-struct Task {
+/// A Ready, quiet one-off Box on `BRANCH` whose probe reads `boxwork`.
+struct OneOff {
     f: Fx,
     forge: Arc<FakeForge>,
     looked: AutoCloseLooked,
 }
 
-fn task(boxwork: &str) -> Task {
+fn one_off(boxwork: &str) -> OneOff {
+    one_off_on(FakeDriver::new(), boxwork)
+}
+
+fn one_off_on(driver: FakeDriver, boxwork: &str) -> OneOff {
     let dir = tempfile::tempdir().unwrap();
     let path = BoxPath::under("/work/box-1", ".moor/boxwork").unwrap();
-    let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, boxwork));
+    let driver = Arc::new(driver.peek_text("box-1", &path, boxwork));
     let forge = Arc::new(FakeForge::new());
     let proc = proc();
     let cx = Cx::fake(dir.path(), driver.clone(), proc.clone()).with_forge(forge.clone());
@@ -44,7 +48,7 @@ fn task(boxwork: &str) -> Task {
         .unwrap()
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    Task {
+    OneOff {
         f: Fx {
             dir,
             cx,
@@ -65,7 +69,7 @@ const fn cfg() -> AutoClose {
     }
 }
 
-impl Task {
+impl OneOff {
     fn sweep(&self) -> Vec<String> {
         let store = self.f.cx.store().unwrap();
         auto_close_pass(&self.f.cx, store, &|| false, (&cfg(), &self.looked)).unwrap()
@@ -127,7 +131,7 @@ impl Task {
 
 #[test]
 fn a_merged_pull_request_closes_the_box_and_keeps_its_evidence() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     let receipt = AccessEvent::TurnChanges {
         turn: 1,
         repos: Vec::new(),
@@ -146,7 +150,7 @@ fn a_merged_pull_request_closes_the_box_and_keeps_its_evidence() {
 
 #[test]
 fn a_pull_request_closed_without_a_merge_closes_the_box() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.pull(Some(PullState::Closed));
     t.sweep();
     assert!(t.closed());
@@ -155,7 +159,7 @@ fn a_pull_request_closed_without_a_merge_closes_the_box() {
 
 #[test]
 fn an_open_or_missing_pull_request_keeps_the_box() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.pull(Some(PullState::Approved));
     assert!(t.sweep().is_empty());
     t.pull(None);
@@ -164,8 +168,8 @@ fn an_open_or_missing_pull_request_keeps_the_box() {
 }
 
 #[test]
-fn a_task_box_closes_after_seven_idle_days_and_not_before() {
-    let t = task("ahead=0 dirty=0");
+fn a_one_off_box_closes_after_seven_idle_days_and_not_before() {
+    let t = one_off("ahead=0 dirty=0");
     assert!(t.pass_secs(7 * DAY - 120).is_empty());
     assert!(!t.closed());
     t.pass_secs(240);
@@ -175,7 +179,7 @@ fn a_task_box_closes_after_seven_idle_days_and_not_before() {
 
 #[test]
 fn a_steer_or_terminal_restarts_the_idle_clock() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.f.cx.clock().sleep(Duration::from_secs(6 * DAY));
     let opened = AccessEvent::TerminalOpened { shell: false };
     let store = t.f.cx.store().unwrap();
@@ -190,7 +194,7 @@ fn a_steer_or_terminal_restarts_the_idle_clock() {
 
 #[test]
 fn unpushed_work_holds_the_close_and_says_why_once() {
-    let t = task("ahead=2 dirty=1");
+    let t = one_off("ahead=2 dirty=1");
     t.pull(Some(PullState::Merged));
     assert!(t.sweep().is_empty());
     assert!(!t.closed());
@@ -208,7 +212,7 @@ fn unpushed_work_holds_the_close_and_says_why_once() {
 
 #[test]
 fn a_box_whose_agent_is_working_is_left_for_a_later_pass() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     let store = t.f.cx.store().unwrap();
     store
         .apply(Decision::new(t.f.id).session(SessionInput::AgentBusy))
@@ -221,7 +225,7 @@ fn a_box_whose_agent_is_working_is_left_for_a_later_pass() {
 
 #[test]
 fn an_asleep_box_closes_from_the_check_recorded_at_sleep_without_waking() {
-    let t = task("ahead=9 dirty=9");
+    let t = one_off("ahead=9 dirty=9");
     t.slept_with(Some((0, 0)));
     t.pull(Some(PullState::Merged));
     let lines = t.sweep();
@@ -232,7 +236,7 @@ fn an_asleep_box_closes_from_the_check_recorded_at_sleep_without_waking() {
 
 #[test]
 fn an_asleep_box_whose_record_shows_unpushed_work_stays_and_is_marked() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.slept_with(Some((1, 0)));
     t.pull(Some(PullState::Closed));
     assert!(t.sweep().is_empty());
@@ -246,7 +250,7 @@ fn an_asleep_box_whose_record_shows_unpushed_work_stays_and_is_marked() {
 
 #[test]
 fn an_asleep_box_with_no_record_is_held_not_woken() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.slept_with(None);
     t.pull(Some(PullState::Merged));
     assert!(t.sweep().is_empty());
@@ -259,7 +263,7 @@ fn an_asleep_box_with_no_record_is_held_not_woken() {
 
 #[test]
 fn a_manual_close_of_an_asleep_box_uses_the_record_and_never_wakes_it() {
-    let t = task("ahead=9 dirty=9");
+    let t = one_off("ahead=9 dirty=9");
     t.slept_with(Some((0, 0)));
     let rng = crate::testing::rng::FakeRng::default();
     t.f.cx.store().unwrap().reserve(t.f.id, &rng).unwrap();
@@ -270,10 +274,25 @@ fn a_manual_close_of_an_asleep_box_uses_the_record_and_never_wakes_it() {
 
 #[test]
 fn a_manual_close_of_an_asleep_box_whose_record_shows_work_is_refused_unwoken() {
-    let t = task("ahead=0 dirty=0");
+    let t = one_off("ahead=0 dirty=0");
     t.slept_with(Some((0, 3)));
     let e = run(&t.f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, moor_core::ErrorKind::Refused);
     assert!(!t.woke());
     assert_eq!(row(&t.f).lifecycle, BoxLifecycle::Asleep);
+}
+
+#[test]
+fn closing_an_asleep_box_unwoken_says_its_caches_were_lost_unless_the_driver_keeps_them() {
+    let lost = one_off("ahead=0 dirty=0");
+    lost.slept_with(Some((0, 0)));
+    run(&lost.f.cx, &req(false)).unwrap();
+    assert_eq!(lost.events("caches_not_saved").len(), 1);
+
+    let kept = one_off_on(FakeDriver::new().cache_volumes(), "ahead=0 dirty=0");
+    kept.slept_with(Some((0, 0)));
+    run(&kept.f.cx, &req(false)).unwrap();
+    assert!(kept.closed());
+    assert!(!kept.woke());
+    assert!(kept.events("caches_not_saved").is_empty());
 }

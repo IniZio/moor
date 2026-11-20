@@ -37,7 +37,7 @@ pub struct ControllerConfig {
     /// Seconds after a workflow run ends before its Box closes, counted from the last time a
     /// person opened its terminal or steered it; 0 keeps these Boxes. None means 86400.
     pub auto_close_run_after_secs: Option<u64>,
-    /// Seconds a task Box (not from a run) may sit idle before it closes; 0 turns the idle
+    /// Seconds a one-off Box (not from a run) may sit idle before it closes; 0 turns the idle
     /// close off. None means 604800.
     pub auto_close_idle_after_secs: Option<u64>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
@@ -111,7 +111,7 @@ pub struct AutoClose {
     /// How long after its run ends, or after the last steer or terminal, a run's Box closes;
     /// none keeps them.
     pub run_after: Option<Duration>,
-    /// How long a task Box may sit idle before it closes; none turns that close off. A task Box
+    /// How long a one-off Box may sit idle before it closes; none turns that close off. A one-off Box
     /// whose pull request merged or closed closes whatever this is.
     pub idle_after: Option<Duration>,
 }
@@ -140,7 +140,7 @@ const DEFAULT_AUTO_CLOSE_EVERY_SECS: u64 = 60;
 /// Seconds a run's Box stays open after the run ends.
 const DEFAULT_AUTO_CLOSE_RUN_SECS: u64 = 86_400;
 
-/// Seconds a task Box may sit idle.
+/// Seconds a one-off Box may sit idle.
 const DEFAULT_AUTO_CLOSE_IDLE_SECS: u64 = 604_800;
 
 /// Seconds a drain waits when the config does not say: long enough for a `start` to finish.

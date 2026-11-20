@@ -20,6 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
 use crate::ops::common::boxwork::{self, BoxWork, BOXWORK_DEADLINE};
+use crate::ops::common::cache::keeps_caches;
 use crate::ops::common::provision::planned_root;
 use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
@@ -127,7 +128,8 @@ fn close_held(
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Asleep);
     // A forced close reads nothing in the Box, so it has no answer; its caches go with it all the same.
-    if unwoken && (probed_clean || req.force) {
+    let saved_anyway = unwoken && keeps_caches(cx, store, &row);
+    if unwoken && !saved_anyway && (probed_clean || req.force) {
         store.apply(Decision::new(row.id).event(ExtraEvent::CachesNotSaved))?;
     }
     let saved = save_transcript(cx, store, &row)?;

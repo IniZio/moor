@@ -67,7 +67,7 @@ moor also closes Boxes nobody needs any more, once a minute:
 - A workflow run's Box closes 24 hours after the run ends. Opening its terminal
   or steering it restarts the 24 hours. See
   [When a run's Box closes](workflows.md#when-a-runs-box-closes).
-- A task Box, one that is not from a run, closes when its pull request merges or
+- A one-off Box, one that is not from a run, closes when its pull request merges or
   closes. It also closes after 7 days with no steer, terminal or finished turn.
 - A Box with unpushed commits or uncommitted files is not closed. moor writes an
   `auto_close_held` event that says why. `box_status` shows the Box as

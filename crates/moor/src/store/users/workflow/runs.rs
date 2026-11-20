@@ -57,7 +57,7 @@ impl Open {
 /// How a Box relates to the workflow runs that used it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RunOfBox {
-    /// No run used it: a task Box.
+    /// No run used it: a one-off Box.
     NoRun,
     /// Its latest run is being started, works or waits for an answer.
     Open,

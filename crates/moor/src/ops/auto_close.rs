@@ -1,7 +1,7 @@
 //! The pass that closes Boxes nobody needs any more, so their disks do not pile up.
 //!
 //! A workflow run's Box closes a while after its run ends, counted from the last steer or terminal
-//! someone opened since. A task Box closes when its pull request merged or closed, or when it sat
+//! someone opened since. A one-off Box closes when its pull request merged or closed, or when it sat
 //! idle for long enough. A Box holding work that exists only in it is never closed: the pass says
 //! so on the Box and leaves it to a person. The close never wakes an asleep Box; it answers from
 //! the check recorded when the Box went to sleep.
@@ -32,7 +32,7 @@ use crate::store::{BoxRow, RunOfBox, Store, StoreError};
 /// Events that show someone steered or opened the terminal of a Box.
 const HANDS_ON: [&str; 2] = ["steered", "terminal_opened"];
 
-/// Events that show a task Box was used: a person's hands, or its agent's turns.
+/// Events that show a one-off Box was used: a person's hands, or its agent's turns.
 const IN_USE: [&str; 6] = [
     "started",
     "steered",
@@ -95,7 +95,7 @@ pub(crate) fn pass(
 /// What made a close due.
 #[derive(Clone, Copy)]
 enum Due {
-    /// The clock: a run's Box or an idle task Box, judged again under the Box's turn.
+    /// The clock: a run's Box or an idle one-off Box, judged again under the Box's turn.
     Clock(&'static str),
     /// The Box's pull request ended.
     Pull(&'static str),
@@ -193,7 +193,7 @@ fn millis(d: Duration) -> i64 {
 }
 
 /// The reason Box `row` is due by the clock at `now`, when it is: its run ended long enough ago
-/// with nobody's hands on it since, or it is a task Box left idle for long enough.
+/// with nobody's hands on it since, or it is a one-off Box left idle for long enough.
 fn due_by_clock(
     store: &Store,
     row: &BoxRow,
