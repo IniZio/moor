@@ -93,7 +93,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | A poll keeps the id of the last delivery it read. | A delivery then never fires twice, and a restart resumes where the last poll stopped. |
 | The operator creates one App per moor install on GitHub and gives moor its id, private key and webhook secret. No shared hosted App. | moor carries no App setup code. A shared App would route every team's events through one owner. |
 | moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
-| The App only reads. moor uses App credentials to verify deliveries, find installations, and read pull requests and collaborator permissions. No code path writes with an App token. Runs keep acting as the owner's token through the Proxy. | Grants already live in `proxy.allow`. A second write identity would need a second grant model. |
+| The App holds comment and status write permissions. Which identity writes is open until the trigger is live. For now runs write through the Proxy with the owner's token, and moor writes nothing with an App token. | The team can pick either identity later without recreating the App. See [Open question](#open-question). |
 | A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
 | One open run per workflow and pull request. | Two pull requests should not wait on each other. One pull request must not get two agents. |
 | A newer head cancels the open run of an older head. | The old run is a live Box spending tokens on a stale commit. |
@@ -117,9 +117,10 @@ columns with a check that matches the enum, and parses rows back into it.
   controller as it does for `/mcp`.
 - **Creating the App.** The operator creates the App on GitHub by hand, under a
   personal account or an org. Webhook URL `<public url>/hooks/github`, a webhook
-  secret, and event `pull_request`. Permissions `metadata: read` and `pull_requests: read`.
-  The App gets no write permission. Every comment, status or
-  other write goes through the owner's token and the Proxy.
+  secret, and event `pull_request`. Permissions `metadata: read`, `pull_requests: read and
+  write` and `statuses: read and write`. moor uses the App only to verify deliveries,
+  find installations, and read pull requests and collaborator permissions. Its
+  installation tokens ask for reads only.
 - **Credentials.** The controller config gains a `github_app` entry with three values.
 
   ```yaml
@@ -238,10 +239,17 @@ review code, run a check or do nothing on GitHub at all.
   skipped. A fork's author needs `admin`, `maintain` or `write` on the base repo, read
   at intake on every event. Their code runs beside the owner's token.
 - **Identity.** The run acts as the workflow's owner, with the owner's secrets, as any
-  run does. The App key reads pull requests and nothing else.
+  run does. For now moor only reads with the App key.
 - **Grants.** A later PR adds `{pull}` and `{head_sha}` to the `proxy.allow` syntax, such
   as `POST /repos/{repo}/issues/{pull}/comments`. The Box can then write only to its own
   pull request and commit.
+
+## Open question
+
+Which identity writes comments and statuses, decided after the trigger is live.
+
+- **App identity.** A bot author and no personal token, but a second grant model beside `proxy.allow`.
+- **Owner token.** The existing `proxy.allow` grants, but comments show as the person.
 
 ## Out of scope
 
