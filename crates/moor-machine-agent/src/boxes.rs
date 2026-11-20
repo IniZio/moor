@@ -299,7 +299,6 @@ impl<P: BoxProvider> Boxes<P> {
 
     /// The health of each Box held, or each of `controller`'s.
     async fn reports_of(&self, controller: Option<&ControllerId>) -> Vec<BoxReport> {
-        // Why a Box the provider does not list is down. A provider that could not look says nothing.
         let (seen, unlisted) = match self.provider.observe().await {
             Ok(seen) => (seen, Some(health::GONE.to_owned())),
             Err(ProvideError::Lost(why)) => (Vec::new(), Some(why)),
