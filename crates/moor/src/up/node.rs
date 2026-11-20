@@ -15,6 +15,7 @@ use moor_core::Request;
 use serde::{Deserialize, Serialize};
 
 use super::files::{Layout, NODE};
+use super::relay::{relay_unit, relayed, Relay};
 use super::service;
 use moor_client::rootless;
 
@@ -36,8 +37,6 @@ const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's wor
 /// What `up` tells the person about the images of a rootless daemon.
 const IMAGES: &str = "the rootless daemon keeps its own images and cache volumes under your home, \
     so the first Box here pulls the Box images again";
-/// The rootless Docker daemon's own user unit.
-const DOCKER_UNIT: &str = "docker.service";
 /// The file in the state dir that keeps the ports `up` chose.
 const PORTS_FILE: &str = "up-ports.json";
 /// Seconds to wait for the agent's link; `MOOR_UP_LINK_WAIT_SECS` sets another.
@@ -173,42 +172,6 @@ fn bridge_gateway() -> Result<Ipv4Addr, Check> {
     })
 }
 
-/// What the egress relay of a rootless daemon needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Relay {
-    /// The `moor-egress-forward` executable, which has a relay mode.
-    pub forward: PathBuf,
-    /// The state dir of the daemon's rootlesskit, which holds `child_pid`.
-    pub state: PathBuf,
-    /// The user unit that runs the daemon.
-    pub docker: String,
-}
-
-/// The rootless daemon's namespace address, which the relay listens on and a Box dials, and the
-/// relay's own facts.
-fn relayed(env: &Env) -> Result<(Ipv4Addr, Relay), Check> {
-    let fail = |why: String| Check::fail("relay", why, "check that the rootless daemon is running");
-    let state = rootless::daemon_state().map_err(fail)?;
-    let ip = rootless::child_ip(&state).map_err(fail)?;
-    let forward = crate::proxy::route::binary(env);
-    if !fs::metadata(&forward).is_ok_and(|m| m.is_file()) {
-        return Err(Check::fail(
-            "relay",
-            format!("{} does not exist", forward.display()),
-            INSTALL,
-        ));
-    }
-    let docker = DOCKER_UNIT.to_owned();
-    Ok((
-        ip,
-        Relay {
-            forward,
-            state,
-            docker,
-        },
-    ))
-}
-
 /// What `up` says about the privileges Docker Boxes take. Under rootless Docker it first checks
 /// the daemon is set up for them, and fails with every check that does not hold.
 fn trust(env: &Env, rootless: bool) -> Result<Vec<Check>, Check> {
@@ -318,54 +281,6 @@ pub(crate) fn agent_unit(plan: &Plan, home: &Path, env: &Env) -> String {
         &["run".to_owned()],
         &vars,
         None,
-    )
-}
-
-/// The relay's unit text: it enters the rootless daemon's namespace as it is when the unit starts,
-/// and follows the daemon's own unit, so a new namespace gets a new relay.
-pub(crate) fn relay_unit(
-    plan: &Plan,
-    layout: &Layout,
-    relay: &Relay,
-    path: Option<&str>,
-) -> String {
-    let script = "exec nsenter -U --preserve-credentials -n -t $(cat \"$1\"/child_pid) \"$2\" --relay \"$3\" --socket \"$4\"";
-    let words = [
-        "/bin/sh".to_owned(),
-        "-c".to_owned(),
-        script.to_owned(),
-        "moor-relay".to_owned(),
-        relay.state.display().to_string(),
-        relay.forward.display().to_string(),
-        plan.egress.to_string(),
-        crate::proxy::route::local_socket(&layout.state_dir)
-            .display()
-            .to_string(),
-    ];
-    let exec = words
-        .iter()
-        .map(|w| service::quoted(&w.replace('$', "$$")))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let vars = path.map_or_else(String::new, |p| {
-        format!("Environment={}\n", service::quoted(&format!("PATH={p}")))
-    });
-    let docker = &relay.docker;
-    format!(
-        "[Unit]
-Description=moor egress relay: carries Box egress into the rootless Docker namespace
-BindsTo={docker}
-PartOf={docker}
-After={docker}
-
-[Service]
-ExecStart={exec}
-{vars}Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-"
     )
 }
 

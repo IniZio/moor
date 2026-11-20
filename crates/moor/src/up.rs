@@ -8,6 +8,7 @@
 mod files;
 mod gate;
 mod node;
+mod relay;
 mod secrets;
 mod service;
 #[cfg(test)]

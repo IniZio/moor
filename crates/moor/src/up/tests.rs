@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use super::files::{controller, converge_user, Layout};
 use super::gate::{self, Gate, Plan as GatePlan};
-use super::node::{agent_unit, relay_unit, rootless_checks, runner_unit, Plan, Ports, Relay};
+use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
+use super::relay::{relay_unit, Relay};
 use super::service::{service_unit, socket_unit, Unit};
 use crate::env::Env;
 use moor_client::rootless::Facts;
@@ -353,7 +354,7 @@ Restart=always
 RestartSec=2
 
 [Install]
-WantedBy=default.target
+WantedBy=default.target docker.service
 "
     );
 }
