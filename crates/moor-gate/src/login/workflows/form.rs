@@ -31,7 +31,7 @@ struct Fields {
     /// IANA time zone the cron is read in.
     #[serde(default)]
     timezone: String,
-    /// Minutes a run may take; the default when absent.
+    /// Minutes a run may take; the stored value, or the default for a new workflow, when absent.
     #[serde(default)]
     timeout_minutes: Option<u32>,
     /// Whether a pull request event on the first repo fires a run; the stored value when absent.
@@ -134,7 +134,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
     WorkflowAddReq {
         identity: None,
         name: name.to_owned(),
-        cron: non_empty(&fields.cron),
+        cron: Some(non_empty(&fields.cron).unwrap_or_default()),
         timezone: non_empty(&fields.timezone),
         repos: fields.repos.iter().map(|r| r.trim().to_owned()).collect(),
         config: kept.and_then(|w| w.config.clone()),
@@ -144,8 +144,8 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         expected_revision: None,
         origin_key: None,
         keep_state: false,
-        enabled: true,
-        on_pull_request,
+        enabled: Some(true),
+        on_pull_request: Some(on_pull_request),
     }
 }
 
@@ -205,7 +205,7 @@ pub(crate) fn create(
     if let Some(plan) = new.plan.filter(|p| !p.trim().is_empty()) {
         request.plan = Some(plan);
     }
-    request.enabled = new.enabled;
+    request.enabled = Some(new.enabled);
     match tools::ask_as(
         &gate.controller,
         &session.person,

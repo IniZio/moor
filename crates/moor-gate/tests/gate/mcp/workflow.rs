@@ -238,3 +238,32 @@ fn the_tool_texts_say_repo_expands_to_every_box_repo_and_how_to_add_disabled() {
         assert!(text.contains(want), "{text}");
     }
 }
+
+#[test]
+fn add_workflow_sends_only_what_the_caller_left_in_and_null_cron_clears_it() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    for args in [
+        json!({"name": "w", "repos": ["o/n"], "prompt": "p"}),
+        json!({"name": "w", "repos": ["o/n"], "prompt": "p", "cron": null}),
+        json!({"name": "w", "repos": ["o/n"], "prompt": "p", "config": "",
+            "on_pull_request": false, "enabled": true}),
+    ] {
+        let result = m.call(&token, "add_workflow", args);
+        assert_ne!(result["isError"], true, "{result}");
+    }
+    let sent: Vec<_> = m
+        .requests()
+        .iter()
+        .map(|r| r["request"]["request"].clone())
+        .collect();
+    assert_eq!(
+        sent[0],
+        json!({"cmd": "workflow-add", "name": "w", "repos": ["o/n"], "prompt": "p"}),
+        "nothing left out is sent as a value"
+    );
+    assert_eq!(sent[1]["cron"], "", "null clears the cron");
+    assert_eq!(sent[2]["config"], "");
+    assert_eq!(sent[2]["on_pull_request"], false);
+    assert_eq!(sent[2]["enabled"], true);
+}

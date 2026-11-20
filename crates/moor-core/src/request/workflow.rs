@@ -15,23 +15,26 @@ pub struct WorkflowAddReq {
     pub identity: Option<Identity>,
     /// The workflow's name, unique per user; adding a name again replaces it.
     pub name: String,
-    /// Five-field cron expression; none for a workflow that runs only by hand or on a pull
-    /// request.
+    /// Five-field cron expression. Absent keeps a stored workflow's cron; blank clears it, for a
+    /// workflow that runs only by hand or on a pull request. A new workflow has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cron: Option<String>,
-    /// IANA time zone the cron is read in; required with a cron, ignored without one.
+    /// IANA time zone the cron is read in; required with a cron, ignored without one. Absent
+    /// keeps a stored workflow's zone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
     /// The repos, each `OWNER/NAME`, that each firing's one Box clones, in order. Its agent works
     /// in the first and the rest sit beside it. The controller's own `box.also` never applies.
     pub repos: Vec<String>,
     /// A partial repo config, in the repo config format, laid over each repo's config for the
-    /// Boxes this workflow starts; none when absent.
+    /// Boxes this workflow starts. Absent keeps a stored workflow's config (a new one has none);
+    /// blank clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
     /// What each Box's agent is asked to do.
     pub prompt: String,
-    /// Minutes a run may take before it is stopped; the default when absent.
+    /// Minutes a run may take before it is stopped. Absent keeps a stored workflow's timeout; a
+    /// new one gets the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_minutes: Option<u32>,
     /// The plan a run walks, as JSON text; none stores no plan, so a run delivers the prompt in
@@ -48,31 +51,19 @@ pub struct WorkflowAddReq {
     pub origin_key: Option<String>,
     /// Yes to replace a stored workflow's content and keep whether it is enabled, and the
     /// reason the controller disabled it for. A workflow just made is enabled either way. No
-    /// (the default) is a replace that enables it, as `add_workflow` does.
+    /// (the default) is a replace that follows `enabled`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_state: bool,
     /// No to store the workflow disabled in the same write, so no cron fires before a later
-    /// enable. Yes (the default) enables it. Ignored with `keep_state`.
-    #[serde(default = "enabled_by_default", skip_serializing_if = "is_true")]
-    pub enabled: bool,
+    /// enable; yes to enable it. Absent keeps a stored workflow's state, as `keep_state` does,
+    /// and enables a new one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// Yes to fire a run when a pull request on the first repo is opened, reopened, marked
-    /// ready for review or pushed to. No (the default) fires on the cron and by hand only.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub on_pull_request: bool,
-}
-
-/// The default of `WorkflowAddReq::enabled`.
-const fn enabled_by_default() -> bool {
-    true
-}
-
-/// Whether `value` is true, so a default `enabled` is not sent.
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "the signature serde's skip_serializing_if calls"
-)]
-const fn is_true(value: &bool) -> bool {
-    *value
+    /// ready for review or pushed to. Absent keeps a stored workflow's value; a new one fires
+    /// on the cron and by hand only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_pull_request: Option<bool>,
 }
 
 /// Arguments of `workflow-remove`.
