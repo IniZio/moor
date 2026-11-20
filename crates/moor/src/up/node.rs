@@ -165,10 +165,16 @@ fn trust(env: &Env) -> Result<Vec<Check>, Check> {
     if !failed.is_empty() {
         return Err(Check::fail("docker", rootless::report(&failed), ""));
     }
-    Ok(vec![
+    let mut checks = vec![
         Check::ok("docker", rootless::notice(&facts.user)),
         Check::ok("docker", IMAGES),
-    ])
+    ];
+    checks.extend(
+        rootless::warnings(&facts)
+            .into_iter()
+            .map(|w| Check::warn(w.check, w.detail, w.fix)),
+    );
+    Ok(checks)
 }
 
 /// The trimmed stdout of `docker args`, else why it failed.

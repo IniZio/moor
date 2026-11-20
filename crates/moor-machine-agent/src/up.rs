@@ -251,6 +251,12 @@ fn trust_docker(say: &mut dyn FnMut(&str)) -> Result<(), String> {
         ));
     }
     say(&rootless::notice(&facts.user));
+    for w in rootless::warnings(&facts) {
+        say(&format!(
+            "warning: {}: {}; fix: {}",
+            w.check, w.detail, w.fix
+        ));
+    }
     Ok(())
 }
 

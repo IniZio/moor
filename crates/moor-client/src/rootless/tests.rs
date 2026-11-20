@@ -7,8 +7,8 @@
 )]
 
 use super::{
-    cmdline_words, failures, is_rootless, loopback_closed, notice, report, state_dir, Facts,
-    Failure,
+    cmdline_words, failures, is_rootless, loopback_closed, notice, report, state_dir, warnings,
+    Facts, Failure,
 };
 
 /// What rootless Docker 29.10 printed for its security options.
@@ -158,14 +158,22 @@ fn the_loopback_flag_may_carry_true_and_never_false() {
 }
 
 #[test]
-fn a_kvm_device_must_be_open_to_everyone() {
+fn a_kvm_device_not_open_to_everyone_is_a_warning_not_a_failure() {
     let mut f = good();
+    assert_eq!(warnings(&f), []);
     f.kvm_mode = Some(0o660);
-    let one = only(&f);
+    assert_eq!(failures(&f, true), []);
+    let [one] = warnings(&f).try_into().unwrap();
     assert_eq!(one.check, "kvm");
+    assert!(
+        one.detail.starts_with(
+            "KVM Boxes (Android emulators) will not work on this node until /dev/kvm is 0666"
+        ),
+        "{one:?}"
+    );
     assert!(one.fix.contains("0666"), "{one:?}");
     f.kvm_mode = None;
-    assert_eq!(failures(&f, true), []);
+    assert_eq!(warnings(&f), []);
 }
 
 #[test]
@@ -174,14 +182,14 @@ fn every_failure_is_reported_at_once() {
     f.linger = Some(false);
     f.kvm_mode = Some(0o600);
     f.unit = None;
-    assert_eq!(names(&f, true), ["docker.service", "linger", "kvm"]);
+    assert_eq!(names(&f, true), ["docker.service", "linger"]);
 }
 
 #[test]
 fn the_report_gives_each_failure_a_line_with_its_fix() {
     let mut f = good();
     f.linger = Some(false);
-    f.kvm_mode = Some(0o600);
+    f.rootlesskit = Ok(Vec::new());
     let text = report(&failures(&f, true));
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 3, "{text}");
@@ -194,7 +202,7 @@ fn the_report_gives_each_failure_a_line_with_its_fix() {
         lines[1].ends_with("; fix: run `loginctl enable-linger`"),
         "{text}"
     );
-    assert!(lines[2].starts_with("- kvm: "), "{text}");
+    assert!(lines[2].starts_with("- loopback: "), "{text}");
 }
 
 #[test]
