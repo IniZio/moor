@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 use std::process::Command;
 
-use moor_testkit::write_executable;
+use moor_testkit::{write_executable, LockedPort};
 
 use super::{fresh_dir, Dir, Run};
 
@@ -55,6 +55,7 @@ pub(super) struct Host {
     pub(super) home: Dir,
     pub(super) state: tempfile::TempDir,
     pub(super) bin: Dir,
+    ports: [LockedPort; 3],
 }
 
 impl Host {
@@ -83,6 +84,28 @@ impl Host {
             home: fresh_dir("up-home"),
             state: moor_testkit::short_tempdir("up").unwrap(),
             bin,
+            ports: [(); 3].map(|()| LockedPort::reserve()),
+        }
+    }
+
+    /// Gives `up` ports no other test holds: parallel hosts can probe one free port before either
+    /// controller binds it. A host whose `docker` names no bridge fails first and writes nothing.
+    pub(super) fn keep_ports(&self) {
+        let file = self.state.path().join("up-ports.json");
+        let gateway = Command::new(self.bin.join("docker"))
+            .args([
+                "network",
+                "inspect",
+                "bridge",
+                "--format",
+                "{{(index .IPAM.Config 0).Gateway}}",
+            ])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if gateway && !file.exists() {
+            let [agents, listen, egress] = self.ports.each_ref().map(LockedPort::port);
+            let kept = format!("{{\"agents\":{agents},\"listen\":{listen},\"egress\":{egress}}}\n");
+            fs::write(file, kept).unwrap();
         }
     }
 
