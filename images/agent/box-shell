@@ -58,7 +58,7 @@ parent=$PPID
 setsid bash -lc ". /run/moor/agent.env 2>/dev/null; $2" <&0 &
 child=$!
 ( while kill -0 "$parent" 2>/dev/null; do sleep 1; done
-  kill -TERM -- "-$child" 2>/dev/null; sleep 3; kill -KILL -- "-$child" 2>/dev/null ) &
+  kill -TERM -- "-$child" 2>/dev/null; sleep 3; kill -KILL -- "-$child" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
 watcher=$!
 wait "$child"
 status=$?
