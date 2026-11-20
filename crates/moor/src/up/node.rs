@@ -91,6 +91,9 @@ impl Ports {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 /// What the node's units need, found before `up` writes anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Plan {
