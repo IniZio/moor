@@ -6,11 +6,11 @@ The [end-user experience spec](end-user-experience.md) covers the screens. The [
 
 ## The premise
 
-A moor workflow is shaped like a CI pipeline. Someone writes the steps before any task exists. moor freezes them and walks them one by one. Every repo of the workflow gets the same steps.
+A moor workflow is shaped like a CI pipeline. Its plan is written once, outside the Box, before anyone has looked at the task. moor freezes it and walks it step by step. Every repo of the workflow gets the same steps.
 
-An agent does not need that. It can read the repo and write its own plan for this task. So people should declare ends and limits, and the agent should write the means.
+The products studied here do it another way. The shape of the work is prose that an agent reads. The agent plans each task after it reads the repo. The prose lives in version control, so people and agents can improve it.
 
-> People say what done means and what needs a yes. The agent plans the work. moor checks the result from outside.
+> moor owns the mechanisms. The team's definition owns the shape. The agent writes the plan.
 
 ## moor in one line
 
@@ -25,7 +25,7 @@ An agent does not need that. It can read the repo and write its own plan for thi
 - **Not a pipeline engine.** moor holds no step graph.
 - **Not a company-wide assistant.** Hopper answers data and product questions too. moor stays with work on a repo.
 
-What is left is the part no vendor ships for a team's own hardware. That part is the shared task, the proof of done, and the credential boundary.
+What is left is the part no vendor ships for a team's own hardware. That part is the shared task, proof from outside the agent, and the credential boundary.
 
 ## What the sources show
 
@@ -33,85 +33,88 @@ Sources were read on 2026-11-20. They differ on one question. At what grain do p
 
 ```mermaid
 flowchart LR
-	S[Steps] --- P[Phases] --- K[Roles and skills] --- C[Nothing, the model writes a script]
+	S[Steps] --- P[Phases] --- R[Roles and prose] --- K[Skills only] --- C[Nothing, the model writes a script]
 	S1[moor workflow] -.-> S
-	P1[Factory] -.-> P
-	K1[Hopper, Warp, Casper, Kolega] -.-> K
+	P1[Mastra Factory] -.-> P
+	R1[Warp Factories] -.-> R
+	K1[Hopper] -.-> K
 	C1[Code mode] -.-> C
 ```
 
-| | moor workflow today | [Factory](https://factory.mastra.ai/) | [Hopper](https://medium.com/alan/hopper-we-built-an-internal-coding-agent-now-80-of-alan-uses-it-9c11e5b62ca5) | Code mode |
+| | moor workflow today | Mastra Factory | Warp Factories | Hopper |
 | --- | --- | --- | --- | --- |
-| What people declare | Up to 20 typed steps with pass and fail edges | A board of phases | Skills | Nothing |
-| Who writes the plan | A person's agent, once, before any task exists | The working agent, per task, after it investigates | No plan object | The model, as a script, per turn |
-| Who walks it | The controller, step by step | The agent, freely, after one approval | The agent | The harness runs the script |
-| Where a person says yes | Approve steps placed in the graph | Per phase, set to wait or to go on its own | The gateway asks before a risky tool call | Permission rules per call |
-| Where "done" lives | Evidence and checks on each step | The phase's goal and its exit tool | "Proving the work", by the agent | Nowhere |
-| What holds team knowledge | Step instructions | Skills, edited by admins | Skills, kept by the team that knows the work | Nothing |
-| Unit of work | A run of a workflow | A work card, and a review card per pull request | A session that colleagues can continue | One turn |
+| What people declare | Up to 20 typed steps with pass and fail edges | A board of phases | Agent roles, automations, skills and scorers, as files | Skills |
+| Where the shape of work lives | The step graph | The board | Prose in the foreman agent's file | The agent decides |
+| Who plans a task | A person's agent, once, before any task exists | The working agent, after it investigates | A triage agent routes. A spec agent works with a person. | No plan object |
+| Who drives | The controller, step by step | The agent, after one approval | The foreman agent | The agent |
+| Where a person says yes | Approve steps in the graph | Per phase, set to wait or to go | Where the prose says so, and at merge | The gateway asks before a risky call |
+| Where "done" lives | Evidence and checks on each step | The phase's goal and exit tool | A review agent, and scorers on a sample of runs | The agent proves its own work |
+| How it improves | A person edits the plan | Admins edit skills | A follow-up run opens a pull request on the definition | Teams edit skills |
 
-### Factory
+### Mastra Factory
+
+[Factory](https://factory.mastra.ai/) moved the declaration from steps up to phases.
 
 - A board is a list of phases. A working phase has a skill, instructions, a goal and an exit tool.
 - Each phase has "Start on its own" and "Approve on its own". A board can mix phases that wait with phases that go.
 - The planning phase writes a plan in the session and submits it. The card waits until a person approves.
 - The board Factory installs starts nothing on its own. By default no tokens are spent without a person.
-- Rules move cards when a source event arrives. They do not start runs.
 - A pull request gets its own review card and session. Requested changes return to the session that wrote the code.
-- Factory still declares structure. It moved the declaration from steps up to phases.
-
-### Hopper
-
-- It began as codebase questions, then pull requests, then hosted pages and dashboards. People outside engineering came for answers and prototypes.
-- One agent serves every job. What changes per job is tools, skills and connectors.
-- A skill is versioned instructions for repeatable work. It lives in Git or a registry.
-- One gateway sits in front of every tool. It decides allow, ask or deny, picks the credential and records the call.
-- The session is the unit of work. The agent acts as the person steering now, never as the first owner.
-- The agent loop moved out of the sandbox. A sandbox starts only when the task needs one.
-- Alan reports that 80% of its people use Hopper. It reports that 25% of merged pull requests come from it.
 
 ### Warp Factories
 
-[Warp's post](https://www.warp.dev/blog/open-infrastructure-for-building-a-software-factory) treats the factory as infrastructure, not as a product.
+[Warp's post](https://www.warp.dev/blog/open-infrastructure-for-building-a-software-factory) treats the factory as infrastructure. Its [examples](https://github.com/warpdotdev/warp-factory-examples) show the files.
 
-- The factory is version-controlled code. One top-level YAML file sits beside folders for agents, automations, runners, skills, webhooks, scorers and benchmarks.
-- The post compares this to Terraform. A team can roll a factory version back, canary it and test it.
-- Because the definition is code, agents can change it. The post calls this a huge driver of self-improvement.
-- Observer agents score a share of runs and look for a better score. Their knobs are the model, the harness, the context and the skill text.
-- Observers open pull requests against the factory. The post does not say who reviews them.
-- A foreman agent takes each work item and decides to implement, spec or wait. Default agents are Triage, Spec, Implement and Review.
-- Benchmarks compare factory versions on fixed tasks.
+- The factory is YAML and Markdown under version control. One top-level file names the repos, integrations and defaults. Folders hold agents, automations, skills, scorers, runners and benchmarks.
+- An agent file is frontmatter plus prose. The foreman's prose is the workflow. One example reads "When in doubt, triage" and "wait for a human to approve the spec".
+- An automation file is triggers in frontmatter and an ask in the body. A weekly dependency audit is one such file.
+- A scorer file holds labels, a passing score, a sampling rate and a judge prompt. A judge model grades a sample of finished runs.
+- A scorer can turn on self-improvement. After enough failures, a follow-up run opens a pull request against the definition.
+- The docs say "Nothing is adopted without your review". A setting picks who is asked to review.
+- The docs name no guard that stops a follow-up run from editing its own scorer.
+- Warp says the definition is checked into version control. It does not say which repo. Mastra Factory keeps its project apart from the target repo.
+
+### Hopper
+
+[Alan's post](https://medium.com/alan/hopper-we-built-an-internal-coding-agent-now-80-of-alan-uses-it-9c11e5b62ca5) describes one agent for every job.
+
+- It began as codebase questions, then pull requests, then hosted pages and dashboards. People outside engineering came for answers and prototypes.
+- What changes per job is tools, skills and connectors. A skill is versioned instructions for repeatable work.
+- One gateway sits in front of every tool. It decides allow, ask or deny, picks the credential and records the call.
+- The session is the unit of work. The agent acts as the person steering now, never as the first owner.
+- Alan reports that 80% of its people use Hopper. It reports that 25% of merged pull requests come from it.
 
 ### Code mode
 
-[pi](https://docs.pi.dev/latest/codemode) and [Claude Code](https://code.claude.com/docs/en/code-mode) let the model write a script that calls its tools. Control flow is written at run time, by the model, for this turn. It is the far end of the same line. A step graph written in advance duplicates what the model does better in context.
+[pi](https://docs.pi.dev/latest/codemode) and [Claude Code](https://code.claude.com/docs/en/code-mode) let the model write a script that calls its tools. Control flow is written at run time, by the model, for this turn. It is the far end of the same line.
 
 ### Other in-house agents
 
-[Casper](https://eng.snap.com/casper), [HAL](https://www.checkout.com/blog/how-agent-hal-ships-software-checkout-com) and [Kolega](https://bitrise.io/blog/post/how-we-built-a-coding-agent-that-lives-in-slack-and-the-recipe-to-build-your-own) agree on three points.
+[HAL](https://www.checkout.com/blog/how-agent-hal-ships-software-checkout-com), [Kolega](https://bitrise.io/blog/post/how-we-built-a-coding-agent-that-lives-in-slack-and-the-recipe-to-build-your-own) and [Casper](https://eng.snap.com/casper) add three points.
 
-- The agent keeps its pull request. It fixes its own failing CI and takes review comments.
-- Guardrails live in code, not prompts. Kolega's post says each guardrail came from an incident.
-- A human merges.
+- HAL and Kolega keep their pull request. They fix their own failing CI and take review comments.
+- Kolega's post says guardrails live in code, not prompts, and that each one came from an incident.
+- HAL and Kolega say a human merges.
 
-### What the sources do not show
+### What no source shows
 
-- **Self-improvement in Hopper or Factory.** People edit skills in both. Only Warp describes agents that improve the definition.
-- **A plan per stakeholder.** Only Factory has a plan per task. Its docs name no role for the approver. Hopper has no plan object.
-- **Proof from outside the agent.** Hopper's agent proves its own work. Factory's phase ends when the agent calls its exit tool.
+- **Proof on every task from outside the agent.** Warp scores a sample after the fact. Hopper's agent proves its own work. Factory's phase ends when the agent calls its exit tool.
+- **A guard on self-improvement.** Warp's follow-up run may change the files that grade it.
 
 ## What moor's own pilot shows
 
-The dependency-check pilot ran four workflows with four-step plans. Its findings are mixed.
+The dependency-check pilot ran four workflows with the same four-step plan.
 
-- **The plan helped.** Planned runs ended as delivered, with evidence on file. Before plans, a run that gave up looked like a run that delivered.
-- **Most friction was plumbing.** Stalled starts, a dead Box and a lost link do not argue against the model.
-- **Two findings argue against the model.** Step text contradicted the skill the agent used, twice. One failed a review step. Two places said how to do the work.
-- **A plan needs an author with a model.** A person who only uses the portal cannot write one.
+- **Enforced proof worked.** All four runs ended as delivered, with every step reported and evidence on file. Against the best run on old moor, two covered more, one matched it and one fell short.
+- **Most friction was plumbing.** A failed profile fetch, a dead Box and a lost link do not argue against the model.
+- **One finding argues against step text.** The audit skill's no-push rule contradicted the plan's draft pull request step. Two places said how to do the work.
+- **One finding argues against the graph.** A run ended as delivered with a failed review step inside it. A fail edge let the run carry on.
+- **One plan did not fit four repos.** The live step meant a Compose smoke on one repo, a browser suite on another, and Android and iOS builds on a third.
+- **Exit codes were not enough.** On one repo the branch failed the same 175 tests as main. That is no regression, and the command still exited non-zero.
 
 The need behind the plan is real. The step graph is not the only way to meet it.
 
-## Three models, three cases
+## Four models, three cases
 
 Each model is tested on the same cases.
 
@@ -119,108 +122,168 @@ Each model is tested on the same cases.
 - **B.** A PM asks for a copy fix with a screenshot.
 - **C.** A second person steers a task that someone else started.
 
-| | Sessions and skills (Hopper, Warp) | A board of phases (Factory) | Task, skill and contract (proposed) |
-| --- | --- | --- | --- |
-| People declare | Skills | Phases, and a skill per phase | Skills, a contract, and gate settings |
-| A | A skill and a schedule. Nothing outside the agent checks the proof. | A board for the chore. Proof is the agent's exit call. No schedule in the pages read. | A skill, a schedule and a contract. moor runs the contract's checks. |
-| B | Natural | Heavy. The ask must become a card and pass through phases. | Natural. The repo's default contract applies. |
-| C | The gateway uses the steerer's account | Not covered | The Proxy uses the steerer's tokens |
-| Cost | A run that gave up looks delivered again | moor becomes a board and a tracker | Proof moves from each step to the end |
+| | Skills only (Hopper) | Board of phases (Factory) | Roles and prose (Warp) | Definition plus enforced gates (proposed) |
+| --- | --- | --- | --- | --- |
+| A | A skill and a schedule. Nothing outside the agent checks the proof. | A board for the chore. No schedule in the pages read. | One automation file. A scorer samples runs afterwards. | One automation file and one contract. moor checks every task. |
+| B | Natural | Heavy. The ask becomes a card and passes through phases. | The foreman routes it. Slack and trackers are the way in. | Natural. The repo's default contract applies. |
+| C | The gateway uses the steerer's account | Not covered | Not covered in the pages read | The Proxy uses the steerer's tokens |
+| Cost | A run that gave up looks delivered again | moor becomes a board and a tracker | Proof is a sample, graded by a model | Two things to keep. Prose and contracts. |
 
 ## The proposed model
 
-One lifecycle, the same for every task. People do not edit its shape. They set what each gate needs.
+moor takes Warp's shape and keeps its own proof.
+
+- **The definition** is a repo of YAML and Markdown. It says how this team's moor behaves. People and agents change it by pull request.
+- **moor's mechanisms** are few and fixed. They are the task, the Box, the gates, the triggers and the scores. The definition cannot turn them off.
+
+### The definition
+
+It lives in its own repo, so no project repo is touched. moor applies it when a pull request merges. The diff of that pull request is the plan. A revert rolls it back.
+
+```
+team-moor/
+  moor.yaml                        repos, defaults
+  agents/lead/agent.md             how this team runs a task
+  skills/deps-check/SKILL.md       how to check dependencies
+  automations/deps-check.md        what starts the task, and the ask
+  contracts/deps-check.yaml        what done means
+  contracts/default.yaml
+  repos/acme-web.yaml              setup, egress and checks for one repo
+```
+
+The dependency check, as one automation.
+
+```markdown
+---
+triggers:
+  - schedule: "0 9 * * 1-5"
+    timezone: Europe/London
+repos: [acme/web, acme/api, acme/ios]
+skill: deps-check
+contract: deps-check
+grants:
+  - github: pulls:write
+---
+Check this repo's dependencies. Bump what has a fix in range.
+Run the repo's live test on the base and on your branch.
+Open a draft pull request with the proof.
+```
+
+Its contract.
+
+```yaml
+result: pull_request
+evidence: [audit.md, "before-*", "after-*", report.md]
+checks:
+  - run: repo.checks.ci
+judge: >
+  The after files show no failure that the before files lack.
+  Every bumped package appears in audit.md.
+gates:
+  plan: show
+  open_pull_request: go
+max_tries: 3
+```
+
+The lead agent's file holds the shape of work, as prose. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
+
+### The mechanisms
 
 ```mermaid
 flowchart LR
-	A[Ask] --> PL[Agent plans]
-	PL --> G1{Plan gate}
+	AU[Automation or a person] --> T[Task in a Box]
+	D[Definition] -.->|lead, skill, contract| T
+	T -->|submits plan| G1{Plan gate}
 	G1 --> W[Agent works]
-	W --> G2{Done gate}
-	G2 -->|checks fail| W
-	G2 --> R[Result]
-	R --> RV[Review on GitHub]
+	W -->|risky action| G3{Action gate}
+	G3 --> W
+	W -->|claims done| G2{Done gate}
+	G2 -->|fails| W
+	G2 --> RS[Result]
+	RS --> RV[Review on GitHub]
 	RV -->|comments, failing CI| W
-	RV --> L[Agent proposes a skill edit]
 ```
+
+- **The plan gate.** The agent submits its plan, written for this task. The contract says show or wait.
+- **The done gate.** The agent claims done. moor looks for the evidence, runs the checks in the Box, and asks a judge model the contract's question. A failure returns to the agent, up to the limit. A task that fails the gate never shows as done.
+- **Action gates.** The Proxy asks before a risky action, such as opening a pull request. The gate sits on the action, wherever the agent takes it.
 
 | Word | Meaning | Who sets it |
 | --- | --- | --- |
 | Task | What someone asked for. Shared, long-lived, open to colleagues. | Anyone |
 | Plan | The agent's own checklist for this task. Written after it reads the repo. Revised as it learns. | The agent |
-| Definition | One repo of files that says how this team's moor behaves. It holds skills, contracts, gates, triggers and grants. moor applies it. | The team, by pull request |
-| Skill | The team's way to do one kind of work. A file in the definition. | The team that knows the work |
-| Contract | What must be true before a result counts. Checks moor runs, evidence that must exist. | Repo maintainers, per repo or per skill |
-| Gate | A point where moor waits for a yes. Set to wait or to go on its own. | Repo maintainers |
-| Trigger | What starts a task. A person, a schedule, or an event. | Developers |
-| Result | What the task hands back. | The agent |
+| Definition | The repo that says how this team's moor behaves. | The team, by pull request |
+| Lead | The prose that tells the agent how this team runs a task. | The team |
+| Skill | The team's way to do one kind of work. | The team that knows the work |
+| Automation | Triggers and an ask. It starts tasks. | Developers |
+| Contract | What must be true before a result counts. | Repo maintainers |
+| Gate | A point where moor checks or waits for a yes. | The contract |
+| Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
 | Box | The computer a task runs in. | moor |
-| Grant | What one task may do beyond the defaults. | Repo maintainers |
+| Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by merging |
 
-There are three kinds of gate, and none sits inside a step graph.
-
-- **The plan gate.** The agent submits its plan. By default the plan is shown and the agent continues. A repo or skill can make it wait.
-- **The done gate.** The agent claims done. moor runs the contract's checks in the Box and looks for the evidence. A failure goes back to the agent, up to a limit.
-- **Action gates.** The Proxy asks before a risky action, such as opening a pull request. The gate sits on the action, wherever the agent takes it.
+Secrets never enter the definition. A grant names a permission, not a token.
 
 ### The three cases again
 
-- **A.** The skill says how to check dependencies. The contract names the before and after evidence and the regression command. A schedule starts one task per repo. Each agent writes a plan that fits its repo.
-- **B.** The PM types the ask. The agent's plan appears in plain words. The repo's contract asks for a screenshot and passing tests. The PM sees needs you only if a gate waits.
+- **A.** One automation and one contract replace four workflows. Each agent writes a plan that fits its repo. The judge handles "no worse than main", which an exit code cannot.
+- **B.** The PM types the ask. The plan appears in plain words. The default contract asks for a screenshot and passing checks. The PM sees needs you only if a gate waits.
 - **C.** The second person's message carries their identity. From then on the Proxy adds their tokens. It refuses when it cannot tell who is steering.
 
 ### A definition that improves
 
-The definition is code in its own repo, as in Warp. It is not in any project repo, so no project is touched. moor applies it when a pull request merges. A revert rolls it back.
-
 ```mermaid
 flowchart LR
-	D[Definition repo] -->|moor applies| T[Tasks]
+	D[Definition repo] -->|moor applies on merge| T[Tasks]
 	T --> S[Scores]
-	S --> O[Observer agent]
-	O -->|pull request| D
+	S --> O[Observer task]
+	O -->|pull request, prose only| D
 	H[A person] -->|merges or declines| D
 ```
 
 - **Scores come free.** A task records done-gate failures, steers that corrected the agent, review comments, and whether the pull request merged.
-- **An observer proposes.** It reads settled tasks and opens a pull request against the definition. The change may touch a skill, a contract or a gate.
-- **A person merges.** Nothing changes the definition without a person. Review happens on GitHub, where review already lives.
+- **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a pull request on the definition.
+- **The observer cannot edit its grader.** Its pull request may touch lead, skill and automation prose. moor refuses a push that touches a contract, a grant or a gate.
+- **A person merges.** Review happens on GitHub, where review already lives.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
-- **The portal still edits.** A change made in the portal becomes a commit to the definition.
+- **The portal still edits.** A change made in the portal becomes a pull request on the definition.
 
 ### What retires
 
 | Today | Becomes |
 | --- | --- |
-| Workflow | A skill plus a trigger |
+| Workflow | An automation file |
 | Plan of typed steps, frozen per run | The agent's plan, per task, not walked by moor |
-| Work step | Gone. The agent's plan holds it. |
+| Work step | Gone. The lead and the skill say how. |
 | Check step | A check in the contract, run at the done gate |
-| Approve step | A plan gate or an action gate |
+| Approve step | The plan gate or an action gate |
 | Deliver step | The result |
 | `report_step` | Two calls. The agent submits its plan, then claims done. |
-| Run | A task that a trigger started |
+| Run | A task that an automation started |
 | "Plan first" | The plan gate's setting, with a per-task override |
 | Compiling a plan from a prompt | Gone |
-| Workflows screen | Skills and triggers |
-| A workflow stored in moor's database | Files in the definition repo |
+| Workflows screen | Automations, with their last tasks |
+| Workflows and repo config in moor's database | Files in the definition repo |
 
 ### What this costs
 
-- Proof moves from each step to the end. A long task can fail late. The agent may run the contract's checks itself at any time.
-- A person cannot force an order of work. A skill can ask for one. Only the contract and the gates are enforced.
-- The pilot's four plans must be rewritten as one skill and one contract.
+- Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
+- The judge is a model. It can be wrong. Evidence and checks stay deterministic, and the judge only reads what is on file.
+- A person cannot force an order of work. The lead can ask for one. Only contracts and gates are enforced.
+- One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
+- Repo config moved into moor's database on 2026-11-17. This proposal moves it out again, into the definition repo.
 
 ## Who does what
 
-| | Ask | Approve a plan | Answer | Steer, step in | Review the result | Keep a skill | Set contract and gates | Run moor |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Requester (QA, PM, designer) | ● | ● | ● | | proof | | | |
-| Developer | ● | ● | ● | ● | proof and diff | by pull request | | |
-| Repo maintainer | ● | ● | ● | ● | on GitHub | ● | ● | |
-| Reviewer who never opens moor | | | | | in the PR | | | |
-| A person's own agent, over MCP | ● | ● | ● | ● | ● | | | |
-| Operator | | | | | | | | ● |
+| | Ask | Approve a plan | Answer | Steer, step in | Review the result | Change the definition | Run moor |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Requester (QA, PM, designer) | ● | ● | ● | | proof | | |
+| Developer | ● | ● | ● | ● | proof and diff | prose, by pull request | |
+| Repo maintainer | ● | ● | ● | ● | on GitHub | contracts and grants too | |
+| Reviewer who never opens moor | | | | | in the PR | | |
+| A person's own agent, over MCP | ● | ● | ● | ● | ● | | |
+| Observer | | | | | | prose only, by pull request | |
+| Operator | | | | | | | ● |
 
 The plan is written for its reader. A requester reads what will change and what proof will come back. A developer opens the same plan and sees files and commands.
 
@@ -232,8 +295,7 @@ mindmap
     Ask
       Portal
       Your own agent
-      Schedule
-      Event
+      Automation
     Plan
       Written by the agent
       Shown to you
@@ -241,24 +303,24 @@ mindmap
     Do
       Task
       Box
-      Skill
+      Lead and skills
     Prove
       Contract
-      Checks moor runs
-      Evidence
+      Evidence and checks
+      Judge
     Decide
       Needs you
       Action gates
       Review on GitHub
     Learn
-      Definition as code
+      Definition as files
       Scores from tasks
       Observer opens a pull request
       A person merges
     Keep safe
       Proxy holds tokens
       Egress allow list
-      Grants per task
+      Grants
 ```
 
 ## Order of work
@@ -267,24 +329,26 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 
 | # | Step | Check |
 | --- | --- | --- |
-| 1 | The contract and the done gate, for one-off tasks. | A task on the fixture repo with a failing test cannot reach done. |
+| 1 | The contract and the done gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and the plan gate. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
-| 3 | The definition repo. Skills, contracts and triggers are files that moor applies on merge. The dependency check moves to one skill and one contract. | The check on the fixture repo delivers the same evidence as a planned run. A revert of the definition restores the old behaviour. The step plan code is deleted. |
-| 4 | Action gates at the Proxy, and tokens that follow the steerer. | Opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
+| 3 | The definition repo. Lead, skills, automations and contracts are files that moor applies on merge. | The dependency check runs on the fixture repo from one automation and one contract. A revert restores the old behaviour. The step plan code is deleted. |
+| 4 | Action gates at the Proxy, and tokens that follow the steerer. | With that gate set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
-| 6 | An observer that proposes definition changes. | A steer that corrects the agent leads to a pull request on the definition. It replays on the fixture repo. The next task follows it once merged. |
+| 6 | The observer. | A steer that corrects the agent leads to a pull request on the definition. A push that touches a contract is refused. |
 
 ## Decided
 
 The owner decided this on 2026-11-20.
 
-- "Run" folds into "task" for people. A run is a task that a trigger started.
+- "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 
 ## Open questions
 
-1. Is one fixed lifecycle with gate settings right, with no step graph and no board of phases?
-2. Does an observer propose definition changes from settled tasks, for a person to merge?
-3. Does the requester approve the plan, and the repo maintainer the result?
-4. Does the definition live in its own repo, and does repo config move there from moor's store?
-5. Does a task act as the person steering it, as Hopper does?
-6. Does moor design for anyone outside the team, such as a client?
+1. Does moor fix only the gates, and leave the shape of work to prose in the definition?
+2. Does an observer propose changes by pull request, limited to prose?
+3. Does the definition live in its own repo, as YAML and Markdown, applied on merge?
+4. Does repo config move into that repo?
+5. May the done gate use a judge model?
+6. Does the requester approve a plan that waits?
+7. Does a task act as the person steering it, as Hopper does?
+8. Does moor design for anyone outside the team, such as a client?
