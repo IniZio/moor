@@ -9,7 +9,8 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// Append a `needs_input` event when the agent starts waiting for the user.
+/// Append a `needs_input` event when the agent starts waiting for the user: at a prompt, or with
+/// a reply that asks a question.
 ///
 /// One event per status the agent reported: a `moor run` meanwhile does not end the episode,
 /// and the agent asking again sets a new status. With no status time to go by, the event is
@@ -22,14 +23,15 @@ pub(super) fn note_needs_input(
     row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    let Some(Activity {
-        state: AgentState::NeedsInput {
-            question, options, ..
-        },
-        source,
-    }) = reading.activity.as_ref()
-    else {
+    let Some(Activity { state, source }) = reading.activity.as_ref() else {
         return Ok(());
+    };
+    let (question, options) = match state {
+        AgentState::NeedsInput {
+            question, options, ..
+        } => (question.clone(), options.clone()),
+        AgentState::Asked { question, .. } => (Some(question.clone()), Vec::new()),
+        _ => return Ok(()),
     };
     if *source == Source::FirstRun {
         return Ok(());
@@ -49,9 +51,6 @@ pub(super) fn note_needs_input(
             return Ok(());
         }
     }
-    let asked = ExtraEvent::NeedsInput {
-        question: question.clone(),
-        options: options.clone(),
-    };
+    let asked = ExtraEvent::NeedsInput { question, options };
     apply_read(cx, store, reading.decision(row.id).event(asked))
 }

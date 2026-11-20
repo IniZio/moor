@@ -60,6 +60,44 @@ fn the_agents_own_status_gives_the_state() {
 }
 
 #[test]
+fn a_turn_that_ends_asking_beside_background_work_asks_and_is_not_busy() {
+    let note = Note {
+        said: Some("Report.\n\nShip it? Recommend: yes".to_owned()),
+        background: vec!["sleep 900".to_owned()],
+        ..Note::default()
+    };
+    let a = decide(
+        &read(Some(Status::Idle), note, ""),
+        Ts::from_millis(NOW),
+        OLD,
+        None,
+    );
+    let asked = AgentState::Asked {
+        question: "Ship it?".to_owned(),
+        background: vec!["sleep 900".to_owned()],
+    };
+    assert_eq!(a.state, asked);
+    assert_eq!(a.state.as_str(), "needs_input");
+    assert!(!a.state.busy());
+    assert!(may_apply_quiet(&a, None));
+}
+
+#[test]
+fn a_failed_turn_or_a_reply_before_any_turn_asks_nothing() {
+    let note = || Note {
+        said: Some("Ship it?".to_owned()),
+        ..Note::default()
+    };
+    let failed = read(Some(Status::Error { msg: None }), note(), "");
+    assert_eq!(state(&failed, OLD), AgentState::Idle);
+    let mut fresh = read(Some(Status::Idle), note(), "");
+    if let Probe::Read { term: Some(t), .. } = &mut fresh {
+        t.turn = 0;
+    }
+    assert_eq!(state(&fresh, OLD), AgentState::Idle);
+}
+
+#[test]
 fn a_permission_asks_with_its_message_and_the_menu_on_screen() {
     let screen = "Run ls?\n❯ 1. Yes\n  2. No\n";
     let probe = read(

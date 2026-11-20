@@ -10,7 +10,7 @@ A webhook that names no events gets the kinds marked with a check.
 | Kind | Default | When |
 | --- | --- | --- |
 | `idled` | ✓ | The agent ended its turn. |
-| `needs_input` | ✓ | The agent asks a question or a permission. |
+| `needs_input` | ✓ | The agent asks a question or a permission, at a prompt or in the reply that ends its turn. A reply that asks keeps the Box needing you even while background work the turn started still runs. The agent's `waiting_on` names that work. |
 | `setup_failed` | ✓ | A clone, `setup` line, or agent install failed. `data.line` names it. |
 | `session_failed` | ✓ | The agent could not be started. |
 | `launch_timed_out` | ✓ | The agent did not start within `box.launch_timeout`. |

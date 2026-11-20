@@ -341,7 +341,7 @@ const fn ready(reading: &Reading) -> bool {
         && matches!(
             reading.activity,
             Some(Activity {
-                state: AgentState::Idle | AgentState::Working,
+                state: AgentState::Idle | AgentState::Working | AgentState::Asked { .. },
                 source: Source::Status,
             })
         )

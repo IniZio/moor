@@ -5,7 +5,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
 use moor_core::{ErrorKind, SteerReq};
 
-use super::{fx_with, menu, steered, working};
+use super::{fx_with, menu, steered, text, working};
 use crate::ops::steer::run;
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
@@ -29,6 +29,18 @@ fn a_choice_for_the_prompt_the_agent_waits_at_is_sent() {
     let ask = ask_id(Some("Which fruit?"), None, &options());
     run(&f.cx, &answer(2, &ask)).unwrap();
     assert_eq!(f.engine.steers(), [("agent-1".to_owned(), Steer::Menu(2))]);
+}
+
+#[test]
+fn words_for_a_question_the_agents_reply_asked_are_sent_as_text() {
+    let reply = "Done.\n\nShip the fix? Recommend: yes";
+    let asked = agent::replied_beside(reply, &["sleep 900"], Ts::from_millis(0));
+    let f = fx_with(FakeEngine::new().probes("agent-1", asked), true);
+    run(&f.cx, &text("yes, ship it")).unwrap();
+    assert_eq!(
+        f.engine.steers(),
+        [("agent-1".to_owned(), Steer::Text("yes, ship it".to_owned()))]
+    );
 }
 
 #[test]

@@ -132,20 +132,19 @@ fn status(lifecycle: &str, events: &[Happened]) -> String {
     }
 }
 
-/// `status` with what the agent still waits on, when its row says it ended its turn but waits.
+/// `status` with what the agent still waits on, when its row says it ended its turn but waits,
+/// or the background work still running beside a question it asks.
 fn waiting(status: String, agent: Option<&Value>) -> String {
     let field = |name| agent.and_then(|a| a.get(name));
-    if field("state").and_then(Value::as_str) != Some("waiting") {
-        return status;
-    }
     let on: Vec<&str> = field("waiting_on")
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
-    if on.is_empty() {
-        format!("{status} · waiting on background work")
-    } else {
-        format!("{status} · waiting on {}", on.join(", "))
+    match (field("state").and_then(Value::as_str), on.is_empty()) {
+        (Some("waiting"), true) => format!("{status} · waiting on background work"),
+        (Some("waiting"), false) => format!("{status} · waiting on {}", on.join(", ")),
+        (Some("needs_input"), false) => format!("{status} · still running {}", on.join(", ")),
+        _ => status,
     }
 }
 

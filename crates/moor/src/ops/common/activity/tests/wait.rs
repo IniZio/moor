@@ -15,6 +15,7 @@ use crate::ops::common::autosleep;
 use crate::testing::agent::{idle, with_note};
 use crate::testing::clock::FakeClock;
 
+mod asked;
 mod stale_prompt;
 mod unread;
 

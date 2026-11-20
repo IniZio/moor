@@ -163,7 +163,7 @@ fn agent_active(
     let idle_unrecorded = reading
         .activity
         .as_ref()
-        .is_some_and(|a| a.state == AgentState::Idle)
+        .is_some_and(|a| matches!(a.state, AgentState::Idle | AgentState::Asked { .. }))
         && !row.session.is_quiet();
     Ok(reading.busy() || idle_unrecorded || activity::turn_open(store, row, reading, now)?)
 }

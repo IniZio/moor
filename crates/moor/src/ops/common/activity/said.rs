@@ -21,7 +21,7 @@ pub(super) fn said(activity: &Activity, probe: &Probe) -> Option<String> {
         || !ended_a_turn
         || !matches!(
             activity.state,
-            AgentState::Idle | AgentState::Waiting { .. }
+            AgentState::Idle | AgentState::Waiting { .. } | AgentState::Asked { .. }
         )
     {
         return None;

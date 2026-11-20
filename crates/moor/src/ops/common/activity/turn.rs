@@ -184,7 +184,7 @@ fn never_began(reading: &Reading, sent: Ts, now: Ts) -> Option<TurnOutcome> {
     let read_idle = matches!(
         reading.activity,
         Some(Activity {
-            state: AgentState::Idle,
+            state: AgentState::Idle | AgentState::Asked { .. },
             source: Source::Status,
         })
     );

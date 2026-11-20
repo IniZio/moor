@@ -5,11 +5,13 @@ use std::time::Duration;
 
 use crate::seam::clock::Ts;
 
+mod asked;
 mod first_run;
 mod menu;
 mod stall;
 mod wait;
 
+pub use asked::asked;
 pub use menu::{menu_detail, menu_line, menu_options};
 pub use stall::{stalled_for, STALL_AFTER};
 pub use wait::{wait_overdue, WaitCheck};
@@ -37,6 +39,14 @@ pub enum AgentState {
     },
     /// Done and waiting for input.
     Idle,
+    /// Ended its turn with a reply that asks the person a question, which they answer at the
+    /// prompt. Fronts see it as `needs_input`: background work still running does not hide it.
+    Asked {
+        /// The question, from the reply.
+        question: String,
+        /// Background work its turn left running, one line per piece; shown beside the question.
+        background: Vec<String>,
+    },
     /// Ended its turn but waits on background work it started.
     Waiting {
         /// What it waits on, one line per piece.
@@ -67,7 +77,7 @@ impl AgentState {
         match self {
             Self::Starting => "starting",
             Self::Working => "working",
-            Self::NeedsInput { .. } => "needs_input",
+            Self::NeedsInput { .. } | Self::Asked { .. } => "needs_input",
             Self::Idle => "idle",
             Self::Waiting { .. } => "waiting",
             Self::Exited { .. } => "exited",
@@ -273,6 +283,27 @@ fn blocked(kind: Option<BlockKind>, msg: Option<&str>, note: &Note, screen: &str
     }
 }
 
+/// The state of an agent whose turn ended: asking the person when its reply asks a question,
+/// else waiting on the background work it left running, else idle. A failed turn's reply asks
+/// nothing, and before any turn has ended a reply in the note was left by an agent before this one.
+fn ended(term: &Term, note: &Note) -> AgentState {
+    let question = note
+        .said
+        .as_deref()
+        .filter(|_| term.turn > 0 && term.status == Some(Status::Idle))
+        .and_then(asked);
+    match question {
+        Some(question) => AgentState::Asked {
+            question,
+            background: note.background.clone(),
+        },
+        None if !note.background.is_empty() => AgentState::Waiting {
+            on: note.background.clone(),
+        },
+        None => AgentState::Idle,
+    }
+}
+
 /// Chooses the agent state from one read. `started` is when the agent session began;
 /// `first_run` names the first-run screen the profile reads on the terminal, if any.
 #[must_use]
@@ -293,12 +324,7 @@ pub fn decide(probe: &Probe, now: Ts, started: Ts, first_run: Option<&str>) -> A
     }
     let state = match &term.status {
         Some(Status::Working { .. }) => AgentState::Working,
-        Some(Status::Idle | Status::Error { .. }) if !note.background.is_empty() => {
-            AgentState::Waiting {
-                on: note.background.clone(),
-            }
-        }
-        Some(Status::Idle | Status::Error { .. }) => AgentState::Idle,
+        Some(Status::Idle | Status::Error { .. }) => ended(term, note),
         Some(Status::Blocked { kind, msg }) => blocked(*kind, msg.as_deref(), note, screen),
         None => {
             if age(now, started) < STARTUP_GRACE {
@@ -347,7 +373,7 @@ pub const fn may_apply_quiet(activity: &Activity, probe: Option<&Probe>) -> bool
     matches!(activity.source, Source::Status | Source::FirstRun)
         && matches!(
             activity.state,
-            AgentState::Idle | AgentState::NeedsInput { .. }
+            AgentState::Idle | AgentState::NeedsInput { .. } | AgentState::Asked { .. }
         )
 }
 
