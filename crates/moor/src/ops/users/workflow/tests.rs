@@ -34,6 +34,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         expected_revision: None,
         origin_key: None,
         keep_state: false,
+        enabled: true,
     }
 }
 
@@ -327,7 +328,15 @@ fn record(f: &Fixture, who: &Identity, state: RunState, due: i64) -> WorkflowId 
 }
 
 fn runs(f: &Fixture, who: &Identity, after: Option<i64>, limit: Option<u32>) -> Value {
-    ok(f, who, cmd(WorkflowCmd::Runs { after, limit }))
+    ok(
+        f,
+        who,
+        cmd(WorkflowCmd::Runs {
+            after,
+            limit,
+            workflow: None,
+        }),
+    )
 }
 
 #[test]
@@ -531,4 +540,5 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
     assert!(listed["workflows"][0]["last_runs"][0].get("box").is_none());
 }
 
+mod enabled_and_filter;
 mod plan;

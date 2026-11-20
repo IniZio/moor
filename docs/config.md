@@ -276,7 +276,8 @@ They are narrow, and moor refuses the config with the reason otherwise:
   `github-git`, and `github-uploads`. A repo config cannot add a host or a credential.
 - Each entry is `METHOD /path`, with an upper-case method. `*` is not a method
   and not an entry.
-- The path names `{repo}`, the Box's own repos. `{any_repo}` and
+- The path names `{repo}`, the Box's own repos. `{repo}` expands to every repo
+  of the Box, the first repo and the others, one entry per repo. `{any_repo}` and
   `{repo:urlenc}` are refused, and so is `**`.
 
 The Proxy reads these entries from config the controller stores. That is the

@@ -48,6 +48,24 @@ pub struct WorkflowAddReq {
     /// (the default) is a replace that enables it, as `add_workflow` does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_state: bool,
+    /// No to store the workflow disabled in the same write, so no cron fires before a later
+    /// enable. Yes (the default) enables it. Ignored with `keep_state`.
+    #[serde(default = "enabled_by_default", skip_serializing_if = "is_true")]
+    pub enabled: bool,
+}
+
+/// The default of `WorkflowAddReq::enabled`.
+const fn enabled_by_default() -> bool {
+    true
+}
+
+/// Whether `value` is true, so a default `enabled` is not sent.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "the signature serde's skip_serializing_if calls"
+)]
+const fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// Arguments of `workflow-remove`.
@@ -118,6 +136,9 @@ pub struct WorkflowRunsReq {
     /// Most changes to return; 50 when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Only the changes of the workflow with this name; every workflow's when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 /// Arguments of `workflow-run-list`.
@@ -197,6 +218,8 @@ pub enum WorkflowCmd {
         after: Option<i64>,
         /// Most changes to return.
         limit: Option<u32>,
+        /// Only this workflow's changes.
+        workflow: Option<String>,
     },
 }
 
@@ -257,6 +280,7 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
             WorkflowCmd::Runs {
                 after: r.after,
                 limit: r.limit,
+                workflow: r.workflow,
             },
         ),
         Request::WorkflowRunList(r) => (

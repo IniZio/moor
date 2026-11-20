@@ -47,6 +47,9 @@ struct AddArgs {
     /// The `revision` `list_workflows` showed for the workflow you are replacing. The call is
     /// refused when the workflow has changed since. Leave it out for a new workflow.
     expected_revision: Option<u64>,
+    /// False to store the workflow disabled in this same write, so no cron fires before you
+    /// call `set_workflow_enabled`; true when left out.
+    enabled: Option<bool>,
 }
 
 /// The JSON Schema of a plan, which `add_workflow` checks the argument against.
@@ -108,6 +111,9 @@ struct RunsArgs {
     after: Option<i64>,
     /// Most changes to return, up to 200; 50 when left out.
     limit: Option<u32>,
+    /// A workflow name, as `list_workflows` shows it, to read only that workflow's changes;
+    /// every workflow's when left out.
+    workflow: Option<String>,
 }
 
 #[tool_router(router = workflow_router, vis = "pub(super)")]
@@ -121,13 +127,16 @@ impl Tools {
                        asks for it in `config`, under `proxy.allow` on the default rule `github-api`, \
                        for example `proxy: {allow: {github-api: [\"PATCH /repos/{repo}/issues/comments/*\"]}}`. \
                        The entries apply to this workflow's Boxes only. Each must be `METHOD /path` \
-                       with `{repo}`, never `{any_repo}` or `*`; no new hosts or credentials. \
+                       with `{repo}`, never `{any_repo}` or `*`; `{repo}` expands to every repo of the Box, \
+                       the first and the others, one entry each; no new hosts or credentials. \
                        moor refuses anything else with the reason. To run the same job on separate projects, add one \
                        workflow per project. Every run acts as you, with your credentials, and its agent \
                        may push branches and open pull requests in those repos; it cannot merge \
                        them. A run is skipped while the workflow's previous run is unfinished, \
                        and a run past timeout_minutes is stopped. Three failed runs in a row \
-                       disable the workflow. A cron that can fire closer together than the \
+                       disable the workflow. Pass `enabled: false` to store it disabled in the same \
+                       write, so no cron fires before you enable it with set_workflow_enabled. \
+                       A cron that can fire closer together than the \
                        controller's minimum gap, an hour unless configured, is refused. Adding \
                        an existing name replaces it, plan included: send the whole plan again, \
                        and pass the revision you read as expected_revision, so a change made \
@@ -186,6 +195,7 @@ impl Tools {
             expected_revision: args.expected_revision,
             origin_key: None,
             keep_state: false,
+            enabled: args.enabled.unwrap_or(true),
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }
@@ -306,7 +316,8 @@ impl Tools {
                        run (due time, outcome, refusal detail, Box) or a workflow the \
                        controller disabled (with the reason). A run appears again each time it \
                        moves on, from started to finished or timed out. Pass the previous \
-                       `next` as `after` to get only newer changes. Needs the moor:read scope."
+                       `next` as `after` to get only newer changes, and `workflow` to read one \
+                       workflow's changes only. Needs the moor:read scope."
     )]
     async fn list_workflow_runs(
         &self,
@@ -317,6 +328,7 @@ impl Tools {
             identity: None,
             after: args.after,
             limit: args.limit,
+            workflow: args.workflow,
         });
         self.run(&context, READ, Ok(request), Reply::AsIs).await
     }

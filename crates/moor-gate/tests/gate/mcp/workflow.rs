@@ -177,3 +177,41 @@ fn the_plan_argument_carries_the_plan_schema_and_the_description_says_how_to_wri
         assert!(text.contains(want), "{want} missing from {text}");
     }
 }
+
+#[test]
+fn add_workflow_enabled_false_and_the_runs_filter_reach_the_controller() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let added = m.call(
+        &token,
+        "add_workflow",
+        json!({"name": "held", "cron": "0 9 * * *", "timezone": "UTC", "repos": ["o/n"],
+            "prompt": "p", "enabled": false}),
+    );
+    assert_ne!(added["isError"], true, "{added}");
+    let listed = m.call(&token, "list_workflow_runs", json!({"workflow": "held"}));
+    assert_ne!(listed["isError"], true, "{listed}");
+    let sent: Vec<_> = m
+        .requests()
+        .iter()
+        .map(|r| r["request"]["request"].clone())
+        .collect();
+    assert_eq!(sent[0]["enabled"], false);
+    assert_eq!(sent[1], json!({"cmd": "workflow-runs", "workflow": "held"}));
+}
+
+#[test]
+fn the_tool_texts_say_repo_expands_to_every_box_repo_and_how_to_add_disabled() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let reply = m.rpc(&token, "tools/list", json!({}));
+    let tools = reply["result"]["tools"].as_array().unwrap();
+    let text = tools
+        .iter()
+        .find(|t| t["name"] == "add_workflow")
+        .and_then(|t| t["description"].as_str())
+        .unwrap();
+    for want in ["every repo of the Box", "enabled: false"] {
+        assert!(text.contains(want), "{text}");
+    }
+}

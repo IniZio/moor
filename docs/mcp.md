@@ -38,9 +38,9 @@ token's audience.
 | `list_webhooks` | none |
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
-| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `config`, `timeout_minutes`, `plan`, `expected_revision` |
+| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `config`, `timeout_minutes`, `plan`, `expected_revision`, `enabled` (false stores it disabled) |
 | `list_workflows` | none |
-| `list_workflow_runs` | optional `after`, `limit` |
+| `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs) |
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
 | `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note` |
