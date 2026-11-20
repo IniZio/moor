@@ -111,6 +111,19 @@ fn machine_features(cx: &Cx, store: &Store, row: &BoxRow) -> Option<Vec<String>>
     link.online.then_some(link.features)
 }
 
+/// Whether the machine or provider `row` is on keeps its cache volumes, so a close saves them
+/// from the volumes without waking the Box.
+pub(crate) fn keeps_caches(cx: &Cx, store: &Store, row: &BoxRow) -> bool {
+    let Some(provider) = row.hands.as_ref().map(|h| &h.provider) else {
+        return false;
+    };
+    let seated = seat_of(cx, store, row).ok().flatten().is_some();
+    if provider.host().is_some() || seated {
+        return machine_lacks(cx, store, row).is_none();
+    }
+    cx.driver().caps(provider).is_ok_and(|c| c.cache_volumes)
+}
+
 /// The plan for `row` on `provider`, or why the Box starts cold. A Box with no volumes to keep is
 /// not cold.
 fn plan(

@@ -89,7 +89,7 @@ pub(crate) use sessions::SessionRecord;
 pub(crate) use users::machine::{Change, MachineWake, NodeSettings, SettingsWrote};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
-pub(crate) use users::workflow::{ManualClaim, Put};
+pub(crate) use users::workflow::{ManualClaim, Put, RunOfBox};
 mod webhook_outbox;
 mod write_check;
 pub(crate) use user_inbox::UserInboxRow;

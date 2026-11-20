@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use super::{death_line, newest_worth, run_line};
+use super::{death_line, held_line, newest_worth, run_line};
 
 #[test]
 fn a_failed_and_a_waiting_run_print_the_reason_or_question_and_the_run_page() {
@@ -45,4 +45,16 @@ fn a_box_whose_machine_died_prints_how_it_ended() {
     assert_eq!(death_line("repo/a", "idled", Some(&capped)), None);
     let events = [json!({"id": 1, "kind": "death_capped"})];
     assert!(newest_worth(&events).is_some());
+}
+
+#[test]
+fn a_held_back_close_names_what_holds_the_box() {
+    let held = serde_json::json!({"due": "idle", "why": "it holds 2 unpushed commit(s) and 0 uncommitted file(s)"});
+    assert_eq!(
+        held_line("repo/a", "auto_close_held", Some(&held)).as_deref(),
+        Some(
+            "moor: box repo/a auto_close_held: moor did not close it, it holds 2 unpushed commit(s) and 0 uncommitted file(s); push or discard that, then close it"
+        )
+    );
+    assert_eq!(held_line("repo/a", "idled", Some(&held)), None);
 }

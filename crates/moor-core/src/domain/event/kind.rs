@@ -44,6 +44,7 @@ pub const ASSERTED_KINDS: &[&str] = &[
 pub const EVENT_KINDS: &[&str] = &[
     "caches_not_saved",
     "close_refused",
+    "auto_close_held",
     "disk_lost",
     "wanted_dropped",
     "started",
@@ -72,6 +73,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "exec_ran",
     "turn_changes",
     "diff_kept",
+    "terminal_opened",
     "port_forward_opened",
     "port_forward_closed",
     "port_forward_refused",

@@ -31,6 +31,15 @@ pub struct ControllerConfig {
     /// Seconds a Box may sit in `setup_failed` before the controller closes it; 0 turns the
     /// close off. None means 86400.
     pub close_setup_failed_after_secs: Option<u64>,
+    /// Seconds between the passes that close Boxes nobody needs any more; 0 turns them off.
+    /// None means 60.
+    pub auto_close_every_secs: Option<u64>,
+    /// Seconds after a workflow run ends before its Box closes, counted from the last time a
+    /// person opened its terminal or steered it; 0 keeps these Boxes. None means 86400.
+    pub auto_close_run_after_secs: Option<u64>,
+    /// Seconds a one-off Box (not from a run) may sit idle before it closes; 0 turns the idle
+    /// close off. None means 604800.
+    pub auto_close_idle_after_secs: Option<u64>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
     pub fronts: BTreeMap<String, FrontEntry>,
     /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy, machine runner
@@ -94,6 +103,19 @@ pub struct RemoteFront {
     pub key_file: PathBuf,
 }
 
+/// When and how the controller closes Boxes nobody needs any more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutoClose {
+    /// Time between passes.
+    pub every: Duration,
+    /// How long after its run ends, or after the last steer or terminal, a run's Box closes;
+    /// none keeps them.
+    pub run_after: Option<Duration>,
+    /// How long a one-off Box may sit idle before it closes; none turns that close off. A one-off Box
+    /// whose pull request merged or closed closes whatever this is.
+    pub idle_after: Option<Duration>,
+}
+
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
 #[allow(
     clippy::option_option,
@@ -111,6 +133,15 @@ const DEFAULT_SETTLE_SECS: u64 = 5;
 
 /// Seconds a `setup_failed` Box is kept before the controller closes it when the config does not say.
 const DEFAULT_CLOSE_SETUP_FAILED_SECS: u64 = 86_400;
+
+/// Seconds between auto-close passes.
+const DEFAULT_AUTO_CLOSE_EVERY_SECS: u64 = 60;
+
+/// Seconds a run's Box stays open after the run ends.
+const DEFAULT_AUTO_CLOSE_RUN_SECS: u64 = 86_400;
+
+/// Seconds a one-off Box may sit idle.
+const DEFAULT_AUTO_CLOSE_IDLE_SECS: u64 = 604_800;
 
 /// Seconds a drain waits when the config does not say: long enough for a `start` to finish.
 const DEFAULT_DRAIN_SECS: u64 = 30;
@@ -157,6 +188,24 @@ impl ControllerConfig {
             .close_setup_failed_after_secs
             .unwrap_or(DEFAULT_CLOSE_SETUP_FAILED_SECS);
         (secs > 0).then(|| Duration::from_secs(secs))
+    }
+
+    /// How the controller closes Boxes nobody needs any more; none when it closes none.
+    #[must_use]
+    pub fn auto_close(&self) -> Option<AutoClose> {
+        let secs = |v: Option<u64>, default: u64| {
+            Some(v.unwrap_or(default))
+                .filter(|s| *s > 0)
+                .map(Duration::from_secs)
+        };
+        Some(AutoClose {
+            every: secs(self.auto_close_every_secs, DEFAULT_AUTO_CLOSE_EVERY_SECS)?,
+            run_after: secs(self.auto_close_run_after_secs, DEFAULT_AUTO_CLOSE_RUN_SECS),
+            idle_after: secs(
+                self.auto_close_idle_after_secs,
+                DEFAULT_AUTO_CLOSE_IDLE_SECS,
+            ),
+        })
     }
 
     /// How long a SIGTERM waits for in-flight requests.

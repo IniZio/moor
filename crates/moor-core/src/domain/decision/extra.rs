@@ -15,6 +15,13 @@ pub enum ExtraEvent {
     DiskLost,
     /// A close deleted the Box without waking it, so its caches were not saved.
     CachesNotSaved,
+    /// moor's own close of the Box was due but held back for a person to decide.
+    AutoCloseHeld {
+        /// Why the close was due.
+        due: String,
+        /// What holds it back, in words.
+        why: String,
+    },
     /// The wanted pass gave up a close moor still wanted, so the Box stays open.
     CloseRefused {
         /// Why, when the close was refused; none when it failed some other way.

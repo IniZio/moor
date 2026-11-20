@@ -9,6 +9,7 @@ use crate::error::CommandError;
 pub(crate) mod artifacts;
 pub(crate) mod attach;
 pub(crate) mod authz;
+mod auto_close;
 mod binding;
 pub(crate) mod box_config;
 pub(crate) mod box_rsync;
@@ -49,6 +50,7 @@ mod wake;
 pub(crate) mod webhook_outbox;
 pub(crate) mod workflow;
 
+pub(crate) use auto_close::{pass as auto_close_pass, Looked as AutoCloseLooked};
 pub(crate) use close::wanted::pass as wanted_pass;
 pub(crate) use common::promote::pass as promote_pass;
 #[cfg(test)]

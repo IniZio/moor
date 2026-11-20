@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use moor_core::config::AutoClose;
+
 use super::drain::Drain;
 use super::watch::Streams;
 use super::{log, Running, Sink};
@@ -126,6 +128,12 @@ pub(super) fn spawn_wanted(env: &Env, every: Duration, drain: &Arc<Drain>, sink:
 /// take many minutes and must not hold up a close or the other passes.
 pub(super) fn spawn_promote(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
     passes(every, drain, sink, Moor::promote_pass(env));
+}
+
+/// Runs the auto-close pass each `auto.every`, on its own thread, since it reads the forge and a
+/// close can take a while, and neither may hold up settling the others.
+pub(super) fn spawn_auto_close(env: &Env, auto: AutoClose, drain: &Arc<Drain>, sink: &Sink) {
+    passes(auto.every, drain, sink, Moor::auto_close_pass(env, auto));
 }
 
 /// How often the controller looks for workflow runs to start, finish or expire.

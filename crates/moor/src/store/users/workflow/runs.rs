@@ -54,7 +54,47 @@ impl Open {
     }
 }
 
+/// How a Box relates to the workflow runs that used it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunOfBox {
+    /// No run used it: a one-off Box.
+    NoRun,
+    /// Its latest run is being started, works or waits for an answer.
+    Open,
+    /// Its latest run ended at this time.
+    Ended(Ts),
+}
+
 impl Store {
+    /// How Box `box_id` relates to its latest workflow run.
+    pub(crate) fn run_of_box(&self, box_id: BoxId) -> Result<RunOfBox, StoreError> {
+        let latest = self
+            .reader()?
+            .rows(
+                Query::select()
+                    .columns([WorkflowRuns::Outcome, WorkflowRuns::EndedAt])
+                    .from(WorkflowRuns::Table)
+                    .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
+                    .order_by(WorkflowRuns::Id, Order::Desc)
+                    .limit(1),
+                |r| {
+                    let outcome: String = r.get(0)?;
+                    let ended: Option<i64> = r.get(1)?;
+                    Ok::<_, db::Error>((outcome, ended))
+                },
+            )?
+            .next()
+            .transpose()?;
+        Ok(match latest {
+            None => RunOfBox::NoRun,
+            Some((outcome, _)) if [STARTING, STARTED, WAITING].contains(&outcome.as_str()) => {
+                RunOfBox::Open
+            }
+            Some((_, Some(ended))) => RunOfBox::Ended(Ts::from_millis(ended)),
+            Some((_, None)) => RunOfBox::Open,
+        })
+    }
+
     /// Moves the run of `workflow` and `repo` due at `due_at` from the phase `from` to `to` at
     /// `at`, and appends the line for the move, when the run is still in `from`. False, with
     /// nothing changed, otherwise, so whichever of two moves comes first wins.

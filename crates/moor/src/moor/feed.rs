@@ -4,6 +4,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::config::AutoClose;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CLOSE_REASON_SETUP_FAILED_EXPIRED;
@@ -134,6 +135,26 @@ impl Moor {
         env: &Env,
     ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
         Self::store_pass(env, ops::wanted_pass)
+    }
+
+    /// The pass that closes Boxes nobody needs any more, for the controller to run each tick.
+    pub(crate) fn auto_close_pass(
+        env: &Env,
+        cfg: AutoClose,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        let env = env.clone();
+        let looked = ops::AutoCloseLooked::default();
+        move |draining| match Self::from_env(&env) {
+            Ok(moor) => crate::cx::owners::checked(|| {
+                let done = moor.cx.store().and_then(|store| {
+                    ops::auto_close_pass(&moor.cx, store, draining, (&cfg, &looked))
+                });
+                let mut out = done.unwrap_or_else(|e| vec![e.error.to_string()]);
+                out.extend(moor.cx.take_warnings().into_iter().map(|w| w.message));
+                out
+            }),
+            Err(e) => vec![e.error.to_string()],
+        }
     }
 
     /// The pass that starts the Boxes waiting on a node once it has room, for the controller to

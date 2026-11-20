@@ -126,3 +126,36 @@ fn an_agent_attach_to_a_box_another_holder_kept_says_to_recreate_it() {
     let e = argv(&cx, &req(false)).unwrap_err().error.to_string();
     assert!(e.contains("close the Box and recreate it"), "{e}");
 }
+
+#[test]
+fn opening_a_terminal_leaves_a_record_that_a_person_was_there() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _, _) = ready_box(dir.path());
+    argv(&cx, &req(true)).unwrap();
+    let store = cx.store().unwrap();
+    let opened = store.events(BoxId::new(1), 100).unwrap();
+    let opened: Vec<_> = opened
+        .iter()
+        .filter(|e| e.kind == "terminal_opened")
+        .collect();
+    assert_eq!(opened.len(), 1);
+    assert_eq!(
+        opened.first().and_then(|e| e.payload.get("shell")),
+        Some(&serde_json::json!(true))
+    );
+    assert!(store
+        .last_event_at(BoxId::new(1), &["terminal_opened"])
+        .unwrap()
+        .is_some());
+}
+
+#[test]
+fn a_refused_terminal_leaves_no_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _, _) = ready_box(dir.path());
+    let mut gone = req(true);
+    gone.target = BoxName::parse_allow_bare("nope").unwrap().into();
+    assert!(argv(&cx, &gone).is_err());
+    let events = cx.store().unwrap().events(BoxId::new(1), 100).unwrap();
+    assert!(events.iter().all(|e| e.kind != "terminal_opened"));
+}

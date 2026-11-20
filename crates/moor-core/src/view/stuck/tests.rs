@@ -390,3 +390,20 @@ fn a_wake_clears_a_death_and_nothing_else() {
         Some("stalled".to_owned())
     );
 }
+
+#[test]
+fn a_close_held_back_for_unsaved_work_reads_as_stuck_and_says_why_until_the_box_closes() {
+    let held = at(
+        "auto_close_held",
+        json!({"due": "run_ended", "why": "it holds 2 unpushed commit(s) and 0 uncommitted file(s)"}),
+        "2026-01-01T00:30:00Z",
+    );
+    let view = stuck_of(std::slice::from_ref(&held)).expect("stuck");
+    assert_eq!(view.kind, "close_held");
+    assert_eq!(
+        view.detail,
+        "not closed: it holds 2 unpushed commit(s) and 0 uncommitted file(s)"
+    );
+    let closed = at("closed", json!({}), "2026-01-02T00:30:00Z");
+    assert_eq!(stuck_of(&[held, closed]), None);
+}

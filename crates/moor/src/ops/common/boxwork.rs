@@ -3,13 +3,14 @@
 use std::time::Duration;
 
 use moor_core::boxscript::boxwork::{
-    boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE, BOXWORK_NO_CHECKOUT,
+    boxwork_script_with, is_full_sha, parse_boxwork, BOXWORK_FILE, BOXWORK_NO_CHECKOUT,
 };
 use moor_core::boxscript::quote;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath};
 
+use super::changes;
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
 use crate::store::{BoxRow, HandsRow};
@@ -99,7 +100,6 @@ pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &HandsRow) -> Result<ProbePlan,
         .filter(|b| is_full_sha(b))
         .into_iter()
         .collect();
-    let script = boxwork_script(&saved).ok_or("cannot build the probe script")?;
     let workdir = match boxed.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,
         None => cx
@@ -109,6 +109,9 @@ pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &HandsRow) -> Result<ProbePlan,
     };
     let path = BoxPath::under(workdir.as_str(), BOXWORK_FILE)
         .map_err(|e| format!("bad result path: {e}"))?;
+    let trees = changes::trees(row, &workdir);
+    let others: Vec<&str> = trees.iter().skip(1).map(|t| t.dir.as_str()).collect();
+    let script = boxwork_script_with(&saved, &others).ok_or("cannot build the probe script")?;
     // A batch `Run` starts with no working directory, so the script enters the checkout itself.
     let script = format!("cd {} || exit 1\n{script}", quote(workdir.as_str()));
     Ok(ProbePlan {

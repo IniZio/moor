@@ -21,7 +21,7 @@ use crate::testing::proc::ScriptedProc;
 const CLEAN: &str = "ahead=0 dirty=0\n";
 
 /// A rig whose first Box answers its close check with `first` and every other Box with a clean one.
-fn rig_probing(first: &str) -> Rig {
+pub(super) fn rig_probing(first: &str) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = Arc::new((1..=6).fold(FakeDriver::new(), |d, n| {
@@ -52,7 +52,7 @@ fn rig_probing(first: &str) -> Rig {
     }
 }
 
-fn lifecycle(r: &Rig, id: BoxId) -> BoxLifecycle {
+pub(super) fn lifecycle(r: &Rig, id: BoxId) -> BoxLifecycle {
     r.cx.store()
         .unwrap()
         .box_row(id)
@@ -72,7 +72,7 @@ fn event_kinds(r: &Rig, id: BoxId) -> Vec<String> {
 }
 
 /// Runs day one to its end: the agent goes quiet and the run finishes.
-fn finished_first_day(r: &Rig, id: WorkflowId) -> BoxId {
+pub(super) fn finished_first_day(r: &Rig, id: WorkflowId) -> BoxId {
     r.advance_to(FIRST_DUE + 1_000);
     r.pass();
     let first = r.latest_box(id);

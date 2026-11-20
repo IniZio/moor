@@ -69,6 +69,7 @@ fn bare_host(host: &str) -> String {
 fn signal(kind: &str) -> Option<&str> {
     match kind {
         "agent_stalled" => Some("stalled"),
+        "auto_close_held" => Some("close_held"),
         "egress_refused"
         | "egress_aborted"
         | "credential_withheld"
@@ -128,6 +129,7 @@ fn detail(kind: &str, p: &Value) -> String {
             _ => text(p, "error").map(str::to_owned),
         },
         "death_capped" => text(p, "reason").map(deaths::sentence),
+        "auto_close_held" => text(p, "why").map(|why| format!("not closed: {why}")),
         "agent_link_lost" => text(p, "pane").map(|pane| {
             p.get("exit").and_then(Value::as_i64).map_or_else(
                 || format!("pane {pane} ended"),

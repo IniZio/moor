@@ -13,6 +13,7 @@ use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 
 pub(crate) use claim::ManualClaim;
 pub(crate) use put::Put;
+pub(crate) use runs::RunOfBox;
 
 mod changes;
 mod claim;

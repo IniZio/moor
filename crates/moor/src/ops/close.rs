@@ -20,6 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
 use crate::ops::common::boxwork::{self, BoxWork, BOXWORK_DEADLINE};
+use crate::ops::common::cache::keeps_caches;
 use crate::ops::common::provision::planned_root;
 use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
@@ -70,6 +71,16 @@ pub(crate) fn run_unless_kept(
     close_with(cx, req, None, Some(keep), false)
 }
 
+/// [`run_unless_kept`] for the close moor chooses on its own: `reason` lands on the `closed` event.
+pub(crate) fn run_auto(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: &str,
+    keep: Keep<'_>,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, Some(reason.to_owned()), Some(keep), false)
+}
+
 /// The close of `req`; see [`run_unless_kept`] for `keep`. Once the Box's turn is held and `keep`
 /// lets it go, the close is wanted, so a restart or the wanted pass finishes what this cannot.
 /// `tell` records `close_refused` when the close is given up.
@@ -117,7 +128,8 @@ fn close_held(
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Asleep);
     // A forced close reads nothing in the Box, so it has no answer; its caches go with it all the same.
-    if unwoken && (probed_clean || req.force) {
+    let saved_anyway = unwoken && keeps_caches(cx, store, &row);
+    if unwoken && !saved_anyway && (probed_clean || req.force) {
         store.apply(Decision::new(row.id).event(ExtraEvent::CachesNotSaved))?;
     }
     let saved = save_transcript(cx, store, &row)?;

@@ -571,6 +571,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
 
 mod also;
 mod approve;
+mod auto_close;
 mod check;
 mod death_cap;
 mod manual;

@@ -107,6 +107,7 @@ Settled · 18  ▸
 
 - Each row shows state, repo, title, the one line that matters now, age and owner.
 - "Settled" holds tasks whose PR merged or closed, tasks that were closed, and done tasks idle for 7 days. It is folded by default, as in thinkrail. A row's Keep active option holds it out of Settled.
+- moor closes the Box of a settled task. A run's Box closes 24 hours after the run ends, and a steer or terminal restarts that. A task Box closes when its PR merges or closes, or after 7 idle days. A Box with unpushed commits or uncommitted files is never closed, and the row says why. A close does not wake an asleep Box.
 - Filters cover mine or everyone's, repo and workflow. Mine is the default.
 - ⌘K opens a switcher with needs-you tasks first.
 

@@ -17,6 +17,7 @@ use crate::testing::proc::ScriptedProc;
 
 mod agent;
 mod artifacts;
+mod auto_close;
 mod boxwork;
 mod interrupt;
 mod leases;
@@ -99,17 +100,30 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
 
 /// Like [`admit`], for a Box named `name`.
 fn admit_named(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>, name: &str) -> BoxId {
+    admit_on(cx, driver, yaml, (name, None))
+}
+
+/// Like [`admit_named`], for a Box on branch `name.1` when it has one.
+fn admit_on(
+    cx: &Cx,
+    driver: &FakeDriver,
+    yaml: Option<&str>,
+    (name, branch): (&str, Option<&str>),
+) -> BoxId {
     let store = cx.store().unwrap();
     if let Some(yaml) = yaml {
         crate::testing::cx::store_config(store, &ForgeRepo::new("o", "n"), yaml);
     }
-    let id = store
-        .apply(crate::testing::cx::new_box_of(
-            BoxName::parse_allow_bare(name).unwrap(),
-            crate::testing::cx::box_repo(),
-        ))
-        .unwrap()
-        .box_id;
+    let new = Decision::insert(moor_core::domain::decision::NewBox {
+        name: BoxName::parse_allow_bare(name).unwrap(),
+        repo: Some(crate::testing::cx::box_repo()),
+        spec: moor_core::domain::decision::SpecFields {
+            branch: branch.map(str::to_owned),
+            ..moor_core::domain::decision::SpecFields::default()
+        },
+    })
+    .requester(crate::testing::cx::REQUESTER_USER);
+    let id = store.apply(new).unwrap().box_id;
     let provider = ProviderId::new("p");
     let fields = HandsFields {
         provider: Field::Set(provider.clone()),

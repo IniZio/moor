@@ -29,9 +29,11 @@ A webhook that names no events gets the kinds marked with a check.
 | `run_failed` | ✓ | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
-| `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. |
+| `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. It is `run_ended`, `pr_merged`, `pr_closed`, `idle`, `setup_failed_expired` or `close_failed`. |
+| `auto_close_held` | ✓ | moor's own close of the Box was due, but the Box stays open. It holds work that is not pushed, or it was not checked when it slept. `data.due` is `run_ended`, `pr_merged`, `pr_closed` or `idle`. `data.why` says what holds it. It is written once for the same reason. `box_status` shows the Box as `close_held` until it closes. |
 | `close_refused` | | moor gave up a close it was waiting to finish, so the Box stays open. `data.reason` is the refusal, such as `{"refusal": "unsaved", "branch", "ahead", "dirty"}` or `{"refusal": "unchecked", "reason"}`, or null when the close failed another way. `data.error` says why in words. The event is written with the give-up itself. When the close woke an asleep Box, moor puts it back to sleep afterwards, and that shows as a later `asleep` event. |
 | `caches_not_saved` | | A close deleted an asleep Box whose caches were not saved. |
+| `terminal_opened` | | A person opened the Box's terminal. `data.shell` is true for a login shell. It restarts the clock that closes a run's Box. |
 | `exec_ran` | | `exec_in_box` or `moor exec` ran a command. |
 | `turn_changes` | | moor read from git what the agent's turns changed, once they ended. `data.turn` counts the turns ended so far. `data.repos` lists each repo, first one first, as `{repo, turn, total, files}`. `turn` and `total` are `{files, added, removed}`, for the turn and against the base. `files` lists up to 200 files as `{path, from, added, removed}`, with null counts for a binary file. |
 | `diff_kept` | | moor kept the Box's whole diff against its base. It does so when a turn ends, when the Box sleeps and when it closes. The portal then shows the diff without waking the Box. moor writes the event only when the diff changed. `data.repos` lists each repo, first one first, as `{repo, total, files, patch, cut}`. `patch` is the unified diff. All repos share 1 MiB, and `cut` is true for a patch past it. A webhook gets this kind only if it was added with it. |
@@ -92,6 +94,7 @@ listener prints the events it missed.
 | --- | --- |
 | `moor: box NAME EVENT: SAID` | An `idled`, `needs_input`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped`, or `closed` event. `SAID` is the first line of the agent's message, cut at 200 characters. |
 | `moor: box NAME run_failed: WORKFLOW (REPO) OUTCOME at STEP: REASON LINK` | `run_failed`, and `run_waiting` as `run_waiting: WORKFLOW (REPO) asks: QUESTION LINK`. |
+| `moor: box NAME auto_close_held: moor did not close it, WHY; push or discard that, then close it` | `auto_close_held`. |
 | `moor: box NAME death_capped: DETAIL` | `death_capped`. `DETAIL` says how the machine stopped. |
 | `moor: box NAME stalled: no progress for N min while DOING` | `agent_stalled`. |
 | `moor: box NAME resumed after N min` | `agent_resumed`. |

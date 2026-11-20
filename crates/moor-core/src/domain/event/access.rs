@@ -32,6 +32,11 @@ pub enum AccessEvent {
         /// Each repo, the first one first.
         repos: Vec<RepoReceipt>,
     },
+    /// A person opened the Box's terminal: the agent's, or a shell.
+    TerminalOpened {
+        /// True for a login shell, false for the agent's own terminal.
+        shell: bool,
+    },
     /// moor kept the Box's diff against its base, with each file's hunks, so it can be shown
     /// while the Box sleeps or after it closes. Only the newest is read.
     DiffKept {
@@ -73,6 +78,7 @@ impl AccessEvent {
             Self::Copied { .. } => "copied",
             Self::ExecRan { .. } => "exec_ran",
             Self::TurnChanges { .. } => "turn_changes",
+            Self::TerminalOpened { .. } => "terminal_opened",
             Self::DiffKept { .. } => "diff_kept",
             Self::PortForwardOpened { .. } => "port_forward_opened",
             Self::PortForwardClosed { .. } => "port_forward_closed",

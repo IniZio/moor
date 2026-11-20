@@ -58,7 +58,27 @@ Close a Box from any front. A close is refused while the Box holds commits
 that are not pushed or files that are not committed. Ask the agent to push
 first, or close with `force` to discard that work.
 
-An asleep Box stays in every list until someone closes it.
+An asleep Box does not wake for a close. moor records what the Box holds when it
+goes to sleep. This covers each repo. The close reads that record. A Box with no
+record is checked by waking it.
+
+moor also closes Boxes nobody needs any more, once a minute:
+
+- A workflow run's Box closes 24 hours after the run ends. Opening its terminal
+  or steering it restarts the 24 hours. See
+  [When a run's Box closes](workflows.md#when-a-runs-box-closes).
+- A one-off Box, one that is not from a run, closes when its pull request merges or
+  closes. It also closes after 7 days with no steer, terminal or finished turn.
+- A Box with unpushed commits or uncommitted files is not closed. moor writes an
+  `auto_close_held` event that says why. `box_status` shows the Box as
+  `close_held`. A person pushes or discards the work. Then moor closes the Box,
+  or you close it.
+- A Box whose agent is working is left alone.
+
+The `closed` event has `reason` `run_ended`, `pr_merged`, `pr_closed` or `idle`.
+A close keeps the artifacts, the transcript and the stored diff.
+[Controller config](config.md#controller-config) lists the keys that set the
+times. A Box has no keep flag yet.
 
 ## Open a web app in the Box from your browser
 
