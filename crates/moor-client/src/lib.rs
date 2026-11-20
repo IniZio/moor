@@ -35,6 +35,7 @@ mod pipe;
 pub mod port_forward;
 mod redial;
 mod remote;
+pub mod rootless;
 pub mod session;
 pub mod sse;
 mod stream;
