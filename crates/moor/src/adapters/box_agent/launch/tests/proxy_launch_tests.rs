@@ -104,7 +104,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 }
 
 #[test]
-fn the_boxs_own_env_is_left_for_bash_tool_lines_without_the_root_signal() {
+fn the_box_own_env_is_left_for_bash_tool_lines_without_the_root_signal() {
     let d = driver(FakeDriver::new());
     d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
     let addr = ProxyAddr {
