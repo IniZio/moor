@@ -49,6 +49,14 @@ struct Create {
     /// absent or blank.
     #[serde(default)]
     plan: Option<String>,
+    /// False to store the new workflow disabled; true when absent.
+    #[serde(default = "on")]
+    enabled: bool,
+}
+
+/// The default of a create's `enabled`.
+const fn on() -> bool {
+    true
 }
 
 /// The body of an edit.
@@ -122,6 +130,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         expected_revision: None,
         origin_key: None,
         keep_state: false,
+        enabled: true,
     }
 }
 
@@ -181,6 +190,7 @@ pub(crate) fn create(
     if let Some(plan) = new.plan.filter(|p| !p.trim().is_empty()) {
         request.plan = Some(plan);
     }
+    request.enabled = new.enabled;
     match tools::ask_as(
         &gate.controller,
         &session.person,

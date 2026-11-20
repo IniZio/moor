@@ -53,15 +53,17 @@ impl Store {
     }
 
     /// The changes to `owner`'s workflows after `after`, oldest first, at most `limit`: every
-    /// run recorded or moved on, and every workflow the controller disabled.
+    /// run recorded or moved on, and every workflow the controller disabled. With `only`, just
+    /// the changes of the workflow of that name.
     pub(crate) fn workflow_changes(
         &self,
         owner: UserId,
         after: i64,
         limit: u64,
+        only: Option<&WorkflowName>,
     ) -> Result<Vec<WorkflowChange>, StoreError> {
-        let mut out = self.run_changes(owner, after, limit)?;
-        out.extend(self.disabled_changes(owner, after, limit)?);
+        let mut out = self.run_changes(owner, after, limit, only)?;
+        out.extend(self.disabled_changes(owner, after, limit, only)?);
         out.sort_by_key(|c| c.seq);
         out.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
         Ok(out)
@@ -73,6 +75,7 @@ impl Store {
         owner: UserId,
         after: i64,
         limit: u64,
+        only: Option<&WorkflowName>,
     ) -> Result<Vec<WorkflowChange>, StoreError> {
         let reader = self.reader()?;
         let runs = reader.rows(
@@ -91,6 +94,9 @@ impl Store {
                 )
                 .and_where(Expr::col((Workflows::Table, Workflows::User)).eq(owner.get()))
                 .and_where(Expr::col((WorkflowRuns::Table, WorkflowRuns::Seq)).gt(after))
+                .and_where_option(
+                    only.map(|n| Expr::col((Workflows::Table, Workflows::Name)).eq(n.as_str())),
+                )
                 .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), Order::Asc)
                 .limit(limit),
             |r| {
@@ -130,6 +136,7 @@ impl Store {
         owner: UserId,
         after: i64,
         limit: u64,
+        only: Option<&WorkflowName>,
     ) -> Result<Vec<WorkflowChange>, StoreError> {
         let reader = self.reader()?;
         let disabled = reader.rows(
@@ -146,6 +153,7 @@ impl Store {
                 .and_where(Expr::col(Workflows::ChangeSeq).gt(after))
                 .and_where(Expr::col(Workflows::EnabledAt).is_null())
                 .and_where(Expr::col(Workflows::DisabledReason).is_not_null())
+                .and_where_option(only.map(|n| Expr::col(Workflows::Name).eq(n.as_str())))
                 .order_by(Workflows::ChangeSeq, Order::Asc)
                 .limit(limit),
             |r| {

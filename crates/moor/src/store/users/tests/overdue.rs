@@ -51,11 +51,11 @@ fn a_start_that_returns_after_its_run_was_refused_changes_nothing_and_the_stream
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let (alice, id) = two_claims(&store);
-    let before = store.workflow_changes(alice, 0, 50).unwrap();
+    let before = store.workflow_changes(alice, 0, 50, None).unwrap();
     let one = (id, &repo("a/one"), Ts::from_millis(100));
     assert!(store.refuse_run(one, ("late", true), NOW).unwrap());
     assert!(!store.resolve_workflow_start(one, &running(5), NOW).unwrap());
-    let after = store.workflow_changes(alice, 0, 50).unwrap();
+    let after = store.workflow_changes(alice, 0, 50, None).unwrap();
     assert!(after.last().map(|c| c.seq) > before.last().map(|c| c.seq));
 }
 
