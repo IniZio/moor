@@ -131,6 +131,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         origin_key: None,
         keep_state: false,
         enabled: true,
+        on_pull_request: kept.is_some_and(|w| w.on_pull_request),
     }
 }
 

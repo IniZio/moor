@@ -120,6 +120,7 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         // does the origin.
         keep_state: true,
         enabled: true,
+        on_pull_request: stored.on_pull_request,
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {

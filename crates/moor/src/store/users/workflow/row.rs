@@ -189,6 +189,9 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
         TIMED_OUT => ended(RunOutcome::TimedOut {
             at: ended_step(row)?,
         })?,
+        CANCELLED if box_id.is_none() => RunState::Done(RunEnd::CancelledUnstarted {
+            cause: row.detail.as_deref().and_then(cancel_of).ok_or_else(bad)?,
+        }),
         CANCELLED => ended(RunOutcome::Cancelled {
             at: ended_step(row)?,
             cause: row.detail.as_deref().and_then(cancel_of).ok_or_else(bad)?,
@@ -213,6 +216,14 @@ fn cancel_of(detail: &str) -> Option<CancelCause> {
     CommitSha::parse(detail)
         .ok()
         .map(|sha| CancelCause::NewerHead { sha })
+}
+
+/// The `detail` a cancel cause is stored as: `closed`, or the newer head's SHA.
+fn cancel_detail(cause: &CancelCause) -> String {
+    match cause {
+        CancelCause::NewerHead { sha } => sha.to_string(),
+        CancelCause::Closed => CLOSED.to_owned(),
+    }
 }
 
 /// The cause a row's `trigger`, `pull_number` and `head_sha` stand for; a trigger that does not
@@ -286,6 +297,9 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
         }
         RunState::Done(RunEnd::Refused { detail }) => cols.detail = Some(detail.clone()),
         RunState::Done(RunEnd::SkippedFork { author }) => cols.detail = Some(author.clone()),
+        RunState::Done(RunEnd::CancelledUnstarted { cause }) => {
+            cols.detail = Some(cancel_detail(cause));
+        }
         RunState::Done(RunEnd::Ended {
             ended_at, outcome, ..
         }) => {
@@ -302,10 +316,7 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
                 | RunOutcome::Declined { at }
                 | RunOutcome::TimedOut { at } => cols.ended_step = Some(at.to_string()),
                 RunOutcome::Cancelled { at, cause } => {
-                    cols.detail = Some(match cause {
-                        CancelCause::NewerHead { sha } => sha.to_string(),
-                        CancelCause::Closed => CLOSED.to_owned(),
-                    });
+                    cols.detail = Some(cancel_detail(cause));
                     cols.ended_step = Some(at.to_string());
                 }
             }

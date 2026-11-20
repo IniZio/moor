@@ -1,5 +1,5 @@
 //! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine pairing,
-//! the pages behind browser sign-in, and 404 for the rest.
+//! the App's webhook, the pages behind browser sign-in, and 404 for the rest.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -75,6 +75,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
         (Some("GET"), p) if p.starts_with(crate::artifacts_http::PREFIX) && gate.mcp.is_some() => {
             crate::artifacts_http::serve(stream, p, &req, gate);
         }
+        (Some("POST"), crate::hooks::PATH) => crate::hooks::serve(stream, leftover, &req, gate),
         (Some("GET"), terminal::PATH) => {
             terminal::serve(stream, leftover, &req, (gate, login), streams);
         }

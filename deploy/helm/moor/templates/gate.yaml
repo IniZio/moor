@@ -104,6 +104,7 @@ spec:
           {{- if .Values.mcp.enabled }}{{ $paths = concat $paths (list "/mcp" "/.well-known/oauth-protected-resource" "/events") }}{{ end }}
           {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks" "/pair" "/account") }}{{ end }}
           {{- if .Values.runner.enabled }}{{ $paths = append $paths "/machines/pair" }}{{ end }}
+          {{- if .Values.githubApp.webhookSecret }}{{ $paths = append $paths "/hooks/github" }}{{ end }}
           {{- range $paths }}
           - path: {{ . }}
             pathType: Prefix

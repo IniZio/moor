@@ -20,6 +20,7 @@ mod artifact;
 mod artifacts_http;
 mod boxes;
 mod events_http;
+mod hooks;
 mod http;
 mod login;
 mod mcp;

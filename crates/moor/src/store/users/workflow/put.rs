@@ -93,6 +93,7 @@ fn insert_workflow(
                 Workflows::OriginKey,
                 Workflows::Config,
                 Workflows::Plan,
+                Workflows::OnPullRequest,
             ])
             .values_panic([
                 owner.get().into(),
@@ -109,6 +110,7 @@ fn insert_workflow(
                 def.origin.as_ref().and_then(|o| o.key.as_deref()).into(),
                 def.config.as_deref().into(),
                 plan.into(),
+                i64::from(def.on_pull_request).into(),
             ])
             .returning_col(Workflows::Id),
         |r| r.get(0),
@@ -133,6 +135,7 @@ fn replace_workflow(
         .value(Workflows::Config, def.config.as_deref())
         .value(Workflows::Prompt, def.prompt.as_str())
         .value(Workflows::Plan, plan)
+        .value(Workflows::OnPullRequest, i64::from(def.on_pull_request))
         .value(Workflows::EnabledAt, enabled_at)
         .value(Workflows::DisabledReason, reason)
         .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))

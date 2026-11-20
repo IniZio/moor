@@ -50,6 +50,10 @@ struct AddArgs {
     /// False to store the workflow disabled in this same write, so no cron fires before you
     /// call `set_workflow_enabled`; true when left out.
     enabled: Option<bool>,
+    /// True to also fire a run when a pull request on the first repo is opened, reopened,
+    /// marked ready for review or pushed to. The run gets the pull request in its env. False
+    /// when left out.
+    on_pull_request: Option<bool>,
 }
 
 /// The JSON Schema of a plan, which `add_workflow` checks the argument against.
@@ -203,6 +207,7 @@ impl Tools {
             origin_key: None,
             keep_state: false,
             enabled: args.enabled.unwrap_or(true),
+            on_pull_request: args.on_pull_request.unwrap_or(false),
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

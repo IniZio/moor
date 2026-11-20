@@ -412,12 +412,17 @@ github_app:
 | --- | --- | --- |
 | `id` | required | The App id from the App's settings page on GitHub. |
 | `private_key_file` | required | The PEM private key GitHub generated for the App. |
-| `webhook_secret_file` | none | The App's webhook secret. Only the webhook event source needs it. |
+| `webhook_secret_file` | none | The App's webhook secret. Without it the gate's `/hooks/github` answers `404`. |
 
 moor needs `metadata: read` and `pull_requests: read` on the App. It uses the App only
 to find installations and read pull requests and collaborator permissions. Its
 installation tokens ask for those two reads alone, whatever else the App holds. A controller
-that cannot read a key file, or finds no RSA key in it, does not start.
+that cannot read a key file, finds no RSA key in it, or finds an empty webhook secret, does
+not start.
+
+Set the App's webhook URL to `<public url>/hooks/github`, with the same secret and the
+`pull_request` event. The gate takes deliveries there without sign-in. The controller
+checks each one's `X-Hub-Signature-256` and answers `401` to a bad or missing one.
 
 The portal's Repo settings page then links "Install the App on a repo" and lists the
 repos the App is installed on. Every signed-in person sees that list.

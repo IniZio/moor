@@ -253,7 +253,8 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "node-add"
         | "node-settings-get"
         | "node-settings-set"
-        | "machine-pair" => return Names::Nothing,
+        | "machine-pair"
+        | "github-hook" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

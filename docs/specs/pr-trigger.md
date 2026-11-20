@@ -60,6 +60,8 @@ pub enum RunEnd {
     /* ...today's arms, such as SkippedOverlap... */
     /// The fork's author lacks write access. Stored as `skipped_fork`.
     SkippedFork { author: Login },
+    /// A newer head or a close cancelled the run before it had a Box.
+    CancelledUnstarted { cause: CancelCause },
 }
 
 pub enum RunOutcome {
@@ -89,9 +91,8 @@ columns with a check that matches the enum, and parses rows back into it.
 | Decision | Reason |
 | --- | --- |
 | Events come from a GitHub App, not a webhook per repo. | An App is generic. An external team sets up its own moor without hand-made webhooks. |
-| Events reach moor from one of two sources. `webhook` is the gate route with its signature check, for a dedicated App. `poll` reads the App's delivery log every minute. It serves an App shared with another service, and it is the one in use now. The webhook route comes when a dedicated App exists. | A shared App's webhook URL belongs to the other service, and moor must not change it. Both sources feed one `on_pull_request` handler. |
-| A poll keeps the id of the last delivery it read. | A delivery then never fires twice, and a restart resumes where the last poll stopped. |
-| The operator gives moor one App's id, private key and, for the webhook source, its webhook secret. moor ships no hosted App. The App may be one the operator already runs for another service. | moor carries no App setup code. A hosted App would route every team's events through one owner. |
+| Events reach moor only through the gate route `POST /hooks/github` and its signature check. moor reads no delivery log. | moor has its own App, `moor-bot`, so it owns the App's webhook URL. A delivery-log poll only served an App whose webhook URL belongs to another service. |
+| The operator gives moor one App's id, private key and and its webhook secret. moor ships no hosted App. | moor carries no App setup code. A hosted App would route every team's events through one owner. |
 | moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
 | The App in use holds comment write permissions but no `statuses` permission. Which identity writes is open until the trigger is live. For now runs write comments and statuses through the Proxy with the owner's token. moor writes nothing with an App token. | The team can pick an identity later. A status needs the owner's token until an App holds `statuses: write`. See [Open question](#open-question). |
 | A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
@@ -103,7 +104,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | A maintainer lets a skipped fork pull request run with Run again on its `skipped_fork` row. It starts a manual run at the current head as the owner. A later push from that fork skips again. | The maintainer's click is the approval, and it covers one head only. |
 | No per-workflow cap on open pull request runs. | The machine agent's placement and capacity checks already bound the load. |
 | No cron sweep for pull request workflows. Cron stays for scheduled workflows. | The App delivers every event. A sweep would double the runs it exists to replace. |
-| With the `webhook` source, failed deliveries are redelivered when the controller starts or the gate reconnects. The `poll` source needs no redelivery. | A short gate outage would otherwise lose a pull request's run until its next push. A poll reads every delivery, failed or not. |
+| Failed deliveries are redelivered when the controller starts or the gate reconnects. It comes after the receiver, as its own build step. | A short gate outage would otherwise lose a pull request's run until its next push. |
 | The controller reads the pull request back from GitHub before it fires. | Deliveries arrive out of order. The current head, state and draft flag decide, not the payload. |
 | The receiver answers `202` before it calls GitHub. | GitHub gives a delivery 10 s. |
 | Run again on a pull request run is a manual run for that pull request at its current head. | The old head may be gone. The person wants the pull request checked, not the commit. |
@@ -112,16 +113,16 @@ columns with a check that matches the enum, and parses rows back into it.
 
 ## The GitHub App
 
-- **Requirement.** With the `webhook` source, GitHub must reach the gate at `MOOR_GATE_PUBLIC_URL`. A controller
+- **Requirement.** GitHub must reach the gate at `MOOR_GATE_PUBLIC_URL`. A controller
   behind NAT works, because only the gate faces GitHub and the gate forwards to the
   controller as it does for `/mcp`.
 - **Creating the App.** The operator creates the App on GitHub by hand, under a
-  personal account or an org. Webhook URL `<public url>/hooks/github`, a webhook
-  secret, and event `pull_request`. moor needs `metadata: read` and `pull_requests: read`.
-  The App in use now is another service's App with more permissions, but no
-  `statuses`. moor uses the App only to verify deliveries,
-  find installations, and read pull requests and collaborator permissions. Its
-  installation tokens ask for reads only.
+  personal account or an org. It sets the webhook URL to `<public url>/hooks/github`,
+  a webhook secret and the `pull_request` event.
+  The App needs `metadata: read` and `pull_requests: read`.
+  The team's App is `moor-bot`, which serves moor alone.
+  The App verifies deliveries, finds installations, and reads pull requests and
+  collaborator permissions. Its installation tokens ask for reads only.
 - **Credentials.** The controller config gains a `github_app` entry.
 
   ```yaml
@@ -131,8 +132,8 @@ columns with a check that matches the enum, and parses rows back into it.
     webhook_secret_file: /run/secrets/github-app/webhook-secret
   ```
 
-  The private key is the PEM GitHub generates for the App. Only the `webhook` source
-  needs `webhook_secret_file`. The Helm chart takes
+  The private key is the PEM GitHub generates for the App. Without
+  `webhook_secret_file` the gate takes no deliveries. The Helm chart takes
   `githubApp.id`, `githubApp.privateKey` and `githubApp.webhookSecret`. It keeps the
   secrets in the Secret `<release>-secrets` and installs them under
   `/var/lib/moor/config/`. Without
@@ -142,14 +143,9 @@ columns with a check that matches the enum, and parses rows back into it.
   have the App installed. The controller reads the slug from `GET /app`.
 - **Tokens.** The controller signs a JWT with the App key and trades it for an
   installation token for each read-back. It caches the token for under its hour.
-- **Delivery-log poll.** The source for a shared App, in use now. Every minute the controller lists
-  `GET /app/hook/deliveries` with
-  the App JWT, newest first, back to the last delivery id it kept. For each new
-  `pull_request` delivery it reads the payload from `GET /app/hook/deliveries/{id}`. It
-  then keeps the newest id. GitHub answers both reads, so no signature check applies.
-- **Lost after `202`.** With the `webhook` source, a controller crash between `202` and the claim loses the event.
+- **Lost after `202`.** A controller crash between `202` and the claim loses the event.
   The next push or Run again covers it.
-- **Recovery.** With the `webhook` source, when the controller starts or the gate reconnects, the controller lists
+- **Recovery.** When the controller starts or the gate reconnects, the controller lists
   `GET /app/hook/deliveries` since the last one it saw and redelivers each failed one with `POST /app/hook/deliveries/{id}/attempts`.
   The claim key makes a redelivery that already ran a no-op.
 
@@ -182,9 +178,6 @@ sequenceDiagram
         P->>GH: allowed by the workflow's proxy.allow, as the owner
     end
 ```
-
-With the `poll` source, the controller reads the delivery from the delivery log in
-place of the first five steps. The rest is the same.
 
 For a fork, the read-back also asks `GET /repos/{repo}/collaborators/{author}/permission`.
 
@@ -234,7 +227,7 @@ review code, run a check or do nothing on GitHub at all.
 
 ## Security
 
-- **Signature.** With the `webhook` source, `X-Hub-Signature-256` must equal `sha256=` and the hex HMAC-SHA256 of the
+- **Signature.** `X-Hub-Signature-256` must equal `sha256=` and the hex HMAC-SHA256 of the
   raw body, keyed by the App's webhook secret. moor compares in constant time. A
   missing or wrong signature answers `401` and writes nothing. Bodies over 1 MiB answer `413`.
 - **Route.** `POST /hooks/github` sits outside `/auth/` and `/webhooks/`, so no sign-in
@@ -281,18 +274,21 @@ signed replay. The real delivery runs on the team cluster last.
 3. **One open run per subject.** The open-run rule, `close_previous` and `Cancelled`.
    Live check. Run `pull` on two fixture pull requests at once and see both Boxes. Push
    to one and run it again. The older run ends `Cancelled` and its Box agent stops.
-4. **The receivers.** `on_pull_request` and the delivery-log poll. The gate route and its
-   signature check come when a dedicated App exists. Live check. Open a fixture pull
-   request and see the poll fire a run within two minutes, once.
-5. **Eligibility.** The read-back, the skips, the fork check and `closed`. Live check.
+4. **The receiver.** `on_pull_request`, the gate route, its signature check and the
+   `closed` cancel. Live check. Send signed replays to the local controller. `opened`
+   fires a run. A wrong signature gets `401` and no row. `synchronize` at a new SHA
+   cancels the older run, and `closed` cancels the open run.
+5. **Eligibility.** The read-back, the skips and the fork check. Live check.
    Replay a draft and see no row, then `ready_for_review` at the same SHA and see a run.
    Replay a fork pull request from an account without write access and see `skipped_fork`.
-6. **Real delivery.** Give the team cluster the shared App with the `poll` source,
+6. **Real delivery.** Give the team cluster `moor-bot` with its webhook secret,
    installed on `IniZio/moor-pilot-example`. Turn on `on_pull_request` for the evidence
    workflow and remove its cron schedule. Live check. Open a pull request and see the
    run start within two minutes, then the comment and the `moor/evidence` status. Push
-   again and see the older run cancelled. Stop the controller, open a pull request,
-   start it and see the run fire once.
-7. **Narrow grants.** `{pull}` and `{head_sha}` in `proxy.allow`. Live check. The evidence
+   again and see the older run cancelled.
+7. **Recovery.** Redeliver failed deliveries when the controller starts or the gate
+   reconnects. Live check. Stop the controller, open a pull request, start it and see
+   the run fire once.
+8. **Narrow grants.** `{pull}` and `{head_sha}` in `proxy.allow`. Live check. The evidence
    workflow with narrowed entries still comments and sets its status. A write to another
    fixture pull request from its Box is refused by the Proxy.

@@ -21,13 +21,10 @@ const DEFAULT_RUN_LIST: u32 = 30;
 /// Most changes `workflow-runs` returns at once.
 const MAX_LIMIT: u32 = 200;
 
-/// `run` as shown, naming its Box.
-pub(super) fn run_view(
-    store: &Store,
-    workflow: &str,
-    run: &WorkflowRun,
-) -> Result<LastRunView, CommandError> {
-    let (detail, result) = match &run.state {
+/// The detail and result a run in `state` shows: a refusal's or failure's reason, a delivery's
+/// result.
+fn told(state: &RunState) -> (Option<String>, Option<String>) {
+    match state {
         RunState::Done(RunEnd::Refused { detail }) => (Some(detail.clone()), None),
         RunState::Done(RunEnd::SkippedFork { author }) => (
             Some(format!(
@@ -48,8 +45,19 @@ pub(super) fn run_view(
         RunState::Queued
         | RunState::Running { .. }
         | RunState::Waiting { .. }
-        | RunState::Done(RunEnd::SkippedOverlap) => (None, None),
-    };
+        | RunState::Done(RunEnd::SkippedOverlap | RunEnd::CancelledUnstarted { .. }) => {
+            (None, None)
+        }
+    }
+}
+
+/// `run` as shown, naming its Box.
+pub(super) fn run_view(
+    store: &Store,
+    workflow: &str,
+    run: &WorkflowRun,
+) -> Result<LastRunView, CommandError> {
+    let (detail, result) = told(&run.state);
     let existing = match run.state.box_id() {
         Some(id) => store.box_row(id)?.map(|r| r.name.as_str().to_owned()),
         None => None,

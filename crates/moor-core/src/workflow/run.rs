@@ -114,6 +114,12 @@ pub enum RunEnd {
         /// Why, as the start reported it.
         detail: String,
     },
+    /// A newer head or the pull request's close cancelled the run while its Box was being
+    /// started. A Box the start still makes is closed when the start settles.
+    CancelledUnstarted {
+        /// What ended it.
+        cause: CancelCause,
+    },
     /// The run had a Box and ended.
     Ended {
         /// The Box.
@@ -229,6 +235,7 @@ impl RunState {
             Self::Done(RunEnd::SkippedOverlap) => "skipped_overlap",
             Self::Done(RunEnd::SkippedFork { .. }) => "skipped_fork",
             Self::Done(RunEnd::Refused { .. }) => "refused",
+            Self::Done(RunEnd::CancelledUnstarted { .. }) => "cancelled",
             Self::Done(RunEnd::Ended { outcome, .. }) => match outcome {
                 RunOutcome::Delivered { .. } => "finished",
                 RunOutcome::Failed { .. } => "failed",
@@ -256,7 +263,10 @@ impl RunState {
             },
             Self::Queued
             | Self::Done(
-                RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::Refused { .. },
+                RunEnd::SkippedOverlap
+                | RunEnd::SkippedFork { .. }
+                | RunEnd::Refused { .. }
+                | RunEnd::CancelledUnstarted { .. },
             ) => None,
         }
     }
@@ -270,7 +280,10 @@ impl RunState {
             | Self::Done(RunEnd::Ended { box_id, .. }) => Some(*box_id),
             Self::Queued
             | Self::Done(
-                RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::Refused { .. },
+                RunEnd::SkippedOverlap
+                | RunEnd::SkippedFork { .. }
+                | RunEnd::Refused { .. }
+                | RunEnd::CancelledUnstarted { .. },
             ) => None,
         }
     }

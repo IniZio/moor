@@ -66,6 +66,7 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
         origin_key: Some("k".to_owned()),
         keep_state: false,
         enabled: true,
+        on_pull_request: false,
     };
     let add = UserCmd::Workflow(WorkflowCmd::Add {
         req: req.clone(),

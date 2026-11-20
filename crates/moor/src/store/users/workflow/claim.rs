@@ -5,8 +5,8 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::workflow::{
-    CancelCause, CommitSha, HistoryEntry, NewRun, Plan, RunEnd, RunId, RunOutcome, RunPhase,
-    RunState, WorkflowRun,
+    CancelCause, CommitSha, HistoryEntry, NewRun, Plan, RunCause, RunEnd, RunId, RunOutcome,
+    RunPhase, RunState, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::{BoxState, WorkflowRuns};
@@ -14,15 +14,15 @@ use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use super::changes::next_seq;
 use super::history::append_history;
-use super::row::{state_cols, subject_cols};
+use super::row::{state_cols, subject_cols, SKIPPED_FORK};
 use super::runs::real_run;
 use super::subject::{cancel_in, open_run, subject_of};
 use crate::store::db::{Db, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
 
-/// What asking for a manual run came to.
+/// What claiming a manual or pull request run came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ManualClaim {
+pub(crate) enum OpenClaim {
     /// The run is recorded, with this id. `cancelled` is the open run of an older head of the
     /// same pull request that the claim ended `Cancelled`, as it was before, whose agent is
     /// still to stop.
@@ -34,6 +34,9 @@ pub(crate) enum ManualClaim {
     },
     /// A run about the same subject is open, so nothing was recorded. It is that run.
     Open(Box<WorkflowRun>),
+    /// A pull request run at this head is already recorded, whatever came of it, so nothing
+    /// changed. A delivery that comes twice, or late after a newer head, lands here.
+    Held,
 }
 
 impl Store {
@@ -57,19 +60,26 @@ impl Store {
         Ok(id)
     }
 
-    /// Records a run its owner asked for, unless a run of the workflow about the same subject is
-    /// open, which is looked for in the transaction that inserts the row. A read before the write
-    /// would race the tick, which could claim a cron run with another due time in between. No
-    /// unique key covers a manual run, so the open run is the only thing that stops it.
+    /// Records a manual or pull request run, unless a run of the workflow about the same subject
+    /// is open, which is looked for in the transaction that inserts the row. A read before the
+    /// write would race the tick, which could claim a cron run with another due time in between.
+    /// No unique key covers a manual run, so the open run is the only thing that stops it.
     ///
-    /// A run for a pull request whose open run is at an older head cancels that run with
-    /// [`CancelCause::NewerHead`] in the same transaction, then records. An older run still
-    /// being started has no Box to stop yet, so it blocks as any open run does.
-    pub(crate) fn claim_manual_run(&self, run: &NewRun) -> Result<ManualClaim, StoreError> {
+    /// A pull request run whose key is already recorded changes nothing, before any cancel, so a
+    /// late delivery of an older head never cancels the newer one. A run for a pull request whose
+    /// open run is at an older head cancels that run with [`CancelCause::NewerHead`] in the same
+    /// transaction, then records. An older run still being started is cancelled too, and its
+    /// start closes the Box it makes.
+    pub(crate) fn claim_open_run(&self, run: &NewRun) -> Result<OpenClaim, StoreError> {
         let mut open = None;
         let mut cancelled = None;
         let mut id = None;
+        let mut held = false;
         self.numbered(|tx, seq| {
+            if pull_key_held(tx, run)? {
+                held = true;
+                return Ok(0);
+            }
             let Some(old) = blocking(tx, run)? else {
                 id = insert(tx, seq, run)?;
                 return Ok(usize::from(id.is_some()));
@@ -91,17 +101,43 @@ impl Store {
             id = insert(tx, next_seq(tx)?, run)?;
             Ok(usize::from(id.is_some()))
         })?;
-        match (open, id) {
-            (Some(run), _) => Ok(ManualClaim::Open(Box::new(run))),
-            (None, Some(run)) => Ok(ManualClaim::Recorded {
+        match (held, open, id) {
+            (true, _, _) => Ok(OpenClaim::Held),
+            (false, Some(run), _) => Ok(OpenClaim::Open(Box::new(run))),
+            (false, None, Some(run)) => Ok(OpenClaim::Recorded {
                 run,
                 cancelled: cancelled.map(Box::new),
             }),
-            (None, None) => Err(StoreError::Invalid(
+            (false, None, None) => Err(StoreError::Invalid(
                 "a manual run met a unique key it has no part in".to_owned(),
             )),
         }
     }
+}
+
+/// Whether `run` is a pull request run whose workflow, repo, number and head are already
+/// recorded, read in `tx`. The unique key on them would refuse its insert.
+fn pull_key_held(tx: &dyn Db, run: &NewRun) -> Result<bool, StoreError> {
+    let RunCause::PullRequest { pull } = &run.cause else {
+        return Ok(false);
+    };
+    let (number, sha) = subject_cols(&run.cause);
+    let found: Option<i64> = tx
+        .row(
+            Query::select()
+                .column(WorkflowRuns::Id)
+                .from(WorkflowRuns::Table)
+                .and_where(Expr::col(WorkflowRuns::Workflow).eq(run.workflow.get()))
+                .and_where(Expr::col(WorkflowRuns::Repo).eq(pull.repo.to_string()))
+                .and_where(Expr::col(WorkflowRuns::Trigger).eq(run.cause.trigger().as_str()))
+                .and_where(Expr::col(WorkflowRuns::PullNumber).eq(number))
+                .and_where(Expr::col(WorkflowRuns::HeadSha).eq(sha))
+                .and_where(Expr::col(WorkflowRuns::Outcome).ne(SKIPPED_FORK))
+                .limit(1),
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(found.is_some())
 }
 
 /// The head `run` moves its pull request to, when `open` is that pull request's run at an

@@ -20,7 +20,7 @@ use super::cancel::stop_agent;
 use super::{prepare, pull, run_start, Prepared, StartJob};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{ManualClaim, Store};
+use crate::store::{OpenClaim, Store};
 
 /// A refusal the caller can act on.
 fn refused(why: impl std::fmt::Display) -> CommandError {
@@ -110,10 +110,10 @@ fn declined(w: &Workflow, why: String) -> RunNowValue {
     }
 }
 
-/// Claims a manual run of `w` for `cause` and hands it to `start`. A claim the store refuses
-/// records nothing; a start that fails after the claim leaves a refused run, as a cron firing
-/// does.
-fn fire(
+/// Claims a manual or pull request run of `w` for `cause` and hands it to `start`. A claim
+/// the store refuses records nothing; a start that fails after the claim leaves a refused run,
+/// as a cron firing does.
+pub(super) fn fire(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
@@ -134,8 +134,8 @@ fn fire(
         plan: frozen,
         cause: cause.clone(),
     };
-    match store.claim_manual_run(&claim)? {
-        ManualClaim::Open(open) => {
+    match store.claim_open_run(&claim)? {
+        OpenClaim::Open(open) => {
             let box_name = open_box(store, w, &open)?;
             let phase = open.state.phase().as_str();
             let of = open
@@ -150,7 +150,14 @@ fn fire(
                 ),
             ))
         }
-        ManualClaim::Recorded { run, cancelled } => {
+        OpenClaim::Held => Ok(declined(
+            w,
+            format!(
+                "a run of {} for this pull request at this head is already recorded",
+                w.name
+            ),
+        )),
+        OpenClaim::Recorded { run, cancelled } => {
             if let Some(why) = cancelled.and_then(|old| stop_agent(cx, store, &old)) {
                 cx.warn(moor_core::Warning {
                     code: "cancelled_agent_running".to_owned(),
@@ -170,7 +177,7 @@ fn fire(
 }
 
 /// Starts `job`'s Box on a thread of its own, as its owner, which settles the claim.
-fn spawn_start(cx: &Cx, job: StartJob) -> Result<(), CommandError> {
+pub(crate) fn spawn_start(cx: &Cx, job: StartJob) -> Result<(), CommandError> {
     let owner = cx
         .detached()?
         .with_requester(job.firing.identity.clone())
