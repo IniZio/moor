@@ -88,6 +88,26 @@ impl Store {
         Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
     }
 
+    /// Whether a Box on `node` stopped holding its machine at or after `since`, unix seconds: it
+    /// slept, or its machine was released, lost or never came up. A memory report taken before
+    /// then still counts what that Box held.
+    pub(crate) fn stopped_since(&self, node: &NodeName, since: i64) -> Result<bool, StoreError> {
+        let conn = self.reader()?;
+        let up = [HandsState::Ready.as_str(), HandsState::Starting.as_str()];
+        let stopped: i64 = conn.row(
+            join_current(join_state(
+                Query::select()
+                    .expr(Expr::col(Asterisk).count())
+                    .from(Boxes::Table),
+            ))
+            .and_where(Expr::col(st(BoxState::Node)).eq(node.as_str()))
+            .and_where(Expr::col(h(BoxHands::State)).is_not_in(up))
+            .and_where(Expr::col(h(BoxHands::StateAt)).gte(since.saturating_mul(1000))),
+            |r| r.get(0),
+        )?;
+        Ok(stopped > 0)
+    }
+
     /// One Box per owner among those on `node` whose disk is still there, Ready or asleep. An
     /// awake Box is preferred, since its owner's thread or agent is the one in use.
     pub(crate) fn one_live_per_owner_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
