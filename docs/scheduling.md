@@ -51,8 +51,8 @@ other wakes, then new starts, each oldest first. A small Box never passes a big
 one ahead of it, so the head cannot starve.
 
 To make room, the node suspends its longest-idle Box, at most one every 30
-seconds. A suspended Box keeps its whole state on disk and wakes later as if
-nothing happened. A Box that is working, waiting on a question, or still
+seconds. A suspended Box keeps its files, branch and session on disk. Its
+running processes stop, so an idle Box wakes where it left off. A Box that is working, waiting on a question, or still
 starting is never suspended to admit another.
 
 A woken Box needs what it used when it went to sleep, which the agent measured
@@ -76,13 +76,14 @@ Running Boxes can still exhaust a host. Each report checks for that:
 Each report suspends at most one Box, and none within 30 seconds of the last.
 
 A Box suspended at work says so in its status, waits first in line, and
-resumes with no one needing to act. Its agent is told how long it was paused
-and that open network connections dropped. Every Box still finishes. Pressure
-only decides when it runs.
+resumes with no one needing to act. Suspending stops its processes, so the
+agent loses its current turn and is relaunched when the Box wakes. Its agent is
+told how long it was paused and that open network connections dropped. Every
+Box still finishes. Pressure only decides when it runs.
 
 This is a trade we prefer to the alternative. Killing a Box loses work, and
 letting the host swap stalls every Box on it. Suspending one to disk costs that
-Box some minutes and nothing else.
+Box some minutes and, if it was working, its current turn.
 
 ## Disk
 
