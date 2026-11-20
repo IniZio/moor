@@ -34,7 +34,7 @@ and proxied rows. Seven gaps remain, and this spec closes them.
 
 | # | Gap | Today under rootless | Decision |
 | --- | --- | --- | --- |
-| 1 | Proxy address | `moor up` binds `MOOR_EGRESS_LISTEN` on the bridge gateway that `docker network inspect bridge` names ([`up/node.rs:113`](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor/src/up/node.rs#L113)). That address, `172.17.0.1`, exists only inside rootlesskit's network namespace. Where the host has a system `docker0` with the same address, the bind succeeds on the wrong interface and Boxes fail with no error. | A relay inside the namespace listens there. The controller does not bind. |
+| 1 | Proxy address | `moor up` binds `MOOR_EGRESS_LISTEN` on the bridge gateway that `docker network inspect bridge` names ([`up/node.rs:113`](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor/src/up/node.rs#L113)). That address, `172.17.0.1`, exists only inside rootlesskit's network namespace. Where the host has a system `docker0` with the same address, the bind succeeds on the wrong interface and Boxes fail with no error. | A relay inside the namespace listens on the namespace's own slirp4netns address, `10.0.2.100` by default. The controller dials that address and does not bind. |
 | 2 | Loopback exposure | The only setup that worked opened every host `127.0.0.1` listener to every Box. | Host loopback stays closed. `moor up` refuses a daemon that opens it. |
 | 3 | Daemon settings | Nothing checks them. | A preflight, listed below. A missing setting otherwise shows up as a Box that fails to start. |
 | 4 | `DOCKER_HOST` in the agent's unit | `moor up` copies `DOCKER_HOST`, `DOCKER_CONTEXT` and `DOCKER_CONFIG` into the agent's unit. `moor-machine-agent up` writes only `PATH` and `XDG_STATE_HOME` ([`up.rs:193`](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor-machine-agent/src/up.rs#L193)). A person who opted in through `DOCKER_HOST` in their shell gets an agent on the system daemon. A Docker context kept in `~/.docker` still works. | `moor-machine-agent up` copies the same three variables, so both programs follow the person's Docker the same way. |
@@ -49,11 +49,18 @@ state dir, mode `0600`. `MOOR_EGRESS_LISTEN` adds a TCP listener with the same h
 and the same token check ([`proxy/egress.rs:350`](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor/src/proxy/egress.rs#L350)). The handler does not look at which listener a connection came from. A
 Unix socket is a file, so a process in another network namespace can connect to it.
 
-A relay runs inside rootlesskit's network namespace. It listens on the bridge gateway
-and the egress port. For each connection it connects to `egress.sock` and copies the
-bytes both ways. The Box does not change. Its forwarder still dials
-`ws://moor-host:PORT/egress` with its token, and `moor-host` still resolves to
-`host-gateway`, which is the bridge gateway.
+A relay runs inside rootlesskit's network namespace. It listens on the namespace's own
+address, the one slirp4netns gives the tap device, and the egress port. `moor up` reads
+the address from rootlesskit and does not assume `10.0.2.100`. For each connection the
+relay connects to `egress.sock` and copies the bytes both ways. The Box's forwarder
+dials `ws://10.0.2.100:PORT/egress` with its token. The address is an IP literal, so
+the route does not depend on `moor-host` or on `host-gateway`.
+
+The relay does not listen on the bridge gateway. A Box's nested dockerd takes
+`172.17.0.1` for its own `docker0`, so `moor-host`, which `host-gateway` makes
+`172.17.0.1`, points back into the Box. A live run cloned with a 502 for this reason.
+Nested Docker's default address pools never cover `10.0.2.x`. No daemon setting is
+needed.
 
 ```mermaid
 flowchart LR
@@ -61,13 +68,13 @@ flowchart LR
     tp["tinyproxy"] --> fw["moor-egress-forward"]
   end
   subgraph rk["rootlesskit network namespace"]
-    relay["relay on 172.17.0.1:PORT"]
+    relay["relay on 10.0.2.100:PORT"]
   end
   subgraph host["host"]
     sock["egress/egress.sock"] --> proxy["controller's Proxy"]
     lo["other 127.0.0.1 listeners"]
   end
-  fw -->|"ws://moor-host:PORT/egress with the Box's token"| relay
+  fw -->|"ws://10.0.2.100:PORT/egress with the Box's token"| relay
   relay -->|"Unix socket"| sock
   fw -.->|"no route, host loopback is disabled"| lo
 ```
@@ -85,15 +92,20 @@ under rootful Docker. The token decides which Box a connection is.
   `child_pid` in its state dir, `$XDG_RUNTIME_DIR/dockerd-rootless`. The user owns that
   user namespace, so no root is needed.
 - **`moor up` writes the relay as a third user unit.** `moor up` already knows the
-  socket path and the gateway address. The unit is bound to the rootless
-  `docker.service`, so a daemon restart, which makes a new namespace, restarts the relay.
+  socket path. It reads the namespace's address from rootlesskit's `api.sock`, at
+  `/v1/info`, as `networkDriver.childIP`, and fails plainly when the driver names none.
+  The unit is bound to the rootless `docker.service` with `PartOf`, `BindsTo` and
+  `WantedBy`. A daemon restart or crash makes a new namespace and restarts the relay.
+  The relay reads `child_pid` when it starts, so it enters the current namespace.
 - **The relay is a mode of `moor-egress-forward`.** The controller already knows where
   that binary is, and a byte relay from TCP to a Unix socket is small.
 - **The controller names the address and does not bind it.** A new variable,
   `MOOR_EGRESS_RELAYED=IP:PORT`, takes the place of `MOOR_EGRESS_LISTEN` in the
-  controller's unit. `EgressRoute::upstream` builds `ws://moor-host:PORT/egress` from
-  either. Only `MOOR_EGRESS_LISTEN` makes the Proxy bind. A bind on the host either
-  fails or lands on the system `docker0`.
+  controller's unit. `EgressRoute::upstream` builds `ws://IP:PORT/egress` from it, with
+  the relay's IP literal, and `ws://moor-host:PORT/egress` from `MOOR_EGRESS_LISTEN`.
+  Only `MOOR_EGRESS_LISTEN` makes the Proxy bind. A bind on the host either fails or lands
+  on the system `docker0`. The Box's forwarder accepts plain `ws://` to a private IP
+  literal as it accepts `moor-host`.
 - **Host loopback stays closed.** Docker's rootless start script passes
   `--disable-host-loopback` unless `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK`
   is `false`. `moor up` reads
@@ -123,12 +135,16 @@ through the `nsenter` line above.
 | Host `ss -ltn` for port 47812, and host `curl 172.17.0.1:47812` | No listener, no connection |
 | `ss -ltn` inside the namespace | `172.17.0.1:47812` |
 
-`moor-host` resolved to `172.17.0.1`, the default bridge's gateway, though the container
-sat on a network whose gateway was `172.18.0.1`. So the relay binds the address that
-`moor up` already computes.
+The prototype bound the relay on `172.17.0.1` and dialed `moor-host`. That name resolved to
+the default bridge's gateway, though the container sat on a network whose gateway was
+`172.18.0.1`. It held until a Box's nested dockerd took `172.17.0.1` for its own
+`docker0`. The table stays as measured, and the address moved to the namespace's own.
 
 ### Options not taken
 
+- **A bridge-gateway relay with `--host-gateway-ip` on the daemon.** A Box's nested
+  dockerd takes `172.17.0.1`, so `moor-host` points back into the Box. A daemon setting is
+  also one more thing the host owner must get right.
 - **Open host loopback** with `DISABLE_HOST_LOOPBACK=false` and
   `--host-gateway-ip 10.0.2.2`. Every Box then reaches every `127.0.0.1` listener of the
   host, such as the runner, the controller's ports and databases.
@@ -201,8 +217,11 @@ Nothing is copied from the system daemon.
 - **Socket mount as the next step.** Mounting the socket also closes the shared port
   under rootful Docker, and `MOOR_EGRESS_LISTEN` and the relay could then both go. Is
   that worth a change to the forwarder and to the socket's mode?
-- **Relay unit.** Binding the relay's unit to `docker.service` is the plan and is not
-  tested. A relay that outlives its daemon holds the old namespace and serves nothing.
+- **Relay unit.** Settled. A throwaway user unit stood in for `docker.service`. A
+  `systemctl restart` and a crash of rootlesskit each gave the relay a new process in
+  the new namespace. `BindsTo` and `PartOf` alone left it stopped after a crash, so the
+  unit is also `WantedBy` the daemon's unit. A relay that cannot enter the namespace
+  exits and retries, and serves nothing meanwhile.
 - **pasta.** Every measurement used slirp4netns. pasta is faster on paper and rootlesskit
   marks it experimental. Does the relay design hold there unchanged?
 - **Different users.** The relay must enter the daemon's user namespace and open the
