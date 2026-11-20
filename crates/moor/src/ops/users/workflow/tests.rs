@@ -337,6 +337,7 @@ fn runs(f: &Fixture, who: &Identity, after: Option<i64>, limit: Option<u32>) -> 
             after,
             limit,
             workflow: None,
+            pull: None,
         }),
     )
 }
@@ -556,3 +557,4 @@ mod enabled_and_filter;
 mod keep_omitted;
 mod no_cron;
 mod plan;
+mod pull_filter;
