@@ -190,13 +190,16 @@ impl Launch<'_> {
         let env = env.map_err(|e| fail("script", &e))?;
         let profile = self.profile_env_lines(&exec.unset)?;
         let env = [profile.clone(), env].concat();
+        let given = ctx.proxy.as_ref().map_or(&[][..], |p| &p.box_env[..]);
+        let given = agent_env::export_lines(given, false, &exec.unset);
+        let shared = [profile, given.map_err(|e| fail("script", &e))?].concat();
         script_stripping(
             (self.cred, self.tmp),
             ctx,
             hooks,
             preseed,
             (&self.argv(), writers),
-            (&lines, &env, &exec.unset, &profile),
+            (&lines, &env, &exec.unset, &shared),
         )
         .map_err(|e| fail("script", &e))
     }
