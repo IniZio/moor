@@ -97,6 +97,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | Closing the pull request cancels its open run. | Nothing will read the result. |
 | Pull requests from forks fire when the author has write access to the base repo. | The team's git workflow puts feature work on personal forks. A writer could push the same code to the repo anyway. |
 | A draft or bot event writes no row. A fork skip writes a `skipped_fork` row with its reason. | A draft that turns ready at the same SHA must still fire. A fork author needs to see why nothing ran. |
+| A maintainer lets a skipped fork pull request run with Run again on its `skipped_fork` row. It starts a manual run at the current head as the owner. A later push from that fork skips again. | The maintainer's click is the approval, and it covers one head only. |
 | No per-workflow cap on open pull request runs. | The machine agent's placement and capacity checks already bound the load. |
 | No cron sweep for pull request workflows. Cron stays for scheduled workflows. | The App delivers every event. A sweep would double the runs it exists to replace. |
 | Failed deliveries are redelivered when the controller starts or the gate reconnects. | A short gate outage would otherwise lose a pull request's run until its next push. |
@@ -221,12 +222,6 @@ review code, run a check or do nothing on GitHub at all.
 - Comment commands such as `/review`, labels and review requests.
 - `push`, `issues` and other events, and other forges.
 - Check runs, and any status or comment moor writes itself.
-
-## Open questions
-
-- How does a maintainer let a skipped fork pull request run anyway? Recommend Run again
-  on its `skipped_fork` row. It starts a manual run at the current head as the owner,
-  so a maintainer's click is the approval. A later push from that fork skips again.
 
 ## Build order
 
