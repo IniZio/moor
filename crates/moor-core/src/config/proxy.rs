@@ -2,6 +2,7 @@
 //!
 //! Pure data and validation; the proxy turns [`ResolvedRule`]s into routes.
 
+mod extra;
 mod resolve;
 mod shape;
 mod template;
@@ -12,6 +13,7 @@ use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
 use crate::user::SecretName;
+pub(super) use extra::check_extra_allow;
 pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};

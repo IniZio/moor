@@ -172,3 +172,17 @@ fn node_never_from_repo() {
 fn no_size_in_either_config_leaves_the_size_unset() {
     assert_eq!(resolve("{}", Some("{}"), &Flags::default()).size, None);
 }
+
+#[test]
+fn proxy_allow_comes_from_the_repo_config_only() {
+    let s = resolve(
+        "",
+        Some("proxy: {allow: {github-api: [\"POST /repos/{repo}/statuses/*\"]}}"),
+        &Flags::default(),
+    );
+    assert_eq!(
+        s.proxy_allow["github-api"],
+        ["POST /repos/{repo}/statuses/*"]
+    );
+    assert!(resolve("", None, &Flags::default()).proxy_allow.is_empty());
+}

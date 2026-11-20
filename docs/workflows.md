@@ -223,7 +223,13 @@ The agent calls `add_workflow` with these values.
 - `repos`, one or more `owner/name`, first one first. The controller's
   `box.also` never applies to a workflow.
 - `config`, optional, a partial repo config in YAML that every Box starts
-  with. See [Override for one Box](repo.md#override-for-one-box).
+  with. See [Override for one Box](repo.md#override-for-one-box). It can also
+  ask the Proxy for extra GitHub writes for these Boxes only. Examples are
+  editing the workflow's own comment or setting a commit status. Write it as
+  `proxy: {allow: {github-api: ["PATCH /repos/{repo}/issues/comments/*"]}}`.
+  Each entry is `METHOD /path` with `{repo}`. moor refuses `{any_repo}`, `*`,
+  and any new host or credential. See
+  [Extra Proxy entries](config.md#extra-proxy-entries).
 - `prompt`, `timeout_minutes` (180 by default), and `plan`, a `steps` list
   as the editor writes it.
 - `expected_revision`, optional, the `revision` that `list_workflows` showed.

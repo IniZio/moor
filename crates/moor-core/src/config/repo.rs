@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::proxy::{default_rules, injected};
+use super::proxy::{check_extra_allow, default_rules, injected};
 use super::{check, parse_strict, BoxSize, ConfigError};
 use crate::cache::CacheConfig;
 
@@ -42,6 +42,14 @@ pub struct RepoNode {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct RetiredCheckpoint {}
 
+/// `proxy:` section: what a repo or one Box asks of the Proxy beyond the default rules.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ProxyExtras {
+    /// Default rule name to extra `METHODS /path` entries, each naming `{repo}`.
+    pub allow: BTreeMap<String, Vec<String>>,
+}
+
 /// The repo config. Build it with [`parse_repo`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -69,6 +77,8 @@ pub struct RepoConfig {
     pub machine: Option<RepoMachine>,
     /// `node:` section.
     pub node: RepoNode,
+    /// `proxy:` section.
+    pub proxy: ProxyExtras,
 }
 
 /// Parses and validates a repo config document.
@@ -100,6 +110,7 @@ impl RepoConfig {
             ("cache", self.cache != other.cache),
             ("machine", self.machine != other.machine),
             ("node", self.node != other.node),
+            ("proxy", self.proxy != other.proxy),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))
@@ -117,6 +128,7 @@ impl RepoConfig {
             .as_ref()
             .map_or(Ok(()), RepoMachine::validate)?;
         self.validate_node()?;
+        check_extra_allow(&self.proxy.allow)?;
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)

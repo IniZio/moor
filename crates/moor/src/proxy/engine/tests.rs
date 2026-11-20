@@ -22,6 +22,7 @@ use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 
 mod also_repos;
+mod extra_allow;
 mod graphql_e2e;
 mod hairpin_e2e;
 mod nono_e2e;

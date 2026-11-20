@@ -86,3 +86,30 @@ fn the_override_is_checked_as_a_repo_config() {
         assert!(RepoOverride::parse("o", text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn proxy_entries_add_to_the_repos_for_the_same_rule() {
+    let a = "PATCH /repos/{repo}/issues/comments/*";
+    let b = "POST /repos/{repo}/statuses/*";
+    is(
+        &format!("proxy: {{allow: {{github-api: [\"{a}\"]}}}}"),
+        &format!("proxy: {{allow: {{github-api: [\"{a}\", \"{b}\"]}}}}"),
+        &format!("proxy: {{allow: {{github-api: [\"{a}\", \"{b}\"]}}}}"),
+    );
+    is(
+        "setup: [x]",
+        &format!("proxy: {{allow: {{github-api: [\"{b}\"]}}}}"),
+        &format!("setup: [x]\nproxy: {{allow: {{github-api: [\"{b}\"]}}}}"),
+    );
+    is(
+        &format!("proxy: {{allow: {{github-api: [\"{a}\"]}}}}"),
+        "setup: [x]",
+        &format!("setup: [x]\nproxy: {{allow: {{github-api: [\"{a}\"]}}}}"),
+    );
+}
+
+#[test]
+fn an_override_with_a_bad_proxy_entry_does_not_parse() {
+    let bad = "proxy: {allow: {github-api: [\"PATCH /repos/{any_repo}/x\"]}}";
+    assert!(RepoOverride::parse("over", bad).is_err());
+}

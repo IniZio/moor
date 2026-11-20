@@ -279,3 +279,66 @@ fn each_served_host_goes_through_the_proxy_only_when_configured() {
         "{hosts:?}"
     );
 }
+
+/// The `github-api` allow entries of the rules `proxy` plans for a Box on `o/r` with `repo_yaml`.
+fn github_api_allowed(repo_yaml: &str) -> Vec<(String, String)> {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = FakeProxyHost::new();
+    let mut r = rig(dir.path());
+    r.cx = r.cx.with_proxy_host(Arc::new(fake.clone()));
+    let store = r.cx.store().unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
+    let new = NewBox {
+        name: BoxName::parse_allow_bare("repo-box").unwrap(),
+        repo: None,
+        spec: SpecFields::default(),
+    };
+    let id = store
+        .apply(Decision::insert(new).requester(user))
+        .unwrap()
+        .box_id;
+    let repo = moor_core::seam::forge::ForgeRepo {
+        owner: "o".to_owned(),
+        name: "r".to_owned(),
+    };
+    let parsed = moor_core::config::parse_repo("repo", repo_yaml).unwrap();
+    let cfg = BoxSettings::resolve(&UserConfig::default(), Some(&parsed), &Flags::default());
+    super::proxy(
+        &r.cx,
+        id,
+        Some((BoxHandle::new("h"), HandsInc::FIRST)),
+        Some(&repo),
+        &cfg,
+    )
+    .unwrap();
+    fake.calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            ProxyHostCall::Ensure(spec) => Some(spec.rules),
+            _ => None,
+        })
+        .flatten()
+        .filter(|rule| rule.name == "github-api")
+        .flat_map(|rule| rule.endpoint_rules)
+        .map(|e| (e.method, e.path))
+        .collect()
+}
+
+#[test]
+fn a_box_whose_config_asks_for_entries_gets_them_and_a_box_without_does_not() {
+    let patch = (
+        "PATCH".to_owned(),
+        "/repos/o/r/issues/comments/*".to_owned(),
+    );
+    let status = ("POST".to_owned(), "/repos/o/r/statuses/*".to_owned());
+    let with = github_api_allowed(
+        "proxy: {allow: {github-api: [\"PATCH /repos/{repo}/issues/comments/*\", \"POST /repos/{repo}/statuses/*\"]}}",
+    );
+    assert!(with.contains(&patch) && with.contains(&status), "{with:?}");
+    let without = github_api_allowed("");
+    assert!(
+        !without.contains(&patch) && !without.contains(&status),
+        "{without:?}"
+    );
+    assert_eq!(with.len(), without.len() + 2);
+}

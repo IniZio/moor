@@ -33,7 +33,8 @@ struct AddArgs {
     repos: Vec<String>,
     /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
-    /// replace. None when left out.
+    /// replace. `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default
+    /// Proxy rule for these Boxes only. None when left out.
     config: Option<String>,
     /// What each Box's agent is asked to do.
     prompt: String,
@@ -115,7 +116,13 @@ impl Tools {
     #[tool(
         description = "Add a workflow: on its cron, moor starts one Box with your prompt that \
                        clones every repo in `repos`. The agent starts in the first repo, and the \
-                       rest sit beside it. To run the same job on separate projects, add one \
+                       rest sit beside it. A workflow that needs a GitHub write the default Proxy \
+                       rules refuse, such as PATCH on its own comment or POST of a commit status, \
+                       asks for it in `config`, under `proxy.allow` on the default rule `github-api`, \
+                       for example `proxy: {allow: {github-api: [\"PATCH /repos/{repo}/issues/comments/*\"]}}`. \
+                       The entries apply to this workflow's Boxes only. Each must be `METHOD /path` \
+                       with `{repo}`, never `{any_repo}` or `*`; no new hosts or credentials. \
+                       moor refuses anything else with the reason. To run the same job on separate projects, add one \
                        workflow per project. Every run acts as you, with your credentials, and its agent \
                        may push branches and open pull requests in those repos; it cannot merge \
                        them. A run is skipped while the workflow's previous run is unfinished, \
@@ -185,7 +192,8 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron, time zone, repos, prompt, plan (with \
+        description = "List your workflows: cron, time zone, repos, config (which may hold the extra Proxy \
+                       `allow` entries the workflow's Boxes get, and only theirs), prompt, plan (with \
                        plan_stale when the prompt changed after it was made), revision, timeout, whether each \
                        is enabled, why it was disabled if the controller disabled it, its next \
                        due time and its latest run with its outcome and Box. Needs \
