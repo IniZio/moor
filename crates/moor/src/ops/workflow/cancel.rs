@@ -4,12 +4,13 @@
 //! The run ends `Cancelled` first, in one transaction compare-and-set on its state, so a cancel
 //! that lost to a finish, a report or another cancel changes nothing. Its agent is stopped after,
 //! and its Box stays for follow-ups as any ended run's Box does. An asleep Box runs no agent, so
-//! it is left asleep, never woken to be stopped.
+//! it is left asleep, never woken to be stopped. A Box whose agent never launched is closed.
 
 use moor_core::name::ForgeRepo;
 use moor_core::request::EndSessionReq;
 use moor_core::workflow::{CancelCause, Workflow, WorkflowRun};
 
+use super::settle::close_open_box;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::end_session;
@@ -41,7 +42,8 @@ pub(crate) fn cancel_pull(
 }
 
 /// Stops the agent of cancelled run `run` when its Box is awake; why it could not, if it could
-/// not.
+/// not. A Box whose agent never launched, such as one still waiting for capacity, is closed
+/// instead, so it never launches on the stale head later.
 pub(super) fn stop_agent(cx: &Cx, store: &Store, run: &WorkflowRun) -> Option<String> {
     let row = match run.state.box_id().map(|id| store.box_row(id)) {
         Some(Ok(Some(row))) => row,
@@ -53,7 +55,27 @@ pub(super) fn stop_agent(cx: &Cx, store: &Store, run: &WorkflowRun) -> Option<St
         }
         Some(Ok(None)) | None => return None,
     };
-    if !row.lifecycle.is_live() || row.asleep() {
+    if !row.lifecycle.is_live() {
+        return None;
+    }
+    match store.first_launch_at(row.id) {
+        Ok(None) => {
+            return close_open_box(cx, store, &row.name).err().map(|why| {
+                format!(
+                    "could not close the unstarted Box {}: {why}",
+                    row.name.as_str()
+                )
+            });
+        }
+        Err(e) => {
+            return Some(format!(
+                "could not read the agent of {}: {e}",
+                row.name.as_str()
+            ))
+        }
+        Ok(Some(_)) => {}
+    }
+    if row.asleep() {
         return None;
     }
     let req = EndSessionReq {

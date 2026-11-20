@@ -12,6 +12,7 @@ use moor_core::BoxId;
 use moor_schema::tables::{BoxState, WorkflowRuns};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
+use super::changes::next_seq;
 use super::history::append_history;
 use super::row::{state_cols, subject_cols};
 use super::runs::real_run;
@@ -84,7 +85,9 @@ impl Store {
                 return Ok(0);
             }
             cancelled = Some(old);
-            id = insert(tx, seq, run)?;
+            // The cancel holds `seq`; a number of its own keeps a paged change stream from
+            // splitting the two.
+            id = insert(tx, next_seq(tx)?, run)?;
             Ok(usize::from(id.is_some()))
         })?;
         match (open, id) {

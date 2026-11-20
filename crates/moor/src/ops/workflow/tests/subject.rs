@@ -169,9 +169,71 @@ fn a_newer_head_cancels_the_older_run_and_stops_its_agent_and_leaves_other_pulls
         RunState::Running { .. }
     ));
 
+    let store = r.cx.store().unwrap();
+    let changes = store.workflow_changes(REQUESTER_USER, 0, 50, None).unwrap();
+    let mut seqs: Vec<i64> = changes.iter().map(|c| c.seq).collect();
+    seqs.dedup();
+    assert_eq!(
+        seqs.len(),
+        changes.len(),
+        "each change has its own number: {seqs:?}"
+    );
+
     let late = r.report_from(old_box, ok(single().as_str(), "done"));
     assert!(late.error, "{late:?}");
     assert_eq!(r.run_for(id, 65, OLD).state, old.state);
+}
+
+#[test]
+fn a_newer_head_closes_an_older_box_whose_agent_never_launched() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    let req = moor_core::StartReq {
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
+        cold: false,
+        config: None,
+        name: moor_core::BoxName::parse("daily-fix/w1-pr65-aaaaaaa").unwrap(),
+        prompt: None,
+        issue: None,
+        base: None,
+        model: None,
+        node: None,
+        no_agent: true,
+        resume: false,
+        repo: Some(repo()),
+        also: None,
+        parent: None,
+        identity: None,
+    };
+    let made = crate::ops::start::run(&r.cx, &req).unwrap();
+    let old_box = BoxId::new(made.boxed.id);
+    let now = r.cx.clock().now();
+    let pull = target(65).at(CommitSha::parse(OLD).unwrap());
+    let run = moor_core::workflow::NewRun {
+        workflow: id,
+        repo: repo(),
+        due_at: now,
+        state: RunState::Running {
+            box_id: old_box,
+            at: single(),
+            try_n: 1,
+        },
+        recorded_at: now,
+        plan: None,
+        cause: moor_core::workflow::RunCause::Manual { pull: Some(pull) },
+    };
+    assert!(r.cx.store().unwrap().record_workflow_run(&run).unwrap());
+    r.pause(1_000);
+    started(&r.fire_pull("daily-fix", 65, NEW));
+    assert!(matches!(
+        r.run_for(id, 65, OLD).state,
+        RunState::Done(RunEnd::Ended {
+            outcome: RunOutcome::Cancelled { .. },
+            ..
+        })
+    ));
+    assert_eq!(lifecycle(&r, old_box), BoxLifecycle::Closed);
 }
 
 #[test]

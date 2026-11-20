@@ -309,7 +309,7 @@ impl Tools {
                        run open (starting, working, waiting for an answer, or timed out with \
                        its Box still open) is refused with that run's Box, and nothing is \
                        recorded; a run for a newer head of a pull request instead cancels the \
-                       open run of the older head and stops its agent. A cron run that comes due while a manual run is open is skipped. A \
+                       open run of the older head and stops its agent. A cron run that comes due while a manual run for no pull request is open is skipped. A \
                        manual run that fails does not count toward the three failed runs that \
                        disable a workflow, and one that delivers resets that count. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \

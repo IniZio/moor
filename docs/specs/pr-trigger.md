@@ -80,7 +80,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | `opened`, `reopened`, `ready_for_review` | `PullRequest` at the read-back head | One open run per workflow and pull request. Same head: nothing. |
 | `synchronize` | `PullRequest` at the new head | Cancels the open run of the older head, then claims. |
 | `closed` | none | Cancels the open run with `Closed`. |
-| Run again on a pull request run | `Manual` at the pull request's current head | Refused while that pull request has an open run. |
+| Run again on a pull request run | `Manual` at the pull request's current head | Same head open: refused. Older head open: cancels it, then claims. A run still starting blocks. |
 | `run_workflow` with `pull` | `Manual` at the current head | As Run again. |
 | `run_workflow` without `pull`, or cron | `Manual` or `Cron`, no subject | One open subject-less run, as today. |
 
@@ -223,9 +223,11 @@ review code, run a check or do nothing on GitHub at all.
   so a newer push still cancels it before it starts.
 - **Cancel.** The run ends `Cancelled` in one transaction, compare-and-set on its state.
   moor then interrupts the agent. The Box stays for its 24 hours, as any ended run's
-  Box does.
-- **Approve steps.** `answer_run` finds the waiting run by workflow alone today. It gains
-  an optional `pull`. With two runs waiting and no `pull`, it refuses and lists them.
+  Box does. A Box whose agent never launched is closed, so it cannot start on the old head.
+  A run still being started has no Box yet and is not cancelled.
+- **Approve steps.** `answer_run` takes an optional `pull`. Without it, it answers the run
+  for no pull request, or the only run that waits. Several pull request runs waiting and no
+  `pull` is refused with their list.
 - **Stale writes.** A cancelled agent may already have set a status on the old SHA. That
   commit is no longer the head, so it is harmless. A workflow that edits one comment
   should keep the SHA in its marker, as the evidence workflow does.

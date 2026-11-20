@@ -127,12 +127,12 @@ How it sits beside the schedule:
   is open.
 - A run for a newer head of a pull request cancels the open run of the older
   head. That run ends `cancelled`, its agent is stopped, and its Box stays
-  like any ended run's Box. An older run still starting is not cancelled, and
+  like any ended run's Box. A Box whose agent never launched is closed. An older run still starting is not cancelled, and
   the new run is refused until it has a Box. A cancelled run neither counts
   toward the breaker nor resets it.
 - A new run's Box closes only the earlier Boxes of runs about the same subject.
-- A cron run that comes due while a manual run is open is skipped, as for any
-  open run.
+- A cron run is skipped while a manual run for no pull request is open. Both
+  are about the workflow itself.
 - A manual run never swallows a due time the schedule missed.
 - A manual run that fails does not count toward the breaker. One that delivers
   resets it, so a fix you proved by hand clears the earlier failures.
