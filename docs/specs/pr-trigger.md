@@ -91,7 +91,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | Events come from a GitHub App, not a webhook per repo. | An App is generic. An external team sets up its own moor without hand-made webhooks. |
 | Events reach moor from one of two sources. `webhook` is the gate route with its signature check, for a dedicated App. `poll` reads the App's delivery log every minute. It serves an App shared with another service, and it is the one in use now. The webhook route comes when a dedicated App exists. | A shared App's webhook URL belongs to the other service, and moor must not change it. Both sources feed one `on_pull_request` handler. |
 | A poll keeps the id of the last delivery it read. | A delivery then never fires twice, and a restart resumes where the last poll stopped. |
-| The operator creates one App per moor install on GitHub and gives moor its id, private key and webhook secret. No shared hosted App. | moor carries no App setup code. A shared App would route every team's events through one owner. |
+| The operator gives moor one App's id, private key and, for the webhook source, its webhook secret. moor ships no hosted App. The App may be one the operator already runs for another service. | moor carries no App setup code. A hosted App would route every team's events through one owner. |
 | moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
 | The App in use holds comment write permissions but no `statuses` permission. Which identity writes is open until the trigger is live. For now runs write comments and statuses through the Proxy with the owner's token. moor writes nothing with an App token. | The team can pick an identity later. A status needs the owner's token until an App holds `statuses: write`. See [Open question](#open-question). |
 | A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
@@ -122,7 +122,7 @@ columns with a check that matches the enum, and parses rows back into it.
   `statuses`. moor uses the App only to verify deliveries,
   find installations, and read pull requests and collaborator permissions. Its
   installation tokens ask for reads only.
-- **Credentials.** The controller config gains a `github_app` entry with three values.
+- **Credentials.** The controller config gains a `github_app` entry.
 
   ```yaml
   github_app:
@@ -133,10 +133,11 @@ columns with a check that matches the enum, and parses rows back into it.
 
   The private key is the PEM GitHub generates for the App. Only the `webhook` source
   needs `webhook_secret_file`. The Helm chart takes
-  `githubApp.id`, `githubApp.privateKey` and `githubApp.webhookSecret`. It puts the two
-  secrets in the Secret `<release>-secrets` and mounts them as these files. Without
+  `githubApp.id`, `githubApp.privateKey` and `githubApp.webhookSecret`. It keeps the
+  secrets in the Secret `<release>-secrets` and installs them under
+  `/var/lib/moor/config/`. Without
   `github_app`, every App feature is off and the portal shows nothing of it.
-- **Portal.** Settings links "Install the App on a repo" to the App's public install
+- **Portal.** Repo settings links "Install the App on a repo" to the App's public install
   page, `https://github.com/apps/<slug>/installations/new`. It lists the repos that
   have the App installed. The controller reads the slug from `GET /app`.
 - **Tokens.** The controller signs a JWT with the App key and trades it for an
