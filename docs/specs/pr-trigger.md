@@ -55,6 +55,12 @@ pub struct PullRef {
     pub head_sha: CommitSha, // 40 hex characters, parsed at the boundary
 }
 
+pub enum RunEnd {
+    /* ...today's arms, such as SkippedOverlap... */
+    /// The fork's author lacks write access. Stored as `skipped_fork`.
+    SkippedFork { author: Login },
+}
+
 pub enum RunOutcome {
     /* ...today's arms... */
     Cancelled { at: StepId, cause: CancelCause },
@@ -89,7 +95,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | One open run per workflow and pull request. | Two pull requests should not wait on each other. One pull request must not get two agents. |
 | A newer head cancels the open run of an older head. | The old run is a live Box spending tokens on a stale commit. |
 | Closing the pull request cancels its open run. | Nothing will read the result. |
-| Pull requests from forks fire when the author has write access to the base repo. | The Oursky handbook's git workflow puts feature work on personal forks. A writer could push the same code to the repo anyway. |
+| Pull requests from forks fire when the author has write access to the base repo. | The team's git workflow puts feature work on personal forks. A writer could push the same code to the repo anyway. |
 | A draft or bot event writes no row. A fork skip writes a `skipped_fork` row with its reason. | A draft that turns ready at the same SHA must still fire. A fork author needs to see why nothing ran. |
 | No per-workflow cap on open pull request runs. | The machine agent's placement and capacity checks already bound the load. |
 | No cron sweep for pull request workflows. Cron stays for scheduled workflows. | The App delivers every event. A sweep would double the runs it exists to replace. |
@@ -114,6 +120,8 @@ columns with a check that matches the enum, and parses rows back into it.
   Permissions `metadata: read`, `contents: read` and `pull_requests: read`.
 - **Tokens.** The controller signs a JWT with the App key and trades it for an
   installation token for each read-back. It caches the token for under its hour.
+- **Lost after `202`.** A controller crash between `202` and the claim loses the event.
+  The next push or Run again covers it.
 - **Recovery.** When the controller starts or the gate reconnects, the controller lists
   `GET /app/hook/deliveries` since the last one it saw and redelivers each failed one with `POST /app/hook/deliveries/{id}/attempts`.
   The claim key makes a redelivery that already ran a no-op.
@@ -176,6 +184,8 @@ review code, run a check or do nothing on GitHub at all.
 
 ## Concurrency
 
+`ping`, `installation` and every other event or action answer `202` and do nothing.
+
 - **Capacity.** A claimed run starts its Box through the usual placement. A full node
   holds it Pending with `waiting for capacity on NODE`, as any Box. The run stays open,
   so a newer push still cancels it before it starts.
@@ -226,8 +236,8 @@ signed replay. The real delivery runs on the team cluster last.
 
 1. **App setup.** The manifest flow, the stored credentials, the install link and the
    installation token. Live check. Create an App for a test account from the local
-   portal, install it on `IniZio/moor-pilot-example` and read a fixture pull request with
-   its token.
+   portal, install it on `IniZio/moor-pilot-example`, and read a fixture pull request and
+   an author's collaborator permission with its token.
 2. **A run can have a pull request.** `RunCause`, the subject columns, the claim key, the
    Box name and the run's env. `run_workflow` gains an optional `pull`. Live check. Run
    a copy of the evidence workflow with `pull` set to a fixture pull request. Its Box
@@ -242,7 +252,8 @@ signed replay. The real delivery runs on the team cluster last.
    Replay a draft and see no row, then `ready_for_review` at the same SHA and see a run.
    Replay a fork pull request from an account without write access and see `skipped_fork`.
 6. **Real delivery and recovery.** Create the team cluster's App and install it on
-   `IniZio/moor-pilot-example`. Live check. Open a pull request and see the run start
+   `IniZio/moor-pilot-example`. Turn on `on_pull_request` for the evidence workflow and
+   remove its cron schedule. Live check. Open a pull request and see the run start
    within a minute, then the comment and the `moor/evidence` status. Push again and see
    the older run cancelled. Open a pull request with the gate stopped, start it and see
    the redelivered event fire the run.
