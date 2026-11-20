@@ -53,7 +53,8 @@ pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
 ///
 /// The caller holds the Box's turn and passes the row read under it. No Box is acquired. The
 /// effect ends on success and with the failure record, so a crash mid-run leaves it for the next
-/// process to settle.
+/// process to settle. The egress forwarder is delivered again, since the failure may have been a
+/// forwarder that could not run in the Box and has since been replaced on this host.
 pub(super) fn retry_in_box(
     cx: &Cx,
     store: &Store,
@@ -64,6 +65,7 @@ pub(super) fn retry_in_box(
         .lifecycle(BoxLifecycleInput::Retry)
         .effect(EffectChange::Next(Effect::Setup));
     store.apply(begin)?;
+    store.forget_egress_delivery(row.id)?;
     set_up_in_machine(cx, store, row, cfg)
 }
 
