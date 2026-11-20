@@ -426,7 +426,7 @@ async fn an_agent_linked_to_a_stable_server_updates_to_it_and_never_to_a_nightly
     cmd.env("XDG_STATE_HOME", enrolled(dir.path(), &server));
     let log = dir.path().join("agent.log");
     let _agent = spawn(cmd, &log);
-    until("the agent restarts", || marker.exists()).await;
+    until("the agent restarts", || logged(&marker).ends_with('\n')).await;
     assert_eq!(
         fs::read_to_string(&marker).unwrap(),
         "0.3.0 run --auto-update\n"
