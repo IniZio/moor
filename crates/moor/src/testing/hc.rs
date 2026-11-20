@@ -17,7 +17,7 @@ pub(crate) struct Core {
 }
 
 impl Core {
-    /// A core of its own; `None` when the host has no herdr-core.
+    /// A core of its own, already up; `None` when the host has no herdr-core.
     pub(crate) fn start() -> Option<Self> {
         let home = std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/bin"));
         let real = std::env::split_paths(&std::env::var_os("PATH")?)
@@ -49,10 +49,19 @@ impl Core {
             .status()
             .ok()?;
         assert!(installed.success(), "install the wrapper");
-        Some(Self {
+        let core = Self {
             dir,
             _serial: SERIAL.lock().unwrap_or_else(PoisonError::into_inner),
-        })
+        };
+        let started = Command::new(core.bin().join("herdr-core"))
+            .args(["server", "start"])
+            .output()
+            .expect("herdr-core server start");
+        assert!(
+            started.status.success(),
+            "herdr-core server start: {started:?}"
+        );
+        Some(core)
     }
 
     /// The directory holding this core's `herdr-core`.
