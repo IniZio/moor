@@ -6,7 +6,7 @@ use std::net::TcpStream;
 use moor_core::request::{Request as ControllerRequest, WorkflowAnswerReq, WorkflowRunListReq};
 use moor_core::response::ExitClass;
 use moor_core::view::workflow::{RunRowView, WorkflowRunListValue};
-use moor_core::workflow::Answer;
+use moor_core::workflow::{Answer, PullTarget};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -352,6 +352,11 @@ pub(crate) fn answer(
     let request = ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
         identity: None,
         workflow: name.clone(),
+        pull: row
+            .run
+            .pull
+            .as_deref()
+            .and_then(|p| PullTarget::parse(p).ok()),
         answer,
         note,
     });

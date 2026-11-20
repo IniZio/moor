@@ -426,6 +426,42 @@ fn a_failed_or_incomplete_run_counts_and_a_declined_one_does_neither() {
 }
 
 #[test]
+fn a_cancelled_pull_request_run_neither_counts_nor_resets_the_streak() {
+    let base = DAY0 - 10 * DAY;
+    let pull = crate::workflow::PullRef {
+        repo: repo("a/b"),
+        number: 65,
+        head_sha: crate::workflow::CommitSha::parse(&"a".repeat(40)).unwrap(),
+    };
+    let of_pull = |mut r: WorkflowRun| {
+        r.cause = RunCause::PullRequest { pull: pull.clone() };
+        r
+    };
+    let cancelled = |due| {
+        let cause = crate::workflow::CancelCause::Closed;
+        of_pull(ended(
+            "a/b",
+            due,
+            RunOutcome::Cancelled { at: step(), cause },
+        ))
+    };
+    let runs = [
+        of_pull(timed_out("a/b", base)),
+        cancelled(base + DAY),
+        cancelled(base + 2 * DAY),
+        of_pull(refused("a/b", base + 3 * DAY)),
+        cancelled(base + 4 * DAY),
+    ];
+    assert!(!breaker(&runs), "pushing often is not a failing workflow");
+    let more = [
+        runs.to_vec(),
+        vec![of_pull(timed_out("a/b", base + 5 * DAY))],
+    ]
+    .concat();
+    assert!(breaker(&more), "a cancel does not reset the streak either");
+}
+
+#[test]
 fn runs_in_flight_neither_count_nor_reset_the_streak() {
     let base = DAY0 - 10 * DAY;
     let runs = [

@@ -11,8 +11,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
 use moor_core::workflow::{
-    Answer, HistoryEntry, Plan, RunId, RunOutcome, RunState, Step, StepId, StepKind, WorkflowName,
-    WorkflowRun, NOTE_MAX,
+    Answer, HistoryEntry, Plan, PullTarget, RunId, RunOutcome, RunState, Step, StepId, StepKind,
+    WorkflowName, WorkflowRun, NOTE_MAX,
 };
 use moor_core::{BoxId, ErrorKind};
 
@@ -66,12 +66,15 @@ struct Asked<'a> {
     now: Ts,
 }
 
-/// Answers the run of `user`'s workflow `workflow` that waits at an approve step.
+/// Answers the run of `user`'s workflow `workflow` that waits at an approve step: the run for
+/// pull request `pull` when one is named, else the run for no pull request, else the only run
+/// that waits.
 pub(crate) fn run(
     cx: &Cx,
     store: &Store,
     user: UserId,
-    (workflow, answer, note): (&str, Answer, Option<&str>),
+    (workflow, pull): (&str, Option<&PullTarget>),
+    (answer, note): (Answer, Option<&str>),
 ) -> Result<WorkflowAnswerValue, CommandError> {
     let name = WorkflowName::parse(workflow).map_err(usage)?;
     let note = note.map(str::trim).filter(|n| !n.is_empty());
@@ -82,24 +85,17 @@ pub(crate) fn run(
     let Some(w) = store.workflow(user, &name)? else {
         return Err(refused(format!("no workflow named {name}")));
     };
-    let waiting = store.open_workflow_runs(w.id)?.into_iter().find_map(|r| {
-        let RunState::Waiting {
-            box_id,
-            ref at,
-            try_n,
-            ..
-        } = r.state
-        else {
-            return None;
-        };
-        let at = at.clone();
-        Some((box_id, at, try_n, r))
-    });
-    let Some((box_id, at, try_n, run)) = waiting else {
-        return Err(refused(format!(
-            "no run of {name} is waiting for an answer"
-        )));
+    let run = waiting_run(store.open_workflow_runs(w.id)?, &name, pull)?;
+    let RunState::Waiting {
+        box_id,
+        ref at,
+        try_n,
+        ..
+    } = run.state
+    else {
+        return Err(refused(MOVED));
     };
+    let at = at.clone();
     let plan = store.run_plan(run.id, &w.prompt)?;
     #[cfg(test)]
     tests_hook::after_read(cx);
@@ -284,6 +280,53 @@ impl Asked<'_> {
             .step_workflow_run(self.key(), (at, at), (&[line], self.now))?;
         Ok(Some(String::new()))
     }
+}
+
+/// The run among `open` that waits and that the answer names: the run for `pull`, else the run
+/// for no pull request, else the only one that waits. Several waiting and none named is a
+/// refusal that lists them.
+fn waiting_run(
+    open: Vec<WorkflowRun>,
+    name: &WorkflowName,
+    pull: Option<&PullTarget>,
+) -> Result<WorkflowRun, CommandError> {
+    let mut waiting: Vec<WorkflowRun> = open
+        .into_iter()
+        .filter(|r| matches!(r.state, RunState::Waiting { .. }))
+        .collect();
+    let named = pull.map_or_else(
+        || {
+            waiting
+                .iter()
+                .position(|r| r.cause.subject().is_none())
+                .or_else(|| (waiting.len() == 1).then_some(0))
+        },
+        |target| {
+            waiting
+                .iter()
+                .position(|r| r.cause.subject().is_some_and(|p| p.is(target)))
+        },
+    );
+    if let Some(i) = named {
+        return Ok(waiting.swap_remove(i));
+    }
+    let what = pull.map_or_else(String::new, |t| format!(" for {t}"));
+    if waiting.is_empty() || pull.is_some() {
+        return Err(refused(format!(
+            "no run of {name}{what} is waiting for an answer"
+        )));
+    }
+    let listed: Vec<String> = waiting
+        .iter()
+        .filter_map(|r| r.cause.subject())
+        .map(|p| format!("{}#{}", p.repo, p.number))
+        .collect();
+    Err(refused(format!(
+        "{} runs of {name} wait for an answer: {}",
+        listed.len(),
+        listed.join(", ")
+    ))
+    .with_hint("name the run with pull, such as pull: \"owner/name#12\""))
 }
 
 /// The Box `id` when it is live; a closed or missing Box is a refusal.

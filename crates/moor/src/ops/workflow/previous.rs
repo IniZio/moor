@@ -1,11 +1,13 @@
-//! Closing a workflow's earlier Boxes once its next run has a Box, so each workflow and repo
-//! holds one Box for follow-ups and its disk does not pile up night after night.
+//! Closing a workflow's earlier Boxes once its next run has a Box, so each workflow and subject
+//! holds one Box for follow-ups and its disk does not pile up night after night. A pull request's
+//! runs close only that pull request's earlier Boxes, and the workflow's own runs only theirs.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::CloseReq;
+use moor_core::workflow::WorkflowRun;
 use moor_core::BoxId;
 
 use super::StartJob;
@@ -41,7 +43,8 @@ pub(super) fn kept(store: &Store, row: &BoxRow) -> Option<String> {
     }
 }
 
-/// Closes the open Box of each run of `job`'s workflow due before `job`, without force
+/// Closes the open Box of each run of `job`'s workflow about the same subject due before `job`,
+/// without force
 /// and without waking it, when [`kept`] finds no reason to keep it under the Box's lock. Each Box
 /// kept gets a `previous_box_kept` event on `new_box` and a line in the returned log; from the
 /// third run in a row to keep the same Box, both ask the owner to look.
@@ -63,7 +66,9 @@ pub(super) fn close_previous(
     };
     // The Boxes of the runs between this one and the one being looked at, newest first.
     let mut newer = Vec::new();
-    for run in runs.into_iter().filter(|r| r.due_at < job.firing.due_at) {
+    let mine =
+        |r: &WorkflowRun| r.due_at < job.firing.due_at && r.cause.same_subject(&job.firing.cause);
+    for run in runs.into_iter().filter(mine) {
         let Some(id) = run.state.box_id().filter(|id| *id != new_box) else {
             continue;
         };

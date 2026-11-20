@@ -82,7 +82,7 @@ impl Rig {
     ) -> Result<WorkflowAnswerValue, CommandError> {
         let store = self.cx.store().unwrap();
         let name = store.workflow_by_id(wid).unwrap().unwrap().name;
-        answer_run(&self.cx, store, user, (name.as_str(), answer, note))
+        answer_run(&self.cx, store, user, (name.as_str(), None), (answer, note))
     }
 
     fn answer(&self, wid: WorkflowId, answer: Answer) -> Result<WorkflowAnswerValue, CommandError> {
@@ -200,7 +200,8 @@ fn two_answers_at_once_steer_the_agent_once() {
             cx,
             store,
             REQUESTER_USER,
-            (name.as_str(), Answer::Yes, None),
+            (name.as_str(), None),
+            (Answer::Yes, None),
         );
         assert!(told.is_ok(), "{told:?}");
     });

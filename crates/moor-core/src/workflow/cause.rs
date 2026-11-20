@@ -160,6 +160,17 @@ impl PullRef {
     }
 }
 
+impl PullRef {
+    /// Whether this is pull request `target`, at any head. Repo names compare as GitHub does,
+    /// without case.
+    #[must_use]
+    pub fn is(&self, target: &PullTarget) -> bool {
+        self.number == target.number
+            && self.repo.owner.eq_ignore_ascii_case(&target.repo.owner)
+            && self.repo.name.eq_ignore_ascii_case(&target.repo.name)
+    }
+}
+
 impl fmt::Display for PullRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -208,6 +219,20 @@ impl RunCause {
         match self {
             Self::Cron | Self::Manual { pull: None } => None,
             Self::Manual { pull: Some(pull) } | Self::PullRequest { pull } => Some(pull),
+        }
+    }
+
+    /// Whether this run and `other` are about the same subject: both about no pull request, or
+    /// both about the same pull request at any head. One subject holds one open run.
+    #[must_use]
+    pub fn same_subject(&self, other: &Self) -> bool {
+        match (self.subject(), other.subject()) {
+            (None, None) => true,
+            (Some(a), Some(b)) => b.is(&PullTarget {
+                repo: a.repo.clone(),
+                number: a.number,
+            }),
+            _ => false,
         }
     }
 

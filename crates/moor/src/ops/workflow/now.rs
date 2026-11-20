@@ -16,6 +16,7 @@ use moor_core::workflow::{
 };
 use moor_core::ErrorKind;
 
+use super::cancel::stop_agent;
 use super::{prepare, pull, run_start, Prepared, StartJob};
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -137,15 +138,25 @@ fn fire(
         ManualClaim::Open(open) => {
             let box_name = open_box(store, w, &open)?;
             let phase = open.state.phase().as_str();
+            let of = open
+                .cause
+                .subject()
+                .map_or_else(String::new, |p| format!(" for {}#{}", p.repo, p.number));
             Ok(declined(
                 w,
                 format!(
-                    "a run of {} is still open ({phase}, Box {box_name})",
+                    "a run of {}{of} is still open ({phase}, Box {box_name})",
                     w.name
                 ),
             ))
         }
-        ManualClaim::Recorded(run) => {
+        ManualClaim::Recorded { run, cancelled } => {
+            if let Some(why) = cancelled.and_then(|old| stop_agent(cx, store, &old)) {
+                cx.warn(moor_core::Warning {
+                    code: "cancelled_agent_running".to_owned(),
+                    message: why,
+                });
+            }
             let name = job.name.as_str().to_owned();
             start(job.claimed(run))?;
             Ok(RunNowValue {

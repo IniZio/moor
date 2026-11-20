@@ -92,7 +92,8 @@ again once. A second end without progress ends the run `incomplete`.
 
 An `approve` step asks the workflow's owner its `question`. The run waits
 (`waiting` in `list_workflows`) and its Box is left to sleep. The owner answers
-with `answer_run(workflow, answer, note)`. A `yes` follows `ok` and a
+with `answer_run(workflow, answer, note)`, adding `pull` when several runs of the
+workflow wait. A `yes` follows `ok` and a
 `no` follows `fail`. A `no` at a step with no `fail` edge ends the run
 `declined`.
 The next step goes to the agent as a steer, which wakes the Box, and the note
@@ -117,9 +118,19 @@ page as any task, with the plan in the right rail.
 
 How it sits beside the schedule:
 
-- A workflow with an open run is refused with that run's Box, and nothing is
-  recorded. A run is open while it starts, works or waits for an answer. It is
-  also open after a timeout while its Box is open.
+- A workflow holds one open run per subject. A run for a pull request is about
+  that pull request, at any head. Every other run is about the workflow itself.
+  Two pull requests run at once, and neither holds off the schedule.
+- A run asked for while a run about the same subject is open is refused with
+  that run's Box, and nothing is recorded. A run is open while it starts,
+  works or waits for an answer. It is also open after a timeout while its Box
+  is open.
+- A run for a newer head of a pull request cancels the open run of the older
+  head. That run ends `cancelled`, its agent is stopped, and its Box stays
+  like any ended run's Box. An older run still starting is not cancelled, and
+  the new run is refused until it has a Box. A cancelled run neither counts
+  toward the breaker nor resets it.
+- A new run's Box closes only the earlier Boxes of runs about the same subject.
 - A cron run that comes due while a manual run is open is skipped, as for any
   open run.
 - A manual run never swallows a due time the schedule missed.
@@ -247,7 +258,10 @@ Other tools:
   `MOOR_PULL_URL` in its env, and its prompt opens with a line naming the pull
   request. Run again on such a run fires the same pull request at its current
   head.
-- `answer_run(workflow, answer, note)` answers an approve step.
+- `answer_run(workflow, answer, note)` answers an approve step. Pass `pull`,
+  such as `owner/name#12`, to answer that pull request's run. Without it the
+  run for no pull request is answered, or the only run that waits. Several
+  waiting runs and no `pull` is refused with the list.
 - `list_workflows` shows each workflow, its next due time, its plan and its
   latest run. `list_workflow_runs` lists each change oldest first, with an
   outcome, a `trigger` of `cron` or `manual`, and the `pull` and `head_sha` of

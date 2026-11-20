@@ -101,6 +101,10 @@ pub struct WorkflowAnswerReq {
     pub identity: Option<Identity>,
     /// The workflow's name.
     pub workflow: String,
+    /// The pull request whose run to answer; the run for no pull request, or the only waiting
+    /// run, when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<PullTarget>,
     /// Yes or no.
     pub answer: Answer,
     /// What the owner adds, passed on to the agent; none when absent.
@@ -194,6 +198,8 @@ pub enum WorkflowCmd {
     Answer {
         /// The workflow's name.
         workflow: String,
+        /// The pull request whose run to answer.
+        pull: Option<PullTarget>,
         /// Yes or no.
         answer: Answer,
         /// What the owner adds.
@@ -269,6 +275,7 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
             r.identity,
             WorkflowCmd::Answer {
                 workflow: r.workflow,
+                pull: r.pull,
                 answer: r.answer,
                 note: r.note,
             },

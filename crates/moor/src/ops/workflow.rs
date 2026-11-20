@@ -56,6 +56,8 @@ pub(crate) struct Firing {
     pub(crate) config: Option<String>,
     /// The due time the claim answers.
     pub(crate) due_at: Ts,
+    /// Why the run started, which names the subject whose earlier Boxes it closes.
+    pub(crate) cause: RunCause,
     /// The Box to start.
     pub(crate) name: BoxName,
     /// What the Box's agent is asked to do.
@@ -202,6 +204,7 @@ fn prepare(
             also: also.to_vec(),
             config,
             due_at,
+            cause: cause.clone(),
             name,
             prompt,
             first_step: w.plan.first().id.clone(),
@@ -367,6 +370,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
 
 mod advance;
 mod answer;
+pub(super) mod cancel;
 mod check;
 mod facts;
 mod now;
