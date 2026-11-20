@@ -129,6 +129,7 @@ impl Class {
             | "sessions_stopped"
             | "prompt_not_given"
             | "previous_box_kept"
+            | "run_moved"
             | "transcript_saved"
             | "transcript_skipped"
             | "proxy_started"

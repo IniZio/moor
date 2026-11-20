@@ -1,6 +1,8 @@
 //! The person's Boxes as MCP resources, and `subscriptions/listen` over the controller's
 //! watch: a lifecycle event of a Box sends `notifications/resources/updated` for its URI, and
-//! a Box that starts or goes sends `notifications/resources/list_changed`.
+//! a Box that starts or goes sends `notifications/resources/list_changed`. A workflow's runs
+//! are `moor://workflow/NAME`: a run of it that moves sends `notifications/resources/updated`
+//! for that URI, and `list_workflow_runs` reads what it moved to.
 //!
 //! A notification says only which resource changed; the client reads it for the facts, the
 //! same JSON `box_status` returns.
@@ -27,6 +29,12 @@ use crate::{rewrite, Person};
 
 /// Every Box resource's URI starts with this; the Box name follows.
 pub(crate) const PREFIX: &str = "moor://box/";
+
+/// Every workflow's runs URI starts with this; the workflow's name follows.
+pub(crate) const RUNS: &str = "moor://workflow/";
+
+/// The kind a run's move writes on its Box, naming its workflow.
+const MOVED: &str = "run_moved";
 
 /// Kinds after which a Box's resource reads differently.
 const UPDATED: &[&str] = &[
@@ -69,6 +77,8 @@ enum Change {
     Listed,
     /// The Box of this name changed.
     Updated(String),
+    /// A run of the workflow of this name moved.
+    Moved(String),
 }
 
 #[allow(
@@ -142,7 +152,7 @@ impl ServerHandler for Tools {
         accepted.resources_list_changed = requested.resources_list_changed;
         accepted.resource_subscriptions = requested.resource_subscriptions.as_ref().map(|uris| {
             uris.iter()
-                .filter(|u| u.starts_with(PREFIX))
+                .filter(|u| u.starts_with(PREFIX) || u.starts_with(RUNS))
                 .cloned()
                 .collect()
         });
@@ -183,6 +193,9 @@ async fn relay(context: &SubscriptionContext, mut rx: mpsc::UnboundedReceiver<Ch
             None => return true,
             Some(Change::Listed) => sink.notify_resource_list_changed().await,
             Some(Change::Updated(name)) => sink.notify_resource_updated(uri(&name)).await,
+            Some(Change::Moved(name)) => {
+                sink.notify_resource_updated(format!("{RUNS}{name}")).await
+            }
         };
         if matches!(sent, Err(SubscriptionSendError::SubscriptionClosed)) {
             return false;
@@ -258,6 +271,7 @@ fn follow(
             .filter(|k| !UPDATED.contains(k))
             .map(|&k| k.to_owned()),
     );
+    kinds.push(MOVED.to_owned());
     let filter = WatchFilter {
         boxes: None,
         kinds: Some(kinds),
@@ -280,8 +294,17 @@ fn follow(
             Ok(WatchItem::CaughtUp { .. }) => continue,
             Err(e) => return Err(format!("the controller ended the watch: {e}")),
         };
-        let name = event.box_name.unwrap_or_default();
         let kind = event.kind.as_str();
+        if kind == MOVED {
+            let workflow = event.payload.get("workflow").and_then(Value::as_str);
+            if let Some(workflow) = workflow {
+                if tx.send(Change::Moved(workflow.to_owned())).is_err() {
+                    return Ok(());
+                }
+            }
+            continue;
+        }
+        let name = event.box_name.unwrap_or_default();
         if LISTED.contains(&kind) && tx.send(Change::Listed).is_err() {
             return Ok(());
         }

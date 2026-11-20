@@ -1,6 +1,7 @@
-//! The Box event a run's move writes when its owner should hear of it: a run that waits at an
-//! approve step, and a run that ended `Failed`, `Incomplete`, `TimedOut` or `Refused`. Success writes
-//! none, so delivered, declined and skipped runs stay silent.
+//! The Box events a run's move writes. Every move of a run that holds a Box writes `run_moved`,
+//! which wakes whoever follows the run. The owner also hears of a run that waits at an approve
+//! step, and a run that ended `Failed`, `Incomplete`, `TimedOut` or `Refused`. Success writes
+//! no such notice, so delivered, declined and skipped runs stay silent.
 //!
 //! The event is written in the transaction of the compare-and-set that made the move, so a
 //! move that changed nothing (a repeated tick, a restart, a lost race) writes nothing.
@@ -55,9 +56,10 @@ pub(super) fn held(tx: &dyn Db, run: RunId) -> Result<Option<Held>, StoreError> 
         .optional()?)
 }
 
-/// Writes the event for run `run`'s move to `to`, if it is one the owner hears of.
+/// Writes `run_moved` for run `run`'s move to `to`, and the notice when it is one the owner
+/// hears of.
 ///
-/// A refusal before any Box was recorded has no Box to carry an event, so it writes none.
+/// A move before any Box was recorded has no Box to carry an event, so it writes none.
 pub(super) fn record(
     tx: &Tx<'_>,
     run: RunId,
@@ -67,6 +69,15 @@ pub(super) fn record(
 ) -> Result<(), StoreError> {
     let (name, prompt) = workflow_of(tx, held.workflow)?;
     let run = run.get();
+    if let Some(box_id) = to.box_id().map(BoxId::get).or(held.box_id) {
+        if box_exists(tx, box_id)? {
+            let moved = WorkflowEvent::RunMoved {
+                workflow: name.clone(),
+                run,
+            };
+            insert_event(tx, BoxId::new(box_id), &Event::Workflow(moved), at)?;
+        }
+    }
     let link = format!("/workflows/{name}/runs/{run}");
     let repo = held.repo.clone();
     let (box_id, event) = match to {

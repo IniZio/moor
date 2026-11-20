@@ -5,7 +5,7 @@ use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
     WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
-use moor_core::workflow::{Answer, PlanDoc, PullTarget};
+use moor_core::workflow::Answer;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -13,73 +13,10 @@ use rmcp::{tool, tool_router, RoleServer};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use self::args::{pull_arg, AddArgs};
 use super::reply::Reply;
 use super::Tools;
 use crate::mcp::{READ, WRITE};
-
-/// Arguments of `add_workflow`.
-#[derive(Deserialize, JsonSchema)]
-struct AddArgs {
-    /// A name, unique among your workflows; adding the same name again replaces it.
-    name: String,
-    /// A five-field cron expression: minute, hour, day of month, month, day of week. A new
-    /// workflow with none runs only by hand (`run_workflow`) or on pull requests. When you
-    /// replace a workflow, leave it out to keep its cron, or send null to clear it.
-    #[serde(default, deserialize_with = "some")]
-    #[allow(
-        clippy::option_option,
-        reason = "left out keeps the cron and null clears it, which Option<String> cannot tell apart"
-    )]
-    cron: Option<Option<String>>,
-    /// The IANA time zone the cron is read in, such as `Europe/London`. Required with a cron;
-    /// when you replace a workflow, left out keeps its zone.
-    timezone: Option<String>,
-    /// The repos each run's one Box clones, each as `owner/name`, first one first. The agent
-    /// works in the first, where its branch and pull request go; the rest are cloned beside it,
-    /// and each must be one you can push to.
-    repos: Vec<String>,
-    /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
-    /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
-    /// replace. `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default
-    /// Proxy rule for these Boxes only. A new workflow has none when left out; when you replace
-    /// one, left out keeps its config and an empty string clears it.
-    config: Option<String>,
-    /// What each Box's agent is asked to do.
-    prompt: String,
-    /// Minutes a run may take before it is stopped, 1 to 720; 180 for a new workflow when left
-    /// out, and the stored value when you replace one.
-    timeout_minutes: Option<u32>,
-    /// The plan a run walks, as an object with a `steps` list; see the tool description for how
-    /// to write one. None when left out, and each run then delivers the prompt in one step.
-    #[schemars(schema_with = "plan_schema")]
-    plan: Option<serde_json::Value>,
-    /// The `revision` `list_workflows` showed for the workflow you are replacing. The call is
-    /// refused when the workflow has changed since. Leave it out for a new workflow.
-    expected_revision: Option<u64>,
-    /// False to store the workflow disabled in this same write, so no cron fires before you
-    /// call `set_workflow_enabled`; true to enable it. Left out, a new workflow is enabled and a
-    /// replaced one keeps its state.
-    enabled: Option<bool>,
-    /// True to also fire a run when a pull request on the first repo is opened, reopened,
-    /// marked ready for review or pushed to. The run gets the pull request in its env. Left
-    /// out, a new workflow is false and a replaced one keeps its value.
-    on_pull_request: Option<bool>,
-}
-
-/// A field that tells null from absent: absent stays `None` through `default`, and null is
-/// `Some(None)`.
-fn some<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    T::deserialize(deserializer).map(Some)
-}
-
-/// The JSON Schema of a plan, which `add_workflow` checks the argument against.
-fn plan_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    generator.subschema_for::<Option<PlanDoc>>()
-}
 
 /// Arguments of the tools that name one workflow.
 #[derive(Deserialize, JsonSchema)]
@@ -309,12 +246,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<AnswerArgs>,
     ) -> CallToolResult {
-        let pull = args
-            .pull
-            .as_deref()
-            .map(PullTarget::parse)
-            .transpose()
-            .map_err(|e| e.to_string());
+        let pull = pull_arg(args.pull.as_deref());
         let request = pull.map(|pull| {
             ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
                 identity: None,
@@ -362,12 +294,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunNowArgs>,
     ) -> CallToolResult {
-        let pull = args
-            .pull
-            .as_deref()
-            .map(PullTarget::parse)
-            .transpose()
-            .map_err(|e| e.to_string());
+        let pull = pull_arg(args.pull.as_deref());
         let request = pull.map(|pull| {
             ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
                 identity: None,
@@ -396,12 +323,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunsArgs>,
     ) -> CallToolResult {
-        let pull = args
-            .pull
-            .as_deref()
-            .map(PullTarget::parse)
-            .transpose()
-            .map_err(|e| e.to_string());
+        let pull = pull_arg(args.pull.as_deref());
         let request = pull.map(|pull| {
             ControllerRequest::WorkflowRuns(WorkflowRunsReq {
                 identity: None,
@@ -414,3 +336,5 @@ impl Tools {
         self.run(&context, READ, request, Reply::AsIs).await
     }
 }
+
+mod args;

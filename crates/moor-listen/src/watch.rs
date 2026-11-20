@@ -14,6 +14,7 @@ use crate::token::Fail;
 use self::line::{
     death_line, disk_line, held_line, newest_worth, question_line, quiet_line, run_line, said,
 };
+use self::runs::{Runs, RUNS};
 
 /// Every Box resource's URI starts with this.
 const PREFIX: &str = "moor://box/";
@@ -56,22 +57,37 @@ struct State {
     closed: HashSet<String>,
     /// Watched Boxes already reported as not visible.
     missing: HashSet<String>,
+    /// The workflows whose runs are watched.
+    runs: Runs,
 }
 
 impl State {
-    /// Whether Boxes were asked for by name and each has closed.
+    /// Whether Boxes were asked for by name, each has closed, and no workflow is watched: a
+    /// workflow never closes.
     fn finished(&self) -> bool {
-        !self.only.is_empty() && self.only.iter().all(|n| self.closed.contains(n))
+        !self.only.is_empty()
+            && !self.runs.any()
+            && self.only.iter().all(|n| self.closed.contains(n))
+    }
+
+    /// Whether the Box at `uri` is watched: every Box when neither a Box nor a workflow was
+    /// asked for, else only those named.
+    fn watches(&self, uri: &str) -> bool {
+        let name = uri.strip_prefix(PREFIX);
+        if self.only.is_empty() {
+            return !self.runs.any();
+        }
+        self.only.iter().any(|n| name == Some(n))
     }
 }
 
 /// Runs until `say` fails, which is when nobody reads the lines any more, or until every Box in
-/// `only` has closed. An empty `only` watches every Box. `signed_out` is how long to wait before
-/// looking again for a sign-in.
+/// `only` has closed and no workflow is watched. With neither `only` nor `workflows` it
+/// watches every Box. `signed_out` is how long to wait before looking again for a sign-in.
 pub(crate) fn run(
     gate: &Gate,
     signed_out: Duration,
-    only: Vec<String>,
+    (only, workflows): (Vec<String>, Vec<String>),
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<()> {
     let mut state = State {
@@ -81,6 +97,7 @@ pub(crate) fn run(
         only,
         closed: HashSet::new(),
         missing: HashSet::new(),
+        runs: Runs::new(workflows),
     };
     let mut wait = FIRST;
     loop {
@@ -197,10 +214,7 @@ fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
         .into_iter()
         .flatten()
         .filter_map(|r| r.get("uri")?.as_str())
-        .filter(|u| u.starts_with(PREFIX))
-        .filter(|u| {
-            state.only.is_empty() || state.only.iter().any(|n| u.strip_prefix(PREFIX) == Some(n))
-        })
+        .filter(|u| u.starts_with(PREFIX) && state.watches(u))
         .map(str::to_owned)
         .collect();
     // A closed Box leaves the list, so only the others count as absent.
@@ -219,9 +233,13 @@ fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
                 state.said.insert(key);
             }
         }
+        for name in state.runs.names() {
+            state.runs.news(gate, &token, &name);
+        }
         state.first = false;
     }
-    let stream = gate.listen(&token, &uris)?;
+    let all: Vec<String> = uris.iter().cloned().chain(state.runs.uris()).collect();
+    let stream = gate.listen(&token, &all)?;
     Ok(Open {
         token,
         uris,
@@ -253,14 +271,24 @@ fn follow(
                 if state.outage.take().is_some_and(|o| o.told) {
                     say("moor-listen: reconnected")?;
                 }
-                // Boxes may have changed while no stream was open.
+                // Boxes and runs may have changed while no stream was open.
                 for uri in &uris {
                     tell(gate, &token, uri, state, say)?;
+                }
+                for name in state.runs.names() {
+                    for line in state.runs.news(gate, &token, &name) {
+                        say(&line)?;
+                    }
                 }
             }
             Some("notifications/resources/list_changed") => return Ok(Ended::Relist),
             Some("notifications/resources/updated") => {
-                if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
+                let uri = message.pointer("/params/uri").and_then(Value::as_str);
+                if let Some(name) = uri.and_then(|u| u.strip_prefix(RUNS)) {
+                    for line in state.runs.news(gate, &token, name) {
+                        say(&line)?;
+                    }
+                } else if let Some(uri) = uri {
                     tell(gate, &token, uri, state, say)?;
                 }
             }
@@ -326,3 +354,4 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
 }
 
 mod line;
+mod runs;

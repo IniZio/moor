@@ -3,7 +3,7 @@
 use moor_core::user::UserId;
 use moor_core::workflow::{PullTarget, WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
 use moor_schema::tables::{WorkflowRuns, WorkflowSeq, Workflows};
-use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
+use sea_query::{Condition, Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::corrupt;
 use super::row::{read_run, run_of, RunRow, RUN_COLS};
@@ -30,6 +30,19 @@ pub(super) fn next_seq(tx: &dyn Db) -> Result<i64, StoreError> {
             .returning_col(WorkflowSeq::N),
         |r| r.get(0),
     )?)
+}
+
+/// The condition a change stream read with `only` keeps a change by: always, or only the
+/// workflow of that name and the runs for that pull request.
+fn kept((workflow, pull): (Option<&WorkflowName>, Option<&PullTarget>)) -> Condition {
+    let pull_number = pull.and_then(|p| i64::try_from(p.number).ok());
+    Condition::all()
+        .add_option(workflow.map(|n| Expr::col((Workflows::Table, Workflows::Name)).eq(n.as_str())))
+        .add_option(pull.map(|p| {
+            Expr::col((WorkflowRuns::Table, WorkflowRuns::Repo))
+                .eq(p.repo.to_string())
+                .and(Expr::col((WorkflowRuns::Table, WorkflowRuns::PullNumber)).eq(pull_number))
+        }))
 }
 
 impl Store {
@@ -63,8 +76,6 @@ impl Store {
         limit: u64,
         only: (Option<&WorkflowName>, Option<&PullTarget>),
     ) -> Result<Vec<WorkflowChange>, StoreError> {
-        let (workflow, pull) = only;
-        let pull_number = pull.and_then(|p| i64::try_from(p.number).ok());
         let reader = self.reader()?;
         let runs = reader.rows(
             Query::select()
@@ -82,17 +93,7 @@ impl Store {
                 )
                 .and_where(Expr::col((Workflows::Table, Workflows::User)).eq(owner.get()))
                 .and_where(Expr::col((WorkflowRuns::Table, WorkflowRuns::Seq)).gt(after))
-                .and_where_option(
-                    workflow.map(|n| Expr::col((Workflows::Table, Workflows::Name)).eq(n.as_str())),
-                )
-                .and_where_option(pull.map(|p| {
-                    Expr::col((WorkflowRuns::Table, WorkflowRuns::Repo))
-                        .eq(p.repo.to_string())
-                        .and(
-                            Expr::col((WorkflowRuns::Table, WorkflowRuns::PullNumber))
-                                .eq(pull_number),
-                        )
-                }))
+                .cond_where(kept(only))
                 .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), Order::Asc)
                 .limit(limit),
             |r| {
