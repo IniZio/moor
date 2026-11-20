@@ -5,6 +5,7 @@ review or pushed to. The run starts within seconds of the event, not at the next
 cron firing. Each run is for one pull request at one head commit, and the agent
 knows which one.
 
+Events arrive through a GitHub App that each moor install creates for itself.
 moor fires the run and nothing else. The agent writes any comment or commit
 status itself, through the workflow's
 [Extra Proxy entries](../config.md#extra-proxy-entries). The first user is an
@@ -19,6 +20,7 @@ pull request and sets a `moor/evidence` status.
 - **Gate routes.** The gate serves `/mcp`, the portal and pages behind browser sign-in
   (`/auth/`, `/webhooks/` for outbound webhook setup). See `behind_sign_in` in
   [http.rs](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor-gate/src/http.rs). No route takes an unsigned-in `POST` from GitHub.
+  Browser sign-in is off without `MOOR_GATE_PUBLIC_URL`, per [fronts.md](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/docs/fronts.md).
 - **Two triggers.** `RunTrigger` in [run.rs](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor-core/src/workflow/run.rs) is `Cron` or
   `Manual`. The schema checks `trigger IN ('cron','manual')`.
 - **Cron firing.** The controller's workflow pass, [workflow.rs](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor/src/ops/workflow.rs),
@@ -30,28 +32,91 @@ pull request and sets a `moor/evidence` status.
 - **One open run per workflow.** A cron firing while a run is open is `skipped_overlap`.
   A manual run is refused. Once a new run has a Box, `close_previous` closes the
   workflow's earlier Boxes for that repo.
-- **No run input.** A run gets the workflow's prompt, plan, repos and `config`.
-  Nothing tells it which pull request to look at. The evidence workflow's agent lists
-  open pull requests itself and skips heads that already carry its marker.
+- **Capacity.** A Box that does not fit its node waits as Pending with
+  `waiting for capacity on NODE`, per [scheduling.md](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/docs/scheduling.md).
+- **No run input.** Nothing tells a run which pull request to look at. The evidence
+  workflow's agent lists open pull requests itself and skips heads that carry its marker.
+
+## Domain model
+
+A run has a cause. The cause says what fired it and which pull request, if any, it is for.
+
+```rust
+pub enum RunCause {
+    Cron { due_at: Millis },
+    /// `run_workflow`, or Run again. `pull` is set for a pull request.
+    Manual { pull: Option<PullRef> },
+    PullRequest { pull: PullRef },
+}
+
+pub struct PullRef {
+    pub repo: ForgeRepo,     // the workflow's first repo
+    pub number: u64,
+    pub head_sha: CommitSha, // 40 hex characters, parsed at the boundary
+}
+
+pub enum RunOutcome {
+    /* ...today's arms... */
+    Cancelled { at: StepId, cause: CancelCause },
+}
+
+pub enum CancelCause { NewerHead { sha: CommitSha }, Closed }
+```
+
+One enum is enough. Trigger and subject as two fields would allow a cron run with a
+pull request and an event run without one. `RunCause::subject()` returns the
+`PullRef` where there is one. The store keeps `trigger`, `pull_number` and `head_sha`
+columns with a check that matches the enum, and parses rows back into it.
+
+| Event | Cause | Open-run rule |
+| --- | --- | --- |
+| `opened`, `reopened`, `ready_for_review` | `PullRequest` at the read-back head | One open run per workflow and pull request. Same head: nothing. |
+| `synchronize` | `PullRequest` at the new head | Cancels the open run of the older head, then claims. |
+| `closed` | none | Cancels the open run with `Closed`. |
+| Run again on a pull request run | `Manual` at the pull request's current head | Refused while that pull request has an open run. |
+| `run_workflow` with `pull` | `Manual` at the current head | As Run again. |
+| `run_workflow` without `pull`, or cron | `Manual` or `Cron`, no subject | One open subject-less run, as today. |
 
 ## Decisions
 
 | Decision | Reason |
 | --- | --- |
-| A run has an optional subject, a pull request at a head SHA. | Cron and manual runs keep working unchanged with no subject. |
-| One open run per workflow and subject. | Two pull requests should not wait on each other. One pull request must not get two agents. |
-| The claim key gains the subject. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
-| A newer head cancels the open run of an older head. | moor has no queue, so the old run is a live Box spending tokens on a stale commit. |
+| Events come from a GitHub App, not a webhook per repo. | An App is generic. An external team sets up its own moor without hand-made webhooks. |
+| Each moor install creates its own App through GitHub's App manifest flow, from the portal. No shared hosted App. | One click keeps self-hosting easy. A shared App would route every team's events through one owner. |
+| moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
+| The App only reads. Runs keep acting as the owner's token through the Proxy. | Grants already live in `proxy.allow`. A second write identity would need a second grant model. |
+| A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
+| One open run per workflow and pull request. | Two pull requests should not wait on each other. One pull request must not get two agents. |
+| A newer head cancels the open run of an older head. | The old run is a live Box spending tokens on a stale commit. |
 | Closing the pull request cancels its open run. | Nothing will read the result. |
-| An event that is skipped writes no row. | A draft that later becomes ready at the same SHA must still fire. |
+| Pull requests from forks fire when the author has write access to the base repo. | The Oursky handbook's git workflow puts feature work on personal forks. A writer could push the same code to the repo anyway. |
+| A draft or bot event writes no row. A fork skip writes a `skipped_fork` row with its reason. | A draft that turns ready at the same SHA must still fire. A fork author needs to see why nothing ran. |
+| No per-workflow cap on open pull request runs. | The machine agent's placement and capacity checks already bound the load. |
+| No cron sweep for pull request workflows. Cron stays for scheduled workflows. | The App delivers every event. A sweep would double the runs it exists to replace. |
+| Failed deliveries are redelivered when the controller starts or the gate reconnects. | A short gate outage would otherwise lose a pull request's run until its next push. |
 | The controller reads the pull request back from GitHub before it fires. | Deliveries arrive out of order. The current head, state and draft flag decide, not the payload. |
 | The receiver answers `202` before it calls GitHub. | GitHub gives a delivery 10 s. |
-| No delivery table. | The claim key already makes a repeated delivery a no-op. |
-| The existing cron firing stays as the backstop. | It already catches every head the agent has not covered, so a lost event costs at most one cron period. |
-| Per-subject `close_previous`. | Closing by workflow and repo would close another pull request's Box. |
-| A cancelled run does not count toward the breaker. | Pushing often is not a failing workflow. |
-| Pull request runs keep a breaker of their own. Three refused or timed-out runs in a row turn off the trigger, not the schedule. | The backstop keeps running while the owner fixes the cause. |
+| Run again on a pull request run is a manual run for that pull request at its current head. | The old head may be gone. The person wants the pull request checked, not the commit. |
+| A cancelled run does not count toward the breaker. Three refused or timed-out pull request runs in a row turn off the trigger. | Pushing often is not a failing workflow. |
 | One prompt and plan serve both kinds of run. The author branches on `MOOR_PULL_NUMBER`. | A second definition per workflow would drift from the first. |
+
+## The GitHub App
+
+- **Requirement.** GitHub must reach the gate at `MOOR_GATE_PUBLIC_URL`. A controller
+  behind NAT works, because only the gate faces GitHub and the gate forwards to the
+  controller as it does for `/mcp`. Without a public URL the portal hides App setup.
+- **Setup.** An admin opens Settings, GitHub App in the portal and picks a personal
+  account or an org. The portal posts a manifest to GitHub. GitHub sends the browser
+  back to `/auth/github-app/done?code=`. The controller trades the code through
+  `POST /app-manifests/{code}/conversions` and stores the App id, slug, private key and
+  webhook secret as controller secrets. The page then links to the App's install page.
+- **Manifest.** Webhook URL `<public url>/hooks/github`. Event `pull_request`.
+  Permissions `metadata: read`, `contents: read` and `pull_requests: read`.
+- **Tokens.** The controller signs a JWT with the App key and trades it for an
+  installation token for each read-back. It caches the token for under its hour.
+- **Recovery.** When the controller starts or the gate reconnects, the controller lists
+  `GET /app/hook/deliveries` since the last one it saw and redelivers each failed one with `POST /app/hook/deliveries/{id}/attempts`.
+  The claim key makes a redelivery that already ran a no-op.
 
 ## Flow
 
@@ -62,165 +127,96 @@ sequenceDiagram
     participant C as controller
     participant B as Box agent
     participant P as Proxy
-    GH->>G: POST /hooks/github/HOOK (pull_request)
-    G->>C: hook id, headers, raw body
-    C->>C: check X-Hub-Signature-256
+    GH->>G: POST /hooks/github (pull_request)
+    G->>C: headers, raw body
+    C->>C: check X-Hub-Signature-256 with the App secret
     C-->>G: 202 (401 on a bad signature)
     G-->>GH: 202
-    C->>GH: read the pull request as the owner
+    C->>GH: read the pull request as the App
     alt closed
         C->>C: cancel this PR's open run
-    else draft, bot, fork, other repo, or over the cap
+    else draft, bot, or no workflow on this repo
         C->>C: log the skip, write no row
+    else fork whose author lacks write access
+        C->>C: write a skipped_fork row
     else eligible
         C->>C: cancel this PR's open run of an older head
         C->>C: claim workflow, repo, number, head SHA
         C->>B: start Box with the PR in env and first message
-        B->>P: POST or PATCH the marked comment
-        P->>GH: allowed by the workflow's proxy.allow
-        B->>P: POST /repos/{repo}/statuses/SHA
-        P->>GH: allowed by the workflow's proxy.allow
+        B->>P: POST or PATCH the marked comment, POST statuses/SHA
+        P->>GH: allowed by the workflow's proxy.allow, as the owner
     end
 ```
 
-The last four lines belong to the workflow, not to moor. Another workflow could
+For a fork, the read-back also asks `GET /repos/{repo}/collaborators/{author}/permission`.
+
+The last two lines belong to the workflow, not to moor. Another workflow could
 review code, run a check or do nothing on GitHub at all.
 
-## Data shapes
+## Store and run input
 
-```rust
-pub enum RunTrigger {
-    Cron,
-    Manual,
-    /// A pull_request event, or the sweep that stands in for a missed one.
-    PullRequest,
-}
-
-/// The pull request a run is for.
-pub struct PullRef {
-    pub repo: ForgeRepo,  // the workflow's first repo
-    pub number: u64,
-    pub head_sha: CommitSha, // 40 hex characters, parsed at the boundary
-}
-
-/// `PullRequest` runs always hold one. `Manual` may, as Run again on a
-/// pull request run. `Cron` never does.
-pub struct NewRun { /* ...today's fields... */ pub subject: Option<PullRef> }
-
-pub enum RunOutcome {
-    /* ...today's arms... */
-    /// A newer head or a close made the run moot. Its Box is stopped and left
-    /// to auto-close.
-    Cancelled { at: StepId, cause: CancelCause },
-}
-
-pub enum CancelCause { NewerHead { sha: CommitSha }, Closed }
-
-/// The workflow's setting.
-pub struct PullTrigger {
-    pub hook: HookId,          // in the receiver URL
-    pub secret: Secret,        // HMAC key, shown once at setup
-    pub max_open: u8,          // 1 to 5, default 3
-}
-```
-
-- **Store.** `workflow_runs` gains `pull_number` and `head_sha`, both null without a
-  subject. A unique index covers workflow, repo, `pull_number` and `head_sha` where both
-  are set and `trigger` is `pull_request`. Today's key on workflow, repo and due time
-  narrows to cron rows. `trigger` accepts `pull_request`. SQLite cannot change a check,
-  so the migration rebuilds the table as `V85__workflow_plans` did.
-- **Dedupe key.** Repo, pull request number and head SHA, per workflow. It holds whatever
-  state the earlier run ended in. A failed, refused or cancelled head fires again only
-  through Run again or the backstop. That covers a close, then `reopened` at the same SHA.
+- **Workflow setting.** `on_pull_request: bool`, off by default. Every enabled workflow
+  with it on and the event's repo as first repo fires its own run.
+- **Store.** `workflow_runs` gains `pull_number` and `head_sha`. A unique index covers
+  workflow, repo, `pull_number` and `head_sha` for `pull_request` rows that are not
+  `skipped_fork`. Today's key on due time narrows to cron rows. Manual rows sit under no
+  key. The open-run rule guards them. SQLite cannot change a check, so the migration
+  rebuilds the table as `V85__workflow_plans` did. The App's credentials get one row.
+- **Dedupe key.** A failed, refused or cancelled head fires again only through Run again
+  or a new push. That covers a close, then `reopened` at the same SHA.
 - **Settling.** `run_start` and `resolve_interrupted` settle a claim by its run id. Two
   events in one millisecond then never collide. `due_at` is the time the event arrived.
 - **Box name.** `<workflow>/w<id>-pr<number>-<first 7 of SHA>`. It is derived from the
   row, so `resolve_interrupted` still settles a claim a crash left.
+- **Checkout.** The Box fetches `refs/pull/<number>/head` from the base repo, which
+  also works for a fork.
 - **Run input.** The Box gets `MOOR_PULL_REPO`, `MOOR_PULL_NUMBER`, `MOOR_PULL_HEAD_SHA` and
-  `MOOR_PULL_BASE_REF`. They join the run config's `env`, the channel the evidence
-  workflow's `HOUSE_RULES_PR_COMMENT_MARKERS` already uses. The first message opens with one line naming the same pull
-  request. The prompt stays the workflow's own.
+  `MOOR_PULL_BASE_REF` in the run config's `env`. The first message opens with one line
+  naming the same pull request. The prompt stays the workflow's own.
 
 ## Concurrency
 
-`opened`, `reopened`, `ready_for_review` and `synchronize` fire. `closed` cancels. `ping` and
-every other event or action answer `202` and do nothing.
-
-| A run is open for | Event for the same pull request | Result |
-| --- | --- | --- |
-| nothing | eligible head | Claim and start. |
-| the same head | any | Nothing. The claim key already exists. |
-| an older head | eligible newer head | Cancel the open run, then claim the new head. |
-| any head | `closed` | Cancel the open run. |
-| a subject-less run | eligible head | Claim and start. Neither blocks the other. |
-
-- **Cap.** At `max_open` open pull request runs, an event writes no row and logs
-  `busy`. The backstop picks the head up later.
+- **Capacity.** A claimed run starts its Box through the usual placement. A full node
+  holds it Pending with `waiting for capacity on NODE`, as any Box. The run stays open,
+  so a newer push still cancels it before it starts.
 - **Cancel.** The run ends `Cancelled` in one transaction, compare-and-set on its state.
   moor then interrupts the agent. The Box stays for its 24 hours, as any ended run's
   Box does.
 - **Approve steps.** `answer_run` finds the waiting run by workflow alone today. It gains
   an optional `pull`. With two runs waiting and no `pull`, it refuses and lists them.
 - **Stale writes.** A cancelled agent may already have set a status on the old SHA. That
-  status belongs to a commit nobody reviews any more, so it is harmless. A workflow
-  that edits one comment should keep the SHA in its marker, as the evidence workflow does.
-
-## The backstop
-
-The workflow keeps its cron schedule. A cron firing is a subject-less run, as today.
-For the evidence workflow it lists open pull requests and covers every head without
-its marker. So a lost delivery, a receiver outage or a busy skip costs at most one
-cron period. The cron run and a pull request run can meet on one pull request. Both
-edit the same marked comment, so the cost is tokens, not a wrong result.
+  commit is no longer the head, so it is harmless. A workflow that edits one comment
+  should keep the SHA in its marker, as the evidence workflow does.
 
 ## Security
 
 - **Signature.** `X-Hub-Signature-256` must equal `sha256=` and the hex HMAC-SHA256 of the
-  raw body, keyed by the hook's secret. moor compares in constant time. A missing or
-  wrong signature answers `401` and writes nothing. Bodies over 1 MiB answer `413`.
-- **Route.** `POST /hooks/github/<hook id>` sits outside `/auth/` and `/webhooks/`, so no
-  sign-in applies. The gate forwards the raw bytes. The controller holds the secret and
-  checks it. An unknown hook id answers `404`.
-- **Which repos.** A hook belongs to one workflow. Only events whose
-  `repository.full_name` is that workflow's first repo fire. A disabled workflow fires
-  nothing.
+  raw body, keyed by the App's webhook secret. moor compares in constant time. A
+  missing or wrong signature answers `401` and writes nothing. Bodies over 1 MiB answer `413`.
+- **Route.** `POST /hooks/github` sits outside `/auth/` and `/webhooks/`, so no sign-in
+  applies. The gate forwards the raw bytes. The controller holds the secret.
+- **Which repos.** Only repos where the App is installed send events. Only workflows
+  with `on_pull_request` and that repo first fire.
 - **Which pull requests.** Drafts, closed pull requests and authors of type `Bot` are
-  skipped. A pull request from a fork is skipped, because its code would run beside
-  the owner's token.
+  skipped. A fork's author needs `admin`, `maintain` or `write` on the base repo, read
+  at intake on every event. Their code runs beside the owner's token.
 - **Identity.** The run acts as the workflow's owner, with the owner's secrets, as any
-  run does. The payload decides nothing a GitHub read does not confirm.
-- **Grants.** The workflow asks for its writes in `proxy.allow`, as today. A later PR adds
-  `{pull}` and `{head_sha}` to the entry syntax for pull request runs, such as
-  `POST /repos/{repo}/issues/{pull}/comments`. The Box can then write only to its own
+  run does. The App key reads pull requests and nothing else.
+- **Grants.** A later PR adds `{pull}` and `{head_sha}` to the `proxy.allow` syntax, such
+  as `POST /repos/{repo}/issues/{pull}/comments`. The Box can then write only to its own
   pull request and commit.
 
 ## Out of scope
 
 - Comment commands such as `/review`, labels and review requests.
 - `push`, `issues` and other events, and other forges.
-- Check runs. They need a GitHub App identity moor does not have.
-- A queue past `max_open`. The backstop covers it.
-- A status or comment moor writes itself. That stays the workflow's job.
-- Creating the GitHub webhook for the owner.
+- Check runs, and any status or comment moor writes itself.
 
 ## Open questions
 
-- Repo webhook per workflow, or a GitHub App? Recommend: repo webhook. Runs already act
-  as the owner with the owner's token, and an App adds an identity, a key and an install
-  flow for no gain.
-- Should moor create the webhook through GitHub's API? Recommend: not yet. Show the URL
-  and secret once. The owner's token may lack `admin:repo_hook`.
-- Should pull requests from forks fire? Recommend: no. Their code would run with the
-  owner's secrets.
-- Cancel a running run on a newer push, or let it finish? Recommend: cancel. Finishing
-  spends a Box on a commit nobody will merge.
-- How many pull request runs may be open per workflow? Recommend: 3 by default, 5 at
-  most. Past the cap the backstop catches up.
-- Should the cron firing later become a controller-side sweep that fires one run per
-  missed head? Recommend: yes, after the trigger is proven live. It would end the
-  overlap between the sweep and pull request runs.
-- What does Run again do on a pull request run's task? Recommend: a manual run with the
-  same pull request at its current head.
+- How does a maintainer let a skipped fork pull request run anyway? Recommend Run again
+  on its `skipped_fork` row. It starts a manual run at the current head as the owner,
+  so a maintainer's click is the approval. A later push from that fork skips again.
 
 ## Build order
 
@@ -228,23 +224,28 @@ Each step is one small PR. Local checks use the `verify-moor-live` skill's priva
 controller on this host. GitHub cannot reach it, so the receiver is proven there with a
 signed replay. The real delivery runs on the team cluster last.
 
-1. **A run can have a pull request.** `PullRef`, the subject columns, the claim key, the
-   Box name and the run's env. `run_workflow` gains an optional `pull` number for a manual
-   run. Live check. Run a copy of the evidence workflow whose prompt covers only
-   `$MOOR_PULL_NUMBER` when set, with `pull` set to an open fixture pull request. Its Box shows the four `MOOR_PULL_*` variables, and it comments only on
-   that pull request.
-2. **One open run per subject.** Per-subject blocking, `close_previous` and `Cancelled`.
-   Live check. Run `pull` on two fixture pull requests at once and see both Boxes. Push to
-   one and run it again. The older run ends `Cancelled` and its Box agent stops.
-3. **The receiver.** The `PullTrigger` setting, the setup page, the gate route and the
-   signature check. Live check. Send a payload with `curl`, signed with the hook's secret at the local
-   gate and get `202` and a run. A wrong signature gets `401` and no row.
-4. **Eligibility.** The read-back, the skips, `closed` and the cap. Live check. Replay a
-   draft payload and see no row. Replay `ready_for_review` at the same SHA and see a run.
-5. **Real delivery.** Turn the trigger on for the evidence workflow on the team cluster
-   and add the webhook on `IniZio/moor-pilot-example`. Live check. Open a pull request and
-   see the run start within a minute, then the comment and the `moor/evidence` status.
-   Push again and see the older run cancelled and the comment edited for the new head.
-6. **Narrow grants.** `{pull}` and `{head_sha}` in `proxy.allow`. Live check. The evidence
+1. **App setup.** The manifest flow, the stored credentials, the install link and the
+   installation token. Live check. Create an App for a test account from the local
+   portal, install it on `IniZio/moor-pilot-example` and read a fixture pull request with
+   its token.
+2. **A run can have a pull request.** `RunCause`, the subject columns, the claim key, the
+   Box name and the run's env. `run_workflow` gains an optional `pull`. Live check. Run
+   a copy of the evidence workflow with `pull` set to a fixture pull request. Its Box
+   shows the four `MOOR_PULL_*` variables, and it comments only on that pull request.
+3. **One open run per subject.** The open-run rule, `close_previous` and `Cancelled`.
+   Live check. Run `pull` on two fixture pull requests at once and see both Boxes. Push
+   to one and run it again. The older run ends `Cancelled` and its Box agent stops.
+4. **The receiver.** `on_pull_request`, the gate route and the signature check. Live
+   check. Send a payload signed with the App secret to the local gate with `curl` and get
+   `202` and a run. A wrong signature gets `401` and no row.
+5. **Eligibility.** The read-back, the skips, the fork check and `closed`. Live check.
+   Replay a draft and see no row, then `ready_for_review` at the same SHA and see a run.
+   Replay a fork pull request from an account without write access and see `skipped_fork`.
+6. **Real delivery and recovery.** Create the team cluster's App and install it on
+   `IniZio/moor-pilot-example`. Live check. Open a pull request and see the run start
+   within a minute, then the comment and the `moor/evidence` status. Push again and see
+   the older run cancelled. Open a pull request with the gate stopped, start it and see
+   the redelivered event fire the run.
+7. **Narrow grants.** `{pull}` and `{head_sha}` in `proxy.allow`. Live check. The evidence
    workflow with narrowed entries still comments and sets its status. A write to another
    fixture pull request from its Box is refused by the Proxy.
