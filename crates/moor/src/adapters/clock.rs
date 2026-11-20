@@ -53,7 +53,6 @@ impl SystemClock {
     }
 
     /// Unpinned clock reading real time.
-    #[cfg(test)]
     pub(crate) const fn real() -> Self {
         Self { base: None }
     }

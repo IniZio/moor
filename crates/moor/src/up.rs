@@ -15,13 +15,15 @@ mod service;
 mod tests;
 
 use std::io::{BufRead, Write};
-use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::time::Duration;
 
 use moor_core::request::EnrollReq;
+use moor_core::seam::clock::Clock as _;
 use moor_core::view::user::EnrollValue;
 use moor_core::Request;
 
+use crate::adapters::clock::SystemClock;
 use crate::cli::GlobalOpts;
 use crate::client::{self, ClientError, Target};
 use crate::doctor::{answer, line, Check, Status};
@@ -31,8 +33,10 @@ use files::Layout;
 
 /// Pause between looks at the controller socket after the service starts.
 const SOCKET_POLL: Duration = Duration::from_millis(100);
-/// Looks at the socket before giving up: 30 s in all.
-const SOCKET_POLLS: u32 = 300;
+/// How long one hello waits for its reply.
+const HELLO_WAIT: Duration = Duration::from_secs(5);
+/// How long the controller has to answer after the service starts.
+const SOCKET_WAIT: Duration = Duration::from_secs(30);
 
 /// The command `up` suggests once the host is ready.
 const NEXT: &str = "moor start hello --repo OWNER/NAME --prompt \"Say hello and stop\"";
@@ -92,7 +96,7 @@ fn steps(
     say(&files::controller(&layout, gate.runs())?);
     say(&files::user(env, &layout)?);
     let unit = service::Unit::new(env, &layout, plan.egress, relay.is_some(), key_file)?;
-    say(&service::install(&dir, &unit)?);
+    say(&service::install(&dir, &unit, &layout, gate.fronts())?);
     if service::lingers(env) == Some(false) {
         say(&Check::warn(
             "service",
@@ -100,7 +104,7 @@ fn steps(
             "run `loginctl enable-linger`",
         ));
     }
-    say(&wait_for(&layout)?);
+    say(&wait_for(&layout.socket, SOCKET_WAIT)?);
     say(&gate::converge(&dir, &gate)?);
     let target = Target::Socket(layout.socket.clone());
     let ask = |req: Request| -> Result<_, ClientError> {
@@ -127,20 +131,31 @@ fn steps(
     Ok(())
 }
 
-/// Waits until the controller socket takes a connection.
-fn wait_for(layout: &Layout) -> Result<Check, Check> {
-    for _ in 0..SOCKET_POLLS {
-        if UnixStream::connect(&layout.socket).is_ok() {
-            return Ok(Check::ok(
-                "controller",
-                format!("answers at {}", layout.socket.display()),
-            ));
+/// Waits up to `wait` until the controller answers a hello on its socket. systemd holds the
+/// socket, so a connection alone succeeds even while the service fails to start.
+fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
+    let clock = SystemClock::real();
+    let deadline = clock.instant() + wait;
+    let mut last = String::from("nothing tried");
+    loop {
+        let left = deadline.saturating_duration_since(clock.instant());
+        if left.is_zero() {
+            break;
         }
-        std::thread::sleep(SOCKET_POLL);
+        match client::hello(socket, left.min(HELLO_WAIT)) {
+            Ok(()) => {
+                return Ok(Check::ok(
+                    "controller",
+                    format!("answers at {}", socket.display()),
+                ))
+            }
+            Err(e) => last = e,
+        }
+        clock.sleep(SOCKET_POLL);
     }
     Err(Check::fail(
         "controller",
-        format!("no answer at {}", layout.socket.display()),
+        format!("no answer at {}: {last}", socket.display()),
         format!("read `journalctl --user -u {}`", service::SERVICE),
     ))
 }
