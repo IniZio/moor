@@ -173,12 +173,12 @@ impl BoxProvider for FakeProvider {
     }
 
     async fn observe(&self) -> Result<Vec<Observed>, ProvideError> {
-        if let Some(e) = self
+        let unseen = self
             .unseen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        {
+            .clone();
+        if let Some(e) = unseen {
             return Err(e);
         }
         let up = |on: bool| if on { PlaceState::Up } else { PlaceState::Down };
