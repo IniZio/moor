@@ -569,19 +569,9 @@ export type FileChange = v.InferOutput<typeof FileChangeSchema>;
 export type RepoChanges = v.InferOutput<typeof RepoChangesSchema>;
 export type Changes = v.InferOutput<typeof ChangesSchema>;
 
-/** A Box's changes in git against its base: read now when it is awake, else its last receipt. */
+/** A Box's changes in git against its base: read now when it is awake, else the diff kept when it last ended a turn or slept. */
 export async function boxChanges(box: string): Promise<Changes> {
 	return answer(await fetch(`/account/api/box/changes?box=${encodeURIComponent(box)}`), ChangesSchema);
-}
-
-/** Wakes an asleep Box. */
-export async function boxWake(csrf: string, box: string): Promise<void> {
-	const res = await fetch('/account/api/box/wake', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: JSON.stringify({ box }),
-	});
-	await answer(res, v.unknown());
 }
 
 const RepoPullSchema = v.object({

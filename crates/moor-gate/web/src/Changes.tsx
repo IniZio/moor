@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { boxChanges, boxWake, type Changes, type Entry, type FileChange, type RepoChanges, failure, type Tally } from './api';
+import { boxChanges, type Changes, type Entry, type FileChange, type RepoChanges, failure, type Tally } from './api';
 
 /** A file diff longer than this many lines starts folded. */
 const FOLD_LINES = 400;
@@ -172,17 +172,16 @@ function Repo({ r, many, n }: { r: RepoChanges; many: boolean; n: number }) {
 					{r.total.files > r.files.length && <li class="muted">and {r.total.files - r.files.length} more files</li>}
 				</ul>
 			)}
-			{r.cut && <p class="t-stalebar">The diff passed 512 KB, so it stops there. Files past the cut show their counts only.</p>}
+			{r.cut && <p class="t-stalebar">Diff too large: it passed 1 MB, so it stops there. Files past the cut show their counts only.</p>}
 			{parts && r.files.map((f, i) => <FileDiff f={f} part={parts.get(f.path)} id={anchor(i)} key={f.path} />)}
 		</section>
 	);
 }
 
 /** The Box's diff against its base, file by file, each repo first one first. */
-export function ChangesTab({ box, csrf, closed, seen }: { box: string; csrf: string; closed: boolean; seen: string }) {
+export function ChangesTab({ box, seen }: { box: string; seen: string }) {
 	const [changes, setChanges] = useState<Changes | null>(null);
 	const [error, setError] = useState('');
-	const [busy, setBusy] = useState(false);
 	const [round, setRound] = useState(0);
 	useEffect(() => {
 		let live = true;
@@ -194,17 +193,6 @@ export function ChangesTab({ box, csrf, closed, seen }: { box: string; csrf: str
 			live = false;
 		};
 	}, [box, seen, round]);
-	const wake = async () => {
-		setBusy(true);
-		try {
-			await boxWake(csrf, box);
-			setRound((n) => n + 1);
-		} catch (e) {
-			setError((e as Error).message);
-		} finally {
-			setBusy(false);
-		}
-	};
 	if (!changes) return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Reading the Box's changes…</p>;
 	const total = changes.repos.reduce((t, r) => ({ files: t.files + r.total.files, added: t.added + r.total.added, removed: t.removed + r.total.removed }), { files: 0, added: 0, removed: 0 });
 	const at = changes.at ? new Date(changes.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
@@ -223,17 +211,9 @@ export function ChangesTab({ box, csrf, closed, seen }: { box: string; csrf: str
 					</button>
 				</div>
 			) : (
-				<div class="t-stalebar t-changes-old">
-					<span>
-						{changes.why ? `${changes.why[0]?.toUpperCase()}${changes.why.slice(1)}. ` : ''}
-						{changes.repos.length ? `These are its changes as of its last turn, read ${at}. ${closed ? 'Its diff went with it.' : 'The diff needs the Box awake.'}` : 'No turn has ended with changes on record yet.'}
-					</span>
-					{!closed && (
-						<button type="button" class="btn" disabled={busy} onClick={() => void wake()}>
-							{busy ? 'Waking…' : 'Wake the Box'}
-						</button>
-					)}
-				</div>
+				<p class="muted t-changes-old">
+					{changes.repos.length ? (at ? `as of ${at}` : 'as of its last turn') : 'No turn has ended with changes on record yet.'}
+				</p>
 			)}
 			{changes.repos.map((r, n) => (
 				<Repo r={r} many={changes.repos.length > 1} n={n} key={r.repo} />

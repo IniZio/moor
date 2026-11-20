@@ -1,5 +1,6 @@
 //! `changes`: what a Box changed in git against its base. A Box whose machine is up is read now,
-//! each repo's patch with it. Any other Box answers what the last turn's receipt saw, unwoken.
+//! each repo's patch with it. Any other Box answers, unwoken, the diff moor kept at its last turn
+//! end or sleep, else what the last turn's receipt saw.
 
 use moor_core::changes::{ChangesView, RepoChanges, RepoReceipt};
 use moor_core::domain::box_state::BoxLifecycle;
@@ -8,7 +9,7 @@ use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::changes::read_now;
+use crate::ops::common::changes::{kept_at, read_now};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::rfc3339;
 
@@ -31,6 +32,14 @@ pub(crate) fn run(cx: &Cx, req: &ChangesReq) -> Result<ChangesView, CommandError
         _ if row.asleep() => "the Box is asleep",
         _ => "the Box's machine is not up",
     };
+    if let Some((repos, at)) = kept_at(store, &row) {
+        return Ok(ChangesView {
+            live: false,
+            why: Some(why.to_owned()),
+            at: Some(rfc3339(at)),
+            repos,
+        });
+    }
     let last = store.newest_events_of(row.id, "turn_changes", 1)?.pop();
     let receipts: Vec<RepoReceipt> = last
         .as_ref()

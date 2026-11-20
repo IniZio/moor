@@ -9,6 +9,7 @@ use moor_core::changes::{
 };
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::AccessEvent;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{BoxStep, ExecOutcome, Place, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
@@ -154,6 +155,58 @@ fn turn_to_note(store: &Store, row: &BoxRow) -> Option<(u64, bool)> {
 /// Each repo of `row` as its work tree holds it now, with its patch; none when the Box's machine
 /// is not up.
 pub(crate) fn read_now(cx: &Cx, row: &BoxRow) -> Option<Vec<RepoChanges>> {
+    read(cx, row, PATCH_BYTES)
+}
+
+/// Keeps the diff of `row` as a `diff_kept` event, so the Changes tab can show it while the Box
+/// sleeps or after it closes. The patches of all repos share one budget of [`PATCH_BYTES`]; one
+/// that does not fit is cut. A diff the same as the last one kept, or a Box that cannot be read
+/// now, records nothing. The caller holds the Box's turn. A failure only warns.
+pub(crate) fn keep_diff(cx: &Cx, store: &Store, row: &BoxRow) {
+    if row.repo.is_none() {
+        return;
+    }
+    let Some(mut repos) = read(cx, row, PATCH_BYTES) else {
+        return;
+    };
+    repos.retain(|r| r.problem.is_none());
+    if repos.is_empty() {
+        return;
+    }
+    let mut room = PATCH_BYTES;
+    for r in &mut repos {
+        let (patch, cut) = capped(r.patch.as_deref().unwrap_or_default(), room);
+        room = room.saturating_sub(patch.len());
+        r.cut |= cut;
+        r.patch = Some(patch);
+    }
+    if kept(store, row).is_some_and(|last| last == repos) {
+        return;
+    }
+    let recorded = store
+        .apply(Decision::new(row.id).event(ExtraEvent::Access(AccessEvent::DiffKept { repos })));
+    if let Err(e) = recorded {
+        cx.warn(Warning {
+            code: "diff_kept_failed".to_owned(),
+            message: format!("the Box's diff was not kept: {e}"),
+        });
+    }
+}
+
+/// The repos of the newest diff kept for `row`, and when it was kept.
+pub(crate) fn kept_at(store: &Store, row: &BoxRow) -> Option<(Vec<RepoChanges>, Ts)> {
+    let last = store.newest_events_of(row.id, "diff_kept", 1).ok()?.pop()?;
+    let repos = serde_json::from_value(last.payload.get("repos")?.clone()).ok()?;
+    Some((repos, last.ts))
+}
+
+/// The repos of the newest diff kept for `row`.
+fn kept(store: &Store, row: &BoxRow) -> Option<Vec<RepoChanges>> {
+    kept_at(store, row).map(|(repos, _)| repos)
+}
+
+/// [`read_now`] with each repo's patch cut at `cap`.
+fn read(cx: &Cx, row: &BoxRow, cap: usize) -> Option<Vec<RepoChanges>> {
     let (handle, trees) = place(cx, row)?;
     let tag = format!("view{}", cx.clock().now().as_millis());
     let scripts = trees
@@ -162,7 +215,7 @@ pub(crate) fn read_now(cx: &Cx, row: &BoxRow) -> Option<Vec<RepoChanges>> {
             [
                 snapshot(t, &tag),
                 total_numstat(t, &tag, false),
-                patch(t, &tag, PATCH_BYTES),
+                patch(t, &tag, cap),
             ]
         })
         .collect();
@@ -173,7 +226,7 @@ pub(crate) fn read_now(cx: &Cx, row: &BoxRow) -> Option<Vec<RepoChanges>> {
         .map(|(t, out)| {
             let part = |i: usize| out.get(i).and_then(Option::as_deref).unwrap_or_default();
             let files = parse_numstat(part(1));
-            let (patch, cut) = capped(part(2), PATCH_BYTES);
+            let (patch, cut) = capped(part(2), cap);
             RepoChanges {
                 repo: t.repo.clone(),
                 total: Tally::of(&files),

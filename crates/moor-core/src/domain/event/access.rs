@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::domain::changes::RepoReceipt;
+use crate::domain::changes::{RepoChanges, RepoReceipt};
 
 /// Files copied out of a Box, a command run in it, or a port forwarded into it, by its user or
 /// the operator.
@@ -36,6 +36,12 @@ pub enum AccessEvent {
     TerminalOpened {
         /// True for a login shell, false for the agent's own terminal.
         shell: bool,
+    },
+    /// moor kept the Box's diff against its base, with each file's hunks, so it can be shown
+    /// while the Box sleeps or after it closes. Only the newest is read.
+    DiffKept {
+        /// Each repo, the first one first; patches share one byte budget.
+        repos: Vec<RepoChanges>,
     },
     /// A person's port forward into the Box opened.
     PortForwardOpened {
@@ -73,6 +79,7 @@ impl AccessEvent {
             Self::ExecRan { .. } => "exec_ran",
             Self::TurnChanges { .. } => "turn_changes",
             Self::TerminalOpened { .. } => "terminal_opened",
+            Self::DiffKept { .. } => "diff_kept",
             Self::PortForwardOpened { .. } => "port_forward_opened",
             Self::PortForwardClosed { .. } => "port_forward_closed",
             Self::PortForwardRefused { .. } => "port_forward_refused",

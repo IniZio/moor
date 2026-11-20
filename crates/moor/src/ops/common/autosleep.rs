@@ -279,6 +279,7 @@ pub(crate) fn sleep_parked(
     if !suspend_check::record(cx, store, (id, row.hands_inc()), settled)? {
         return Ok(None);
     }
+    super::changes::keep_diff(cx, store, row);
     park_tunnel(cx, id)?;
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {

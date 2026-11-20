@@ -23,6 +23,7 @@ use moor_core::seam::proc::{Deadline, Pipes};
 pub use env::SentEnvs;
 use stream::{ask, blocking, failed, open, unreached};
 
+mod cache;
 mod env;
 mod exec;
 mod over_exec;
@@ -113,7 +114,7 @@ impl Machines {
         let op = BoxOp::Open {
             slug: key.pool_slug(&seat.controller, seat.inc),
             class: req.class.clone(),
-            cache: None,
+            cache: cache::wire(&req.cache),
         };
         Ok((seat.machine, op, BoxHandle::new(key.machine_handle(seat))))
     }

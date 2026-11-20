@@ -110,7 +110,8 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Stall(StallEvent::SleepHeld { .. }) => 97,
         Event::Stall(StallEvent::DeathCapped { .. }) => 98,
         Event::Access(AccessEvent::TurnChanges { .. }) => 99,
-        Event::Close(CloseEvent::AutoCloseHeld { .. }) => 100,
-        Event::Access(AccessEvent::TerminalOpened { .. }) => 101,
+        Event::Access(AccessEvent::DiffKept { .. }) => 100,
+        Event::Close(CloseEvent::AutoCloseHeld { .. }) => 101,
+        Event::Access(AccessEvent::TerminalOpened { .. }) => 102,
     }
 }

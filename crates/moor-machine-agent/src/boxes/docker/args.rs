@@ -44,7 +44,7 @@ fn shared_skills(n: &Names) -> Vec<String> {
 
 /// The argv, after `docker`, that starts the agent place: not privileged, on the Box network,
 /// and never restarted by Docker, because the machine agent is the only actor that restarts a Box.
-pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names) -> Vec<String> {
+pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names, cache: &[String]) -> Vec<String> {
     let mut a = owned(["run", "-d", "--name", &n.agent, "--hostname", slug.as_str()]);
     a.extend(owned(["--network", &s.network, "--restart", "no"]));
     a.extend(owned(["--memory", AGENT_MEMORY]));
@@ -58,6 +58,7 @@ pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names) -> Vec<String> {
     a.extend(owned(["-v", &format!("{}:/run/moor", n.run)]));
     a.extend(owned(["-v", &format!("{}:/home/agent", n.agent_home)]));
     a.extend(shared_skills(n));
+    a.extend(cache.iter().cloned());
     a.push(s.agent_image.clone());
     a
 }
@@ -87,6 +88,7 @@ pub(super) fn work_run(
     n: &Names,
     mem_mib: u64,
     kvm_gid: Option<u32>,
+    cache: &[String],
 ) -> Vec<String> {
     let mem = format!("{mem_mib}m");
     let mut a = owned(["run", "-d", "--name", &n.work]);
@@ -106,6 +108,7 @@ pub(super) fn work_run(
     a.extend(owned(["-v", &format!("{}:/home/agent", n.work_home)]));
     a.extend(shared_skills(n));
     a.extend(owned(["-v", &format!("{}:/var/lib/docker", n.docker)]));
+    a.extend(cache.iter().cloned());
     a.push(s.work_image.clone());
     a
 }

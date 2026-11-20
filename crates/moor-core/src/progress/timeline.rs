@@ -117,6 +117,7 @@ impl Class {
             | "stays_up"
             | "copied"
             | "exec_ran"
+            | "diff_kept"
             | "terminal_opened"
             | "port_forward_opened"
             | "port_forward_closed"

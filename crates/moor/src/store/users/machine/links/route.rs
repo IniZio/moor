@@ -16,6 +16,18 @@ use crate::store::{Store, StoreError};
 pub(crate) const LINK_STALE: Duration = Duration::from_secs(60);
 
 impl Store {
+    /// The stored link of machine `machine_id`, whoever it belongs to.
+    pub(crate) fn machine_link(&self, machine_id: i64) -> Result<Option<MachineLink>, StoreError> {
+        let conn = self.reader()?;
+        let rows = conn.rows(
+            link_select().and_where(
+                Expr::col((MachineLinks::Table, MachineLinks::MachineId)).eq(machine_id),
+            ),
+            link_row,
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?.into_iter().next())
+    }
+
     /// Records runner `runner`'s whole view of its links at `now`, `draining` when it is shutting
     /// down: each machine it lists that is enrolled and not held by a newer live link elsewhere,
     /// and drops the machines it held but no longer lists; what the store holds afterwards, by

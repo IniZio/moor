@@ -307,6 +307,11 @@ fn offered(host: Option<&Host>) -> Option<link::Offer> {
             .ok()
             .and_then(|n| u32::try_from(n.get()).ok()),
         boxes: Some(host.offer()),
+        features: if host.keeps_caches() {
+            vec!["cache-volume".to_owned()]
+        } else {
+            Vec::new()
+        },
         ..link::Offer::default()
     })
 }
