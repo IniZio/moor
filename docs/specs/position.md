@@ -113,6 +113,13 @@ The dependency-check pilot ran four workflows. All four plans had the same step 
 - **The graph hid a failure.** A run ended as delivered with a failed review step inside it. The pilot's grade lists this as an open problem of the run model.
 - **The proof was a comparison.** On one repo the branch failed the same 175 tests as main. Someone must read that as no regression. This is an inference from one run.
 
+A second set of workflows collects evidence on pull requests. The runs work reported this on 2026-11-20.
+
+- **The step split made failures readable.** One run failed at its deliver step with the exact refusal, and kept the evidence from the step before.
+- **The plan is copied per repo.** Five workflows hold the same three steps. Only one paragraph about checks differs. A change to the shared policy means five hand edits.
+- **The steps enforced nothing.** The hard rules held because the agent obeyed them. The one real gate was a hook outside the plan.
+- **Many repos do not fit.** A pull request trigger fires only on a workflow's first repo. A seven-repo project waits on a redesign.
+
 The need behind the plan is real. The step graph is not the only way to meet it.
 
 ## Four models, three cases
@@ -188,6 +195,8 @@ max_tries: 3
 ```
 
 Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
+
+A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the contract. A repo's own checks live in its repo file.
 
 The lead agent's file holds the shape of work, as prose. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
 
@@ -275,6 +284,7 @@ flowchart LR
 - "Done" changes meaning. The experience spec says done when the agent goes quiet. Here done means the done gate passed.
 
 - Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
+- A step graph shows where a task failed. Here the agent's plan must do that. Each plan item records its state and its evidence as the agent goes.
 - The judge is a model. It can be wrong. Evidence and checks stay deterministic, and the judge only reads what is on file.
 - A person cannot force an order of work. The lead can ask for one. Only contracts and gates are enforced.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
