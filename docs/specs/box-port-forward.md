@@ -1,5 +1,7 @@
 # Box port forward
 
+**Status, 2026-11-20.** The `moor-hc forward` entry point is removed (owner decision). Teammates have no way to forward a Box port from their own computer for now. The teammate path is open and will be redesigned. The rest of this spec is history.
+
 A person opens a web app that runs in their Box. They use their own browser,
 at `http://localhost:<port>` on their own computer. moor carries each TCP
 connection from that local port to the same port on the Box's loopback.
@@ -57,7 +59,7 @@ front calls it.
 
 | Surface | Holds a forward | Why |
 | --- | --- | --- |
-| `moor-hc forward BOX PORT` | Yes, the teammate's entry | `moor-hc` already runs on the person's computer, signed in with `moor-hc login`, and pipes bytes to a Box through `/front` for hc ([`moor-hc/src/exec.rs`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/crates/moor-hc/src/exec.rs)). It runs in any terminal pane of the TUI. |
+| `moor-hc forward BOX PORT` | Removed 2026-11-20 (owner). The teammate path is open, to be redesigned | `moor-hc` already runs on the person's computer, signed in with `moor-hc login`, and pipes bytes to a Box through `/front` for hc ([`moor-hc/src/exec.rs`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/crates/moor-hc/src/exec.rs)). It runs in any terminal pane of the TUI. |
 | `moor forward NAME PORT` | Yes, first and dev only | Proves the path before the bridge ships. Same client code. |
 | Account page, MCP | No | They run on a server. A listener there is not the person's `localhost`. |
 

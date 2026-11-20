@@ -35,7 +35,7 @@ names=(
   reverse_tunnel local_tunnel TunnelHandle LocalTunnel TunnelFailure require_reverse_tunnel tend_tunnel
   SleepKind hide_unsupported_sleep lookup_timeout_secs
   moor-herdr moor_herdr MOOR_HERDR_BIN MOOR_HERDR_TAG MOOR_HERDR_RELEASES HERDR_PLUGIN_STATE_DIR
-  'Tool::Herdr'
+  'Tool::Herdr' moor-hc moor_hc
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.
