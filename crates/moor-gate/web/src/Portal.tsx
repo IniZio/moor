@@ -28,7 +28,7 @@ import { RepoPicker } from './RepoPicker';
 import { FailedCard, takeAgain } from './Retry';
 import { useDraft } from './session';
 import { Composer } from './Steer';
-import { MakeRecurring } from './WorkflowForm';
+import { MakeRecurring } from './MakeRecurring';
 import { TerminalTab } from './Terminal';
 import { routine, ToolFold, ToolLine } from './Transcript';
 
