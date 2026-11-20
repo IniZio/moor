@@ -1,5 +1,6 @@
 //! GitHub forge adapter: repo naming comes from origin URL parsing, repo reads from GraphQL.
 
+pub(crate) mod app;
 mod read;
 pub(crate) use read::agent;
 #[cfg(test)]

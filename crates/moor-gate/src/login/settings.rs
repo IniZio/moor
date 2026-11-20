@@ -29,6 +29,8 @@ const TOKEN: &str = "/account/api/machines/token";
 const PROFILE: &str = "/account/api/profile";
 /// A profile checked without saving it.
 const CHECK: &str = "/account/api/profile/check";
+/// The operator's GitHub App: its install page and the repos it is installed on, or null.
+const GITHUB_APP: &str = "/account/api/github-app";
 
 /// How long a machine token can be redeemed.
 const TOKEN_TTL_SECS: u64 = 600;
@@ -47,7 +49,8 @@ struct Source {
 pub(super) fn serves(method: &str, path: &str) -> bool {
     match method {
         "POST" => path == TOKEN || path == CHECK,
-        "GET" | "PUT" => path == PROFILE,
+        "GET" => path == PROFILE || path == GITHUB_APP,
+        "PUT" => path == PROFILE,
         "DELETE" => path == PROFILE || machine(path).is_some(),
         _ => false,
     }
@@ -81,6 +84,7 @@ pub(super) fn serve(
     let ask = |request| tools::ask_as(&gate.controller, &session.person, request);
     let reply = match (req.method, path) {
         ("POST", TOKEN) => return token(stream, gate, session),
+        ("GET", GITHUB_APP) => ask(ControllerRequest::GitHubApp(AsReq { identity: None })),
         ("GET", _) => ask(check(None)),
         ("POST", _) | ("PUT", PROFILE) => match source(body.as_deref()) {
             Ok(source) if req.method == "POST" => ask(check(Some(source))),

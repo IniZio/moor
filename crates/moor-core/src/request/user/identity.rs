@@ -35,6 +35,7 @@ impl Request {
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
             | Self::NodeList(AsReq { identity })
+            | Self::GitHubApp(AsReq { identity })
             | Self::NodeSettingsGet(NodeSettingsGetReq { identity, .. })
             | Self::NodeSettingsSet(NodeSettingsSetReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })

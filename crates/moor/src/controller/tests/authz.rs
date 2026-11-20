@@ -249,6 +249,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "proxy-release"
         | "proxy-status"
         | "node-list"
+        | "github-app"
         | "node-add"
         | "node-settings-get"
         | "node-settings-set"

@@ -209,6 +209,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
         | Request::NodeList(_)
+        | Request::GitHubApp(_)
         | Request::NodeSettingsGet(_)
         | Request::NodeSettingsSet(_)
         | Request::MachineStatus(_)

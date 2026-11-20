@@ -363,6 +363,7 @@ same directory.
 | `blobs` | `kind: fs` | Where artifacts, Reports, and transcripts live. See [Blob storage](#blob-storage). |
 | `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
+| `github_app` | none | The GitHub App the operator created for this install. See [`github_app`](#github_app). |
 
 ### `fronts`
 
@@ -393,6 +394,32 @@ gets its own user, mount, PID, and network namespaces and a root built from an
 allow-list. It reaches the network only through an egress proxy that refuses
 private addresses. A host that forbids unprivileged user namespaces or lacks
 Landlock starts no front, and the controller logs `fronts not started`.
+
+### `github_app`
+
+The operator creates one GitHub App per moor install on GitHub and gives moor
+its id and key. Without `github_app`, every App feature is off.
+
+```yaml
+github_app:
+  id: 123456
+  private_key_file: /run/secrets/github-app/private-key.pem
+  webhook_secret_file: /run/secrets/github-app/webhook-secret
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | required | The App id from the App's settings page on GitHub. |
+| `private_key_file` | required | The PEM private key GitHub generated for the App. |
+| `webhook_secret_file` | none | The App's webhook secret. Only the webhook event source needs it. |
+
+moor needs `metadata: read` and `pull_requests: read` on the App. It uses the App only
+to find installations and read pull requests and collaborator permissions. Its
+installation tokens ask for those two reads alone, whatever else the App holds. A controller
+that cannot read a key file, or finds no RSA key in it, does not start.
+
+The portal's Repo settings page then links "Install the App on a repo" and lists the
+repos the App is installed on. Every signed-in person sees that list.
 
 ### Blob storage
 

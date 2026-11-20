@@ -76,6 +76,12 @@ spec:
             - |
               cp /src/config/controller.yaml /src/config/config.yaml /var/lib/moor/config/
               install -m 0600 /src/secrets/vault.key /var/lib/moor/config/vault.key
+              {{- if .Values.githubApp.id }}
+              install -m 0600 /src/secrets/github-app.pem /var/lib/moor/config/github-app.pem
+              {{- if .Values.githubApp.webhookSecret }}
+              install -m 0600 /src/secrets/github-app-webhook-secret /var/lib/moor/config/github-app-webhook-secret
+              {{- end }}
+              {{- end }}
               {{- if .Values.egress.enabled }}
               install -m 0600 /src/egress/ledger-tls.crt /src/egress/ledger-tls.key /src/egress/ledger-ca.pem /var/lib/moor/config/
               {{- end }}

@@ -33,6 +33,8 @@ use std::time::Duration;
 
 use moor_core::config::{parse_controller, AutoClose, ControllerConfig};
 
+use crate::adapters::github::app::AppClient;
+
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
 use lock::{take_lock, take_socket_lock, LOCK_WAIT};
@@ -147,6 +149,13 @@ fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
     let env = env
         .with_workflow_min_interval(cfg.workflow_min_interval())
         .with_front_step_reports(cfg.step_report_fronts());
+    let env = match &cfg.github_app {
+        Some(app) => {
+            let app = AppClient::load(app, |p| env.expand_home(p))?;
+            env.sharing(app)
+        }
+        None => env,
+    };
     crate::blobs::share(env.with_front_webhooks(cfg.webhook_fronts()), &cfg.blobs)
 }
 

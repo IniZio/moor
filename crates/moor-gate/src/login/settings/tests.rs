@@ -8,6 +8,7 @@ fn routes_are_the_settings_ones() {
     assert!(serves("PUT", "/account/api/profile"));
     assert!(serves("POST", "/account/api/profile/check"));
     assert!(serves("DELETE", "/account/api/profile"));
+    assert!(serves("GET", "/account/api/github-app"));
 }
 
 #[test]

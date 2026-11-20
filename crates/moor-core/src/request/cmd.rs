@@ -77,6 +77,7 @@ impl Request {
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::NodeList(_) => "node-list",
+            Self::GitHubApp(_) => "github-app",
             Self::NodeAdd(_) => "node-add",
             Self::NodeSettingsGet(_) => "node-settings-get",
             Self::NodeSettingsSet(_) => "node-settings-set",

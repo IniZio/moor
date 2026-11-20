@@ -11,7 +11,8 @@ mod user;
 
 pub use blobs::{BlobsConfig, S3Blobs};
 pub use controller::{
-    parse_controller, AutoClose, ControllerConfig, FrontEntry, LedgerTls, RemoteFront,
+    parse_controller, AutoClose, ControllerConfig, FrontEntry, GitHubAppConfig, LedgerTls,
+    RemoteFront,
 };
 pub use repo::{
     override_text, parse_repo, ProxyExtras, RepoBox, RepoCompose, RepoConfig, RepoMachine,

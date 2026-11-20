@@ -130,6 +130,7 @@ impl Request {
             | Self::MachineEnroll(_)
             | Self::MachineList(_)
             | Self::NodeList(_)
+            | Self::GitHubApp(_)
             | Self::NodeAdd(_)
             | Self::NodeSettingsGet(_)
             | Self::NodeSettingsSet(_)
