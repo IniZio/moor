@@ -37,13 +37,15 @@ pub(crate) enum ProvideError {
     Missing,
     /// It tried and failed.
     Failed(String),
+    /// Every Box's places are gone with what ran them, for the reason given.
+    Lost(String),
 }
 
 impl fmt::Display for ProvideError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Missing => f.write_str("the Box does not exist on this machine"),
-            Self::Failed(why) => f.write_str(why),
+            Self::Failed(why) | Self::Lost(why) => f.write_str(why),
         }
     }
 }

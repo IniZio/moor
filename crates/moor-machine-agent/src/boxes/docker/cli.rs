@@ -112,22 +112,10 @@ pub(super) fn read_state(
             State::Stopped
         }));
     }
-    let said = stderr.to_lowercase();
-    if [
-        "cannot connect to the docker daemon",
-        "failed to connect to the docker api",
-        "is the docker daemon running",
-        "error during connect",
-    ]
-    .iter()
-    .any(|m| said.contains(m))
-    {
-        let at = address_in(stderr).or(host).unwrap_or("the default address");
-        return Err(ProvideError::Failed(format!(
-            "the Docker daemon at {at} is not answering: {}",
-            stderr.trim()
-        )));
+    if let Some(why) = unanswered(stderr, host) {
+        return Err(ProvideError::Failed(why));
     }
+    let said = stderr.to_lowercase();
     if said.contains("no such container") || said.contains("no such object") {
         return Ok(None);
     }
@@ -136,6 +124,34 @@ pub(super) fn read_state(
     } else {
         format!("docker: {}", stderr.trim())
     }))
+}
+
+/// Why the daemon does not answer, when `stderr` of a `docker` run says it did not; none for any
+/// other failure. `host` is `DOCKER_HOST`.
+fn unanswered(stderr: &str, host: Option<&str>) -> Option<String> {
+    let said = stderr.to_lowercase();
+    let down = [
+        "cannot connect to the docker daemon",
+        "failed to connect to the docker api",
+        "is the docker daemon running",
+        "error during connect",
+    ]
+    .iter()
+    .any(|m| said.contains(m));
+    let at = address_in(stderr).or(host).unwrap_or("the default address");
+    down.then(|| {
+        format!(
+            "the Docker daemon at {at} is not answering: {}",
+            stderr.trim()
+        )
+    })
+}
+
+/// What a failed `docker ps` of every Box means. A rootless daemon that does not answer took
+/// every Box's places with it, since their network namespace was its own; a rootful one may not.
+pub(super) fn listing_failed(stderr: &str, host: Option<&str>, rootless: bool) -> ProvideError {
+    let _ = (host, rootless);
+    ProvideError::Failed(format!("docker: {}", stderr.trim()))
 }
 
 /// The daemon address Docker's own error names, such as the `unix:///…` after "daemon at".

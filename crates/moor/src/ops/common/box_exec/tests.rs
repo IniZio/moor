@@ -342,3 +342,37 @@ fn a_box_whose_config_asks_for_entries_gets_them_and_a_box_without_does_not() {
     );
     assert_eq!(with.len(), without.len() + 2);
 }
+
+#[test]
+fn an_egress_proxy_its_place_cannot_explain_fails_with_why_the_holder_lists_the_box_down() {
+    let down = "the Docker daemon at unix:///run/user/1003/docker.sock is not answering";
+    let dir = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new()
+        .machine_handles()
+        .listed_by_handle()
+        .exec_results([Ok(moor_core::seam::driver::ExecOutcome::Exited { code: 1 })]);
+    let mut r = rig_driver(dir.path(), UserConfig::default(), driver);
+    r.cx = r.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
+    let store = r.cx.store().unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
+    let new = NewBox {
+        name: BoxName::parse_allow_bare("dead-daemon").unwrap(),
+        repo: None,
+        spec: SpecFields::default(),
+    };
+    let id = store
+        .apply(Decision::insert(new).requester(user))
+        .unwrap()
+        .box_id;
+    r.driver.die_behind(&r.handle, down);
+    let err = super::proxy(
+        &r.cx,
+        id,
+        Some((r.handle.clone(), HandsInc::FIRST)),
+        None,
+        &cfg(),
+    )
+    .err()
+    .unwrap();
+    assert!(err.ends_with(down), "{err}");
+}

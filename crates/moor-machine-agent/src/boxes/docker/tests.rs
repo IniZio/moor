@@ -8,11 +8,11 @@
 )]
 
 use super::args::{agent_run, gid_of, kvm_group, work_memory_mib, work_run};
-use super::cli::{parse_ended, read_state, State};
+use super::cli::{listing_failed, parse_ended, read_state, State};
 use super::names::Names;
 use super::observe::held_by_box;
 use super::{net, Images, Settings};
-use crate::boxes::provider::Ended;
+use crate::boxes::provider::{Ended, ProvideError};
 use crate::boxes::Slug;
 
 const SLUG: &str = "moor-3b3b3b3b-9001";
@@ -77,6 +77,21 @@ fn the_unanswering_daemons_address_comes_from_docker_then_docker_host() {
     assert!(err(odd, Some("tcp://10.0.0.5:2375"))
         .starts_with("the Docker daemon at tcp://10.0.0.5:2375 is not answering"));
     assert!(err(odd, None).starts_with("the Docker daemon at the default address is not answering"));
+}
+
+#[test]
+fn a_rootless_daemon_that_does_not_answer_loses_every_box_and_a_rootful_one_does_not() {
+    let ProvideError::Lost(why) = listing_failed(SOCKET_GONE, None, true) else {
+        panic!("a rootless daemon that does not answer loses its Boxes");
+    };
+    assert!(
+        why.starts_with("the Docker daemon at unix:///run/user/1003/docker.sock is not answering"),
+        "{why}"
+    );
+    for (said, rootless) in [(NOT_RUNNING, false), ("permission denied", true)] {
+        let e = listing_failed(said, None, rootless);
+        assert!(matches!(e, ProvideError::Failed(_)), "{said}: {e:?}");
+    }
 }
 
 #[test]
