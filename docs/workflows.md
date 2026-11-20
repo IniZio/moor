@@ -146,13 +146,24 @@ webhook to the gate at `<public url>/hooks/github`.
 
 - Each event fires one run per enabled workflow with the trigger on. Its trigger
   is `pull_request`.
-- The run is for the pull request at the head the event names. Its Box gets the
-  same `MOOR_PULL_*` env and first line as `run_workflow` with `pull`.
+- moor reads the pull request back from GitHub as the App before it acts. Its
+  current state, draft flag, head and author decide, not the event. A late
+  event for an older head never cancels the newer run.
+- The run is for the pull request at its current head. Its Box gets the same
+  `MOOR_PULL_*` env and first line as `run_workflow` with `pull`.
 - A push cancels the open run of the older head, as a manual run does.
 - The same head fires once, whatever came of its run. A close and a reopen at
   the same head fire nothing. Run again or a new push fires it again.
 - Closing the pull request cancels its open run on every workflow of the repo.
-- Drafts, bot authors and forks still fire for now.
+- A draft records nothing. Marking it ready for review fires it at the same head.
+- A bot's pull request records nothing. A bot is an author of type `Bot` or a
+  login ending in `[bot]`.
+- A pull request from a fork fires only when its author has admin, maintain or
+  write on the repo. Otherwise the run is `skipped_fork` and names the author.
+  **Run again** on that run starts a run by hand at the current head, as you.
+  The next push from the fork skips again.
+- A failed read of the pull request records a refused run at the event's head,
+  with the reason. Nothing retries it. A close whose read fails cancels nothing.
 
 ## Follow runs and retry
 

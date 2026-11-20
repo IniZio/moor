@@ -1,14 +1,6 @@
 //! The App client against a fake GitHub on loopback, with an RSA key made for each test run.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
-
-use aws_lc_rs::encoding::AsDer;
-use aws_lc_rs::rsa::{KeyPair, KeySize, PublicKeyComponents};
-use aws_lc_rs::signature::KeyPair as _;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use moor_core::config::GitHubAppConfig;
 use moor_core::seam::clock::Ts;
@@ -18,121 +10,12 @@ use serde_json::{json, Value};
 
 use super::pull::Permission;
 use super::{AppClient, Installation};
+use crate::adapters::github::app::fake::{key, FakeGitHub, Seen};
 
 mod live;
 
 /// Unix seconds the tests sign at.
 const NOW: i64 = 1_800_000_000;
-
-/// A test RSA key: its PKCS#1 PEM, its PKCS#8 PEM and its public modulus and exponent.
-struct TestKey {
-    pkcs1: String,
-    pkcs8: String,
-    n: Vec<u8>,
-    e: Vec<u8>,
-}
-
-/// One 2048-bit key per test run; RSA key generation is slow.
-fn key() -> &'static TestKey {
-    static KEY: OnceLock<TestKey> = OnceLock::new();
-    KEY.get_or_init(|| {
-        let pair = KeyPair::generate(KeySize::Rsa2048).unwrap();
-        let pkcs8 = pair.as_der().unwrap().as_ref().to_vec();
-        // PrivateKeyInfo: SEQUENCE { version, rsaEncryption AlgorithmIdentifier, OCTET STRING {
-        // RSAPrivateKey } }. For a 2048-bit key the OCTET STRING header ends at byte 26.
-        assert_eq!(
-            pkcs8.get(22..24),
-            Some(&[0x04, 0x82][..]),
-            "unexpected PKCS#8 layout"
-        );
-        let pkcs1 = pkcs8.get(26..).unwrap().to_vec();
-        let public = PublicKeyComponents::<Vec<u8>>::from(pair.public_key());
-        TestKey {
-            pkcs1: pem::encode(&pem::Pem::new("RSA PRIVATE KEY", pkcs1)),
-            pkcs8: pem::encode(&pem::Pem::new("PRIVATE KEY", pkcs8)),
-            n: public.n,
-            e: public.e,
-        }
-    })
-}
-
-/// One request the fake saw.
-#[derive(Debug, Clone)]
-struct Seen {
-    method: String,
-    path: String,
-    auth: String,
-    body: String,
-}
-
-/// A fake GitHub REST API: `route` answers each request by method and path.
-struct FakeGitHub {
-    url: String,
-    seen: Arc<Mutex<Vec<Seen>>>,
-}
-
-impl FakeGitHub {
-    fn start(route: impl Fn(&str, &str) -> (u16, Value) + Send + 'static) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&seen);
-        thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { return };
-                let mut reader = BufReader::new(stream);
-                let mut first = String::new();
-                reader.read_line(&mut first).unwrap();
-                let mut parts = first.split_whitespace();
-                let method = parts.next().unwrap_or_default().to_owned();
-                let path = parts.next().unwrap_or_default().to_owned();
-                let (mut length, mut auth) = (0, String::new());
-                loop {
-                    let mut line = String::new();
-                    reader.read_line(&mut line).unwrap();
-                    let lower = line.to_ascii_lowercase();
-                    if let Some(v) = lower.strip_prefix("content-length:") {
-                        length = v.trim().parse().unwrap();
-                    }
-                    if let Some((name, value)) = line.split_once(':') {
-                        if name.eq_ignore_ascii_case("authorization") {
-                            value.trim().clone_into(&mut auth);
-                        }
-                    }
-                    if line == "\r\n" {
-                        break;
-                    }
-                }
-                let mut body = vec![0; length];
-                reader.read_exact(&mut body).unwrap();
-                let body = String::from_utf8(body).unwrap();
-                let (status, reply) = route(&method, &path);
-                log.lock().unwrap().push(Seen {
-                    method,
-                    path,
-                    auth,
-                    body,
-                });
-                let reply = reply.to_string();
-                let mut stream = reader.into_inner();
-                let _ = write!(
-                    stream,
-                    "HTTP/1.1 {status} Answer\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
-            }
-        });
-        Self { url, seen }
-    }
-
-    fn seen(&self) -> Vec<Seen> {
-        self.seen.lock().unwrap().clone()
-    }
-
-    fn client(&self) -> AppClient {
-        AppClient::from_pem(42, key().pkcs1.as_bytes(), &self.url).unwrap()
-    }
-}
 
 fn now() -> Ts {
     Ts::from_millis(NOW * 1000)
@@ -266,6 +149,14 @@ fn pulls_api() -> FakeGitHub {
                 "user": {"login": "alice", "type": "User"},
             }),
         ),
+        "/repos/acme/web/pulls/8" => (
+            200,
+            json!({
+                "state": "open", "draft": false,
+                "head": {"sha": "c".repeat(40), "repo": {"full_name": "acme/web"}},
+                "user": {"login": "renovate[bot]", "type": "User"},
+            }),
+        ),
         "/repos/acme/web/collaborators/alice/permission" => {
             (200, json!({"permission": "write", "role_name": "maintain"}))
         }
@@ -285,10 +176,14 @@ fn a_pull_reads_with_the_installation_token() {
     assert_eq!(bot.head_repo, None);
     let fork = app.pull(&repo, 6, &token).unwrap();
     assert!(!fork.open && !fork.draft && !fork.author_is_bot);
-    assert_eq!(fork.head_sha, "b".repeat(40));
+    assert_eq!(fork.head_sha.as_str(), "b".repeat(40));
     assert_eq!(fork.head_repo, Some(ForgeRepo::new("alice", "web")));
     assert_eq!(fork.author, "alice");
     assert!(app.pull(&repo, 7, &token).unwrap_err().contains("HTTP 404"));
+    assert!(
+        app.pull(&repo, 8, &token).unwrap().author_is_bot,
+        "a [bot] login is a bot whatever its type"
+    );
     assert!(api
         .seen()
         .iter()
@@ -312,7 +207,7 @@ fn a_head_reads_as_the_installation_that_covers_the_repo_or_names_a_repo_without
     });
     let app = api.client();
     let head = app.head_of(&ForgeRepo::new("acme", "web"), 6, now());
-    assert_eq!(head.unwrap(), "b".repeat(40));
+    assert_eq!(head.unwrap().as_str(), "b".repeat(40));
     let pull_read = api
         .seen()
         .into_iter()

@@ -149,6 +149,10 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
         "unanswered" => "No answer in time; the run ends declined".to_owned(),
         "exhausted" => "Out of tries; following the fail edge".to_owned(),
         "skipped" => "Skipped; the previous Box was still open".to_owned(),
+        "skipped_fork" => format!(
+            "Skipped; the fork's author {} cannot write to the repo",
+            text(entry, "author").unwrap_or("?")
+        ),
         "refused" => format!("Refused: {}", text(entry, "detail").unwrap_or("no reason")),
         "ended" => {
             let outcome = entry.get("outcome").cloned().unwrap_or_default();
@@ -300,6 +304,7 @@ fn run_view(workflow: &str, row: &RunRowView) -> Value {
         "outcome": run.outcome,
         "status": status(&run.phase, &run.outcome),
         "label": label(&run.phase, &run.outcome, run.step.as_deref()),
+        "pull": run.pull,
         "step": run.step,
         "result": run.result,
         "detail": run.detail,
