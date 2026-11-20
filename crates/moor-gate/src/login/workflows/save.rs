@@ -107,7 +107,7 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
     let add = ControllerRequest::WorkflowAdd(WorkflowAddReq {
         identity: None,
         name: stored.name.clone(),
-        cron: stored.cron.clone(),
+        cron: Some(stored.cron.clone().unwrap_or_default()),
         timezone: stored.timezone.clone(),
         repos: stored.repos.clone(),
         config: stored.config.clone(),
@@ -119,8 +119,8 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         // An edit of the content only: whether it runs, and why not, stay as stored, and so
         // does the origin.
         keep_state: true,
-        enabled: true,
-        on_pull_request: stored.on_pull_request,
+        enabled: None,
+        on_pull_request: Some(stored.on_pull_request),
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {

@@ -71,6 +71,7 @@ token's audience.
   `stdout` and `stderr`. Each call records an `exec_ran` event.
 - `retry_box` reruns setup on a Box in `setup_failed`. It returns once setup
   has restarted, while setup goes on. Follow it with `box_status`.
+- `add_workflow` on an existing name keeps every optional field you leave out. That covers `cron` and `timezone`, `config`, `timeout_minutes`, `enabled` and `on_pull_request`. To clear the cron, send `cron: null`. To clear the config, send `config: ""`. The `plan` is the exception, so send the whole plan again. A new workflow is enabled, with no pull request trigger, no cron, no config and a 180 minute timeout.
 - `run_workflow` returns once the run is recorded and its Box start
   has begun, while the Box sets up. A start the controller refuses after that
   shows as a refused run in `list_workflow_runs`.

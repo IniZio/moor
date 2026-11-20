@@ -1,7 +1,6 @@
 //! The workflow tools: a signed-in user keeps recurring jobs that start one Box over a set of
 //! repos on a cron, and reads what each run did.
 
-use moor_core::config::override_text;
 use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
     WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
@@ -23,10 +22,17 @@ use crate::mcp::{READ, WRITE};
 struct AddArgs {
     /// A name, unique among your workflows; adding the same name again replaces it.
     name: String,
-    /// A five-field cron expression: minute, hour, day of month, month, day of week. Leave it
-    /// out for a workflow that runs only by hand (`run_workflow`) or on pull requests.
-    cron: Option<String>,
-    /// The IANA time zone the cron is read in, such as `Europe/London`. Required with a cron.
+    /// A five-field cron expression: minute, hour, day of month, month, day of week. A new
+    /// workflow with none runs only by hand (`run_workflow`) or on pull requests. When you
+    /// replace a workflow, leave it out to keep its cron, or send null to clear it.
+    #[serde(default, deserialize_with = "some")]
+    #[allow(
+        clippy::option_option,
+        reason = "left out keeps the cron and null clears it, which Option<String> cannot tell apart"
+    )]
+    cron: Option<Option<String>>,
+    /// The IANA time zone the cron is read in, such as `Europe/London`. Required with a cron;
+    /// when you replace a workflow, left out keeps its zone.
     timezone: Option<String>,
     /// The repos each run's one Box clones, each as `owner/name`, first one first. The agent
     /// works in the first, where its branch and pull request go; the rest are cloned beside it,
@@ -35,11 +41,13 @@ struct AddArgs {
     /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for every Box of the workflow: a key you set wins, `env` merges by name, lists
     /// replace. `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default
-    /// Proxy rule for these Boxes only. None when left out.
+    /// Proxy rule for these Boxes only. A new workflow has none when left out; when you replace
+    /// one, left out keeps its config and an empty string clears it.
     config: Option<String>,
     /// What each Box's agent is asked to do.
     prompt: String,
-    /// Minutes a run may take before it is stopped, 1 to 720; 180 when left out.
+    /// Minutes a run may take before it is stopped, 1 to 720; 180 for a new workflow when left
+    /// out, and the stored value when you replace one.
     timeout_minutes: Option<u32>,
     /// The plan a run walks, as an object with a `steps` list; see the tool description for how
     /// to write one. None when left out, and each run then delivers the prompt in one step.
@@ -49,12 +57,23 @@ struct AddArgs {
     /// refused when the workflow has changed since. Leave it out for a new workflow.
     expected_revision: Option<u64>,
     /// False to store the workflow disabled in this same write, so no cron fires before you
-    /// call `set_workflow_enabled`; true when left out.
+    /// call `set_workflow_enabled`; true to enable it. Left out, a new workflow is enabled and a
+    /// replaced one keeps its state.
     enabled: Option<bool>,
     /// True to also fire a run when a pull request on the first repo is opened, reopened,
-    /// marked ready for review or pushed to. The run gets the pull request in its env. False
-    /// when left out.
+    /// marked ready for review or pushed to. The run gets the pull request in its env. Left
+    /// out, a new workflow is false and a replaced one keeps its value.
     on_pull_request: Option<bool>,
+}
+
+/// A field that tells null from absent: absent stays `None` through `default`, and null is
+/// `Some(None)`.
+fn some<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 /// The JSON Schema of a plan, which `add_workflow` checks the argument against.
@@ -154,7 +173,11 @@ impl Tools {
                        controller's minimum gap, an hour unless configured, is refused. Adding \
                        an existing name replaces it, plan included: send the whole plan again, \
                        and pass the revision you read as expected_revision, so a change made \
-                       since is not overwritten. \
+                       since is not overwritten. Every other field you leave out keeps its stored value: \
+                       `cron` and `timezone`, `config`, `timeout_minutes`, `enabled` and \
+                       `on_pull_request`. To clear the cron send `cron: null`; to clear \
+                       `config` send an empty string. A new workflow uses the defaults \
+                       instead. \
                        \
                        Write a plan for any job with more than one finish line; a prompt with no \
                        plan runs as one step. Turn the prompt into `plan.steps`, a short list \
@@ -195,10 +218,11 @@ impl Tools {
         let request = ControllerRequest::WorkflowAdd(WorkflowAddReq {
             identity: None,
             name: args.name,
-            cron: args.cron.filter(|c| !c.trim().is_empty()),
+            // Null clears the cron, which the controller reads as a blank one.
+            cron: args.cron.map(Option::unwrap_or_default),
             timezone: args.timezone,
             repos: args.repos,
-            config: override_text(args.config),
+            config: args.config,
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
             // A model may send the plan as an object or as the JSON text of one.
@@ -209,8 +233,8 @@ impl Tools {
             expected_revision: args.expected_revision,
             origin_key: None,
             keep_state: false,
-            enabled: args.enabled.unwrap_or(true),
-            on_pull_request: args.on_pull_request.unwrap_or(false),
+            enabled: args.enabled,
+            on_pull_request: args.on_pull_request,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

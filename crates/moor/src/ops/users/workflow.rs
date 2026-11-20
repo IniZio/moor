@@ -11,7 +11,7 @@ use moor_core::view::workflow::{
 };
 use moor_core::workflow::{
     Plan, PlanError, PromptHash, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName,
-    WorkflowOrigin, WorkflowSchedule,
+    WorkflowOrigin, WorkflowSchedule, WorkflowState,
 };
 use moor_core::ErrorKind;
 
@@ -103,18 +103,26 @@ fn parse_repos(field: &str, repos: &[String]) -> Result<Vec<ForgeRepo>, CommandE
         .collect()
 }
 
-/// The schedule `req` asks for: none without a cron, which fires only by hand or on a pull
-/// request. A cron needs its zone.
+/// The schedule `req` asks for on top of `prior`, the workflow it replaces: a cron left out is
+/// the stored one, and a blank cron is none, which fires only by hand or on a pull request. A
+/// cron needs its zone, and one left out is the stored one.
 fn parse_schedule(
     req: &WorkflowAddReq,
+    prior: Option<&Workflow>,
     floor: std::time::Duration,
 ) -> Result<Option<WorkflowSchedule>, CommandError> {
-    let Some(cron) = req.cron.as_deref().map(str::trim).filter(|c| !c.is_empty()) else {
+    let stored = prior.and_then(|w| w.schedule.as_ref());
+    let cron = req
+        .cron
+        .as_deref()
+        .or_else(|| stored.map(WorkflowSchedule::expr));
+    let Some(cron) = cron.map(str::trim).filter(|c| !c.is_empty()) else {
         return Ok(None);
     };
     let zone = req
         .timezone
         .as_deref()
+        .or_else(|| stored.map(WorkflowSchedule::zone))
         .map(str::trim)
         .filter(|z| !z.is_empty())
         .ok_or_else(|| usage("a cron needs a timezone"))?;
@@ -128,6 +136,42 @@ fn next_due(schedule: Option<&WorkflowSchedule>, now: Ts) -> Option<i64> {
     schedule?.first_after(now).map(Ts::as_millis)
 }
 
+/// The fields of an add that fall back to the stored workflow when the request leaves them out.
+struct Kept {
+    /// Minutes a run may take.
+    timeout: TimeoutMinutes,
+    /// Whether it fires.
+    enabled: bool,
+    /// The partial repo config.
+    config: Option<String>,
+    /// Whether a pull request fires a run.
+    on_pull_request: bool,
+}
+
+impl Kept {
+    /// `req`'s values, with `prior`'s, or the defaults of a new workflow, for what it leaves out.
+    fn of(req: &WorkflowAddReq, prior: Option<&Workflow>) -> Result<Self, CommandError> {
+        let timeout = match (req.timeout_minutes, prior) {
+            (Some(minutes), _) => TimeoutMinutes::new(minutes).map_err(usage)?,
+            (None, Some(w)) => w.timeout,
+            (None, None) => TimeoutMinutes::DEFAULT,
+        };
+        Ok(Self {
+            timeout,
+            enabled: req.enabled.unwrap_or_else(|| {
+                prior.is_none_or(|w| matches!(w.state, WorkflowState::Enabled { .. }))
+            }),
+            config: match (&req.config, prior) {
+                (None, Some(w)) => w.config.clone(),
+                (config, _) => override_text(config.clone()),
+            },
+            on_pull_request: req
+                .on_pull_request
+                .unwrap_or_else(|| prior.is_some_and(|w| w.on_pull_request)),
+        })
+    }
+}
+
 /// `workflow-add`: checks every field and says which one is wrong.
 fn add(
     cx: &Cx,
@@ -138,19 +182,22 @@ fn add(
 ) -> Result<serde_json::Value, CommandError> {
     let name = parse_name(&req.name)?;
     let floor = cx.env().workflow_min_interval();
-    let schedule = parse_schedule(req, floor)?;
+    let prior = store.workflow(user, &name)?;
+    let schedule = parse_schedule(req, prior.as_ref(), floor)?;
     let repos = parse_repos("repos", &req.repos)?;
     box_config::check(req.config.as_deref())?;
-    let timeout = req
-        .timeout_minutes
-        .map_or(Ok(TimeoutMinutes::DEFAULT), TimeoutMinutes::new)
-        .map_err(usage)?;
+    let Kept {
+        timeout,
+        enabled,
+        config,
+        on_pull_request,
+    } = Kept::of(req, prior.as_ref())?;
     let mut def = WorkflowDef::new(
         name.clone(),
         schedule,
         repos,
         &req.prompt,
-        (req.enabled, timeout),
+        (enabled, timeout),
     )
     .map_err(usage)?;
     def.origin = match (origin_front, &req.origin_key) {
@@ -166,14 +213,19 @@ fn add(
         }
         _ => None,
     };
-    def.config = override_text(req.config.clone());
-    def.on_pull_request = req.on_pull_request;
+    def.config = config;
+    def.on_pull_request = on_pull_request;
     def.plan = req
         .plan
         .as_deref()
         .map(|text| parse_plan(text, &req.prompt))
         .transpose()?;
-    let revision = match store.put_workflow_at(user, &def, req.expected_revision, req.keep_state)? {
+    let revision = match store.put_workflow_at(
+        user,
+        &def,
+        req.expected_revision,
+        req.keep_state || req.enabled.is_none(),
+    )? {
         Put::Written { revision, .. } => revision,
         Put::Stale { current } => return Err(stale(&name, current, req.expected_revision)),
     };

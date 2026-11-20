@@ -17,7 +17,7 @@ fn a_workflow_with_no_cron_is_stored_and_listed_with_no_schedule_or_next_due() {
         let mut req = add_req(name, "", "");
         req.cron = cron.map(str::to_owned);
         req.timezone = zone.map(str::to_owned);
-        req.on_pull_request = true;
+        req.on_pull_request = Some(true);
         let added = ok(&f, &who, add(req, None));
         assert_eq!(added.get("next_due"), None, "{name}");
     }

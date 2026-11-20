@@ -19,7 +19,7 @@ fn a_workflow_added_disabled_never_fires_on_a_due_cron_until_it_is_enabled() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let mut off = add_req("held", "0 9 * * *", "UTC");
-    off.enabled = false;
+    off.enabled = Some(false);
     let added = ok(&f, &who, add(off, None));
     assert_eq!(
         added["next_due"],
