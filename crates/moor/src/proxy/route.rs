@@ -3,7 +3,7 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
-use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_LISTEN, EGRESS_URL};
+use crate::env::{Env, EGRESS_FORWARD_BIN, EGRESS_LISTEN, EGRESS_RELAYED, EGRESS_URL};
 
 /// The controller's own shared egress Proxy socket, under the state dir.
 const LOCAL_SOCKET: &str = "egress/egress.sock";
@@ -24,6 +24,14 @@ pub(crate) enum EgressRoute {
         /// `moor-host`; `None` when no Box may be served.
         host: Option<SocketAddr>,
     },
+    /// The controller's own shared Proxy on `socket`, reached through a relay another process
+    /// runs on `host`, which a Box dials as `moor-host`. The controller does not bind `host`.
+    Relayed {
+        /// The socket the Proxy listens on, which the relay connects to.
+        socket: PathBuf,
+        /// The private address the relay listens on.
+        host: SocketAddr,
+    },
 }
 
 impl EgressRoute {
@@ -35,17 +43,27 @@ impl EgressRoute {
     pub(crate) fn from_env(env: &Env) -> Result<Self, String> {
         env.get(EGRESS_URL).filter(|u| !u.is_empty()).map_or_else(
             || {
-                let host = env
-                    .get(EGRESS_LISTEN)
-                    .filter(|a| !a.is_empty())
-                    .map(private_listen)
-                    .transpose()?;
-                env.state_dir()
-                    .map(|dir| Self::Local {
-                        socket: local_socket(&dir),
-                        host,
-                    })
-                    .ok_or_else(|| "no state directory for the shared egress Proxy".to_owned())
+                let named = |var| env.get(var).filter(|a| !a.is_empty());
+                let (listen, relayed) = (named(EGRESS_LISTEN), named(EGRESS_RELAYED));
+                if listen.is_some() && relayed.is_some() {
+                    return Err(format!(
+                        "set only one of {EGRESS_LISTEN}, which binds the Proxy there, and {EGRESS_RELAYED}, which names a relay that already listens there"
+                    ));
+                }
+                let socket = env
+                    .state_dir()
+                    .map(|dir| local_socket(&dir))
+                    .ok_or_else(|| "no state directory for the shared egress Proxy".to_owned())?;
+                match (listen, relayed) {
+                    (_, Some(addr)) => Ok(Self::Relayed {
+                        socket,
+                        host: private_listen(EGRESS_RELAYED, addr)?,
+                    }),
+                    (listen, None) => Ok(Self::Local {
+                        socket,
+                        host: listen.map(|a| private_listen(EGRESS_LISTEN, a)).transpose()?,
+                    }),
+                }
             },
             Self::parse,
         )
@@ -74,17 +92,20 @@ impl EgressRoute {
     /// `moor-host`.
     ///
     /// # Errors
-    /// The local route and no [`EGRESS_LISTEN`] address to dial.
+    /// The local route and no [`EGRESS_LISTEN`] or [`EGRESS_RELAYED`] address to dial.
     pub(crate) fn upstream(&self) -> Result<String, String> {
         Ok(match self {
             Self::Direct { url } => url.clone(),
-            Self::Local { host, .. } => {
-                let host = host.ok_or_else(|| {
-                    format!(
-                        "a Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"
-                    )
-                })?;
+            Self::Local {
+                host: Some(host), ..
+            }
+            | Self::Relayed { host, .. } => {
                 format!("ws://moor-host:{}{}", host.port(), super::egress::PATH)
+            }
+            Self::Local { host: None, .. } => {
+                return Err(format!(
+                    "a Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"
+                ));
             }
         })
     }
@@ -92,16 +113,25 @@ impl EgressRoute {
     /// The socket the controller's own Proxy listens on, on the local route.
     pub(crate) fn socket(&self) -> Option<&Path> {
         match self {
-            Self::Local { socket, .. } => Some(socket),
+            Self::Local { socket, .. } | Self::Relayed { socket, .. } => Some(socket),
             Self::Direct { .. } => None,
+        }
+    }
+
+    /// The address the controller's own Proxy binds besides its socket. A relayed address is
+    /// the relay's, so the controller leaves it alone.
+    pub(crate) const fn bind(&self) -> Option<SocketAddr> {
+        match self {
+            Self::Local { host, .. } => *host,
+            Self::Relayed { .. } | Self::Direct { .. } => None,
         }
     }
 }
 
-/// `addr` as the address the controller's Proxy also listens on. Boxes dial it over plain
+/// `addr`, the value of `var`, as the address a Proxy also listens on. Boxes dial it over plain
 /// `ws://`, so it must be a loopback or private address: never a public or wildcard one.
-fn private_listen(addr: &str) -> Result<SocketAddr, String> {
-    let bad = |why: &str| format!("{EGRESS_LISTEN} {addr}: {why}");
+fn private_listen(var: &str, addr: &str) -> Result<SocketAddr, String> {
+    let bad = |why: &str| format!("{var} {addr}: {why}");
     let parsed: SocketAddr = addr.parse().map_err(|_| bad("not an IP:PORT address"))?;
     let private = match parsed.ip() {
         IpAddr::V4(ip) => {
