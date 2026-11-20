@@ -19,6 +19,8 @@ use serde_json::{json, Value};
 use super::pull::Permission;
 use super::{AppClient, Installation};
 
+mod live;
+
 /// Unix seconds the tests sign at.
 const NOW: i64 = 1_800_000_000;
 
