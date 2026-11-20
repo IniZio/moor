@@ -4,7 +4,8 @@
 
 use std::convert::Infallible;
 use std::os::unix::process::CommandExt;
-use std::process::Command;
+use std::path::Path;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -45,17 +46,17 @@ async fn install(need: String, version: &str, log: Log<'_>) -> String {
         return format!("{need}, but it was just updated to {plain}");
     }
     log(&format!("{need}; updating"));
-    let asked = plain.clone();
-    let done = match tokio::task::spawn_blocking(move || release::update(&asked)).await {
-        Ok(Ok(done)) => done,
-        Ok(Err(e)) => return format!("{need}; the update failed: {e}"),
-        Err(e) => return format!("{need}; the update failed: {e}"),
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => return format!("{need}; the update failed: cannot find this executable: {e}"),
     };
+    if let Err(e) = swap(&exe, &plain).await {
+        return format!("{need}; the update failed: {e}");
+    }
     log(&format!(
-        "updated from {} to {}; restarting once no stream or boot is going on",
-        done.from, done.to
+        "updated from {VERSION} to {plain}; restarting once no stream or boot is going on"
     ));
-    let to = done.to.clone();
+    let to = plain.clone();
     let stuck = |held: &[String]| {
         log(&format!(
             "the update to {to} has waited {} minutes, held by: {}",
@@ -64,16 +65,34 @@ async fn install(need: String, version: &str, log: Log<'_>) -> String {
         ));
     };
     let why = busy::when_idle(PATIENCE, stuck, || {
-        Command::new(&done.exe)
+        Command::new(&exe)
             .args(std::env::args_os().skip(1))
-            .env(UPDATED_TO, &done.to)
+            .env(UPDATED_TO, &plain)
             .exec()
     })
     .await;
     format!(
         "updated to {plain} but cannot restart {}: {why}",
-        done.exe.display()
+        exe.display()
     )
+}
+
+/// Installs release `version` over `exe` from a child `update`, so no fork of this process
+/// holds the new file open for writing when the restart execs it.
+async fn swap(exe: &Path, version: &str) -> Result<(), String> {
+    let out = tokio::process::Command::new(exe)
+        .args(["update", "--version", version])
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| format!("cannot run {} update: {e}", exe.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&out.stderr);
+    let last = said.lines().last().unwrap_or_default();
+    Err(last.trim_start_matches("moor-machine-agent: ").to_owned())
 }
 
 /// Follows the release of each server that links this agent, which `offers` names as each link
