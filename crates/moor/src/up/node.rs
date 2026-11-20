@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use super::files::{Layout, NODE};
 use super::service;
+use moor_client::rootless;
+
 use crate::doctor::{answer, Ask, Check};
 use crate::env::Env;
 use crate::node_add::{self, Add};
@@ -31,6 +33,9 @@ pub(super) const INSTALL: &str =
 const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's work place runs with \
     --privileged so Docker works inside it, and a user who can run Docker is root on this host. \
     Only your own Boxes run here";
+/// What `up` tells the person about the images of a rootless daemon.
+const IMAGES: &str = "the rootless daemon keeps its own images and cache volumes under your home, \
+    so the first Box here pulls the Box images again";
 /// The file in the state dir that keeps the ports `up` chose.
 const PORTS_FILE: &str = "up-ports.json";
 /// Seconds to wait for the agent's link; `MOOR_UP_LINK_WAIT_SECS` sets another.
@@ -111,6 +116,7 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Che
             "install Docker and let this user run it, such as by joining the docker group, then rerun moor up",
         )
     })?;
+    let notes = trust(env)?;
     let gateway = docker(&[
         "network",
         "inspect",
@@ -137,10 +143,8 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Che
     let runner = binary(env, RUNNER_BIN).ok_or_else(|| missing(RUNNER_BIN))?;
     let agent = binary(env, AGENT_BIN).ok_or_else(|| missing(AGENT_BIN))?;
     let ports = Ports::read_or_pick(&layout.state_dir, gateway)?;
-    let checks = vec![
-        Check::ok("docker", format!("Docker {version} answers")),
-        Check::ok("docker", PRIVILEGED),
-    ];
+    let mut checks = vec![Check::ok("docker", format!("Docker {version} answers"))];
+    checks.extend(notes);
     let plan = Plan {
         runner,
         agent,
@@ -148,6 +152,29 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Che
         egress: SocketAddr::new(IpAddr::V4(gateway), ports.egress),
     };
     Ok((plan, checks))
+}
+
+/// What `up` says about the privileges Docker Boxes take. Under rootless Docker it first checks
+/// the daemon is set up for them, and fails with every check that does not hold.
+fn trust(env: &Env) -> Result<Vec<Check>, Check> {
+    if !rootless::detect() {
+        return Ok(vec![Check::ok("docker", PRIVILEGED)]);
+    }
+    let facts = rootless::Facts::read(env.get("PATH"), env.get("USER"));
+    let failed = rootless::failures(&facts, true);
+    if !failed.is_empty() {
+        return Err(Check::fail("docker", rootless::report(&failed), ""));
+    }
+    let mut checks = vec![
+        Check::ok("docker", rootless::notice(&facts.user)),
+        Check::ok("docker", IMAGES),
+    ];
+    checks.extend(
+        rootless::warnings(&facts)
+            .into_iter()
+            .map(|w| Check::warn(w.check, w.detail, w.fix)),
+    );
+    Ok(checks)
 }
 
 /// The trimmed stdout of `docker args`, else why it failed.

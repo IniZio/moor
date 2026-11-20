@@ -7,7 +7,7 @@
     reason = "tests assert on fixed fixtures"
 )]
 
-use super::args::{agent_run, gid_of, work_memory_mib, work_run};
+use super::args::{agent_run, gid_of, kvm_group, work_memory_mib, work_run};
 use super::cli::parse_ended;
 use super::names::Names;
 use super::{net, Images, Settings};
@@ -86,6 +86,13 @@ fn the_work_place_joins_the_group_of_a_hosts_kvm_device() {
     let n = Names::of(&slug());
     let w = work_run(&settings(), &slug(), &n, 4096, Some(994), &[]).join(" ");
     assert!(w.contains("--privileged --restart no -e MOOR_KVM_GID=994 --memory"));
+}
+
+#[test]
+fn rootless_docker_drops_the_kvm_group_so_the_work_place_gets_no_gid() {
+    assert_eq!(kvm_group(false, Some(994)), Some(994));
+    assert_eq!(kvm_group(true, Some(994)), None);
+    assert_eq!(kvm_group(false, None), None);
 }
 
 #[test]

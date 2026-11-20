@@ -506,3 +506,32 @@ fn up_with_allow_exec_pairs_a_machine_that_runs_scripts_and_hosts_no_boxes() {
     assert!(unit.contains("\"run\" \"--allow-exec\""), "{unit}");
     assert!(!unit.contains("--runtime"), "{unit}");
 }
+
+/// A `docker` of rootless Docker whose rootlesskit `up` cannot read, because the daemon is
+/// not at a Unix socket on this host.
+const ROOTLESS_DOCKER: &str = r#"#!/bin/sh
+case "$*" in
+  "info --format {{json .SecurityOptions}}") echo '["name=seccomp,profile=builtin","name=rootless"]' ;;
+  "context inspect --format {{.Endpoints.docker.Host}}") echo tcp://10.0.0.2:2375 ;;
+  *) echo 27.0.1 ;;
+esac
+"#;
+
+#[test]
+fn up_on_rootless_docker_that_is_not_ready_says_each_fix_before_pairing() {
+    let w = world();
+    let docker = w.home.path().join("bin/docker");
+    std::fs::write(&docker, ROOTLESS_DOCKER).unwrap();
+    let ran = w.up();
+    assert!(!ran.ok);
+    assert!(
+        ran.said.contains("rootless Docker is not ready"),
+        "{}",
+        ran.said
+    );
+    assert!(ran.said.contains("- loopback:"), "{}", ran.said);
+    assert!(ran.said.contains("fix: "), "{}", ran.said);
+    assert!(!ran.said.contains("privileged containers"), "{}", ran.said);
+    assert!(w.enrolled.lock().unwrap().is_empty());
+    assert!(!w.unit().exists());
+}

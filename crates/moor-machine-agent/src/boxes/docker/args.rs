@@ -72,6 +72,16 @@ pub(super) fn kvm_gid() -> Option<u32> {
     gid_of(std::path::Path::new(KVM))
 }
 
+/// The group the work place's init joins to open `/dev/kvm`. Rootless Docker drops the host's
+/// `kvm` group, so none helps there: the device must be open to everyone, which `up` checks.
+pub(super) const fn kvm_group(rootless: bool, device: Option<u32>) -> Option<u32> {
+    if rootless {
+        None
+    } else {
+        device
+    }
+}
+
 /// The group that owns `device`, when it exists.
 pub(super) fn gid_of(device: &std::path::Path) -> Option<u32> {
     use std::os::unix::fs::MetadataExt;

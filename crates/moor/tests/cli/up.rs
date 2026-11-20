@@ -475,3 +475,41 @@ fn a_rerun_after_an_up_that_failed_part_way_still_starts_the_gate() {
     let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
     assert!(service.contains("EnvironmentFile="), "{service}");
 }
+
+/// A `docker` of rootless Docker whose rootlesskit `up` cannot read, because the daemon is not
+/// at a Unix socket on this host.
+const ROOTLESS_DOCKER: &str = r#"#!/bin/sh
+case "$*" in
+  "info --format {{.ServerVersion}}") echo 29.10.0 ;;
+  "info --format {{json .SecurityOptions}}") echo '["name=seccomp,profile=builtin","name=rootless"]' ;;
+  "context inspect --format {{.Endpoints.docker.Host}}") echo tcp://10.0.0.2:2375 ;;
+  *) echo "fake docker: $*" >&2; exit 2 ;;
+esac
+"#;
+
+#[test]
+fn up_on_rootless_docker_that_is_not_ready_names_each_fix_and_writes_nothing() {
+    let host = Host::new();
+    write_executable(&host.bin.join("docker"), ROOTLESS_DOCKER).unwrap();
+    let run = host.moor(&["up"], "");
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    assert!(
+        run.stdout
+            .contains("rootless Docker is not ready for Boxes:"),
+        "{}",
+        run.stdout
+    );
+    assert!(run.stdout.contains("- loopback: "), "{}", run.stdout);
+    assert!(run.stdout.contains("; fix: "), "{}", run.stdout);
+    assert!(
+        !run.stdout.contains("a user who can run Docker is root"),
+        "{}",
+        run.stdout
+    );
+    assert!(host.written().iter().all(|(_, text)| text.is_empty()));
+    assert_eq!(
+        host.systemctl_log(),
+        "--user is-enabled docker\n",
+        "only a read"
+    );
+}
