@@ -46,6 +46,7 @@ case $(uname -m) in
   aarch64 | arm64) arch=aarch64 ;;
   *) fail "unsupported CPU $(uname -m); releases cover x86_64 and aarch64" ;;
 esac
+[ "$os-$arch" != apple-darwin-x86_64 ] || fail "moor has no Intel Mac build; use an Apple Silicon Mac or Linux"
 target=$arch-$os
 
 if [ -z "$version" ]; then

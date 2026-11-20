@@ -35,11 +35,12 @@ static SIGNER: LazyLock<minisign::KeyPair> =
 
 fn target() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => "x86_64-unknown-linux-musl",
-        ("linux", "aarch64") => "aarch64-unknown-linux-musl",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        _ => "x86_64-apple-darwin",
+        ("linux", "x86_64") => Some("x86_64-unknown-linux-musl"),
+        ("linux", "aarch64") => Some("aarch64-unknown-linux-musl"),
+        ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        _ => None,
     }
+    .expect("no release is published for this host")
 }
 
 /// A copy of the agent binary in `dir`, which is what the test updates. `cp` writes it, since a

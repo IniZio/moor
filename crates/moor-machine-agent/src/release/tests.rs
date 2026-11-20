@@ -77,7 +77,10 @@ fn a_missing_asset_names_what_it_could_not_download() {
 #[test]
 fn only_published_targets_are_known() {
     assert_eq!(target("linux", "aarch64"), Ok("aarch64-unknown-linux-musl"));
-    assert_eq!(target("macos", "x86_64"), Ok("x86_64-apple-darwin"));
+    assert_eq!(
+        target("macos", "x86_64"),
+        Err("moor has no Intel Mac build; use an Apple Silicon Mac or Linux".to_owned())
+    );
     assert!(target("freebsd", "x86_64").unwrap_err().contains("freebsd"));
     assert!(target("linux", "riscv64").is_err());
 }
