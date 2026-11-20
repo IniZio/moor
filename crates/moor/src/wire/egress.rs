@@ -61,11 +61,7 @@ pub(crate) fn prepare_egress(env: Env) -> Result<Env, String> {
     };
     if let Some(socket) = route.socket() {
         replace(socket)?;
-        let host = match &route {
-            EgressRoute::Local { host, .. } => *host,
-            EgressRoute::Direct { .. } => None,
-        };
-        start(&env, &state, (socket, host))?;
+        start(&env, &state, (socket, route.bind()))?;
     }
     Ok(env)
 }
