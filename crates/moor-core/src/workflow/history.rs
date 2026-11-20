@@ -111,6 +111,12 @@ pub enum HistoryEntry {
         /// What ended it.
         cause: CancelCause,
     },
+    /// The pull request's close arrived and GitHub could not be read to confirm it, so the run
+    /// stays open. A note, not an end: it counts as no failed run.
+    CloseUnconfirmed {
+        /// What the read said.
+        detail: String,
+    },
     /// The run ended.
     Ended {
         /// The phase the run was in.
