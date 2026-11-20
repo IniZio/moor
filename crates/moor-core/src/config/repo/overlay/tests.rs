@@ -152,3 +152,21 @@ fn env_added_to_no_override_names_only_env() {
 fn env_is_not_added_to_an_override_the_repo_config_refuses() {
     assert!(with_env(Some("setp: [a]"), &pull_vars()).is_err());
 }
+
+#[test]
+fn env_values_that_look_like_numbers_or_words_come_back_unchanged() {
+    let over = "env: {A: '1.10', B: '007', C: 'true', D: 'null', E: '0x1F'}";
+    let text = with_env(Some(over), &pull_vars()).unwrap();
+    let got = RepoOverride::parse("t", &text)
+        .unwrap()
+        .over(RepoConfig::default());
+    for (k, v) in [
+        ("A", "1.10"),
+        ("B", "007"),
+        ("C", "true"),
+        ("D", "null"),
+        ("E", "0x1F"),
+    ] {
+        assert_eq!(got.env.get(k).map(String::as_str), Some(v), "{k} in {text}");
+    }
+}
