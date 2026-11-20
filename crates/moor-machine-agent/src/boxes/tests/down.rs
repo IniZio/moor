@@ -1,6 +1,65 @@
 //! A Box whose places are down while it is meant to run is listed down, saying how they ended.
 
 use super::*;
+use crate::boxes::provider::ProvideError;
+
+const LOST: &str = "the Docker daemon at unix:///run/user/1003/docker.sock is not answering: dial";
+
+async fn listed(rig: &Rig) -> Vec<moor_client::link::boxes::BoxReport> {
+    let list = BoxOp::List {
+        controller: ControllerId::parse("1a2b3c4d").unwrap(),
+    };
+    let BoxAnswer::Listed { boxes } = rig.one(&list).await else {
+        panic!("not listed");
+    };
+    boxes
+}
+
+#[tokio::test]
+async fn a_box_meant_to_run_is_listed_down_when_its_provider_lost_every_box() {
+    let rig = rig();
+    rig.opened().await;
+    rig.boxes
+        .provider
+        .fail_observe(ProvideError::Lost(LOST.to_owned()));
+    let boxes = listed(&rig).await;
+    assert_eq!(
+        (boxes[0].state.clone(), boxes[0].down.as_deref()),
+        (ReportState::Mending, Some(LOST))
+    );
+}
+
+#[tokio::test]
+async fn a_provider_that_cannot_look_is_not_a_box_that_is_down() {
+    let rig = rig();
+    rig.opened().await;
+    rig.boxes
+        .provider
+        .fail_observe(ProvideError::Failed("docker: slow".to_owned()));
+    let boxes = listed(&rig).await;
+    assert_eq!(
+        (boxes[0].state.clone(), boxes[0].down.clone()),
+        (ReportState::Mending, None)
+    );
+}
+
+#[tokio::test]
+async fn a_box_asleep_on_request_is_not_listed_down_when_its_provider_lost_every_box() {
+    let rig = rig();
+    rig.opened().await;
+    assert_eq!(
+        rig.one(&BoxOp::Sleep { slug: s(SLUG) }).await,
+        BoxAnswer::Done
+    );
+    rig.boxes
+        .provider
+        .fail_observe(ProvideError::Lost(LOST.to_owned()));
+    let boxes = listed(&rig).await;
+    assert_eq!(
+        (boxes[0].state.clone(), boxes[0].down.clone()),
+        (ReportState::Asleep, None)
+    );
+}
 
 #[tokio::test]
 async fn a_work_place_that_is_down_ends_exec_as_down_and_the_agent_place_runs_on() {

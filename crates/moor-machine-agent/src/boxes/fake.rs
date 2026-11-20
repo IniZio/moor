@@ -42,6 +42,8 @@ pub(crate) struct FakeProvider {
     gate: tokio::sync::RwLock<()>,
     /// How many opens go on now, and the most that ever went on at once.
     opening: (AtomicU32, AtomicU32),
+    /// What `observe` fails with, when a test set it.
+    unseen: Mutex<Option<ProvideError>>,
 }
 
 impl FakeProvider {
@@ -52,6 +54,7 @@ impl FakeProvider {
             boxes: Mutex::default(),
             gate: tokio::sync::RwLock::default(),
             opening: (AtomicU32::new(0), AtomicU32::new(0)),
+            unseen: Mutex::default(),
         }
     }
 
@@ -83,6 +86,12 @@ impl FakeProvider {
         if let Some(fake) = self.boxes().get_mut(slug) {
             fake.work_down = down;
         }
+    }
+
+    /// Has every later `observe` fail with `e`, as a Docker daemon that stopped answering does.
+    #[cfg(test)]
+    pub(crate) fn fail_observe(&self, e: ProvideError) {
+        *self.unseen.lock().unwrap_or_else(PoisonError::into_inner) = Some(e);
     }
 
     /// Makes `slug` hold `mib` of the host while it runs.
@@ -164,6 +173,14 @@ impl BoxProvider for FakeProvider {
     }
 
     async fn observe(&self) -> Result<Vec<Observed>, ProvideError> {
+        let unseen = self
+            .unseen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(e) = unseen {
+            return Err(e);
+        }
         let up = |on: bool| if on { PlaceState::Up } else { PlaceState::Down };
         Ok(self
             .boxes()

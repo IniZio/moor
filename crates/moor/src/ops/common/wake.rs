@@ -318,6 +318,9 @@ pub(crate) fn wake_box(
             )
         })?
         .id;
+    if let Some(row) = store.box_row(id)? {
+        crate::ops::common::reconcile::one(cx, store, &row);
+    }
     let _turn = cx.turn(id, Cmd::Wake)?;
     let reload = || {
         store.box_row(id)?.ok_or_else(|| {
