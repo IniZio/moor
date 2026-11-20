@@ -68,3 +68,12 @@ fn behind_the_head_a_wake_leaves_before_a_start_that_queued_first() {
     tick(&w, hv, with_free(4 * 1024), 0, 0);
     assert_eq!(states(&w, &[head, wake, start]), [Ready, Ready, Ready]);
 }
+
+#[test]
+fn a_repeated_start_of_a_queued_box_keeps_it_behind_the_head() {
+    let (w, _, head, _, _) = head_short_of_room(&[]);
+    let (later, _) = waits(&w, "later");
+    let again = start::run(&w.cx, &req("later")).unwrap();
+    assert!(again.queued);
+    assert_eq!(states(&w, &[head, later]), [Pending, Pending]);
+}

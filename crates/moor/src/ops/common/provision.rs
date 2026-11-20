@@ -80,8 +80,23 @@ pub(crate) fn reprovision(
         }
         return Ok(None);
     };
+    if entry == Entry::Waiting && behind_others(store, &row)? {
+        return Ok(Some(Provisioned::skipped()));
+    }
     let cfg = settings_of(cx, &row, flags)?;
     provision(cx, store, row.id, entry, &cfg).map(Some)
+}
+
+/// Whether Boxes wait ahead of `row` on its node. Those leave the queue first, so asking again
+/// for a Box queued behind them leaves it queued.
+fn behind_others(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    let Some(node) = store.box_spec(row.id)?.node else {
+        return Ok(false);
+    };
+    Ok(store
+        .pending_on(&node)?
+        .first()
+        .is_some_and(|head| *head != row.id))
 }
 
 /// Rebuilds the machine path from the workdir text stored on the Box row.
