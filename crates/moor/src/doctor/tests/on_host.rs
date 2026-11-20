@@ -56,31 +56,51 @@ fn egress_forward_fails_when_the_binary_needs_a_loader_and_passes_when_it_is_sta
     assert_eq!(rig.with(host::egress).status, Status::Ok);
 }
 
+const ROOTLESS_AT: &str = "unix:///run/user/1000/docker.sock";
+
 #[test]
-fn kvm_is_checked_only_beside_an_installed_node_and_fails_when_boxes_cannot_open_it() {
+fn kvm_is_checked_only_beside_an_installed_node_against_the_daemon_its_unit_names() {
     let dir = tempfile::tempdir().unwrap();
     let kvm = dir.path().join("kvm");
     fs::write(&kvm, "").unwrap();
-    mode(&kvm, 0o600);
+    mode(&kvm, 0o660);
     let config = dir.path().join("config");
     let rig = rig_with(&[
         ("XDG_CONFIG_HOME", config.to_str().unwrap()),
         ("MOOR_KVM_DEVICE", kvm.to_str().unwrap()),
     ]);
-    assert_eq!(rig.with(host::kvm), None, "no node installed here");
+    let asked = |env: &[(String, String)]| {
+        env.iter()
+            .any(|(k, v)| k == "DOCKER_HOST" && v == ROOTLESS_AT)
+    };
+    assert_eq!(
+        rig.with(|i| host::kvm_with(i, &asked)),
+        None,
+        "no node installed here"
+    );
     let units = config.join("systemd/user");
     fs::create_dir_all(&units).unwrap();
-    fs::write(units.join("moor-agent.service"), "").unwrap();
-    let c = rig.with(host::kvm).unwrap();
+    fs::write(units.join("moor-agent.service"), "[Service]\n").unwrap();
+    let rootful = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
+    assert_eq!(rootful.status, Status::Ok, "{rootful:?}");
+    fs::write(
+        units.join("moor-agent.service"),
+        format!("[Service]\nEnvironment=\"DOCKER_HOST={ROOTLESS_AT}\"\n"),
+    )
+    .unwrap();
+    let c = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
     assert_eq!(c.status, Status::Fail, "{c:?}");
     assert!(
-        c.detail
-            .starts_with(&format!("{} is mode 0600", kvm.display())),
+        c.detail.starts_with(&format!(
+            "{} is mode 0660, and rootless Docker",
+            kvm.display()
+        )),
         "{c:?}"
     );
     assert!(c.fix.contains("docs/rootless-docker.md#kvm"), "{c:?}");
     mode(&kvm, 0o666);
-    assert_eq!(rig.with(host::kvm).unwrap().status, Status::Ok);
+    let ok = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
+    assert_eq!(ok.status, Status::Ok);
 }
 
 #[test]

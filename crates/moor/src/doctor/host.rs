@@ -2,10 +2,11 @@
 
 use std::fs;
 use std::os::unix::fs::MetadataExt;
+use std::process::{Command, Stdio};
 
 use moor_client::{kvm, rootless};
 
-use super::{Check, Inputs};
+use super::{images, Check, Inputs};
 use crate::proxy::forwarder::elf;
 use crate::proxy::route;
 use crate::up::service;
@@ -19,18 +20,39 @@ pub(super) fn checks(i: &Inputs<'_>) -> Vec<Check> {
 
 /// Whether the Boxes of the node `moor up` installed here can open the KVM device every Box
 /// gets; none on a host with no such node.
-pub(super) fn kvm(i: &Inputs<'_>) -> Option<Check> {
-    let dir = service::unit_dir(i.env)?;
-    if !dir.join(service::AGENT).exists() {
-        return None;
-    }
+fn kvm(i: &Inputs<'_>) -> Option<Check> {
+    kvm_with(i, &daemon_is_rootless)
+}
+
+/// Whether the daemon some `docker` variables name is rootless Docker.
+pub(super) type Rootless = dyn Fn(&[(String, String)]) -> bool;
+
+/// [`kvm()`], where `rootless` says whether the daemon that the agent unit's `docker` variables
+/// name is rootless Docker.
+pub(super) fn kvm_with(i: &Inputs<'_>, rootless: &Rootless) -> Option<Check> {
+    let unit = fs::read_to_string(service::unit_dir(i.env)?.join(service::AGENT)).ok()?;
+    let docker_env: Vec<(String, String)> = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"]
+        .iter()
+        .filter_map(|n| Some(((*n).to_owned(), images::unit_var(&unit, n)?)))
+        .collect();
     let device = kvm::device(i.env.get(kvm::DEVICE_VAR));
     Some(
-        match kvm::refusal(rootless::detect(), device, kvm::mode_of(device)) {
+        match kvm::refusal(rootless(&docker_env), device, kvm::mode_of(device)) {
             Some(f) => Check::fail(f.check, f.detail, f.fix),
             None => Check::ok("kvm", format!("Boxes can open {device}")),
         },
     )
+}
+
+/// Whether the daemon `docker_env` points `docker` at is rootless Docker.
+fn daemon_is_rootless(docker_env: &[(String, String)]) -> bool {
+    Command::new("docker")
+        .args(rootless::SECURITY_ARGS)
+        .envs(docker_env.iter().map(|(k, v)| (k, v)))
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|o| rootless::is_rootless(&String::from_utf8_lossy(&o.stdout)))
 }
 
 /// The forwarder binary the controller delivers to each Box, when the Proxy runs on this host.

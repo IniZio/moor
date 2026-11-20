@@ -216,3 +216,6 @@ pub(crate) fn write(path: &Path, text: &str) -> Result<(), Check> {
     fs::write(&tmp, text).map_err(fail)?;
     fs::rename(&tmp, path).map_err(fail)
 }
+
+#[cfg(test)]
+mod tests;

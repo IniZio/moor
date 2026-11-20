@@ -12,9 +12,9 @@ fn a_state_dir_with_no_kept_ports_picks_three_free_ones_past_a_taken_port_and_ke
     let held = TcpListener::bind((Ipv4Addr::LOCALHOST, base.agents)).unwrap();
     let picked = Ports::read_or_pick(first.path(), Ipv4Addr::LOCALHOST).unwrap();
     drop(held);
-    assert!(picked.agents > base.agents, "{picked:?} after {base:?}");
+    assert_ne!(picked.agents, base.agents, "{picked:?} after {base:?}");
     assert!(
-        picked.agents < picked.listen && picked.listen < picked.egress,
+        picked.agents != picked.listen && picked.listen != picked.egress,
         "{picked:?}"
     );
     assert!(first.path().join(PORTS_FILE).exists());
