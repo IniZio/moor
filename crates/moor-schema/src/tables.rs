@@ -91,7 +91,7 @@ tables! {
         TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also, Config,
         Plan, Revision }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
-        RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger }
+        RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger, PullNumber, HeadSha }
     WorkflowRunHistory { Run, N, At, Entry }
     WorkflowSeq { Id, N }
     Repos { Repo, Config, Revision, EditedBy, EditedAt }

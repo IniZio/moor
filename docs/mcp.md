@@ -44,7 +44,7 @@ token's audience.
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
 | `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note` |
-| `run_workflow` | `name`; optional `expected_revision` |
+| `run_workflow` | `name`, with optional `expected_revision` and `pull` (`OWNER/NAME#NUMBER`) |
 | `get_repo_config` | `repo` |
 | `set_repo_config` | `repo`, `text`; optional `expected_revision` |
 | `get_node_settings` | `name` |

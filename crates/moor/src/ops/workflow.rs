@@ -13,8 +13,7 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    box_name, NewRun, Plan, RunEnd, RunState, RunTrigger, StepId, Workflow, WorkflowId,
-    WorkflowState,
+    box_name, NewRun, Plan, RunCause, RunEnd, RunState, StepId, Workflow, WorkflowId, WorkflowState,
 };
 use moor_core::{BoxId, BoxName, StartReq};
 
@@ -143,7 +142,7 @@ fn record(
         state,
         recorded_at: now,
         plan,
-        trigger: RunTrigger::Cron,
+        cause: RunCause::Cron,
     })
 }
 
@@ -163,9 +162,9 @@ fn prepare(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
-    (due_at, trigger): (Ts, RunTrigger),
+    (due_at, cause): (Ts, &RunCause),
 ) -> Result<Prepared, String> {
-    let name = box_name(w.id, w.name.as_str(), due_at, trigger).map_err(|e| e.to_string())?;
+    let name = box_name(w.id, w.name.as_str(), due_at, cause).map_err(|e| e.to_string())?;
     let (repo, also) = w.repos.split_first().ok_or("the workflow has no repo")?;
     let identity = store
         .identities(w.owner)
@@ -182,6 +181,7 @@ fn prepare(
     } else {
         w.prompt.clone()
     };
+    let (config, prompt) = pull::run_input(cause.subject(), w.config.clone(), prompt)?;
     Ok(Prepared {
         frozen: planned.then(|| w.plan.clone()),
         job: StartJob {
@@ -190,7 +190,7 @@ fn prepare(
             identity,
             repo: repo.clone(),
             also: also.to_vec(),
-            config: w.config.clone(),
+            config,
             due_at,
             name,
             prompt,
@@ -220,7 +220,7 @@ fn claim(
     (due_at, now): (Ts, Ts),
     launch: &dyn Fn(StartJob),
 ) -> Result<(), StoreError> {
-    match prepare(cx, store, w, (due_at, RunTrigger::Cron)) {
+    match prepare(cx, store, w, (due_at, &RunCause::Cron)) {
         Err(detail) => {
             let state = RunState::Done(RunEnd::Refused { detail });
             record(store, w, due_at, now, (state, None)).map(|_| ())
@@ -323,7 +323,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
         let workflow = store.workflow_by_id(run.workflow).ok().flatten();
         let found = workflow
             .as_ref()
-            .and_then(|w| box_name(w.id, w.name.as_str(), run.due_at, run.trigger).ok())
+            .and_then(|w| box_name(w.id, w.name.as_str(), run.due_at, &run.cause).ok())
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
         let now = cx.clock().now();
         let state = match (found, workflow) {
@@ -362,6 +362,7 @@ mod check;
 mod facts;
 mod now;
 mod previous;
+mod pull;
 mod report;
 mod settle;
 #[cfg(test)]

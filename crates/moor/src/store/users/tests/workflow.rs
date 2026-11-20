@@ -7,7 +7,7 @@ use moor_core::seam::clock::Clock as _;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    NewRun, Plan, RunEnd, RunOutcome, RunState, RunTrigger, StepId, TimeoutMinutes, WorkflowDef,
+    NewRun, Plan, RunCause, RunEnd, RunOutcome, RunState, StepId, TimeoutMinutes, WorkflowDef,
     WorkflowId, WorkflowName, WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 use moor_core::BoxId;
@@ -50,7 +50,7 @@ pub(super) fn run(workflow: WorkflowId, r: &str, due: i64, state: RunState) -> N
         state,
         recorded_at: Ts::from_millis(due + 5),
         plan: None,
-        trigger: RunTrigger::Cron,
+        cause: RunCause::Cron,
     }
 }
 
@@ -63,7 +63,7 @@ fn recorded(run: &WorkflowRun) -> NewRun {
         state: run.state.clone(),
         recorded_at: run.recorded_at,
         plan: None,
-        trigger: run.trigger,
+        cause: run.cause.clone(),
     }
 }
 

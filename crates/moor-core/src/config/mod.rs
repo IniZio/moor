@@ -15,8 +15,8 @@ pub use controller::{
     RemoteFront,
 };
 pub use repo::{
-    override_text, parse_repo, ProxyExtras, RepoBox, RepoCompose, RepoConfig, RepoMachine,
-    RepoOverride,
+    override_text, parse_repo, with_env, ProxyExtras, RepoBox, RepoCompose, RepoConfig,
+    RepoMachine, RepoOverride,
 };
 
 pub use user::{

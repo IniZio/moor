@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::name::ForgeRepo;
 use moor_core::request::WorkflowCmd;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{NewRun, RunTrigger, WorkflowName};
+use moor_core::workflow::{NewRun, RunCause, WorkflowName};
 use serde_json::{json, Value};
 
 use super::{add, add_req, cmd, daily, me, ok, runs};
@@ -83,7 +83,7 @@ fn the_runs_stream_filters_by_workflow_name_in_the_store_query() {
             state: skipped(),
             recorded_at: Ts::from_millis(due),
             plan: None,
-            trigger: RunTrigger::Cron,
+            cause: RunCause::Cron,
         };
         store.record_workflow_run(&run).unwrap();
     }

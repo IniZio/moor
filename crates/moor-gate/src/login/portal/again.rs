@@ -19,8 +19,9 @@ pub(super) fn names_a_run(name: &str) -> bool {
     !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// The workflow of the run that made `row`'s Box, when the Box has stopped working, the run is
-/// the workflow's latest and it went wrong; null otherwise. A later run has taken the place of an
+/// The workflow of the run that made `row`'s Box, with the run's pull request when it had one,
+/// when the Box has stopped working, the run is the workflow's latest and it went wrong; null
+/// otherwise. Run again fires that pull request at its current head. A later run has taken the place of an
 /// older one, so there is nothing to run again. Only a Box named like a run reads the workflows.
 pub(super) fn failed_run_of(gate: &Gate, session: &Session, row: Option<&Row>) -> Value {
     let Some(row) = row.filter(|r| names_a_run(&r.name)) else {
@@ -42,7 +43,12 @@ pub(super) fn failed_run_of(gate: &Gate, session: &Session, row: Option<&Row>) -
                 .last_run
                 .as_ref()
                 .filter(|r| r.box_name.as_deref() == name || r.planned_box.as_deref() == name)?;
-            workflows::went_wrong(run).then(|| json!({"name": w.name}))
+            workflows::went_wrong(run).then(|| {
+                run.pull.as_ref().map_or_else(
+                    || json!({"name": w.name}),
+                    |pull| json!({"name": w.name, "pull": pull}),
+                )
+            })
         })
         .unwrap_or(Value::Null)
 }

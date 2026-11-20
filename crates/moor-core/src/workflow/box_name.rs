@@ -1,6 +1,6 @@
 //! The name of the Box a workflow firing starts.
 
-use super::{RunTrigger, WorkflowId};
+use super::{RunCause, WorkflowId};
 use crate::name::{BoxName, NameError};
 use crate::seam::clock::Ts;
 
@@ -27,32 +27,43 @@ fn slug(text: &str, max: usize) -> String {
     }
 }
 
-/// The Box name for workflow `id`, called `workflow`, firing at `due_at`.
+/// The Box name for workflow `id`, called `workflow`, firing at `due_at` for `cause`.
 ///
 /// It is `<workflow>/w<id>-<due as UTC yyyymmddhhmm>`, the workflow name cut to fit. The id and
 /// the due time keep it unique per firing, and no repo is in it, so editing the workflow's repos
 /// never changes the name of a run already claimed. A manual firing takes the clock to the second
 /// and an `m` before it, so it never shares a name with a cron firing due in the same minute.
 ///
+/// A run for a pull request names it in place of the due time: `w<id>-pr<number>-<first 7 of the
+/// head SHA>`. That is unique per pull request and head, as the claim is. A manual run for a pull
+/// request adds its `m` stamp after, so Run again at an unchanged head never meets the name of an
+/// earlier run's Box, which stays open after its run ends.
+///
 /// # Errors
-/// [`NameError`] when `due_at` is outside the years the clock can print.
+/// [`NameError`] when `due_at` is outside the years the clock can print, or the name is too long.
 pub fn box_name(
     id: WorkflowId,
     workflow: &str,
     due_at: Ts,
-    trigger: RunTrigger,
+    cause: &RunCause,
 ) -> Result<BoxName, NameError> {
     let invalid = || NameError::BoxName(format!("{workflow}@{}", due_at.as_millis()));
-    let (prefix, format) = match trigger {
-        RunTrigger::Cron => ("", "%Y%m%d%H%M"),
-        RunTrigger::Manual => ("m", "%Y%m%d%H%M%S"),
+    let stamp = |format: &str| -> Result<String, NameError> {
+        Ok(jiff::Timestamp::from_millisecond(due_at.as_millis())
+            .map_err(|_| invalid())?
+            .strftime(format)
+            .to_string())
     };
-    let stamp = jiff::Timestamp::from_millisecond(due_at.as_millis())
-        .map_err(|_| invalid())?
-        .strftime(format)
-        .to_string();
-    BoxName::parse(&format!(
-        "{}/w{id}-{prefix}{stamp}",
-        slug(workflow, PART_MAX)
-    ))
+    let label = match cause {
+        RunCause::Cron => stamp("%Y%m%d%H%M")?,
+        RunCause::Manual { pull: None } => format!("m{}", stamp("%Y%m%d%H%M%S")?),
+        RunCause::Manual { pull: Some(pull) } => format!(
+            "pr{}-{}-m{}",
+            pull.number,
+            pull.head_sha.short(),
+            stamp("%Y%m%d%H%M%S")?
+        ),
+        RunCause::PullRequest { pull } => format!("pr{}-{}", pull.number, pull.head_sha.short()),
+    };
+    BoxName::parse(&format!("{}/w{id}-{label}", slug(workflow, PART_MAX)))
 }

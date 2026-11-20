@@ -3,7 +3,7 @@
 use moor_core::request::CloseReq;
 use moor_core::seam::clock::Ts;
 use moor_core::view::workflow::RunNowValue;
-use moor_core::workflow::{NewRun, RunState, RunTrigger, WorkflowId};
+use moor_core::workflow::{NewRun, RunCause, RunState, RunTrigger, WorkflowId};
 
 use super::{repo, rig, Rig, DAY, FIRST_DUE};
 use crate::ops::workflow::now::run_with;
@@ -12,7 +12,7 @@ use crate::testing::cx::REQUESTER_USER;
 use crate::testing::runs::{delivered, refused, running, skipped};
 
 /// Records a run of the repo as the tick or a person would, never starting a Box.
-fn record_run(r: &Rig, id: WorkflowId, due: i64, (state, trigger): (RunState, RunTrigger)) {
+fn record_run(r: &Rig, id: WorkflowId, due: i64, (state, cause): (RunState, RunCause)) {
     let run = NewRun {
         workflow: id,
         repo: repo(),
@@ -20,7 +20,7 @@ fn record_run(r: &Rig, id: WorkflowId, due: i64, (state, trigger): (RunState, Ru
         state,
         recorded_at: Ts::from_millis(due),
         plan: None,
-        trigger,
+        cause,
     };
     assert!(r.cx.store().unwrap().record_workflow_run(&run).unwrap());
 }
@@ -35,8 +35,8 @@ fn fire(r: &Rig) -> Result<RunNowValue, String> {
         &r.cx,
         r.cx.store().unwrap(),
         REQUESTER_USER,
-        ("daily-fix", None),
-        &start,
+        ("daily-fix", None, None),
+        (&|_| unreachable!("no pull request is named"), &start),
     )
     .map_err(|e| e.error.to_string())
 }
@@ -54,7 +54,7 @@ fn a_manual_run_starts_a_box_named_to_the_second_and_records_its_trigger() {
         Some("daily-fix/w1-m19700101000005")
     );
     let run = r.latest(id);
-    assert_eq!(run.trigger, RunTrigger::Manual);
+    assert_eq!(run.cause.trigger(), RunTrigger::Manual);
     assert_eq!(run.due_at, Ts::from_millis(5_000));
     assert!(
         matches!(run.state, RunState::Running { .. }),
@@ -92,9 +92,12 @@ fn an_open_cron_run_that_was_recorded_after_a_manual_one_still_blocks() {
         &r,
         id,
         FIRST_DUE + 500,
-        (delivered(7, FIRST_DUE + 600), RunTrigger::Manual),
+        (
+            delivered(7, FIRST_DUE + 600),
+            RunCause::Manual { pull: None },
+        ),
     );
-    record_run(&r, id, FIRST_DUE, (running(8), RunTrigger::Cron));
+    record_run(&r, id, FIRST_DUE, (running(8), RunCause::Cron));
     r.advance_to(FIRST_DUE + 1_000);
     let line = fire(&r).unwrap();
     assert_eq!(line.status, "refused", "{line:?}");
@@ -110,14 +113,17 @@ fn a_manual_run_leaves_a_missed_due_time_to_fire() {
         &r,
         id,
         FIRST_DUE + 500,
-        (delivered(7, FIRST_DUE + 600), RunTrigger::Manual),
+        (
+            delivered(7, FIRST_DUE + 600),
+            RunCause::Manual { pull: None },
+        ),
     );
     r.advance_to(FIRST_DUE + 1_000);
     assert!(r.pass().is_empty());
     let cron: Vec<_> = r
         .runs(id)
         .into_iter()
-        .filter(|run| run.trigger == RunTrigger::Cron)
+        .filter(|run| run.cause.trigger() == RunTrigger::Cron)
         .collect();
     assert_eq!(
         cron.len(),
@@ -139,7 +145,7 @@ fn a_cron_run_due_while_a_manual_run_is_open_is_skipped() {
     r.advance_to(FIRST_DUE + 1_000);
     r.pass();
     let run = r.latest(id);
-    assert_eq!(run.trigger, RunTrigger::Cron);
+    assert_eq!(run.cause.trigger(), RunTrigger::Cron);
     assert_eq!(run.state, skipped());
     assert_eq!(r.open_boxes(), 1, "no second Box");
 }
@@ -153,7 +159,7 @@ fn a_stale_revision_is_refused() {
         &r.cx,
         r.cx.store().unwrap(),
         REQUESTER_USER,
-        ("daily-fix", Some(99)),
+        ("daily-fix", Some(99), None),
     )
     .unwrap_err();
     assert!(stale.error.to_string().contains("revision"), "{stale:?}");
@@ -203,7 +209,7 @@ fn a_manual_firing_of_a_disabled_workflow_runs() {
 fn skips_between_failures_do_not_hide_the_breaker_streak() {
     let r = rig();
     let id = r.put(180);
-    let record = |due: i64, state: RunState| record_run(&r, id, due, (state, RunTrigger::Cron));
+    let record = |due: i64, state: RunState| record_run(&r, id, due, (state, RunCause::Cron));
     record(FIRST_DUE, refused("no"));
     record(FIRST_DUE + DAY, refused("no"));
     for day in 2..30 {
@@ -231,7 +237,12 @@ fn a_manual_run_answers_while_its_box_is_still_setting_up() {
     let (answer, answered) = mpsc::channel();
     let worker = std::thread::spawn(move || {
         let store = r.cx.store().unwrap();
-        let _ = answer.send(run_now(&r.cx, store, REQUESTER_USER, ("daily-fix", None)));
+        let _ = answer.send(run_now(
+            &r.cx,
+            store,
+            REQUESTER_USER,
+            ("daily-fix", None, None),
+        ));
         r
     });
     let got = answered.recv_timeout(Duration::from_secs(5));

@@ -92,6 +92,12 @@ pub enum HistoryEntry {
     },
     /// No Box was started, because the previous run's Box was still open.
     Skipped,
+    /// No Box was started, because the pull request came from a fork whose author lacks write
+    /// access to the base repo.
+    SkippedFork {
+        /// The author's GitHub login.
+        author: String,
+    },
     /// The start was refused, or no agent could run in the Box.
     Refused {
         /// The phase the run was in.
@@ -122,6 +128,9 @@ impl HistoryEntry {
                 }
             }
             RunState::Done(RunEnd::SkippedOverlap) => Self::Skipped,
+            RunState::Done(RunEnd::SkippedFork { author }) => Self::SkippedFork {
+                author: author.clone(),
+            },
             RunState::Done(RunEnd::Refused { detail }) => Self::Refused {
                 phase_before: from,
                 detail: detail.clone(),

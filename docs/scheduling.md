@@ -38,7 +38,8 @@ hold, less the file cache the kernel takes back first.
 moor keeps 1 GiB of headroom above that use for each measured Box, so the Box
 has room to grow. The headroom never goes past the Box's ceiling.
 
-The reserve is 4096 MiB plus a tenth of the host's memory. It has no setting. A node whose agent reports
+The reserve is 4096 MiB plus a tenth of the host's memory. It has no setting.
+A node whose agent reports
 no memory admits by Box count alone. A shared node always does.
 
 ## Waiting and making room

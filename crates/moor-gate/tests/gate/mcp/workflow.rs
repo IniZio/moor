@@ -69,6 +69,29 @@ fn the_other_workflow_tools_send_their_requests() {
 }
 
 #[test]
+fn run_workflow_sends_its_pull_request_and_refuses_one_it_cannot_read() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let bad = m.call(
+        &token,
+        "run_workflow",
+        json!({"name": "daily-fix", "pull": "acme/web"}),
+    );
+    assert_eq!(bad["isError"], true, "{bad}");
+    assert!(m.requests().is_empty(), "nothing reaches the controller");
+    let result = m.call(
+        &token,
+        "run_workflow",
+        json!({"name": "daily-fix", "pull": "acme/web#65"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    assert_eq!(
+        m.requests()[0]["request"]["request"],
+        json!({"cmd": "workflow-run-now", "name": "daily-fix", "pull": "acme/web#65"})
+    );
+}
+
+#[test]
 fn a_read_token_reads_but_cannot_change_workflows() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read");

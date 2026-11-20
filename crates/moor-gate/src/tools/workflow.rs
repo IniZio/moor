@@ -6,7 +6,7 @@ use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
     WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
-use moor_core::workflow::{Answer, PlanDoc};
+use moor_core::workflow::{Answer, PlanDoc, PullTarget};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -102,6 +102,9 @@ struct RunNowArgs {
     /// The `revision` `list_workflows` showed for the workflow. The call is refused when the
     /// workflow has changed since, so the run tries the plan you reviewed.
     expected_revision: Option<u64>,
+    /// A pull request on the workflow's first repo, `OWNER/NAME#NUMBER`, to run for at its
+    /// current head. Needs a GitHub App in the controller config.
+    pull: Option<String>,
 }
 
 /// Arguments of `list_workflow_runs`.
@@ -290,7 +293,12 @@ impl Tools {
                        manual run that fails does not count toward the three failed runs that \
                        disable a workflow, and one that delivers resets that count. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \
-                       you reviewed. The reply says `started` with the Box name, or \
+                       you reviewed. Pass `pull`, such as `owner/name#12`, to run for that pull \
+                       request of the workflow's first repo at its current head, which moor \
+                       reads as the controller's GitHub App; without an App it is refused. The \
+                       Box then gets MOOR_PULL_REPO, MOOR_PULL_NUMBER, MOOR_PULL_HEAD_SHA and \
+                       MOOR_PULL_URL in its env, and its name carries the pull request. \
+                       The reply says `started` with the Box name, or \
                        `refused` with the reason. It returns once the run is \
                        recorded and its Box start has begun, while setup continues; follow \
                        the Box with box_status and the run with list_workflow_runs, where a \
@@ -302,12 +310,21 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunNowArgs>,
     ) -> CallToolResult {
-        let request = ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
-            identity: None,
-            name: args.name,
-            expected_revision: args.expected_revision,
+        let pull = args
+            .pull
+            .as_deref()
+            .map(PullTarget::parse)
+            .transpose()
+            .map_err(|e| e.to_string());
+        let request = pull.map(|pull| {
+            ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
+                identity: None,
+                name: args.name,
+                expected_revision: args.expected_revision,
+                pull,
+            })
         });
-        self.run(&context, WRITE, Ok(request), Reply::AsIs).await
+        self.run(&context, WRITE, request, Reply::AsIs).await
     }
 
     /// Reads changes to the caller's workflow runs.

@@ -237,16 +237,26 @@ The agent calls `add_workflow` with these values.
 
 Other tools:
 
-- `run_workflow(name, expected_revision)` is Run now. The reply says
+- `run_workflow(name, expected_revision, pull)` is Run now. The reply says
   `started` with the Box name, or `refused` with the reason.
+- `pull`, optional, is a pull request on the workflow's first repo, such as
+  `owner/name#12`. The run is for that pull request at its current head, which
+  moor reads as the controller's [GitHub App](config.md#github_app). Without an
+  App the call is refused with `no GitHub App configured`. The Box gets
+  `MOOR_PULL_REPO`, `MOOR_PULL_NUMBER`, `MOOR_PULL_HEAD_SHA` and
+  `MOOR_PULL_URL` in its env, and its prompt opens with a line naming the pull
+  request. Run again on such a run fires the same pull request at its current
+  head.
 - `answer_run(workflow, answer, note)` answers an approve step.
 - `list_workflows` shows each workflow, its next due time, its plan and its
   latest run. `list_workflow_runs` lists each change oldest first, with an
-  outcome and a `trigger` of `cron` or `manual`.
+  outcome, a `trigger` of `cron` or `manual`, and the `pull` and `head_sha` of
+  a run for a pull request.
 - `set_workflow_enabled` and `remove_workflow` pause and remove.
 
 A cron run's Box is named `<workflow>/w<id>-<due time>`, and a run by hand
-`<workflow>/w<id>-m<UTC time to the second>`.
+`<workflow>/w<id>-m<UTC time to the second>`. A run by hand for a pull request
+is `<workflow>/w<id>-pr<number>-<first 7 of the head SHA>-m<UTC time to the second>`.
 
 ## Move a workflow from `also`
 

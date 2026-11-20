@@ -50,6 +50,7 @@ mod workflow_also;
 mod workflow_changes;
 mod workflow_plans;
 mod workflow_repo_set;
+mod workflow_run_pull;
 mod workflow_run_trigger;
 mod workflows;
 
@@ -104,4 +105,5 @@ pub const STEPS: &[Step] = &[
     step("V90__user_inbox", user_inbox::write),
     step("V91__workflow_repo_set", workflow_repo_set::write),
     step("V92__box_base_ref", box_base_ref::write),
+    step("V93__workflow_run_pull", workflow_run_pull::write),
 ];

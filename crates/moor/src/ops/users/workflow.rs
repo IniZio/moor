@@ -60,11 +60,12 @@ pub(super) fn run(
         WorkflowCmd::RunNow {
             name,
             expected_revision,
+            pull,
         } => to_value(&crate::ops::workflow::run_now(
             cx,
             store,
             user,
-            (name, *expected_revision),
+            (name, *expected_revision, pull.as_ref()),
         )?),
         WorkflowCmd::Runs {
             after,

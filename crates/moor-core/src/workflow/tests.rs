@@ -193,7 +193,7 @@ fn named(id: i64, workflow: &str, due: i64) -> String {
         super::WorkflowId::new(id),
         workflow,
         Ts::from_millis(due),
-        super::RunTrigger::Cron,
+        &super::RunCause::Cron,
     )
     .unwrap()
     .as_str()

@@ -248,6 +248,7 @@ pub struct Workflow {
 }
 
 mod box_name;
+mod cause;
 mod history;
 mod plan;
 #[cfg(test)]
@@ -261,6 +262,7 @@ mod schedule;
 mod tests;
 
 pub use box_name::box_name;
+pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
 pub use history::HistoryEntry;
 pub use plan::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt,
@@ -270,7 +272,9 @@ pub use plan::{
 pub use report::{
     Answer, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,
 };
-pub use run::{NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, WorkflowRun};
+pub use run::{
+    CancelCause, NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, WorkflowRun,
+};
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 
 /// One entry of a user's change stream, ordered by `seq` across runs and workflows.
@@ -290,7 +294,7 @@ pub struct WorkflowChange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChangeKind {
     /// A run was recorded or moved to its next outcome.
-    Run(WorkflowRun),
+    Run(Box<WorkflowRun>),
     /// The controller disabled the workflow for this reason.
     Disabled {
         /// Why.

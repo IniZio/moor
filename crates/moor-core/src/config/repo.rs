@@ -9,7 +9,7 @@ use super::{check, parse_strict, BoxSize, ConfigError};
 use crate::cache::CacheConfig;
 
 pub use machine::RepoMachine;
-pub use overlay::{override_text, RepoOverride};
+pub use overlay::{override_text, with_env, RepoOverride};
 
 mod machine;
 mod overlay;
