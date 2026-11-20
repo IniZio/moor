@@ -194,9 +194,10 @@ Nothing is copied from the system daemon.
 
 ## Open questions
 
-- **Speed.** One run measured exec at 7.8 s against 0.1 s under rootful Docker, and wake
-  at 6.2 s against 2 s. Start took 14.1 s, sleep 8.0 s, close 4.6 s. Nobody has found
-  the cause. Find it before the mode ships, because exec at 7.8 s is not usable.
+- **Speed.** Settled, not rootless. Paired smokes on rootful and rootless Docker gave the
+  same phases (exec 1.3 s and 1.4 s, wake about 6 s on both). The slow first exec shows on
+  both. Each `box-shell` call costs about 1 s on both, because its watcher's `sleep 1`
+  keeps ssh's stdout open after the command ends. That is a separate `box-shell` fix.
 - **Socket mount as the next step.** Mounting the socket also closes the shared port
   under rootful Docker, and `MOOR_EGRESS_LISTEN` and the relay could then both go. Is
   that worth a change to the forwarder and to the socket's mode?
