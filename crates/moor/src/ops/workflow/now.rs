@@ -145,9 +145,9 @@ fn fire(
                 ),
             ))
         }
-        ManualClaim::Recorded => {
+        ManualClaim::Recorded(run) => {
             let name = job.name.as_str().to_owned();
-            start(job)?;
+            start(job.claimed(run))?;
             Ok(RunNowValue {
                 workflow: w.name.to_string(),
                 status: "started".to_owned(),
@@ -162,8 +162,8 @@ fn fire(
 fn spawn_start(cx: &Cx, job: StartJob) -> Result<(), CommandError> {
     let owner = cx
         .detached()?
-        .with_requester(job.identity.clone())
-        .with_viewer(Viewer::User(job.owner));
+        .with_requester(job.firing.identity.clone())
+        .with_viewer(Viewer::User(job.firing.owner));
     thread::spawn(move || {
         crate::cx::owners::checked(|| {
             run_start(&owner, &job);

@@ -52,18 +52,18 @@ pub(super) fn close_previous(
     new_box: BoxId,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    let runs = match store.recent_workflow_runs(job.workflow, LOOKBACK) {
+    let runs = match store.recent_workflow_runs(job.firing.workflow, LOOKBACK) {
         Ok(runs) => runs,
         Err(e) => {
             return vec![format!(
                 "could not list the earlier runs of {}: {e}",
-                job.repo
+                job.firing.repo
             )]
         }
     };
     // The Boxes of the runs between this one and the one being looked at, newest first.
     let mut newer = Vec::new();
-    for run in runs.into_iter().filter(|r| r.due_at < job.due_at) {
+    for run in runs.into_iter().filter(|r| r.due_at < job.firing.due_at) {
         let Some(id) = run.state.box_id().filter(|id| *id != new_box) else {
             continue;
         };

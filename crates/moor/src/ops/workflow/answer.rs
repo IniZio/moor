@@ -7,13 +7,12 @@
 //! reminds the agent of it. A steer to an asleep Box wakes it.
 
 use moor_core::decide::workflow::{answer_move, Move};
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
 use moor_core::workflow::{
-    Answer, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
-    WorkflowName, WorkflowRun, NOTE_MAX,
+    Answer, HistoryEntry, Plan, RunId, RunOutcome, RunState, Step, StepId, StepKind, WorkflowName,
+    WorkflowRun, NOTE_MAX,
 };
 use moor_core::{BoxId, ErrorKind};
 
@@ -51,8 +50,6 @@ struct Asked<'a> {
     cx: &'a Cx,
     /// The store.
     store: &'a Store,
-    /// The workflow.
-    w: &'a Workflow,
     /// The run.
     run: &'a WorkflowRun,
     /// The run's Box.
@@ -123,7 +120,6 @@ pub(crate) fn run(
     let asked = Asked {
         cx,
         store,
-        w: &w,
         run: &run,
         box_id,
         at: (&at, try_n),
@@ -141,8 +137,8 @@ pub(crate) fn run(
 
 impl Asked<'_> {
     /// The run's key.
-    const fn key(&self) -> (moor_core::workflow::WorkflowId, &ForgeRepo, Ts) {
-        (self.w.id, &self.run.repo, self.run.due_at)
+    const fn key(&self) -> RunId {
+        self.run.id
     }
 
     /// The line for the answer itself.

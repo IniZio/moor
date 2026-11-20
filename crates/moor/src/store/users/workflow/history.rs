@@ -1,30 +1,13 @@
 //! The history of a run: lines only appended, each in the transaction of the move it records.
 
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{HistoryEntry, RunId, WorkflowId};
-use moor_schema::tables::{WorkflowRunHistory, WorkflowRuns};
+use moor_core::workflow::{HistoryEntry, RunId};
+use moor_schema::tables::WorkflowRunHistory;
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::corrupt;
 use crate::store::db::{self, Db, DbExt as _};
 use crate::store::{Store, StoreError};
-
-/// The id of the run of `workflow` and `repo` due at `due_at`, read in `tx`.
-pub(super) fn run_id(
-    tx: &dyn Db,
-    (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
-) -> Result<i64, StoreError> {
-    Ok(tx.row(
-        Query::select()
-            .column(WorkflowRuns::Id)
-            .from(WorkflowRuns::Table)
-            .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-            .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-            .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis())),
-        |r| r.get(0),
-    )?)
-}
 
 /// Appends `entry` at `at` to the history of run `run`, as the line after its last.
 pub(super) fn append_history(

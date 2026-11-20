@@ -1,8 +1,25 @@
 //! Run states for tests, as the tick records them for a workflow nobody planned.
 
+use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{Plan, RunEnd, RunOutcome, RunState};
+use moor_core::workflow::{Plan, RunEnd, RunId, RunOutcome, RunState, WorkflowId};
 use moor_core::BoxId;
+
+use crate::store::Store;
+
+/// The id of the run of `workflow` and `repo` due at `due_at`; panics when there is none.
+pub(crate) fn run_at(
+    store: &Store,
+    (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
+) -> RunId {
+    store
+        .recent_workflow_runs(workflow, 500)
+        .unwrap()
+        .into_iter()
+        .find(|r| &r.repo == repo && r.due_at == due_at)
+        .map(|r| r.id)
+        .expect("a run of that workflow, repo and due time")
+}
 
 /// A run at the one step of the single plan, in Box `box_id`.
 pub(crate) fn running(box_id: i64) -> RunState {

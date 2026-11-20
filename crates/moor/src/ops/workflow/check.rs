@@ -12,13 +12,11 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::name::ForgeRepo;
 use moor_core::request::BoxTarget;
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Pipes;
 use moor_core::view::ExecView;
-use moor_core::workflow::{HistoryEntry, RunId, StepId, WorkflowId};
+use moor_core::workflow::{HistoryEntry, RunId, StepId};
 use moor_core::{BoxId, ExecReq};
 
 use crate::cx::Cx;
@@ -39,12 +37,8 @@ const NOT_RUN_EXIT: i32 = -2;
 
 /// A check to run: the step, the Box and the deadline.
 pub(crate) struct CheckJob {
-    /// The workflow.
-    pub(super) workflow: WorkflowId,
-    /// The repo.
-    pub(super) repo: ForgeRepo,
-    /// The due time of the run.
-    pub(super) due_at: Ts,
+    /// The run.
+    pub(super) run: RunId,
     /// The Box to run it in.
     pub(super) box_id: BoxId,
     /// The step and its try.
@@ -209,7 +203,7 @@ pub(crate) fn run_check(cx: &Cx, job: &CheckJob) -> Vec<String> {
         ));
     }
     let line = outcome_line(job, ran.as_ref().map(|v| *v), &tail);
-    let (from, key) = (&job.at, (job.workflow, &job.repo, job.due_at));
+    let (from, key) = (&job.at, job.run);
     let at = ((&from.0, from.1), (&from.0, from.1));
     if let Err(e) = store.step_workflow_run(key, at, (&[line], cx.clock().now())) {
         out.push(format!("workflow check {}: {e}", job.at.0));

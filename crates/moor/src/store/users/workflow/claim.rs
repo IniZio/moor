@@ -5,7 +5,8 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::workflow::{
-    HistoryEntry, NewRun, Plan, RunEnd, RunOutcome, RunPhase, RunState, WorkflowId, WorkflowRun,
+    HistoryEntry, NewRun, Plan, RunEnd, RunId, RunOutcome, RunPhase, RunState, WorkflowId,
+    WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::{BoxState, WorkflowRuns};
@@ -20,8 +21,8 @@ use crate::store::{Store, StoreError};
 /// What asking for a manual run came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ManualClaim {
-    /// The run is recorded.
-    Recorded,
+    /// The run is recorded, with this id.
+    Recorded(RunId),
     /// A run of the workflow is open, so nothing was recorded. It is that run.
     Open(Box<WorkflowRun>),
 }
@@ -31,8 +32,19 @@ impl Store {
     /// firing on its workflow, repo and due time, a pull request run on its pull request and head.
     /// A firing repeated after a crash then records once. The run's history opens with the line
     /// for its state.
+    #[cfg(test)]
     pub(crate) fn record_workflow_run(&self, run: &NewRun) -> Result<bool, StoreError> {
-        self.numbered(|tx, seq| insert(tx, seq, run))
+        Ok(self.claim_workflow_run(run)?.is_some())
+    }
+
+    /// Like [`Store::record_workflow_run`], giving the id of the run it recorded.
+    pub(crate) fn claim_workflow_run(&self, run: &NewRun) -> Result<Option<RunId>, StoreError> {
+        let mut id = None;
+        self.numbered(|tx, seq| {
+            id = insert(tx, seq, run)?;
+            Ok(usize::from(id.is_some()))
+        })?;
+        Ok(id)
     }
 
     /// Records a run its owner asked for, unless the workflow has a run open, which is looked for
@@ -41,22 +53,28 @@ impl Store {
     /// run, so the open run is the only thing that stops it.
     pub(crate) fn claim_manual_run(&self, run: &NewRun) -> Result<ManualClaim, StoreError> {
         let mut open = None;
+        let mut id = None;
         self.numbered(|tx, seq| {
             open = blocking(tx, run.workflow)?;
             if open.is_some() {
                 return Ok(0);
             }
-            insert(tx, seq, run)
+            id = insert(tx, seq, run)?;
+            Ok(usize::from(id.is_some()))
         })?;
-        Ok(open.map_or(ManualClaim::Recorded, |run| {
-            ManualClaim::Open(Box::new(run))
-        }))
+        match (open, id) {
+            (Some(run), _) => Ok(ManualClaim::Open(Box::new(run))),
+            (None, Some(id)) => Ok(ManualClaim::Recorded(id)),
+            (None, None) => Err(StoreError::Invalid(
+                "a manual run met a unique key it has no part in".to_owned(),
+            )),
+        }
     }
 }
 
-/// Inserts `run` and the first line of its history; the rows inserted, none when a unique key
-/// already holds it.
-fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
+/// Inserts `run` and the first line of its history; its id, none when a unique key already
+/// holds it.
+fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<Option<RunId>, StoreError> {
     let cols = state_cols(&run.state);
     let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
     let (pull_number, head_sha) = subject_cols(&run.cause);
@@ -109,11 +127,11 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
         .next()
         .transpose()?;
     let Some(id) = id else {
-        return Ok(0);
+        return Ok(None);
     };
     let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
     append_history(tx, id, run.recorded_at, &entry)?;
-    Ok(1)
+    Ok(Some(RunId::new(id)))
 }
 
 /// The run that keeps another of `workflow` from starting: one that is claimed, working or waiting,

@@ -351,7 +351,10 @@ fn the_stream_shows_a_run_again_each_time_it_moves_on() {
     assert_eq!(runs(&f, &who, Some(cursor), None)["changes"], json!([]));
 
     let store = f.cx.store().unwrap();
-    let key = (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(
+        f.cx.store().unwrap(),
+        (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100)),
+    );
     store
         .resolve_workflow_start(key, &running(9), Ts::from_millis(150))
         .unwrap();
@@ -386,7 +389,10 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
     daily(&f, &who);
     let id = record(&f, &who, RunState::Queued, 100);
     let store = f.cx.store().unwrap();
-    let key = (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(
+        f.cx.store().unwrap(),
+        (id, &ForgeRepo::new("o", "n"), Ts::from_millis(100)),
+    );
     store
         .resolve_workflow_start(key, &running(9), Ts::from_millis(150))
         .unwrap();

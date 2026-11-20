@@ -1,6 +1,6 @@
 //! The workflow tick decider: whether a workflow has a firing due.
 
-use crate::name::{BoxId, ForgeRepo};
+use crate::name::BoxId;
 use crate::seam::clock::Ts;
 use crate::workflow::{
     RunCause, RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
@@ -84,10 +84,8 @@ pub fn workflow_due(workflow: &Workflow, facts: &WorkflowFacts, now: Ts) -> Work
 /// A started run that has outlived its timeout, and the Box to stop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowExpiry {
-    /// The repo the run is for.
-    pub repo: ForgeRepo,
-    /// The due time the run answers.
-    pub due_at: Ts,
+    /// The run.
+    pub run: RunId,
     /// The Box to stop.
     pub box_id: BoxId,
     /// The step the run was at.
@@ -103,8 +101,8 @@ pub const START_LIMIT: std::time::Duration = std::time::Duration::from_hours(1);
 /// A run that did not start its agent within [`START_LIMIT`] of its claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartBreach {
-    /// The repo the run is for.
-    pub repo: ForgeRepo,
+    /// The run.
+    pub run: RunId,
     /// The due time the run answers.
     pub due_at: Ts,
     /// The Box the run recorded, none while it is still being started.
@@ -149,7 +147,7 @@ pub fn workflow_start_overdue(
                 _ => return None,
             };
             Some(StartBreach {
-                repo: run.repo.clone(),
+                run: run.id,
                 due_at: run.due_at,
                 box_id,
                 claimed_only,
@@ -183,8 +181,7 @@ pub fn workflow_expired(
                 }) =>
             {
                 Some(WorkflowExpiry {
-                    repo: run.repo.clone(),
-                    due_at: run.due_at,
+                    run: run.id,
                     box_id: *box_id,
                     at: at.clone(),
                     try_n: *try_n,

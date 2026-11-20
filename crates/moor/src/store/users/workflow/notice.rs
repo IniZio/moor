@@ -6,9 +6,8 @@
 //! move that changed nothing (a repeated tick, a restart, a lost race) writes nothing.
 
 use moor_core::domain::event::{Event, WorkflowEvent};
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{Plan, RunEnd, RunOutcome, RunState, StepKind, WorkflowId};
+use moor_core::workflow::{Plan, RunEnd, RunId, RunOutcome, RunState, StepKind, WorkflowId};
 use moor_core::BoxId;
 use moor_schema::tables::{Boxes, WorkflowRuns, Workflows};
 use sea_query::{Expr, ExprTrait as _, Query};
@@ -18,40 +17,42 @@ use crate::store::apply::insert_event;
 use crate::store::db::{Db, DbExt as _, OptionalExtension as _, Tx};
 use crate::store::StoreError;
 
-/// The Box and step a run held before a move, which a refusal drops from the row.
+/// The workflow and repo of a run, and the Box and step it held before a move, which a refusal
+/// drops from the row.
 pub(super) struct Held {
+    /// The workflow.
+    workflow: WorkflowId,
+    /// The repo column.
+    repo: String,
     /// The Box column.
     box_id: Option<i64>,
     /// The step column.
     step: Option<String>,
 }
 
-/// Reads what run `key` holds, before its move.
-pub(super) fn held(
-    tx: &dyn Db,
-    (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
-) -> Result<Held, StoreError> {
-    let row: Option<Held> = tx
+/// Reads what run `run` holds, before its move; none when there is no such run.
+pub(super) fn held(tx: &dyn Db, run: RunId) -> Result<Option<Held>, StoreError> {
+    Ok(tx
         .row(
             Query::select()
-                .column(WorkflowRuns::Box)
-                .column(WorkflowRuns::Step)
+                .columns([
+                    WorkflowRuns::Workflow,
+                    WorkflowRuns::Repo,
+                    WorkflowRuns::Box,
+                    WorkflowRuns::Step,
+                ])
                 .from(WorkflowRuns::Table)
-                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis())),
+                .and_where(Expr::col(WorkflowRuns::Id).eq(run.get())),
             |r| {
                 Ok(Held {
-                    box_id: r.get(0)?,
-                    step: r.get(1)?,
+                    workflow: WorkflowId::new(r.get(0)?),
+                    repo: r.get(1)?,
+                    box_id: r.get(2)?,
+                    step: r.get(3)?,
                 })
             },
         )
-        .optional()?;
-    Ok(row.unwrap_or(Held {
-        box_id: None,
-        step: None,
-    }))
+        .optional()?)
 }
 
 /// Writes the event for run `run`'s move to `to`, if it is one the owner hears of.
@@ -59,15 +60,15 @@ pub(super) fn held(
 /// A refusal before any Box was recorded has no Box to carry an event, so it writes none.
 pub(super) fn record(
     tx: &Tx<'_>,
-    (key, run): ((WorkflowId, &ForgeRepo), i64),
+    run: RunId,
     held: &Held,
     to: &RunState,
     at: Ts,
 ) -> Result<(), StoreError> {
-    let (workflow, repo) = key;
-    let (name, prompt) = workflow_of(tx, workflow)?;
+    let (name, prompt) = workflow_of(tx, held.workflow)?;
+    let run = run.get();
     let link = format!("/workflows/{name}/runs/{run}");
-    let repo = repo.to_string();
+    let repo = held.repo.clone();
     let (box_id, event) = match to {
         RunState::Waiting {
             box_id, at: step, ..

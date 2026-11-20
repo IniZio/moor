@@ -43,7 +43,10 @@ fn a_workflow_added_disabled_never_fires_on_a_due_cron_until_it_is_enabled() {
     let claimed = RefCell::new(Vec::new());
     tick(
         &f.cx,
-        (&|job| claimed.borrow_mut().push(job.workflow), &|_| {}),
+        (
+            &|job| claimed.borrow_mut().push(job.firing.workflow),
+            &|_| {},
+        ),
         &|| false,
     );
     let store = f.cx.store().unwrap();

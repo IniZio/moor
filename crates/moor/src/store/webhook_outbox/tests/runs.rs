@@ -130,7 +130,7 @@ fn an_incomplete_run_gets_exactly_one_delivery_however_often_the_move_repeats() 
     let (id, boxed) = w.workflow(alice, false);
     w.start(id, boxed, 100, None);
     assert_eq!(w.sent(), []);
-    let key = (id, &repo(), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let on = Plan::single_id();
     let end = || {
         let outcome = RunOutcome::Incomplete { at: on.clone() };
@@ -180,7 +180,7 @@ fn a_restart_after_the_move_does_not_send_it_again() {
     let id = first.put_workflow(alice, &def(false)).unwrap();
     let run = new_run(id, 100, running(boxed.get()), None);
     assert!(first.record_workflow_run(&run).unwrap());
-    let key = (id, &repo(), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&first, (id, &repo(), Ts::from_millis(100)));
     let on = Plan::single_id();
     let ended = (boxed, RunOutcome::TimedOut { at: on.clone() });
     let at = Ts::from_millis(900);
@@ -201,7 +201,7 @@ fn delivered_and_skipped_runs_send_nothing() {
     let (id, boxed) = w.workflow(alice, false);
     w.start(id, boxed, 100, None);
     let on = Plan::single_id();
-    let key = (id, &repo(), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let ok = RunOutcome::Delivered {
         result: "done".to_owned(),
     };
@@ -222,7 +222,7 @@ fn a_waiting_run_sends_one_delivery_with_its_question() {
     w.webhook(alice, EVENT_KINDS);
     let (id, boxed) = w.workflow(alice, true);
     w.start(id, boxed, 100, Some(plan()));
-    let key = (id, &repo(), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let (from, ask) = (Plan::single_id(), step("ask"));
     let wait = || {
         let at = Ts::from_millis(500);
@@ -253,12 +253,12 @@ fn a_refusal_names_the_step_it_held_and_a_run_without_a_box_sends_nothing() {
     let queued = new_run(id, 200, RunState::Queued, None);
     assert!(w.store.record_workflow_run(&queued).unwrap());
     let at = Ts::from_millis(900);
-    let one = (id, &repo(), Ts::from_millis(100));
+    let one = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     assert!(w
         .store
         .refuse_run(one, ("agent never started", false), at)
         .unwrap());
-    let two = (id, &repo(), Ts::from_millis(200));
+    let two = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(200)));
     assert!(w.store.refuse_run(two, ("no node", true), at).unwrap());
     let sent = w.sent();
     assert_eq!(sent.len(), 1, "{sent:?}");

@@ -13,7 +13,8 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    box_name, NewRun, Plan, RunCause, RunEnd, RunState, StepId, Workflow, WorkflowId, WorkflowState,
+    box_name, NewRun, Plan, RunCause, RunEnd, RunId, RunState, StepId, Workflow, WorkflowId,
+    WorkflowState,
 };
 use moor_core::{BoxId, BoxName, StartReq};
 
@@ -32,6 +33,15 @@ use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expi
 /// One claimed firing, ready to start a Box.
 #[derive(Debug, Clone)]
 pub(crate) struct StartJob {
+    /// The run the claim recorded.
+    pub(crate) run: RunId,
+    /// What to start.
+    pub(crate) firing: Firing,
+}
+
+/// A firing made ready to claim: the Box to start and what it is asked to do.
+#[derive(Debug, Clone)]
+pub(crate) struct Firing {
     /// The workflow.
     pub(crate) workflow: WorkflowId,
     /// Whose Box it is.
@@ -54,10 +64,10 @@ pub(crate) struct StartJob {
     pub(crate) first_step: StepId,
 }
 
-impl StartJob {
-    /// The claim's key.
-    const fn key(&self) -> (WorkflowId, &ForgeRepo, Ts) {
-        (self.workflow, &self.repo, self.due_at)
+impl Firing {
+    /// This firing as claimed by run `run`.
+    const fn claimed(self, run: RunId) -> StartJob {
+        StartJob { run, firing: self }
     }
 }
 
@@ -130,8 +140,8 @@ fn record(
     due_at: Ts,
     now: Ts,
     (state, plan): (RunState, Option<Plan>),
-) -> Result<bool, StoreError> {
-    store.record_workflow_run(&NewRun {
+) -> Result<Option<RunId>, StoreError> {
+    store.claim_workflow_run(&NewRun {
         workflow: w.id,
         repo: w
             .repos
@@ -148,8 +158,8 @@ fn record(
 
 /// A firing made ready to claim: the job that starts its Box, and the plan the run freezes.
 struct Prepared {
-    /// The job.
-    job: StartJob,
+    /// The firing.
+    job: Firing,
     /// The workflow's plan, when it was planned. A workflow nobody planned freezes none, and its
     /// Box gets the bare prompt as it always has.
     frozen: Option<Plan>,
@@ -184,7 +194,7 @@ fn prepare(
     let (config, prompt) = pull::run_input(cause.subject(), w.config.clone(), prompt)?;
     Ok(Prepared {
         frozen: planned.then(|| w.plan.clone()),
-        job: StartJob {
+        job: Firing {
             workflow: w.id,
             owner: w.owner,
             identity,
@@ -226,8 +236,8 @@ fn claim(
             record(store, w, due_at, now, (state, None)).map(|_| ())
         }
         Ok(Prepared { job, frozen }) => {
-            if record(store, w, due_at, now, (RunState::Queued, frozen))? {
-                launch(job);
+            if let Some(run) = record(store, w, due_at, now, (RunState::Queued, frozen))? {
+                launch(job.claimed(run));
             }
             Ok(())
         }
@@ -238,7 +248,7 @@ fn claim(
 /// uses, and settles the claim with its Box or its refusal. Returns what to log.
 pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     let state = match cx.store() {
-        Ok(store) => start_box(cx, store, job),
+        Ok(store) => start_box(cx, store, &job.firing),
         Err(e) => RunState::Done(RunEnd::Refused {
             detail: e.error.to_string(),
         }),
@@ -248,7 +258,7 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
         return cx.take_warnings().into_iter().map(|w| w.message).collect();
     }
     let settled = cx.store().map_err(|e| e.error.to_string()).and_then(|s| {
-        s.resolve_workflow_start(job.key(), &state, cx.clock().now())
+        s.resolve_workflow_start(job.run, &state, cx.clock().now())
             .map_err(|e| e.to_string())
     });
     let mut out: Vec<String> = cx.take_warnings().into_iter().map(|w| w.message).collect();
@@ -260,24 +270,24 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     }
     if matches!(settled, Ok(false)) {
         let late = cx.store().map_err(|e| e.error.to_string());
-        if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.name)) {
+        if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.firing.name)) {
             out.push(format!(
                 "could not close the late Box {}: {why}",
-                job.name.as_str()
+                job.firing.name.as_str()
             ));
         }
     }
     if let Err(e) = settled {
         out.push(format!(
             "could not record the start of {}: {e}",
-            job.name.as_str()
+            job.firing.name.as_str()
         ));
     }
     out
 }
 
 /// Starts the Box, or says why not.
-fn start_box(cx: &Cx, store: &Store, job: &StartJob) -> RunState {
+fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
     let refused = |detail: String| RunState::Done(RunEnd::Refused { detail });
     match store.open_box_by_name(&job.name) {
         Ok(Some(_)) => {
@@ -345,8 +355,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
                 detail: "the controller stopped before the Box started".to_owned(),
             }),
         };
-        let key = (run.workflow, &run.repo, run.due_at);
-        if let Err(e) = store.resolve_workflow_start(key, &state, now) {
+        if let Err(e) = store.resolve_workflow_start(run.id, &state, now) {
             out.push(format!(
                 "could not settle a claimed run of {}: {e}",
                 run.repo

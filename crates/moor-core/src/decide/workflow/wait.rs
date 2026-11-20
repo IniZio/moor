@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
-use crate::name::{BoxId, ForgeRepo};
+use crate::name::BoxId;
 use crate::seam::clock::Ts;
-use crate::workflow::{HistoryEntry, RunState, StepId, WorkflowRun};
+use crate::workflow::{HistoryEntry, RunId, RunState, StepId, WorkflowRun};
 
 /// How long a run waits for an answer before it ends declined.
 pub const WAIT_LIMIT: Duration = Duration::from_hours(24 * 7);
@@ -12,10 +12,8 @@ pub const WAIT_LIMIT: Duration = Duration::from_hours(24 * 7);
 /// A run that waited [`WAIT_LIMIT`] for an answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unanswered {
-    /// The repo the run is for.
-    pub repo: ForgeRepo,
-    /// The due time the run answers.
-    pub due_at: Ts,
+    /// The run.
+    pub run: RunId,
     /// The run's Box.
     pub box_id: BoxId,
     /// The approve step it waits at.
@@ -36,8 +34,7 @@ pub fn workflow_unanswered(open: &[WorkflowRun], now: Ts) -> Vec<Unanswered> {
                 try_n,
                 since,
             } if now.as_millis().saturating_sub(since.as_millis()) >= limit => Some(Unanswered {
-                repo: run.repo.clone(),
-                due_at: run.due_at,
+                run: run.id,
                 box_id: *box_id,
                 at: at.clone(),
                 try_n: *try_n,

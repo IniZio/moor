@@ -3,7 +3,7 @@
 use moor_core::decide::workflow::{run_verdict, RunVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{RunOutcome, StepId, Workflow, WorkflowRun};
+use moor_core::workflow::{RunOutcome, StepId, WorkflowRun};
 use moor_core::BoxId;
 
 use super::settle::{box_facts, broken_detail};
@@ -14,13 +14,12 @@ use crate::store::{Store, StoreError};
 /// work step. A Box that sleeps is what a wait wants, so any other Box leaves it be.
 pub(super) fn lose_waiting(
     store: &Store,
-    w: &Workflow,
     run: &WorkflowRun,
     (box_id, at, try_n): (BoxId, &StepId, u8),
     now: Ts,
 ) -> Result<(), StoreError> {
     let row = store.box_row(box_id)?;
-    let key = (w.id, &run.repo, run.due_at);
+    let key = run.id;
     if let Some(row) = &row {
         let facts = box_facts(store, row)?;
         if run_verdict(Some(&facts), now) == RunVerdict::Broken {

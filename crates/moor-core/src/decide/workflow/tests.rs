@@ -312,8 +312,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
     let at = |ms| workflow_expired(&w, &open, &agent, &|_, _| 0, ts(ms));
     assert!(at(DAY0 + 30 * 60_000 - 1).is_empty());
     let expiry = WorkflowExpiry {
-        repo: repo("a/b"),
-        due_at: ts(DAY0),
+        run: open[0].id,
         box_id: BoxId::new(7),
         at: step(),
         try_n: 1,

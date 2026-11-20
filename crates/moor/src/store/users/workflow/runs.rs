@@ -4,17 +4,16 @@
 //! still in the state it was read in, and the move's line is appended to the run's history in
 //! the same transaction, so a move repeated or raced by another tick changes nothing.
 
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    HistoryEntry, RunEnd, RunOutcome, RunPhase, RunState, RunTrigger, StepId, WorkflowId,
+    HistoryEntry, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, StepId, WorkflowId,
     WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
-use super::history::{append_history, run_id};
+use super::history::append_history;
 use super::notice;
 use super::row::{
     read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_FORK, SKIPPED_OVERLAP,
@@ -95,8 +94,8 @@ impl Store {
         })
     }
 
-    /// Moves the run of `workflow` and `repo` due at `due_at` from the phase `from` to `to` at
-    /// `at`, and appends the line for the move, when the run is still in `from`. False, with
+    /// Moves run `run` from the phase `from` to `to` at `at`, and appends the line for the
+    /// move, when the run is still in `from`. False, with
     /// nothing changed, otherwise, so whichever of two moves comes first wins.
     ///
     /// `guard` also requires a running or waiting run to be at exactly that step and try, and
@@ -105,14 +104,16 @@ impl Store {
     /// not written twice.
     pub(super) fn move_run(
         &self,
-        (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
+        run: RunId,
         (from, to): (Open, &RunState),
         (guard, lines, at, own): (Option<(&StepId, u8)>, &[HistoryEntry], Ts, bool),
     ) -> Result<bool, StoreError> {
         let cols = state_cols(to);
         let entry = HistoryEntry::moving(from.phase(), to);
         self.numbered(|tx, seq| {
-            let held = notice::held(tx, (workflow, repo, due_at))?;
+            let Some(held) = notice::held(tx, run)? else {
+                return Ok(0);
+            };
             let mut update = Query::update();
             update
                 .table(WorkflowRuns::Table)
@@ -125,9 +126,7 @@ impl Store {
                 .value(WorkflowRuns::WaitingSince, cols.waiting_since)
                 .value(WorkflowRuns::EndedStep, cols.ended_step.clone())
                 .value(WorkflowRuns::Seq, seq)
-                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                .and_where(Expr::col(WorkflowRuns::Id).eq(run.get()))
                 .and_where(Expr::col(WorkflowRuns::Outcome).eq(from.outcome()));
             if let Some((step, try_n)) = guard {
                 update
@@ -136,26 +135,25 @@ impl Store {
             }
             let changed = tx.run(&mut update)?;
             if changed == 1 {
-                let id = run_id(tx, (workflow, repo, due_at))?;
                 for line in lines {
-                    append_history(tx, id, at, line)?;
+                    append_history(tx, run.get(), at, line)?;
                 }
                 if own {
-                    append_history(tx, id, at, &entry)?;
+                    append_history(tx, run.get(), at, &entry)?;
                 }
-                notice::record(tx, ((workflow, repo), id), &held, to, at)?;
+                notice::record(tx, run, &held, to, at)?;
             }
             Ok(changed)
         })
     }
 
-    /// Ends the run of `workflow` and `repo` due at `due_at` with `outcome`, at `at`, appending
+    /// Ends run `run` with `outcome`, at `at`, appending
     /// `lines` first, when it is running at exactly step `on` and try `on.1`. False, with nothing
     /// changed, when there is no such run, it ended, or it moved to another step or try, so
     /// whichever of a finish, a report and an expiry comes first wins.
     pub(crate) fn end_workflow_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         on: (&StepId, u8),
         (box_id, outcome): (BoxId, RunOutcome),
         (lines, at): (&[HistoryEntry], Ts),
@@ -168,13 +166,13 @@ impl Store {
         self.move_run(key, (Open::Running, &to), (Some(on), lines, at, true))
     }
 
-    /// Refuses the run of `workflow` and `repo` due at `due_at` with `detail`, dropping its Box
+    /// Refuses run `run` with `detail`, dropping its Box
     /// from the run, when it is still in the state it was seen in: only claimed when
     /// `claimed_only`, else running. False, with nothing changed, otherwise, so a start that
     /// settled in the meantime keeps its outcome.
     pub(crate) fn refuse_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         (detail, claimed_only): (&str, bool),
         at: Ts,
     ) -> Result<bool, StoreError> {
@@ -189,11 +187,11 @@ impl Store {
         self.move_run(key, (from, &to), (None, &[], at, true))
     }
 
-    /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `state`, which is
+    /// Settles the claimed run `run` as `state`, which is
     /// Running or a refusal. False, with nothing changed, unless the run is still claimed.
     pub(crate) fn resolve_workflow_start(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         state: &RunState,
         at: Ts,
     ) -> Result<bool, StoreError> {

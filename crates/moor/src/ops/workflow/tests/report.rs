@@ -456,10 +456,7 @@ fn a_tick_that_ends_the_run_between_a_reports_read_and_move_leaves_no_report_beh
     assert!(!r.report(wid, ok("audit", "")).error);
     let before = r.trail(wid);
 
-    let key = {
-        let run = r.latest(wid);
-        (wid, run.repo.clone(), run.due_at)
-    };
+    let key = r.latest(wid).id;
     let box_id = r.latest_box(wid);
     super::super::report::tests_hook::once_after_standing(move |cx| {
         let outcome = RunOutcome::Incomplete { at: id("ship") };
@@ -467,7 +464,7 @@ fn a_tick_that_ends_the_run_between_a_reports_read_and_move_leaves_no_report_beh
             .store()
             .unwrap()
             .end_workflow_run(
-                (key.0, &key.1, key.2),
+                key,
                 (&id("ship"), 1),
                 (box_id, outcome),
                 (&[], cx.clock().now()),

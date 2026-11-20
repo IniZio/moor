@@ -22,7 +22,7 @@ fn two_claims(store: &crate::store::Store) -> (UserId, WorkflowId) {
         let claimed = run(id, r, 100, RunState::Queued);
         assert!(store.record_workflow_run(&claimed).unwrap());
     }
-    let two = (id, &repo("a/two"), Ts::from_millis(100));
+    let two = crate::testing::runs::run_at(store, (id, &repo("a/two"), Ts::from_millis(100)));
     assert!(store.resolve_workflow_start(two, &running(4), NOW).unwrap());
     (alice, id)
 }
@@ -32,8 +32,8 @@ fn an_overdue_run_is_refused_only_in_the_state_it_was_seen_in() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let (_, id) = two_claims(&store);
-    let one = (id, &repo("a/one"), Ts::from_millis(100));
-    let two = (id, &repo("a/two"), Ts::from_millis(100));
+    let one = crate::testing::runs::run_at(&store, (id, &repo("a/one"), Ts::from_millis(100)));
+    let two = crate::testing::runs::run_at(&store, (id, &repo("a/two"), Ts::from_millis(100)));
     assert!(!store.refuse_run(one, ("late", false), NOW).unwrap());
     assert!(store.refuse_run(one, ("late", true), NOW).unwrap());
     assert!(!store.refuse_run(one, ("again", true), NOW).unwrap());
@@ -52,7 +52,7 @@ fn a_start_that_returns_after_its_run_was_refused_changes_nothing_and_the_stream
     let (store, _) = open(dir.path());
     let (alice, id) = two_claims(&store);
     let before = store.workflow_changes(alice, 0, 50, None).unwrap();
-    let one = (id, &repo("a/one"), Ts::from_millis(100));
+    let one = crate::testing::runs::run_at(&store, (id, &repo("a/one"), Ts::from_millis(100)));
     assert!(store.refuse_run(one, ("late", true), NOW).unwrap());
     assert!(!store.resolve_workflow_start(one, &running(5), NOW).unwrap());
     let after = store.workflow_changes(alice, 0, 50, None).unwrap();
