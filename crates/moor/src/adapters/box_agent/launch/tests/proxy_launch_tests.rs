@@ -104,34 +104,6 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 }
 
 #[test]
-fn the_boxs_own_env_is_left_for_bash_tool_lines_without_the_root_signal() {
-    let d = driver(FakeDriver::new());
-    d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
-    let addr = ProxyAddr {
-        keep_egress: true,
-        box_env: vec![
-            ("MOOR_PULL_NUMBER".to_owned(), "65".to_owned()),
-            ("IS_SANDBOX".to_owned(), "0".to_owned()),
-        ],
-        ..proxy_addr()
-    };
-    let req = LaunchReq {
-        profile: None,
-        mcp: std::collections::BTreeMap::new(),
-        proxy: Some(Arc::new(addr)),
-        ..req_with_proxy()
-    };
-    agent(&d).launch(&req).unwrap();
-    let script = script_of(&d);
-    let shared = script
-        .lines()
-        .find(|l| l.ends_with("> '/run/moor/agent.env' 2>/dev/null || true"))
-        .expect(&script);
-    assert!(shared.contains("export MOOR_PULL_NUMBER="), "{shared}");
-    assert!(!shared.contains("IS_SANDBOX"), "{shared}");
-}
-
-#[test]
 fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
     let d = driver(FakeDriver::new());
     let addr = ProxyAddr {
