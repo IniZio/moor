@@ -186,7 +186,19 @@ jobs:
           set -euo pipefail
           printf '%s' "$TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
           helm package deploy/helm/moor --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP/chart"
-          helm push "$RUNNER_TEMP/chart/moor-$VERSION.tgz" oci://ghcr.io/inizio/charts
+          # helm uploads the manifest by digest, then reads it back to apply the
+          # version tag. ghcr sometimes answers 404 for a manifest it just
+          # accepted (helm/helm#31348, NVIDIA/OpenShell#4577), so retry that one
+          # error. The blobs and manifest are already there, so a retry only tags.
+          for attempt in 1 2 3 4; do
+            if helm push "$RUNNER_TEMP/chart/moor-$VERSION.tgz" oci://ghcr.io/inizio/charts 2>&1 | tee "$RUNNER_TEMP/push.log"; then
+              break
+            fi
+            grep -q 'failed to perform "Tag" on destination.*not found' "$RUNNER_TEMP/push.log" || exit 1
+            [ "$attempt" -lt 4 ] || exit 1
+            echo "::warning::ghcr 404 on the chart manifest just pushed (attempt $attempt); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
 
   sign:
     needs: [release, build]
