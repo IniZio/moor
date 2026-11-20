@@ -16,13 +16,14 @@ import {
 	toError,
 } from './api';
 import { textProblems } from './plan';
+import { githubApp } from './settingsApi';
 import { GeneratePlan } from './PlanDraft';
 import { PlanEditor } from './PlanEditor';
 import { RepoPicker } from './RepoPicker';
 import { browserZone, DAYS, EVERY, FIRST, fromCron, type Schedule, toCron, zones } from './schedule';
 
 /** What the form opens with: a duplicate, a one-off made recurring, or nothing. */
-type Draft = { name: string; repos: string[]; prompt: string; schedule: Schedule; timezone: string; timeout: string; copyOf?: string };
+type Draft = { name: string; repos: string[]; prompt: string; schedule: Schedule; timezone: string; timeout: string; onPull: boolean; copyOf?: string };
 
 const DRAFT = 'moor.workflowDraft';
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -56,11 +57,12 @@ function fromFlow(flow: Workflow): Draft {
 		schedule: fromCron(flow.cron),
 		timezone: flow.timezone,
 		timeout: String(flow.timeout_minutes),
+		onPull: flow.on_pull_request,
 	};
 }
 
 function blank(draft: Partial<Draft>): Draft {
-	return { name: '', repos: [], prompt: '', schedule: FIRST, timezone: browserZone(), timeout: '', ...draft };
+	return { name: '', repos: [], prompt: '', schedule: FIRST, timezone: browserZone(), timeout: '', onPull: false, ...draft };
 }
 
 function SchedulePicker({ value, onChange }: { value: Schedule; onChange: (s: Schedule) => void }) {
@@ -151,6 +153,30 @@ function Preview({ cron, zone }: { cron: string; zone: string }) {
 	);
 }
 
+/** The pull request switch. With no GitHub App it is off and disabled with the reason, unless it is already on, so it can still be turned off. */
+function PullSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+	const [hasApp, setHasApp] = useState(true);
+	useEffect(() => {
+		githubApp().then(
+			(app) => setHasApp(app != null),
+			() => setHasApp(true),
+		);
+	}, []);
+	const locked = !hasApp && !on;
+	return (
+		<div class="wf-field">
+			<label class="wf-switch">
+				<input type="checkbox" role="switch" checked={on} disabled={locked} aria-describedby="wf-pull-help" onChange={(e) => onChange(e.currentTarget.checked)} />
+				On pull request
+			</label>
+			<span class="muted" id="wf-pull-help">
+				Runs when a pull request is opened, marked ready, or pushed to, in this workflow's first repo. Needs the GitHub App.
+				{locked && ' This controller has no GitHub App configured, so the switch is off.'}
+			</span>
+		</div>
+	);
+}
+
 /** The workflow form: a new one, a copy, a one-off made recurring, or an edit of `editing`. */
 export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string }) {
 	const [opened] = useState(takeDraft);
@@ -188,7 +214,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 		if (!ready) return;
 		setBusy(true);
 		setProblem(null);
-		const fields = { repos: draft.repos, prompt: draft.prompt, cron, timezone: draft.timezone.trim(), timeout_minutes: timeout };
+		const fields = { repos: draft.repos, prompt: draft.prompt, cron, timezone: draft.timezone.trim(), timeout_minutes: timeout, on_pull_request: draft.onPull };
 		try {
 			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf, plan.trim() || undefined);
 			location.hash = `#/workflows/${encodeURIComponent(saved.name)}`;
@@ -253,6 +279,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 				{draft.schedule.kind !== 'cron' && <span class="muted t-mono" title="The same schedule as cron">{cron}</span>}
 				<Preview cron={cron} zone={draft.timezone.trim()} />
 			</div>
+			<PullSwitch on={draft.onPull} onChange={(onPull) => set({ onPull })} />
 			<details>
 				<summary>More</summary>
 				<label>
