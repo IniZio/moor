@@ -28,6 +28,7 @@ mod shared_machines;
 mod sqlite;
 mod user_inbox;
 mod vm_inc;
+mod workflow_optional_cron;
 mod workflow_plans;
 mod workflow_repo_set;
 mod workflow_run_pull;

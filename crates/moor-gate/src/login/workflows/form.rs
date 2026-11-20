@@ -25,9 +25,11 @@ struct Fields {
     repos: Vec<String>,
     /// What each run's agent is asked to do.
     prompt: String,
-    /// Five-field cron expression.
+    /// Five-field cron expression; empty or absent for a workflow with no cron.
+    #[serde(default)]
     cron: String,
     /// IANA time zone the cron is read in.
+    #[serde(default)]
     timezone: String,
     /// Minutes a run may take; the default when absent.
     #[serde(default)]
@@ -115,13 +117,19 @@ fn failure(stream: &mut TcpStream, f: Failure) {
     }
 }
 
+/// `text` trimmed, or none when it is blank.
+fn non_empty(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
 /// The add request for `name` with `fields`, the plan and config of `kept`.
 fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddReq {
     WorkflowAddReq {
         identity: None,
         name: name.to_owned(),
-        cron: fields.cron.trim().to_owned(),
-        timezone: fields.timezone.trim().to_owned(),
+        cron: non_empty(&fields.cron),
+        timezone: non_empty(&fields.timezone),
         repos: fields.repos.iter().map(|r| r.trim().to_owned()).collect(),
         config: kept.and_then(|w| w.config.clone()),
         prompt: fields.prompt,

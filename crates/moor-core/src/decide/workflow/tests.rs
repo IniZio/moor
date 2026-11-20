@@ -31,7 +31,7 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         id: WorkflowId::new(1),
         owner: UserId::new(1),
         name: WorkflowName::parse("fix").unwrap(),
-        schedule: WorkflowSchedule::parse(cron, zone).unwrap(),
+        schedule: Some(WorkflowSchedule::parse(cron, zone).unwrap()),
         repos: repos.iter().map(|r| repo(r)).collect(),
         config: None,
         prompt: "go".to_owned(),
@@ -67,6 +67,18 @@ fn start(due_at: i64) -> WorkflowVerdict {
 
 fn daily() -> Workflow {
     workflow("0 9 * * *", "UTC", &["a/b"], enabled_since(DAY0 - 30 * DAY))
+}
+
+#[test]
+fn a_workflow_with_no_cron_is_never_due() {
+    let mut w = daily();
+    w.schedule = None;
+    for now in [DAY0, DAY0 + 9 * HOUR, DAY0 + 400 * DAY] {
+        assert_eq!(
+            verdicts(&w, &facts(None, false), now),
+            WorkflowVerdict::NotDue
+        );
+    }
 }
 
 #[test]

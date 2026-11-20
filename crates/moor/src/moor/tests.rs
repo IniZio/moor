@@ -55,8 +55,8 @@ fn only_a_front_socket_gives_an_added_workflow_its_origin_front() {
     let req = WorkflowAddReq {
         identity: None,
         name: "n".to_owned(),
-        cron: "0 9 * * *".to_owned(),
-        timezone: "UTC".to_owned(),
+        cron: Some("0 9 * * *".to_owned()),
+        timezone: Some("UTC".to_owned()),
         repos: vec!["o/n".to_owned()],
         config: None,
         prompt: "p".to_owned(),

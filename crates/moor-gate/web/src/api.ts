@@ -164,10 +164,11 @@ const LastRunSchema = v.object({
 const WorkflowRowSchema = v.object({
 	name: v.string(),
 	repos: v.array(v.string()),
-	cron: v.string(),
-	/** The schedule in words, when it is one of the shapes the form offers. */
+	/** None for a workflow with no cron, which runs only by hand or on pull requests. */
+	cron: v.nullish(v.string()),
+	/** The schedule in words, when it is one of the shapes the form offers, or what fires a workflow with no cron. */
 	words: v.nullish(v.string()),
-	timezone: v.string(),
+	timezone: v.nullish(v.string()),
 	enabled: v.boolean(),
 	next_due: v.nullish(v.number()),
 	/** The next run in the workflow's own zone, such as "Fri 20 Nov, 08:30 (Asia/Hong_Kong)". */

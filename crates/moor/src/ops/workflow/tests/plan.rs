@@ -40,7 +40,7 @@ impl Rig {
     pub(super) fn put_planned(&self, plan: Option<Plan>) -> WorkflowId {
         let mut def = WorkflowDef::new(
             WorkflowName::parse("deps").unwrap(),
-            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo()],
             PROMPT,
             (true, TimeoutMinutes::DEFAULT),

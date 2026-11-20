@@ -1,7 +1,7 @@
 //! Storing a workflow: the write, the plan with it, and the revision check.
 
 use moor_core::user::UserId;
-use moor_core::workflow::{Plan, WorkflowDef, WorkflowId};
+use moor_core::workflow::{Plan, WorkflowDef, WorkflowId, WorkflowSchedule};
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Query};
 
@@ -90,8 +90,8 @@ fn insert_workflow(
             .values_panic([
                 owner.get().into(),
                 def.name.as_str().into(),
-                def.schedule.expr().into(),
-                def.schedule.zone().into(),
+                def.schedule.as_ref().map(WorkflowSchedule::expr).into(),
+                def.schedule.as_ref().map(WorkflowSchedule::zone).into(),
                 repos.into(),
                 def.prompt.as_str().into(),
                 def.enabled.then_some(now).into(),
@@ -121,8 +121,14 @@ fn replace_workflow(
     let mut update = Query::update();
     update
         .table(Workflows::Table)
-        .value(Workflows::Cron, def.schedule.expr())
-        .value(Workflows::Timezone, def.schedule.zone())
+        .value(
+            Workflows::Cron,
+            def.schedule.as_ref().map(WorkflowSchedule::expr),
+        )
+        .value(
+            Workflows::Timezone,
+            def.schedule.as_ref().map(WorkflowSchedule::zone),
+        )
         .value(Workflows::Repos, repos)
         .value(Workflows::Config, def.config.as_deref())
         .value(Workflows::Prompt, def.prompt.as_str())

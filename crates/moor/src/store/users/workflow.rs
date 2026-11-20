@@ -41,9 +41,9 @@ struct WorkflowRow {
     /// `name`.
     name: String,
     /// `cron`.
-    cron: String,
+    cron: Option<String>,
     /// `timezone`.
-    timezone: String,
+    timezone: Option<String>,
     /// `repos`, as JSON.
     repos: String,
     /// `prompt`.
@@ -129,12 +129,14 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         id: WorkflowId::new(row.id),
         owner: UserId::new(row.user),
         name: WorkflowName::parse(&row.name).map_err(|e| corrupt("name", e))?,
-        schedule: WorkflowSchedule::parse_with_min_interval(
-            &row.cron,
-            &row.timezone,
-            Duration::ZERO,
-        )
-        .map_err(|e| corrupt("schedule", e))?,
+        schedule: match (&row.cron, &row.timezone) {
+            (Some(cron), Some(zone)) => Some(
+                WorkflowSchedule::parse_with_min_interval(cron, zone, Duration::ZERO)
+                    .map_err(|e| corrupt("schedule", e))?,
+            ),
+            (None, None) => None,
+            _ => return Err(corrupt("schedule", "cron and timezone are set together")),
+        },
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
         config: row.config,
         prompt: row.prompt.clone(),

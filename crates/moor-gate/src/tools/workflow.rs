@@ -23,10 +23,11 @@ use crate::mcp::{READ, WRITE};
 struct AddArgs {
     /// A name, unique among your workflows; adding the same name again replaces it.
     name: String,
-    /// A five-field cron expression: minute, hour, day of month, month, day of week.
-    cron: String,
-    /// The IANA time zone the cron is read in, such as `Europe/London`.
-    timezone: String,
+    /// A five-field cron expression: minute, hour, day of month, month, day of week. Leave it
+    /// out for a workflow that runs only by hand (`run_workflow`) or on pull requests.
+    cron: Option<String>,
+    /// The IANA time zone the cron is read in, such as `Europe/London`. Required with a cron.
+    timezone: Option<String>,
     /// The repos each run's one Box clones, each as `owner/name`, first one first. The agent
     /// works in the first, where its branch and pull request go; the rest are cloned beside it,
     /// and each must be one you can push to.
@@ -132,7 +133,9 @@ impl Tools {
     /// Adds or replaces a workflow.
     #[tool(
         description = "Add a workflow: on its cron, moor starts one Box with your prompt that \
-                       clones every repo in `repos`. The agent starts in the first repo, and the \
+                       clones every repo in `repos`. The cron is optional: leave it out, with \
+                       `on_pull_request` or alone, for a workflow that runs only on pull requests \
+                       or by hand with run_workflow. The agent starts in the first repo, and the \
                        rest sit beside it. A workflow that needs a GitHub write the default Proxy \
                        rules refuse, such as POST or PATCH of an issue comment, or POST of a commit status, \
                        asks for it in `config`, under `proxy.allow` on the default rule `github-api`, \
@@ -192,7 +195,7 @@ impl Tools {
         let request = ControllerRequest::WorkflowAdd(WorkflowAddReq {
             identity: None,
             name: args.name,
-            cron: args.cron,
+            cron: args.cron.filter(|c| !c.trim().is_empty()),
             timezone: args.timezone,
             repos: args.repos,
             config: override_text(args.config),
@@ -214,7 +217,7 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron, time zone, repos, config (which may hold the extra Proxy \
+        description = "List your workflows: cron and time zone (none for a workflow with no cron), repos, config (which may hold the extra Proxy \
                        `allow` entries the workflow's Boxes get, and only theirs), prompt, plan (with \
                        plan_stale when the prompt changed after it was made), revision, timeout, whether each \
                        is enabled, its next due time and its latest run with its outcome and Box. Needs \

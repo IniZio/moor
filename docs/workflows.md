@@ -25,7 +25,9 @@ Choose **New workflow** and fill in the form.
 - **Schedule.** Every weekday, every day, every week on a day, or every few
   hours, at a time in a time zone. **Advanced (cron)** takes five cron fields.
   The form shows the next three runs. A schedule that can fire twice within an
-  hour is refused.
+  hour is refused. **No schedule (run by hand)** leaves the workflow with no cron:
+  it runs only when you press Run now or call `run_workflow`, and on pull
+  requests if it has that trigger.
 - **More.** The timeout. A run that takes longer is stopped. Three hours when
   blank.
 
@@ -253,7 +255,9 @@ it to fix open Dependabot alerts and open a PR for each fix.
 The agent calls `add_workflow` with these values.
 
 - `name`, unique among your workflows. Adding the same name again replaces it.
-- `cron`, five fields, and `timezone`, an IANA name such as `Europe/London`.
+- `cron`, five fields, and `timezone`, an IANA name such as `Europe/London`. Both are
+  optional together: with no `cron` the workflow is never due on a schedule, and runs
+  only by hand or on a pull request.
 - `repos`, one or more `owner/name`, first one first. The controller's
   `box.also` never applies to a workflow.
 - `config`, optional, a partial repo config in YAML that every Box starts
