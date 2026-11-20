@@ -45,6 +45,7 @@ mod ssh_controller;
 #[cfg(target_os = "linux")]
 #[path = "cli/up.rs"]
 mod up;
+#[cfg(target_os = "linux")]
 #[path = "cli/up_images.rs"]
 mod up_images;
 #[path = "cli/user.rs"]
