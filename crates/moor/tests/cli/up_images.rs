@@ -10,6 +10,9 @@ use super::Run;
 
 impl Host {
     pub(super) fn moor_with(&self, args: &[&str], stdin: &str, vars: &[(&str, &str)]) -> Run {
+        if args.first() == Some(&"up") {
+            self.keep_ports();
+        }
         let child = std::process::Command::new(env!("CARGO_BIN_EXE_moor"))
             .args(args)
             .current_dir(&self.home)
