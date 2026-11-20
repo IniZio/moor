@@ -40,14 +40,44 @@ struct Repository {
     full_name: String,
 }
 
-/// The pull request event of delivery `event` with `body`; none for any other event or action,
-/// which moor answers and drops.
+/// What a signed delivery holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Parsed {
+    /// A pull request event moor handles.
+    Pull(Pulled),
+    /// Any other event or action, which moor answers and drops.
+    Other {
+        /// The payload's `action`, when it has one.
+        action: Option<String>,
+    },
+}
+
+/// A pull request event and the action its payload named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pulled {
+    /// Such as `opened`.
+    pub(crate) action: String,
+    /// The event.
+    pub(crate) event: PullEvent,
+}
+
+/// Just the action of a payload of any event.
+#[derive(Deserialize)]
+struct Action {
+    /// Absent from `ping`.
+    action: Option<String>,
+}
+
+/// The delivery of `event` with `body`.
 ///
 /// # Errors
 /// A `pull_request` body that does not parse.
-pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<PullEvent>, String> {
+pub(super) fn parse(event: &str, body: &[u8]) -> Result<Parsed, String> {
     if event != "pull_request" {
-        return Ok(None);
+        let action = serde_json::from_slice::<Action>(body)
+            .ok()
+            .and_then(|a| a.action);
+        return Ok(Parsed::Other { action });
     }
     let bad = |e: &dyn std::fmt::Display| format!("not a pull_request payload: {e}");
     let p: Payload = serde_json::from_slice(body).map_err(|e| bad(&e))?;
@@ -59,11 +89,18 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<PullEvent>, Strin
     let action = match p.action.as_str() {
         "opened" | "reopened" | "ready_for_review" | "synchronize" => PullAction::Fire,
         "closed" => PullAction::Close,
-        _ => return Ok(None),
+        _ => {
+            return Ok(Parsed::Other {
+                action: Some(p.action),
+            })
+        }
     };
-    Ok(Some(PullEvent {
-        target,
-        head_sha: CommitSha::parse(&p.pull_request.head.sha).map_err(|e| bad(&e))?,
-        action,
+    Ok(Parsed::Pull(Pulled {
+        action: p.action,
+        event: PullEvent {
+            target,
+            head_sha: CommitSha::parse(&p.pull_request.head.sha).map_err(|e| bad(&e))?,
+            action,
+        },
     }))
 }

@@ -569,6 +569,7 @@ mod check;
 mod death_cap;
 mod eligible;
 mod hook;
+mod hook_log;
 mod manual;
 mod plan;
 mod previous;
