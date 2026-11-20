@@ -11,11 +11,12 @@ use std::thread;
 use moor_core::user::Viewer;
 use moor_core::view::workflow::RunNowValue;
 use moor_core::workflow::{
-    box_name, NewRun, RunState, RunTrigger, Workflow, WorkflowName, WorkflowRun,
+    box_name, CommitSha, NewRun, PullRef, PullTarget, RunCause, RunState, Workflow, WorkflowName,
+    WorkflowRun,
 };
 use moor_core::ErrorKind;
 
-use super::{prepare, run_start, Prepared, StartJob};
+use super::{prepare, pull, run_start, Prepared, StartJob};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{ManualClaim, Store};
@@ -30,24 +31,32 @@ fn usage(why: impl std::fmt::Display) -> CommandError {
     CommandError::new(ErrorKind::Usage, why.to_string())
 }
 
-/// Fires `user`'s workflow `name` once. `expected_revision` refuses the call when the workflow
-/// changed after the caller read it.
+/// Reads the head commit of a pull request.
+pub(super) type ReadHead<'a> = &'a dyn Fn(&PullTarget) -> Result<CommitSha, CommandError>;
+
+/// Hands a recorded claim to its start.
+pub(super) type Start<'a> = &'a dyn Fn(StartJob) -> Result<(), CommandError>;
+
+/// Fires `user`'s workflow `name` once, for pull request `pull` at its current head when one is
+/// named. `expected_revision` refuses the call when the workflow changed after the caller read it.
 pub(crate) fn run(
     cx: &Cx,
     store: &Store,
     user: moor_core::user::UserId,
-    args: (&str, Option<u64>),
+    args: (&str, Option<u64>, Option<&PullTarget>),
 ) -> Result<RunNowValue, CommandError> {
-    run_with(cx, store, user, args, &|job| spawn_start(cx, job))
+    let read = |target: &PullTarget| pull::read_head(cx, target);
+    run_with(cx, store, user, args, (&read, &|job| spawn_start(cx, job)))
 }
 
-/// Like [`run`], handing a recorded claim to `start`.
+/// Like [`run`], reading a pull request's head with `read` and handing a recorded claim to
+/// `start`.
 pub(super) fn run_with(
     cx: &Cx,
     store: &Store,
     user: moor_core::user::UserId,
-    (name, expected_revision): (&str, Option<u64>),
-    start: &dyn Fn(StartJob) -> Result<(), CommandError>,
+    (name, expected_revision, target): (&str, Option<u64>, Option<&PullTarget>),
+    (read, start): (ReadHead<'_>, Start<'_>),
 ) -> Result<RunNowValue, CommandError> {
     let name = WorkflowName::parse(name).map_err(usage)?;
     let Some(w) = store.workflow(user, &name)? else {
@@ -60,7 +69,34 @@ pub(super) fn run_with(
         ))
         .with_hint("read it again with list_workflows and run it with that revision"));
     }
-    fire(cx, store, &w, start)
+    let pull = target.map(|t| pull_at_head(&w, t, read)).transpose()?;
+    fire(cx, store, &w, &RunCause::Manual { pull }, start)
+}
+
+/// Pull request `target` at the head `read` gives, when it is on `w`'s first repo. The ref
+/// names the repo as the workflow does; GitHub reads either spelling.
+fn pull_at_head(
+    w: &Workflow,
+    target: &PullTarget,
+    read: ReadHead<'_>,
+) -> Result<PullRef, CommandError> {
+    let first = w
+        .repos
+        .first()
+        .ok_or_else(|| refused(format!("workflow {} has no repo", w.name)))?;
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    if !(same(&target.repo.owner, &first.owner) && same(&target.repo.name, &first.name)) {
+        return Err(refused(format!(
+            "pull request {target} is not on {first}, the first repo of workflow {}",
+            w.name
+        )));
+    }
+    let head_sha = read(target)?;
+    Ok(PullRef {
+        repo: first.clone(),
+        number: target.number,
+        head_sha,
+    })
 }
 
 /// A run that was refused, and why.
@@ -73,16 +109,18 @@ fn declined(w: &Workflow, why: String) -> RunNowValue {
     }
 }
 
-/// Claims a manual run of `w` and hands it to `start`. A claim the store refuses records
-/// nothing; a start that fails after the claim leaves a refused run, as a cron firing does.
+/// Claims a manual run of `w` for `cause` and hands it to `start`. A claim the store refuses
+/// records nothing; a start that fails after the claim leaves a refused run, as a cron firing
+/// does.
 fn fire(
     cx: &Cx,
     store: &Store,
     w: &Workflow,
-    start: &dyn Fn(StartJob) -> Result<(), CommandError>,
+    cause: &RunCause,
+    start: Start<'_>,
 ) -> Result<RunNowValue, CommandError> {
     let now = cx.clock().now();
-    let Prepared { job, frozen } = match prepare(cx, store, w, (now, RunTrigger::Manual)) {
+    let Prepared { job, frozen } = match prepare(cx, store, w, (now, cause)) {
         Ok(prepared) => prepared,
         Err(why) => return Ok(declined(w, why)),
     };
@@ -93,7 +131,7 @@ fn fire(
         state: RunState::Queued,
         recorded_at: now,
         plan: frozen,
-        trigger: RunTrigger::Manual,
+        cause: cause.clone(),
     };
     match store.claim_manual_run(&claim)? {
         ManualClaim::Open(open) => {
@@ -145,6 +183,6 @@ fn open_box(store: &Store, w: &Workflow, open: &WorkflowRun) -> Result<String, C
         None => None,
     };
     Ok(existing
-        .or_else(|| box_name(w.id, w.name.as_str(), open.due_at, open.trigger).ok())
+        .or_else(|| box_name(w.id, w.name.as_str(), open.due_at, &open.cause).ok())
         .map_or_else(|| "unknown".to_owned(), |n| n.as_str().to_owned()))
 }

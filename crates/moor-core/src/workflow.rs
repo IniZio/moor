@@ -248,6 +248,7 @@ pub struct Workflow {
 }
 
 mod box_name;
+mod cause;
 mod history;
 mod plan;
 #[cfg(test)]
@@ -261,6 +262,7 @@ mod schedule;
 mod tests;
 
 pub use box_name::box_name;
+pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
 pub use history::HistoryEntry;
 pub use plan::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt,
@@ -290,7 +292,7 @@ pub struct WorkflowChange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChangeKind {
     /// A run was recorded or moved to its next outcome.
-    Run(WorkflowRun),
+    Run(Box<WorkflowRun>),
     /// The controller disabled the workflow for this reason.
     Disabled {
         /// Why.

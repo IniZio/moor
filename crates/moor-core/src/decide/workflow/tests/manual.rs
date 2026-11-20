@@ -5,12 +5,12 @@ use super::{
 };
 use crate::decide::workflow::{workflow_due, PriorRun, WorkflowFacts, WorkflowVerdict};
 use crate::seam::clock::Ts;
-use crate::workflow::{box_name, RunState, RunTrigger, WorkflowId, WorkflowRun};
+use crate::workflow::{box_name, RunCause, RunState, RunTrigger, WorkflowId, WorkflowRun};
 
 /// `run` fired by hand.
 fn manual(run: WorkflowRun) -> WorkflowRun {
     WorkflowRun {
-        trigger: RunTrigger::Manual,
+        cause: RunCause::Manual { pull: None },
         ..run
     }
 }
@@ -93,17 +93,17 @@ fn a_manual_run_in_the_same_minute_as_a_cron_run_gets_another_box_name() {
     let id = WorkflowId::new(3);
     let due = Ts::from_millis(1_794_978_720_000);
     let at = Ts::from_millis(1_794_978_750_000);
-    let cron = box_name(id, "deps", due, RunTrigger::Cron).unwrap();
-    let hand = box_name(id, "deps", at, RunTrigger::Manual).unwrap();
+    let cron = box_name(id, "deps", due, &RunCause::Cron).unwrap();
+    let hand = box_name(id, "deps", at, &RunCause::Manual { pull: None }).unwrap();
     assert_eq!(cron.as_str(), "deps/w3-202611180512");
     assert_eq!(hand.as_str(), "deps/w3-m20261118051230");
-    let same_minute = box_name(id, "deps", due, RunTrigger::Manual).unwrap();
+    let same_minute = box_name(id, "deps", due, &RunCause::Manual { pull: None }).unwrap();
     assert_ne!(cron, same_minute);
 }
 
 #[test]
 fn a_run_is_fired_by_cron_unless_made_manual() {
     let r = run("a/b", DAY0, DAY0, RunState::Queued);
-    assert_eq!(r.trigger, RunTrigger::Cron);
-    assert_eq!(manual(r).trigger, RunTrigger::Manual);
+    assert_eq!(r.cause.trigger(), RunTrigger::Cron);
+    assert_eq!(manual(r).cause.trigger(), RunTrigger::Manual);
 }

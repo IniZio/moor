@@ -577,6 +577,7 @@ mod death_cap;
 mod manual;
 mod plan;
 mod previous;
+mod pull;
 mod report;
 mod setup_failed;
 mod start_limit;

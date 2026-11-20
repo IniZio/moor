@@ -3,7 +3,7 @@
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 use crate::workflow::{
-    RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId, Workflow, WorkflowRun, WorkflowState,
+    RunCause, RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
     BREAKER_STREAK,
 };
 
@@ -111,8 +111,8 @@ pub struct StartBreach {
     pub box_id: Option<BoxId>,
     /// Whether the run only claimed its firing so far.
     pub claimed_only: bool,
-    /// What fired the run, which its planned Box is named by.
-    pub trigger: RunTrigger,
+    /// Why the run started, which its planned Box is named by.
+    pub cause: RunCause,
 }
 
 /// When a Box's agent first started, if it did.
@@ -153,7 +153,7 @@ pub fn workflow_start_overdue(
                 due_at: run.due_at,
                 box_id,
                 claimed_only,
-                trigger: run.trigger,
+                cause: run.cause.clone(),
             })
         })
         .collect()
@@ -220,7 +220,7 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
     mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
     let mut streak = 0;
     for run in mine {
-        let counts = run.trigger == RunTrigger::Cron;
+        let counts = !matches!(run.cause, RunCause::Manual { .. });
         match &run.state {
             RunState::Done(RunEnd::Refused { .. }) => streak += usize::from(counts),
             RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
@@ -233,7 +233,7 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
             RunState::Queued
             | RunState::Running { .. }
             | RunState::Waiting { .. }
-            | RunState::Done(RunEnd::SkippedOverlap) => {}
+            | RunState::Done(RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. }) => {}
         }
     }
     (streak >= BREAKER_STREAK).then(|| WorkflowDisable {

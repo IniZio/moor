@@ -12,7 +12,7 @@ use moor_schema::tables::{BoxState, WorkflowRuns};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::history::{append_history, run_id};
-use super::row::{read_run, run_of, state_cols, STARTED, STARTING, WAITING};
+use super::row::{read_run, run_of, state_cols, subject_cols, STARTED, STARTING, WAITING};
 use super::runs::real_run;
 use crate::store::db::{Db, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
@@ -23,7 +23,7 @@ pub(crate) enum ManualClaim {
     /// The run is recorded.
     Recorded,
     /// A run of the workflow is open, so nothing was recorded. It is that run.
-    Open(WorkflowRun),
+    Open(Box<WorkflowRun>),
     /// A run of the workflow already has that due time, so nothing was recorded.
     Taken,
 }
@@ -51,7 +51,7 @@ impl Store {
         })?;
         Ok(match (recorded, open) {
             (true, _) => ManualClaim::Recorded,
-            (false, Some(run)) => ManualClaim::Open(run),
+            (false, Some(run)) => ManualClaim::Open(Box::new(run)),
             (false, None) => ManualClaim::Taken,
         })
     }
@@ -61,6 +61,7 @@ impl Store {
 fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
     let cols = state_cols(&run.state);
     let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
+    let (pull_number, head_sha) = subject_cols(&run.cause);
     let inserted = tx.run(
         Query::insert()
             .into_table(WorkflowRuns::Table)
@@ -80,6 +81,8 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
                 WorkflowRuns::EndedStep,
                 WorkflowRuns::Plan,
                 WorkflowRuns::Trigger,
+                WorkflowRuns::PullNumber,
+                WorkflowRuns::HeadSha,
             ])
             .values_panic([
                 run.workflow.get().into(),
@@ -96,7 +99,9 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
                 cols.waiting_since.into(),
                 cols.ended_step.into(),
                 plan.into(),
-                run.trigger.as_str().into(),
+                run.cause.trigger().as_str().into(),
+                pull_number.into(),
+                head_sha.into(),
             ])
             .on_conflict(OnConflict::new().do_nothing().to_owned()),
     )?;

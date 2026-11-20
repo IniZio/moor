@@ -1,7 +1,7 @@
 //! The override's merge, as a table of (repo text, override text, what the Box sees).
 #![allow(clippy::panic, clippy::unwrap_used, reason = "test assertions")]
 
-use super::RepoOverride;
+use super::{with_env, RepoOverride};
 use crate::config::{parse_repo, RepoConfig};
 
 /// `over` laid on `base`, both parsed.
@@ -112,4 +112,43 @@ fn proxy_entries_add_to_the_repos_for_the_same_rule() {
 fn an_override_with_a_bad_proxy_entry_does_not_parse() {
     let bad = "proxy: {allow: {github-api: [\"PATCH /repos/{any_repo}/x\"]}}";
     assert!(RepoOverride::parse("over", bad).is_err());
+}
+
+/// The variables a pull request run adds.
+fn pull_vars() -> Vec<(&'static str, String)> {
+    vec![
+        ("MOOR_PULL_NUMBER", "65".to_owned()),
+        ("MOOR_PULL_REPO", "o/r".to_owned()),
+    ]
+}
+
+#[test]
+fn env_added_to_an_override_keeps_its_other_keys_and_wins_a_clash() {
+    let over = "setup: [make]\nbox: {size: large}\nenv: {MOOR_PULL_NUMBER: '1', KEEP: 'yes'}\n\
+                proxy: {allow: {github-api: ['POST /repos/{repo}/issues/*/comments']}}";
+    let text = with_env(Some(over), &pull_vars()).unwrap();
+    is(
+        "setup: [a]\nteardown: [t]\nenv: {REPO: x}",
+        &text,
+        "setup: [make]\nteardown: [t]\nbox: {size: large}\n\
+         env: {REPO: x, KEEP: 'yes', MOOR_PULL_NUMBER: '65', MOOR_PULL_REPO: o/r}\n\
+         proxy: {allow: {github-api: ['POST /repos/{repo}/issues/*/comments']}}",
+    );
+}
+
+#[test]
+fn env_added_to_no_override_names_only_env() {
+    for none in [None, Some(""), Some("env:")] {
+        let text = with_env(none, &pull_vars()).unwrap();
+        is(
+            "setup: [a]",
+            &text,
+            "setup: [a]\nenv: {MOOR_PULL_NUMBER: '65', MOOR_PULL_REPO: o/r}",
+        );
+    }
+}
+
+#[test]
+fn env_is_not_added_to_an_override_the_repo_config_refuses() {
+    assert!(with_env(Some("setp: [a]"), &pull_vars()).is_err());
 }

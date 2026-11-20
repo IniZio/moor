@@ -66,7 +66,9 @@ const fn real_run(state: &RunState) -> Option<Real> {
             | RunOutcome::Incomplete { .. }
             | RunOutcome::Declined { .. } => Some(Real::Prior(PriorRun::Finished)),
         },
-        RunState::Done(RunEnd::SkippedOverlap | RunEnd::Refused { .. }) => None,
+        RunState::Done(
+            RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::Refused { .. },
+        ) => None,
     }
 }
 

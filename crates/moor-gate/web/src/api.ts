@@ -267,12 +267,12 @@ export async function workflowGet(name: string): Promise<Workflow> {
 
 const RunNowSchema = v.object({ status: v.string(), box: v.nullable(v.string()) });
 
-/** Fires the workflow once, now, in one Box with all its repos. A workflow with an open run is refused as a conflict. */
-export async function workflowRunNow(csrf: string, name: string) {
+/** Fires the workflow once, now, in one Box with all its repos, for pull request `pull` at its current head when given. A workflow with an open run is refused as a conflict. */
+export async function workflowRunNow(csrf: string, name: string, pull?: string | null) {
 	const res = await fetch(`${workflowPath(name)}/run`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: '{}',
+		body: JSON.stringify(pull ? { pull } : {}),
 	});
 	return answer(res, RunNowSchema);
 }
@@ -454,7 +454,7 @@ const BoxDetailSchema = v.object({
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
-	workflow: v.nullish(v.object({ name: v.string() })),
+	workflow: v.nullish(v.object({ name: v.string(), pull: v.nullish(v.string()) })),
 	/** Whether the person asked for a plan first; its approved plan is the newest plan.json. */
 	plan_first: v.optional(v.boolean(), false),
 	/** Whether a workflow run made this Box. */

@@ -114,5 +114,42 @@ impl RepoOverride {
     }
 }
 
+/// `text`, an override or none, with `vars` added to its `env`.
+///
+/// Each variable wins over one of its name. The other keys keep their values, so the result
+/// overrides the repo's config as `text` did, plus the variables.
+///
+/// # Errors
+/// [`ConfigError`] when `text` is not a valid override, or the result is refused.
+pub fn with_env(text: Option<&str>, vars: &[(&str, String)]) -> Result<String, ConfigError> {
+    const FILE: &str = "config";
+    let text = text.unwrap_or_default();
+    RepoOverride::parse(FILE, text)?;
+    let read: serde_json::Value = serde_saphyr::from_str(text)
+        .map_err(|e| ConfigError::new("", format!("invalid yaml: {e}")).in_file(FILE))?;
+    let mut doc = match read {
+        serde_json::Value::Object(map) => map,
+        serde_json::Value::Null => serde_json::Map::new(),
+        _ => return Err(ConfigError::new("", "expected mapping").in_file(FILE)),
+    };
+    let env = doc
+        .entry("env")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if env.is_null() {
+        *env = serde_json::Value::Object(serde_json::Map::new());
+    }
+    let serde_json::Value::Object(env) = env else {
+        return Err(ConfigError::new("env", "expected mapping").in_file(FILE));
+    };
+    for (name, value) in vars {
+        env.insert((*name).to_owned(), serde_json::Value::String(value.clone()));
+    }
+    let out = serde_saphyr::to_string(&doc).map_err(|e| {
+        ConfigError::new("", format!("cannot write the override: {e}")).in_file(FILE)
+    })?;
+    RepoOverride::parse(FILE, &out)?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests;

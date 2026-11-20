@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{AsReq, Request};
 use crate::user::Identity;
-use crate::workflow::Answer;
+use crate::workflow::{Answer, PullTarget};
 
 /// Arguments of `workflow-add`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +121,9 @@ pub struct WorkflowRunNowReq {
     /// workflow has been changed since. Not checked when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_revision: Option<u64>,
+    /// The pull request to run for, on the workflow's first repo. The controller reads its head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<PullTarget>,
 }
 
 /// Arguments of `workflow-runs`.
@@ -202,6 +205,8 @@ pub enum WorkflowCmd {
         name: String,
         /// The revision the caller read.
         expected_revision: Option<u64>,
+        /// The pull request to run for.
+        pull: Option<PullTarget>,
     },
     /// Read the latest runs of one workflow.
     RunList {
@@ -273,6 +278,7 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
             WorkflowCmd::RunNow {
                 name: r.name,
                 expected_revision: r.expected_revision,
+                pull: r.pull,
             },
         ),
         Request::WorkflowRuns(r) => (

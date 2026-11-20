@@ -296,6 +296,36 @@ fn a_pull_reads_with_the_installation_token() {
 }
 
 #[test]
+fn a_head_reads_as_the_installation_that_covers_the_repo_or_names_a_repo_without_the_app() {
+    let api = FakeGitHub::start(|method, path| match (method, path) {
+        ("GET", "/repos/acme/web/installation") => (200, json!({"id": 7})),
+        ("POST", "/app/installations/7/access_tokens") => (201, json!({"token": "ghs_seven"})),
+        ("GET", "/repos/acme/web/pulls/6") => (
+            200,
+            json!({
+                "state": "open", "draft": false,
+                "head": {"sha": "b".repeat(40), "repo": {"full_name": "acme/web"}},
+                "user": {"login": "alice", "type": "User"},
+            }),
+        ),
+        _ => (404, json!({})),
+    });
+    let app = api.client();
+    let head = app.head_of(&ForgeRepo::new("acme", "web"), 6, now());
+    assert_eq!(head.unwrap(), "b".repeat(40));
+    let pull_read = api
+        .seen()
+        .into_iter()
+        .find(|s| s.path.ends_with("/pulls/6"));
+    assert_eq!(pull_read.unwrap().auth, "Bearer ghs_seven");
+    let none = app.head_of(&ForgeRepo::new("acme", "none"), 6, now());
+    assert_eq!(
+        none.unwrap_err(),
+        "the GitHub App is not installed on acme/none"
+    );
+}
+
+#[test]
 fn an_author_permission_reads_with_the_installation_token() {
     let api = pulls_api();
     let app = api.client();

@@ -9,7 +9,7 @@ use crate::name::ForgeRepo;
 use crate::seam::clock::Ts;
 use crate::user::UserId;
 use crate::workflow::{
-    Plan, RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId, TimeoutMinutes, Workflow,
+    Plan, RunCause, RunEnd, RunId, RunOutcome, RunState, StepId, TimeoutMinutes, Workflow,
     WorkflowId, WorkflowName, WorkflowRun, WorkflowSchedule, WorkflowState,
 };
 
@@ -246,7 +246,7 @@ fn run(r: &str, due: i64, recorded: i64, state: RunState) -> WorkflowRun {
         due_at: ts(due),
         state,
         recorded_at: ts(recorded),
-        trigger: RunTrigger::Cron,
+        cause: RunCause::Cron,
     }
 }
 
