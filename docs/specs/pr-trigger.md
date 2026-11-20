@@ -5,7 +5,8 @@ review or pushed to. The run starts within seconds of the event, not at the next
 cron firing. Each run is for one pull request at one head commit, and the agent
 knows which one.
 
-Events arrive through a GitHub App that each moor install creates for itself.
+Events arrive through a GitHub App. The operator creates one App per moor install
+and gives moor its credentials.
 moor fires the run and nothing else. The agent writes any comment or commit
 status itself, through the workflow's
 [Extra Proxy entries](../config.md#extra-proxy-entries). The first user is an
@@ -88,7 +89,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | Decision | Reason |
 | --- | --- |
 | Events come from a GitHub App, not a webhook per repo. | An App is generic. An external team sets up its own moor without hand-made webhooks. |
-| Each moor install creates its own App through GitHub's App manifest flow, from the portal. No shared hosted App. | One click keeps self-hosting easy. A shared App would route every team's events through one owner. |
+| The operator creates one App per moor install on GitHub and gives moor its id, private key and webhook secret. No shared hosted App. | moor carries no App setup code. A shared App would route every team's events through one owner. |
 | moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
 | The App only reads. Runs keep acting as the owner's token through the Proxy. | Grants already live in `proxy.allow`. A second write identity would need a second grant model. |
 | A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
@@ -111,14 +112,27 @@ columns with a check that matches the enum, and parses rows back into it.
 
 - **Requirement.** GitHub must reach the gate at `MOOR_GATE_PUBLIC_URL`. A controller
   behind NAT works, because only the gate faces GitHub and the gate forwards to the
-  controller as it does for `/mcp`. Without a public URL the portal hides App setup.
-- **Setup.** An admin opens Settings, GitHub App in the portal and picks a personal
-  account or an org. The portal posts a manifest to GitHub. GitHub sends the browser
-  back to `/auth/github-app/done?code=`. The controller trades the code through
-  `POST /app-manifests/{code}/conversions` and stores the App id, slug, private key and
-  webhook secret as controller secrets. The page then links to the App's install page.
-- **Manifest.** Webhook URL `<public url>/hooks/github`. Event `pull_request`.
-  Permissions `metadata: read`, `contents: read` and `pull_requests: read`.
+  controller as it does for `/mcp`.
+- **Creating the App.** The operator creates the App on GitHub by hand, under a
+  personal account or an org. Webhook URL `<public url>/hooks/github`, a webhook
+  secret, and event `pull_request`. Permissions `metadata: read`, `contents: read` and
+  `pull_requests: read`.
+- **Credentials.** The controller config gains a `github_app` entry with three values.
+
+  ```yaml
+  github_app:
+    id: 123456
+    private_key_file: /run/secrets/github-app/private-key.pem
+    webhook_secret_file: /run/secrets/github-app/webhook-secret
+  ```
+
+  The private key is the PEM GitHub generates for the App. The Helm chart takes
+  `githubApp.id`, `githubApp.privateKey` and `githubApp.webhookSecret`. It puts the two
+  secrets in the Secret `<release>-secrets` and mounts them as these files. Without
+  `github_app`, every App feature is off and the portal shows nothing of it.
+- **Portal.** Settings links "Install the App on a repo" to the App's public install
+  page, `https://github.com/apps/<slug>/installations/new`. It lists the repos that
+  have the App installed. The controller reads the slug from `GET /app`.
 - **Tokens.** The controller signs a JWT with the App key and trades it for an
   installation token for each read-back. It caches the token for under its hour.
 - **Lost after `202`.** A controller crash between `202` and the claim loses the event.
@@ -170,7 +184,7 @@ review code, run a check or do nothing on GitHub at all.
   workflow, repo, `pull_number` and `head_sha` for `pull_request` rows that are not
   `skipped_fork`. Today's key on due time narrows to cron rows. Manual rows sit under no
   key. The open-run rule guards them. SQLite cannot change a check, so the migration
-  rebuilds the table as `V85__workflow_plans` did. The App's credentials get one row.
+  rebuilds the table as `V85__workflow_plans` did.
 - **Dedupe key.** A failed, refused or cancelled head fires again only through Run again
   or a new push. That covers a close, then `reopened` at the same SHA.
 - **Settling.** `run_start` and `resolve_interrupted` settle a claim by its run id. Two
@@ -229,10 +243,11 @@ Each step is one small PR. Local checks use the `verify-moor-live` skill's priva
 controller on this host. GitHub cannot reach it, so the receiver is proven there with a
 signed replay. The real delivery runs on the team cluster last.
 
-1. **App setup.** The manifest flow, the stored credentials, the install link and the
-   installation token. Live check. Create an App for a test account from the local
-   portal and install it on `IniZio/moor-pilot-example`. Its token reads a fixture pull
-   request and an author's collaborator permission.
+1. **App credentials.** The `github_app` config entry and its Helm values, the App JWT,
+   installation tokens, the install link and the list of installed repos in the portal.
+   Live check. Point the local controller at a test App installed on
+   `IniZio/moor-pilot-example`. The portal shows the link and that repo. The installation
+   token reads a fixture pull request and an author's collaborator permission.
 2. **A run can have a pull request.** `RunCause`, the subject columns, the claim key, the
    Box name and the run's env. `run_workflow` gains an optional `pull`. Live check. Run
    a copy of the evidence workflow with `pull` set to a fixture pull request. Its Box
