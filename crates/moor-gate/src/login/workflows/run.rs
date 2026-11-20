@@ -154,6 +154,10 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
             text(entry, "author").unwrap_or("?")
         ),
         "refused" => format!("Refused: {}", text(entry, "detail").unwrap_or("no reason")),
+        "close_unconfirmed" => format!(
+            "Close not confirmed, the run stays open: {}",
+            text(entry, "detail").unwrap_or("no reason")
+        ),
         "ended" => {
             let outcome = entry.get("outcome").cloned().unwrap_or_default();
             format!(

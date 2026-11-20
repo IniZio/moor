@@ -224,11 +224,33 @@ fn a_failed_read_is_a_refused_run_with_the_reason_and_is_not_retried() {
 }
 
 #[test]
-fn a_close_whose_read_fails_cancels_nothing() {
+fn a_close_whose_read_fails_leaves_the_run_open_and_says_why_in_its_history() {
     let r = hooked();
     let id = r.put_pr("evidence", true, true);
     r.signed("opened", 65, OLD);
     r.github.set_down(true);
     r.raw("closed", OLD);
-    assert!(running(&r.one_at(id, 65, OLD).state));
+    let run = r.one_at(id, 65, OLD);
+    assert!(running(&run.state), "{:?}", run.state);
+    let lines = r.cx.store().unwrap().run_history(run.id).unwrap();
+    let last = lines.last().unwrap();
+    assert_eq!(last.entry.get("kind").unwrap(), "close_unconfirmed");
+    let detail = last.entry.get("detail").unwrap().as_str().unwrap();
+    assert!(
+        detail.contains("could not read o/n#65 from GitHub") && detail.contains("HTTP 503"),
+        "{detail}"
+    );
+    assert_eq!(r.runs(id).len(), 1, "a note is no run, so no failed run");
+    let asked = r.github.api.seen().len();
+    r.raw("closed", OLD);
+    assert_eq!(r.github.api.seen().len(), asked + 1, "no retry");
+}
+
+#[test]
+fn a_close_whose_read_fails_with_no_open_run_writes_nothing() {
+    let r = hooked();
+    let id = r.put_pr("evidence", true, true);
+    r.github.set_down(true);
+    r.raw("closed", OLD);
+    assert!(r.runs(id).is_empty());
 }

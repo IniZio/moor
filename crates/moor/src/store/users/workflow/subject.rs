@@ -8,11 +8,13 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    CancelCause, RunCause, RunEnd, RunOutcome, RunState, WorkflowId, WorkflowRun,
+    CancelCause, HistoryEntry, RunCause, RunEnd, RunId, RunOutcome, RunState, WorkflowId,
+    WorkflowRun,
 };
 use moor_schema::tables::WorkflowRuns;
 use sea_query::{Cond, Expr, ExprTrait as _, Order, Query};
 
+use super::history::append_history;
 use super::row::{read_run, run_of, RUN_COLS, STARTED, STARTING, WAITING};
 use super::runs::{move_in, Open};
 use crate::store::db::{Db, DbExt as _, Tx};
@@ -121,5 +123,34 @@ impl Store {
             Ok(changed)
         })?;
         Ok(cancelled)
+    }
+
+    /// Appends `entry` at `at` to the history of the open run of `workflow` for pull request
+    /// `number` on `repo`, and numbers the run again so a watcher sees it. The run's state is
+    /// untouched. The run noted; none when nothing was open.
+    pub(crate) fn note_pull_run(
+        &self,
+        workflow: WorkflowId,
+        (repo, number): (&ForgeRepo, u64),
+        (entry, at): (&HistoryEntry, Ts),
+    ) -> Result<Option<RunId>, StoreError> {
+        let mut noted = None;
+        self.numbered(|tx, seq| {
+            let Some(open) = open_run(tx, workflow, Some((repo, number)))? else {
+                return Ok(0);
+            };
+            let changed = tx.run(
+                Query::update()
+                    .table(WorkflowRuns::Table)
+                    .value(WorkflowRuns::Seq, seq)
+                    .and_where(Expr::col(WorkflowRuns::Id).eq(open.id.get())),
+            )?;
+            if changed == 1 {
+                append_history(tx, open.id.get(), at, entry)?;
+                noted = Some(open.id);
+            }
+            Ok(changed)
+        })?;
+        Ok(noted)
     }
 }

@@ -9,12 +9,14 @@
 //! request cancels its open run on every workflow of the repo, enabled or not.
 //!
 //! A read that fails records a refused run at the payload's head on each workflow that would
-//! fire, with the reason, and nothing retries it. A close whose read fails cancels nothing.
+//! fire, with the reason, and nothing retries it. A close whose read fails cancels nothing and
+//! notes `close_unconfirmed`, with the reason, in the history of each open run of that pull
+//! request; no open run, no note.
 
 use moor_core::name::ForgeRepo;
 use moor_core::workflow::{
-    CancelCause, CommitSha, NewRun, PullRef, PullTarget, RunCause, RunEnd, RunState, Workflow,
-    WorkflowState,
+    CancelCause, CommitSha, HistoryEntry, NewRun, PullRef, PullTarget, RunCause, RunEnd, RunState,
+    Workflow, WorkflowState,
 };
 
 use super::cancel::cancel_pull;
@@ -158,9 +160,7 @@ fn unread(
     let target = &event.target;
     let detail = format!("could not read {target} from GitHub: {why}");
     if event.action == PullAction::Close {
-        return vec![format!(
-            "pull request {target}: {detail}; nothing cancelled"
-        )];
+        return unconfirmed(cx, store, event, workflows, &detail);
     }
     let mut out = Vec::new();
     for w in workflows.iter().filter(|w| fires(w)) {
@@ -181,6 +181,40 @@ fn unread(
             Err(e) => e,
         };
         out.push(said(w, target, &event.head_sha, &line));
+    }
+    out
+}
+
+/// Notes on the open run of each workflow of the repo that the close of `event`'s pull request
+/// could not be confirmed, with `detail`. Nothing is cancelled and nothing retried; a workflow
+/// with no open run for it records nothing. What to log.
+fn unconfirmed(
+    cx: &Cx,
+    store: &Store,
+    event: &PullEvent,
+    workflows: &[Workflow],
+    detail: &str,
+) -> Vec<String> {
+    let target = &event.target;
+    let entry = HistoryEntry::CloseUnconfirmed {
+        detail: detail.to_owned(),
+    };
+    let mut out = vec![format!(
+        "pull request {target}: {detail}; nothing cancelled"
+    )];
+    for w in workflows {
+        let Some(first) = w.repos.first() else {
+            continue;
+        };
+        match store.note_pull_run(w.id, (first, target.number), (&entry, cx.clock().now())) {
+            Ok(Some(run)) => out.push(format!(
+                "workflow {} on {target}: run {} stays open, close not confirmed",
+                w.name,
+                run.get()
+            )),
+            Ok(None) => {}
+            Err(e) => out.push(format!("workflow {} on {target}: failed: {e}", w.name)),
+        }
     }
     out
 }
