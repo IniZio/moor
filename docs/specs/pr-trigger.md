@@ -91,7 +91,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | Events come from a GitHub App, not a webhook per repo. | An App is generic. An external team sets up its own moor without hand-made webhooks. |
 | The operator creates one App per moor install on GitHub and gives moor its id, private key and webhook secret. No shared hosted App. | moor carries no App setup code. A shared App would route every team's events through one owner. |
 | moor never creates repo webhooks through the API. Installing the App on a repo replaces that. | One setup step per repo, done on GitHub, with no `admin:repo_hook` token. |
-| The App only reads. Runs keep acting as the owner's token through the Proxy. | Grants already live in `proxy.allow`. A second write identity would need a second grant model. |
+| The App only reads. moor uses App credentials to verify deliveries, find installations, and read pull requests and collaborator permissions. No code path writes with an App token. Runs keep acting as the owner's token through the Proxy. | Grants already live in `proxy.allow`. A second write identity would need a second grant model. |
 | A run has one `RunCause`. A pull request run is unique on workflow, repo, number and head SHA. | One claim path for every trigger. A redelivered event lands on the same row and starts nothing. |
 | One open run per workflow and pull request. | Two pull requests should not wait on each other. One pull request must not get two agents. |
 | A newer head cancels the open run of an older head. | The old run is a live Box spending tokens on a stale commit. |
@@ -116,7 +116,8 @@ columns with a check that matches the enum, and parses rows back into it.
 - **Creating the App.** The operator creates the App on GitHub by hand, under a
   personal account or an org. Webhook URL `<public url>/hooks/github`, a webhook
   secret, and event `pull_request`. Permissions `metadata: read`, `contents: read` and
-  `pull_requests: read`.
+  `pull_requests: read`. The App gets no write permission. Every comment, status or
+  other write goes through the owner's token and the Proxy.
 - **Credentials.** The controller config gains a `github_app` entry with three values.
 
   ```yaml
