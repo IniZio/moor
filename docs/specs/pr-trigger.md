@@ -60,6 +60,8 @@ pub enum RunEnd {
     /* ...today's arms, such as SkippedOverlap... */
     /// The fork's author lacks write access. Stored as `skipped_fork`.
     SkippedFork { author: Login },
+    /// A newer head or a close cancelled the run before it had a Box.
+    CancelledUnstarted { cause: CancelCause },
 }
 
 pub enum RunOutcome {
