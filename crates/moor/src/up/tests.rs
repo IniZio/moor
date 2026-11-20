@@ -204,6 +204,22 @@ WantedBy=default.target
 }
 
 #[test]
+fn the_agent_keeps_the_images_the_user_chose_and_leaves_unset_ones_out() {
+    let env = Env::from_pairs([
+        ("HOME", "/nonexistent-home"),
+        ("PATH", "/usr/bin"),
+        ("MOOR_AGENT_IMAGE", "moor-agent:dev"),
+        ("MOOR_WORK_IMAGE", ""),
+    ]);
+    let text = agent_unit(&plan(), Path::new("/state/agent-home"), &env);
+    assert!(
+        text.contains("Environment=\"MOOR_AGENT_IMAGE=moor-agent:dev\""),
+        "{text}"
+    );
+    assert!(!text.contains("MOOR_WORK_IMAGE"), "{text}");
+}
+
+#[test]
 fn the_agent_runs_under_its_own_home_and_state_and_keeps_the_users_path_to_docker() {
     let env = Env::from_pairs([
         ("HOME", "/nonexistent-home"),

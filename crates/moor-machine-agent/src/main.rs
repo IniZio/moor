@@ -133,10 +133,13 @@ fn main() -> ExitCode {
         } => run_here((allow_exec, boxes, images), auto_update),
         Command::Update { version } => return update_here(&version),
     };
-    if let Err(e) = ended {
-        say(&e);
+    match ended {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            say(&e);
+            ExitCode::FAILURE
+        }
     }
-    ExitCode::FAILURE
 }
 
 /// The images a Docker Box is made from; each left out is this release's own.
@@ -169,7 +172,8 @@ impl ImageFlags {
     }
 }
 
-/// Keeps this machine linked until the server or the host stops it.
+/// Keeps this machine linked until the host stops it, which is a clean end; it fails when the
+/// agent cannot run.
 fn run_here(
     (allow_exec, boxes, images): (bool, Option<String>, ImageFlags),
     auto_update: bool,

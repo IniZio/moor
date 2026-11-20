@@ -15,7 +15,7 @@ use moor_core::Request;
 use serde::{Deserialize, Serialize};
 
 use super::files::{Layout, NODE};
-use super::relay::{relay_unit, relayed, Relay};
+use super::relay::{bridge_gateway, relay_unit, relayed, Relay};
 use super::service;
 use moor_client::rootless;
 
@@ -152,26 +152,6 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Option<Relay>, V
     Ok((plan, relay, checks))
 }
 
-/// The address of Docker's default bridge on this host.
-fn bridge_gateway() -> Result<Ipv4Addr, Check> {
-    docker(&[
-        "network",
-        "inspect",
-        "bridge",
-        "--format",
-        "{{(index .IPAM.Config 0).Gateway}}",
-    ])
-    .ok()
-    .and_then(|g| g.parse::<Ipv4Addr>().ok())
-    .ok_or_else(|| {
-        Check::fail(
-            "docker",
-            "cannot read the address of Docker's bridge network",
-            "check `docker network inspect bridge`",
-        )
-    })
-}
-
 /// What `up` says about the privileges Docker Boxes take. Under rootless Docker it first checks
 /// the daemon is set up for them, and fails with every check that does not hold.
 fn trust(env: &Env, rootless: bool) -> Result<Vec<Check>, Check> {
@@ -201,7 +181,7 @@ pub(crate) fn rootless_checks(facts: &rootless::Facts) -> Result<Vec<Check>, Che
 }
 
 /// The trimmed stdout of `docker args`, else why it failed.
-fn docker(args: &[&str]) -> Result<String, String> {
+pub(super) fn docker(args: &[&str]) -> Result<String, String> {
     let out = Command::new("docker")
         .args(args)
         .stdin(Stdio::null())
@@ -262,7 +242,15 @@ pub(crate) fn agent_unit(plan: &Plan, home: &Path, env: &Env) -> String {
         ("HOME".to_owned(), home.display().to_string()),
         ("XDG_STATE_HOME".to_owned(), state.display().to_string()),
     ];
-    for name in ["PATH", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
+    for name in [
+        "PATH",
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        // A source build has no released images; the agent would ask for ones that don't exist.
+        "MOOR_AGENT_IMAGE",
+        "MOOR_WORK_IMAGE",
+    ] {
         if let Some(v) = env.get(name).filter(|v| !v.is_empty()) {
             vars.push((name.to_owned(), v.to_owned()));
         }
