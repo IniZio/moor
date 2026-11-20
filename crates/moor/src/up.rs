@@ -35,6 +35,8 @@ use files::Layout;
 const SOCKET_POLL: Duration = Duration::from_millis(100);
 /// How long one hello waits for its reply.
 const HELLO_WAIT: Duration = Duration::from_secs(5);
+/// How long `down` waits for a controller's hello before it takes the controller for gone.
+const DOWN_HELLO_WAIT: Duration = Duration::from_secs(2);
 /// How long the controller has to answer after the service starts.
 const SOCKET_WAIT: Duration = Duration::from_secs(30);
 
@@ -208,14 +210,28 @@ fn refusal(boxes: &[String]) -> Option<Check> {
 
 /// Stops and removes every unit `up` wrote; config, state and secrets stay. Refuses while Boxes run, unless `force`.
 pub fn down(env: &Env, force: bool, out: &mut dyn Write) -> u8 {
+    down_with(env, force, &|| running_boxes(env), out)
+}
+
+/// The Boxes of the controller on this host, asked only when it answers a hello, so a controller
+/// that is broken, which is when `down` is wanted most, does not hold `down` up.
+fn running_boxes(env: &Env) -> Vec<String> {
+    let Some(Target::Socket(socket)) = client::configured_target(env) else {
+        return Vec::new();
+    };
+    if client::hello(&socket, DOWN_HELLO_WAIT).is_err() {
+        return Vec::new();
+    }
+    let target = Target::Socket(socket);
+    open_boxes(&|req: Request| client::call(env, &target, &req, |_| {}, |_| {}))
+}
+
+/// [`down`], where `running` names the Boxes that run.
+fn down_with(env: &Env, force: bool, running: &dyn Fn() -> Vec<String>, out: &mut dyn Write) -> u8 {
     if !force {
-        if let Some(Target::Socket(socket)) = client::configured_target(env) {
-            let target = Target::Socket(socket);
-            let ask = |req: Request| client::call(env, &target, &req, |_| {}, |_| {});
-            if let Some(refused) = refusal(&open_boxes(&ask)) {
-                let _ = out.write_all(line(&refused).as_bytes());
-                return 1;
-            }
+        if let Some(refused) = refusal(&running()) {
+            let _ = out.write_all(line(&refused).as_bytes());
+            return 1;
         }
     }
     let result = service::unit_dir(env)

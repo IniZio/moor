@@ -128,7 +128,7 @@ pub(crate) struct Inputs<'a> {
     /// The repo the checkout's origin names, which decides the secrets a start needs.
     pub repo: Option<ForgeRepo>,
     /// Where an image is.
-    pub present: &'a (dyn Fn(&str) -> images::Presence + Sync),
+    pub present: &'a images::Probe,
     /// The version the agent at a path reports.
     pub agent_version: &'a dyn Fn(&str) -> Option<String>,
     /// Whether an image that exists nowhere fails, as in the doctor, or only warns, as in `up`.

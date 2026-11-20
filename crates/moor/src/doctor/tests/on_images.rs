@@ -28,8 +28,34 @@ fn installed(vars: &[(&str, &str)]) -> (Rig, tempfile::TempDir) {
 }
 
 fn run(rig: &mut Rig, probe: impl Fn(&str) -> Presence + Sync + 'static) -> Vec<Check> {
-    rig.present = Box::new(probe);
+    rig.present = Box::new(move |image, _| probe(image));
     rig.with(images::checks)
+}
+
+#[test]
+fn the_probe_runs_docker_the_way_the_agent_does() {
+    let (mut rig, _home) = installed(&[
+        ("DOCKER_HOST", "unix:///run/user/1003/docker.sock"),
+        ("DOCKER_CONTEXT", ""),
+    ]);
+    let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    rig.present = Box::new(move |_, env| {
+        log.lock().unwrap().push(env.to_vec());
+        Presence::Local
+    });
+    rig.with(images::checks);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    for env in seen.iter() {
+        assert_eq!(
+            env,
+            &[(
+                "DOCKER_HOST".to_owned(),
+                "unix:///run/user/1003/docker.sock".to_owned()
+            )]
+        );
+    }
 }
 
 #[test]

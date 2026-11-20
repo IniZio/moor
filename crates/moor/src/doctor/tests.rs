@@ -41,7 +41,7 @@ pub(super) struct Rig {
     pub public_url: Option<String>,
     pub repo: Option<moor_core::name::ForgeRepo>,
     pub get: Get,
-    pub present: Box<dyn Fn(&str) -> images::Presence + Sync>,
+    pub present: Box<images::Probe>,
     pub agent_version: VersionOf,
     pub images_fail: bool,
 }
@@ -58,7 +58,7 @@ impl Rig {
             public_url: None,
             repo: None,
             get: Box::new(|_| Err("unscripted".to_owned())),
-            present: Box::new(|_| images::Presence::Local),
+            present: Box::new(|_, _| images::Presence::Local),
             agent_version: Box::new(|_| None),
             images_fail: true,
         }

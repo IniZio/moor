@@ -30,6 +30,9 @@ pub(crate) enum Presence {
     Unknown(String),
 }
 
+/// Where an image is, asked with the `docker` variables the agent's unit sets.
+pub(crate) type Probe = dyn Fn(&str, &[(String, String)]) -> Presence + Sync;
+
 /// One line for each image of the installed agent; none when this host has no agent unit.
 pub(super) fn checks(i: &Inputs<'_>) -> Vec<Check> {
     let Some(dir) = service::unit_dir(i.env) else {
@@ -51,10 +54,14 @@ pub(super) fn checks(i: &Inputs<'_>) -> Vec<Check> {
         (role, image)
     });
     let present = i.present;
+    let docker_env: Vec<(String, String)> = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"]
+        .iter()
+        .filter_map(|n| Some(((*n).to_owned(), unit_var(&unit, n)?)))
+        .collect();
     let found: Vec<Presence> = std::thread::scope(|s| {
         let probes: Vec<_> = wanted
             .iter()
-            .map(|(_, image)| s.spawn(|| present(image)))
+            .map(|(_, image)| s.spawn(|| present(image, &docker_env)))
             .collect();
         probes
             .into_iter()
@@ -130,9 +137,11 @@ pub(crate) fn agent_version(exe: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Where `image` is: this host's store, else its registry, through the `docker` command line.
-pub(crate) fn present(image: &str) -> Presence {
+/// Where `image` is: this host's store, else its registry, through the `docker` command line
+/// run with `env`, the variables the agent's unit sets.
+pub(crate) fn present(image: &str, env: &[(String, String)]) -> Presence {
     let local = Command::new("docker")
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .args(["image", "inspect", image])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -141,15 +150,16 @@ pub(crate) fn present(image: &str) -> Presence {
     if local.is_ok_and(|s| s.success()) {
         return Presence::Local;
     }
-    match manifest(image) {
+    match manifest(image, env) {
         Ok(()) => Presence::Pullable,
         Err(said) => classify_manifest(&said),
     }
 }
 
 /// `docker manifest inspect image`, which asks the registry without pulling; else what it said.
-fn manifest(image: &str) -> Result<(), String> {
+fn manifest(image: &str, env: &[(String, String)]) -> Result<(), String> {
     let mut child = Command::new("docker")
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .args(["manifest", "inspect", image])
         .stdin(Stdio::null())
         .stdout(Stdio::null())

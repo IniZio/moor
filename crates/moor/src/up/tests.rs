@@ -7,7 +7,7 @@ use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
 use super::relay::{relay_unit, Relay};
 use super::service::{front_socket_unit, service_unit, socket_unit, Unit};
-use super::{open_boxes, refusal, wait_for};
+use super::{down_with, open_boxes, refusal, wait_for};
 use crate::env::Env;
 use moor_client::rootless::Facts;
 
@@ -511,6 +511,29 @@ fn down_refuses_open_boxes_and_names_close_and_force() {
     assert!(check.detail.contains("fix-login, docs"), "{check:?}");
     assert!(check.fix.contains("moor close <name>"), "{check:?}");
     assert!(check.fix.contains("moor down --force"), "{check:?}");
+}
+
+#[test]
+fn down_with_an_open_box_stops_nothing_unless_forced() {
+    let home = tempfile::tempdir().unwrap();
+    let env = Env::from_pairs([("HOME", home.path().to_str().unwrap())]);
+    let open = || vec!["fix-login".to_owned()];
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, false, &open, &mut out), 1);
+    let said = String::from_utf8(out).unwrap();
+    assert!(said.starts_with("fail  boxes"), "{said}");
+    assert!(
+        !said.contains("not installed"),
+        "it went on to the units: {said}"
+    );
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, true, &open, &mut out), 0);
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "ok    service     not installed\n"
+    );
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, false, &Vec::new, &mut out), 0);
 }
 
 #[test]
