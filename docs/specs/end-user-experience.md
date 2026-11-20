@@ -239,7 +239,7 @@ Each step ends in a check someone can rerun. The first step is useful alone.
 
 All nine steps shipped by 2026-11-19. The terminal uses xterm.js rather than ghostty-web, as decided below.
 
-1. **Delete the herdr front.** PR #1496.
+1. **Delete the herdr front.** PR #1496. The moor-hc bridge was deleted after the browser terminal shipped.
 2. **Mockup and design system.** A clickable mockup of Home and the Task page, with the reference screenshots beside it.
 3. **Tasks in the portal.** The derived state, the Home list, the Task page with Timeline from events only, Evidence, and Start. Check. Start a task from the browser on the pilot fixture repo and see it reach done with a screenshot.
 4. **needs you.** The waiting card, answers from the web, the inbox, and default notifications. Check. A permission prompt answered in the browser unblocks the agent.

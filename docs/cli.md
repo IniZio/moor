@@ -38,7 +38,7 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 | `moor inspect NAME` | Shows the agent's state, why it looks stuck, its latest messages, and the end of its terminal. |
 | `moor run NAME CMD...` | Runs a command in the Box's work tree and records the run. |
 | `moor exec NAME CMD...` | Runs a command with stdin, stdout, and stderr passed byte for byte, and exits with its code. Records no run. |
-| `moor forward NAME PORT` | Serves port `PORT` of the Box on this computer's `localhost` until Ctrl-C. A development tool; `moor-hc forward` is the one teammates run. |
+| `moor forward NAME PORT` | Serves port `PORT` of the Box on this computer's `localhost` until Ctrl-C. |
 | `moor steer NAME [TEXT]` | Sends text, a menu choice, or an interrupt to the agent. |
 | `moor wait NAME` | Waits until the Box reaches a state. |
 | `moor wait-events BOXES...` | Waits for events from one or more Boxes. |

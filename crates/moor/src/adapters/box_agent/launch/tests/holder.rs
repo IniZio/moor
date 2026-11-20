@@ -32,7 +32,7 @@ struct TestBox {
 impl TestBox {
     fn new() -> Self {
         let home = tempfile::Builder::new()
-            .prefix("moor-hc-install-")
+            .prefix("herdr-core-install-")
             .tempdir()
             .unwrap();
         let bin = home.path().join("bin");

@@ -87,10 +87,10 @@ own browser. This matters when you must act in the app yourself, such as
 signing in with a second factor that the agent cannot supply.
 
 ```sh
-moor-hc forward fix-login 5177
+moor forward fix-login 5177
 ```
 
-moor-hc listens on `localhost:5177` on your computer and carries each
+`moor` listens on `localhost:5177` on your computer and carries each
 connection to port 5177 in the Box. Open `http://localhost:5177` in your
 browser. The app sees `Host: localhost:5177`, so a sign-in whose only
 registered redirect is `http://localhost:5177` works. Ctrl-C ends the forward.

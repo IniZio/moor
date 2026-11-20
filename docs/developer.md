@@ -92,5 +92,5 @@ reads the repo with your GitHub token, so link GitHub first.
 ## Reach the Box from your own computer
 
 A Box that runs a web app can be reached from your browser with
-[moor-hc forward](boxes.md#open-a-web-app-in-the-box-from-your-browser). Use it when
+[moor forward](boxes.md#open-a-web-app-in-the-box-from-your-browser). Use it when
 you must act in the app yourself, such as signing in with a second factor.
