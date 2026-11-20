@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use crate::ops::users::run;
 use crate::ops::users::tests::{fixture, id, Fixture};
-use crate::testing::runs::{refused, running, skipped};
+use crate::testing::runs::{refused, running, skipped, timed_out};
 
 fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
     WorkflowAddReq {
@@ -279,13 +279,17 @@ fn a_replace_that_sends_no_origin_keeps_the_stored_one() {
 }
 
 #[test]
-fn keep_state_leaves_a_disabled_workflow_disabled_with_its_reason() {
+fn keep_state_leaves_a_disabled_workflow_disabled() {
     let f = fixture();
     let who = me(&f, "local:2000");
     daily(&f, &who);
     let store = f.cx.store().unwrap();
     assert!(store
-        .disable_workflow(stored(&f, &who).id, "o/n: three failures")
+        .set_workflow_enabled(
+            store.user_of(&who).unwrap().unwrap(),
+            &WorkflowName::parse("daily").unwrap(),
+            false,
+        )
         .unwrap());
     let disabled = stored(&f, &who).state;
 
@@ -295,10 +299,7 @@ fn keep_state_leaves_a_disabled_workflow_disabled_with_its_reason() {
     ok(&f, &who, add(req.clone(), None));
     let got = stored(&f, &who);
     assert_eq!(got.prompt, "edited");
-    assert_eq!(
-        got.state, disabled,
-        "a kept state stays disabled, with its reason"
-    );
+    assert_eq!(got.state, disabled, "a kept state stays disabled");
 
     req.keep_state = false;
     ok(&f, &who, add(req, None));
@@ -485,26 +486,30 @@ fn the_run_list_of_a_workflow_that_is_not_yours_is_refused() {
 }
 
 #[test]
-fn the_breaker_disabling_is_a_change_of_its_own_and_other_people_see_none() {
+fn five_failed_runs_leave_the_workflow_enabled_and_each_shows_in_the_stream() {
     let f = fixture();
-    let (alice, bob) = (me(&f, "local:2000"), me(&f, "local:2001"));
-    daily(&f, &alice);
-    let id = record(&f, &alice, skipped(), 100);
-    let cursor = runs(&f, &alice, None, None)["next"].as_i64().unwrap();
-    f.cx.store()
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    for due in 1..=3 {
+        record(&f, &who, refused("no repo"), due * 100);
+    }
+    for due in 4..=5 {
+        record(&f, &who, timed_out(9, due * 100), due * 100);
+    }
+    let all = runs(&f, &who, None, None);
+    let outcomes: Vec<_> = all["changes"]
+        .as_array()
         .unwrap()
-        .disable_workflow(id, "o/n: three failures")
-        .unwrap();
-    let after = runs(&f, &alice, Some(cursor), None);
-    assert_eq!(after["changes"][0]["kind"], "disabled");
-    assert_eq!(after["changes"][0]["reason"], "o/n: three failures");
-    assert_eq!(after["changes"][0]["workflow"], "daily");
-    assert_eq!(runs(&f, &bob, None, None)["changes"], json!([]));
-    let listed = ok(&f, &alice, cmd(WorkflowCmd::List));
+        .iter()
+        .map(|c| c["outcome"].as_str().unwrap())
+        .collect();
     assert_eq!(
-        listed["workflows"][0]["disabled_reason"],
-        "o/n: three failures"
+        outcomes,
+        ["refused", "refused", "refused", "timed_out", "timed_out"]
     );
+    let listed = ok(&f, &who, cmd(WorkflowCmd::List));
+    assert_eq!(listed["workflows"][0]["enabled"], true);
+    assert!(listed["workflows"][0].get("disabled_reason").is_none());
 }
 
 #[test]

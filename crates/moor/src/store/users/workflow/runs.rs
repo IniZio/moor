@@ -215,30 +215,6 @@ impl Store {
             .transpose()
     }
 
-    /// The latest `limit` runs of `workflow` that were not skipped, newest due time
-    /// first, so skips never push a failure out of the window.
-    pub(crate) fn recent_unskipped_runs(
-        &self,
-        workflow: WorkflowId,
-        limit: u64,
-    ) -> Result<Vec<WorkflowRun>, StoreError> {
-        self.reader()?
-            .rows(
-                Query::select()
-                    .columns(RUN_COLS)
-                    .from(WorkflowRuns::Table)
-                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(
-                        Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, SKIPPED_FORK]),
-                    )
-                    .order_by(WorkflowRuns::DueAt, Order::Desc)
-                    .limit(limit),
-                |r| read_run(r, 0),
-            )?
-            .map(|row| run_of(workflow, &row?))
-            .collect()
-    }
-
     /// The latest `limit` runs of `workflow`, newest due time first.
     pub(crate) fn recent_workflow_runs(
         &self,

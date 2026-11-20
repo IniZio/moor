@@ -9,9 +9,6 @@ use moor_core::BoxId;
 
 use crate::store::{Store, StoreError};
 
-/// How many of a workflow's latest unskipped runs the breaker reads; it needs only a streak of 3.
-const HISTORY: u64 = 20;
-
 /// What the tick reads of a workflow's runs.
 pub(super) struct History {
     /// The latest cron run of any outcome, which sets the latest due time. A run fired by hand is
@@ -20,8 +17,6 @@ pub(super) struct History {
     /// The latest run of any trigger that was a real attempt, however many skips and refusals
     /// followed.
     real: Option<WorkflowRun>,
-    /// The latest runs that were not skipped, for the breaker.
-    pub(super) unskipped: Vec<WorkflowRun>,
 }
 
 impl History {
@@ -81,7 +76,6 @@ pub(super) fn history(store: &Store, w: &Workflow) -> Result<History, StoreError
     Ok(History {
         cron: store.latest_cron_run(w.id)?,
         real: store.latest_real_run(w.id)?,
-        unskipped: store.recent_unskipped_runs(w.id, HISTORY)?,
     })
 }
 

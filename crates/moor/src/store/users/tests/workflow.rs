@@ -154,7 +154,7 @@ fn enabling_restarts_the_clock_and_disabling_stops_it() {
         .put_workflow(alice, &def("daily", &["a/one"], false))
         .unwrap();
     let state = |s: &Store| s.workflow(alice, &name("daily")).unwrap().unwrap().state;
-    assert_eq!(state(&store), WorkflowState::Disabled { reason: None });
+    assert_eq!(state(&store), WorkflowState::Disabled);
 
     clock.sleep(Duration::from_secs(60));
     assert!(store
@@ -176,7 +176,7 @@ fn enabling_restarts_the_clock_and_disabling_stops_it() {
     assert!(store
         .set_workflow_enabled(alice, &name("daily"), false)
         .unwrap());
-    assert_eq!(state(&store), WorkflowState::Disabled { reason: None });
+    assert_eq!(state(&store), WorkflowState::Disabled);
     assert!(!store
         .set_workflow_enabled(alice, &name("absent"), true)
         .unwrap());
@@ -387,27 +387,17 @@ fn state_of(store: &Store, owner: UserId) -> WorkflowState {
 }
 
 #[test]
-fn the_controller_disables_with_a_reason_and_enabling_clears_it() {
+fn enabling_counts_from_now_and_disabling_stops_it() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let alice = user(&store, "local:1");
-    let id = store
+    store
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
-
-    assert!(store.disable_workflow(id, "a/one: three failures").unwrap());
-    let reason = Some("a/one: three failures".to_owned());
-    assert_eq!(
-        state_of(&store, alice),
-        WorkflowState::Disabled {
-            reason: reason.clone()
-        }
-    );
-    assert!(
-        !store.disable_workflow(id, "again").unwrap(),
-        "already disabled"
-    );
-    assert_eq!(state_of(&store, alice), WorkflowState::Disabled { reason });
+    store
+        .set_workflow_enabled(alice, &name("daily"), false)
+        .unwrap();
+    assert_eq!(state_of(&store, alice), WorkflowState::Disabled);
 
     clock.sleep(Duration::from_secs(60));
     store
@@ -417,44 +407,6 @@ fn the_controller_disables_with_a_reason_and_enabling_clears_it() {
         state_of(&store, alice),
         WorkflowState::Enabled { since: store.now() }
     );
-    store
-        .set_workflow_enabled(alice, &name("daily"), false)
-        .unwrap();
-    assert_eq!(
-        state_of(&store, alice),
-        WorkflowState::Disabled { reason: None }
-    );
-}
-
-#[test]
-fn an_owner_edit_or_disable_keeps_the_controllers_reason() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let alice = user(&store, "local:1");
-    let id = store
-        .put_workflow(alice, &def("daily", &["a/one"], true))
-        .unwrap();
-    store.disable_workflow(id, "why").unwrap();
-    let kept = WorkflowState::Disabled {
-        reason: Some("why".to_owned()),
-    };
-
-    store
-        .set_workflow_enabled(alice, &name("daily"), false)
-        .unwrap();
-    assert_eq!(state_of(&store, alice), kept);
-    let mut edited = def("daily", &["a/one"], false);
-    edited.prompt = "other".to_owned();
-    store.put_workflow(alice, &edited).unwrap();
-    assert_eq!(state_of(&store, alice), kept);
-
-    store
-        .put_workflow(alice, &def("daily", &["a/one"], true))
-        .unwrap();
-    assert!(matches!(
-        state_of(&store, alice),
-        WorkflowState::Enabled { .. }
-    ));
 }
 
 #[test]

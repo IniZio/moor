@@ -19,6 +19,7 @@ mod checkpoint_stale;
 mod drop_box_deaths;
 mod drop_checkpoints;
 mod drop_panes;
+mod drop_workflow_breaker;
 mod effect_backfill;
 mod egress_token;
 mod forward_port;
@@ -108,4 +109,5 @@ pub const STEPS: &[Step] = &[
     step("V92__box_base_ref", box_base_ref::write),
     step("V93__workflow_run_pull", workflow_run_pull::write),
     step("V94__workflow_on_pull", workflow_on_pull::write),
+    step("V95__drop_workflow_breaker", drop_workflow_breaker::write),
 ];

@@ -86,9 +86,6 @@ pub struct WorkflowView {
     pub prompt: String,
     /// Whether it fires.
     pub enabled: bool,
-    /// Why the controller disabled it, when it did.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disabled_reason: Option<String>,
     /// Minutes a run may take.
     pub timeout_minutes: u32,
     /// The next time it is due, in Unix milliseconds; none while disabled.
@@ -179,18 +176,6 @@ pub enum ChangeView {
         /// The run.
         #[serde(flatten)]
         run: Box<LastRunView>,
-    },
-    /// The controller disabled the workflow.
-    Disabled {
-        /// The position in the stream.
-        seq: i64,
-        /// The workflow's name.
-        workflow: String,
-        /// The front that created the workflow.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        origin: Option<OriginView>,
-        /// Why.
-        reason: String,
     },
 }
 

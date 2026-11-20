@@ -50,8 +50,6 @@ struct WorkflowRow {
     prompt: String,
     /// `enabled_at`.
     enabled_at: Option<i64>,
-    /// `disabled_reason`.
-    disabled_reason: Option<String>,
     /// `timeout_minutes`.
     timeout_minutes: i64,
     /// `created_at`.
@@ -73,7 +71,7 @@ struct WorkflowRow {
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 18] = [
+const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -82,7 +80,6 @@ const WORKFLOW_COLS: [Workflows; 18] = [
     Workflows::Repos,
     Workflows::Prompt,
     Workflows::EnabledAt,
-    Workflows::DisabledReason,
     Workflows::TimeoutMinutes,
     Workflows::CreatedAt,
     Workflows::UpdatedAt,
@@ -110,16 +107,15 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         repos: r.get(5)?,
         prompt: r.get(6)?,
         enabled_at: r.get(7)?,
-        disabled_reason: r.get(8)?,
-        timeout_minutes: r.get(9)?,
-        created_at: r.get(10)?,
-        updated_at: r.get(11)?,
-        origin_front: r.get(12)?,
-        origin_key: r.get(13)?,
-        config: r.get(14)?,
-        revision: r.get(15)?,
-        plan: r.get(16)?,
-        on_pull_request: r.get(17)?,
+        timeout_minutes: r.get(8)?,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
+        origin_front: r.get(11)?,
+        origin_key: r.get(12)?,
+        config: r.get(13)?,
+        revision: r.get(14)?,
+        plan: r.get(15)?,
+        on_pull_request: r.get(16)?,
     })
 }
 
@@ -142,14 +138,11 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         repos: serde_json::from_str(&row.repos).map_err(|e| corrupt("repos", e))?,
         config: row.config,
         prompt: row.prompt.clone(),
-        state: row.enabled_at.map_or(
-            WorkflowState::Disabled {
-                reason: row.disabled_reason,
-            },
-            |ms| WorkflowState::Enabled {
+        state: row
+            .enabled_at
+            .map_or(WorkflowState::Disabled, |ms| WorkflowState::Enabled {
                 since: Ts::from_millis(ms),
-            },
-        ),
+            }),
         timeout,
         origin: row.origin_front.map(|front| WorkflowOrigin {
             front,
@@ -303,38 +296,14 @@ impl Store {
             .and_where(Expr::col(Workflows::User).eq(owner.get()))
             .and_where(Expr::col(Workflows::Name).eq(name.as_str()));
         if enabled {
-            update
-                .value(
-                    Workflows::EnabledAt,
-                    Func::coalesce([Expr::col(Workflows::EnabledAt), Expr::value(now)]),
-                )
-                .value(Workflows::DisabledReason, Option::<String>::None);
+            update.value(
+                Workflows::EnabledAt,
+                Func::coalesce([Expr::col(Workflows::EnabledAt), Expr::value(now)]),
+            );
         } else {
             update.value(Workflows::EnabledAt, Option::<i64>::None);
         }
         update.value(Workflows::UpdatedAt, now);
         Ok(self.writer().run(&mut update)? == 1)
-    }
-
-    /// Disables workflow `id` for `reason`; true when it was enabled. One its owner disabled is
-    /// left as it is.
-    pub(crate) fn disable_workflow(
-        &self,
-        id: WorkflowId,
-        reason: &str,
-    ) -> Result<bool, StoreError> {
-        let now = self.now().as_millis();
-        self.numbered(|tx, seq| {
-            Ok(tx.run(
-                Query::update()
-                    .table(Workflows::Table)
-                    .value(Workflows::EnabledAt, Option::<i64>::None)
-                    .value(Workflows::DisabledReason, reason)
-                    .value(Workflows::ChangeSeq, seq)
-                    .value(Workflows::UpdatedAt, now)
-                    .and_where(Expr::col(Workflows::Id).eq(id.get()))
-                    .and_where(Expr::col(Workflows::EnabledAt).is_not_null()),
-            )?)
-        })
     }
 }

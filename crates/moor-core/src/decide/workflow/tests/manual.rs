@@ -1,8 +1,6 @@
 //! Tests for a run fired by hand beside the cron ones.
 
-use super::{
-    breaker, daily, facts, finished, refused, run, timed_out, ts, verdicts, DAY, DAY0, HOUR,
-};
+use super::{daily, facts, run, ts, verdicts, DAY, DAY0, HOUR};
 use crate::decide::workflow::{workflow_due, PriorRun, WorkflowFacts, WorkflowVerdict};
 use crate::seam::clock::Ts;
 use crate::workflow::{box_name, RunCause, RunState, RunTrigger, WorkflowId, WorkflowRun};
@@ -45,46 +43,6 @@ fn a_cron_run_due_while_a_manual_run_is_open_records_skipped_overlap() {
             due_at: ts(DAY0 + 9 * HOUR)
         }
     );
-}
-
-#[test]
-fn three_failed_manual_runs_leave_the_breaker_untripped() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        manual(refused("a/b", base)),
-        manual(timed_out("a/b", base + DAY)),
-        manual(refused("a/b", base + 2 * DAY)),
-        manual(timed_out("a/b", base + 3 * DAY)),
-    ];
-    assert!(!breaker(&runs));
-}
-
-#[test]
-fn a_manual_failure_does_not_add_to_the_cron_streak() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        refused("a/b", base),
-        refused("a/b", base + DAY),
-        manual(refused("a/b", base + 2 * DAY)),
-    ];
-    assert!(!breaker(&runs), "two cron failures and a manual one");
-    let more = [runs.to_vec(), vec![refused("a/b", base + 3 * DAY)]].concat();
-    assert!(breaker(&more), "the third cron failure still trips it");
-}
-
-#[test]
-fn a_manual_delivery_resets_the_streak() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        refused("a/b", base),
-        refused("a/b", base + DAY),
-        manual(finished("a/b", base + 2 * DAY)),
-        refused("a/b", base + 3 * DAY),
-        timed_out("a/b", base + 4 * DAY),
-    ];
-    assert!(!breaker(&runs));
-    let more = [runs.to_vec(), vec![refused("a/b", base + 5 * DAY)]].concat();
-    assert!(breaker(&more));
 }
 
 #[test]

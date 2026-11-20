@@ -1,8 +1,8 @@
 //! Tests for the workflow tick decider.
 
 use super::{
-    workflow_breaker, workflow_due, workflow_expired, workflow_start_overdue, PriorRun,
-    WorkflowExpiry, WorkflowFacts, WorkflowVerdict,
+    workflow_due, workflow_expired, workflow_start_overdue, PriorRun, WorkflowExpiry,
+    WorkflowFacts, WorkflowVerdict,
 };
 use crate::name::BoxId;
 use crate::name::ForgeRepo;
@@ -169,12 +169,7 @@ fn a_re_enabled_workflow_does_not_fire_for_times_while_it_was_off() {
 
 #[test]
 fn a_disabled_workflow_never_fires() {
-    let w = workflow(
-        "0 9 * * *",
-        "UTC",
-        &["a/b"],
-        WorkflowState::Disabled { reason: None },
-    );
+    let w = workflow("0 9 * * *", "UTC", &["a/b"], WorkflowState::Disabled);
     assert_eq!(
         verdicts(&w, &facts(None, false), DAY0 + 12 * HOUR),
         WorkflowVerdict::NotDue
@@ -374,162 +369,10 @@ fn a_run_is_overdue_an_hour_after_its_claim_unless_its_agent_started() {
     assert_eq!(late.len(), 1, "only the claim that never got a Box");
 }
 
-fn breaker(runs: &[WorkflowRun]) -> bool {
-    workflow_breaker(&daily(), runs).is_some()
-}
-
-#[test]
-fn three_failures_in_a_row_trip_the_breaker_with_a_reason() {
-    let base = DAY0 - 10 * DAY;
-    let two = [refused("a/b", base), timed_out("a/b", base + DAY)];
-    assert!(!breaker(&two));
-    let three = [
-        two[0].clone(),
-        two[1].clone(),
-        refused("a/b", base + 2 * DAY),
-    ];
-    let got = workflow_breaker(&daily(), &three).unwrap();
-    assert!(got.reason.contains("the last 3 runs"), "{}", got.reason);
-}
-
-#[test]
-fn a_finished_run_resets_the_streak() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        refused("a/b", base),
-        refused("a/b", base + DAY),
-        finished("a/b", base + 2 * DAY),
-        refused("a/b", base + 3 * DAY),
-        timed_out("a/b", base + 4 * DAY),
-    ];
-    assert!(!breaker(&runs));
-    let more = [runs.to_vec(), vec![refused("a/b", base + 5 * DAY)]].concat();
-    assert!(breaker(&more));
-}
-
-#[test]
-fn a_failed_or_incomplete_run_counts_and_a_declined_one_does_neither() {
-    let base = DAY0 - 10 * DAY;
-    let failed = |due| {
-        let (at, reason) = (step(), "no".to_owned());
-        ended("a/b", due, RunOutcome::Failed { at, reason })
-    };
-    let incomplete = |due| ended("a/b", due, RunOutcome::Incomplete { at: step() });
-    let declined = |due| ended("a/b", due, RunOutcome::Declined { at: step() });
-    let runs = [
-        failed(base),
-        declined(base + DAY),
-        incomplete(base + 2 * DAY),
-    ];
-    assert!(!breaker(&runs), "a declined run is not a failure");
-    let more = [runs.to_vec(), vec![failed(base + 3 * DAY)]].concat();
-    assert!(breaker(&more), "and does not reset the streak either");
-}
-
-#[test]
-fn a_cancelled_pull_request_run_neither_counts_nor_resets_the_streak() {
-    let base = DAY0 - 10 * DAY;
-    let pull = crate::workflow::PullRef {
-        repo: repo("a/b"),
-        number: 65,
-        head_sha: crate::workflow::CommitSha::parse(&"a".repeat(40)).unwrap(),
-    };
-    let of_pull = |mut r: WorkflowRun| {
-        r.cause = RunCause::PullRequest { pull: pull.clone() };
-        r
-    };
-    let cancelled = |due| {
-        let cause = crate::workflow::CancelCause::Closed;
-        of_pull(ended(
-            "a/b",
-            due,
-            RunOutcome::Cancelled { at: step(), cause },
-        ))
-    };
-    let runs = [
-        of_pull(timed_out("a/b", base)),
-        cancelled(base + DAY),
-        cancelled(base + 2 * DAY),
-        of_pull(refused("a/b", base + 3 * DAY)),
-        cancelled(base + 4 * DAY),
-    ];
-    assert!(!breaker(&runs), "pushing often is not a failing workflow");
-    let more = [
-        runs.to_vec(),
-        vec![of_pull(timed_out("a/b", base + 5 * DAY))],
-    ]
-    .concat();
-    assert!(breaker(&more), "a cancel does not reset the streak either");
-}
-
-#[test]
-fn runs_in_flight_neither_count_nor_reset_the_streak() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        refused("a/b", base),
-        waiting("a/b", base + DAY),
-        refused("a/b", base + 2 * DAY),
-        started("a/b", base + 3 * DAY, 3),
-        timed_out("a/b", base + 4 * DAY),
-    ];
-    assert!(breaker(&runs));
-}
-
 #[test]
 fn a_waiting_run_is_not_overdue_for_its_start() {
     let open = [waiting("a/b", DAY0)];
     assert!(workflow_start_overdue(&open, (&|_| None, &|_, _| 0), ts(DAY0 + 9 * HOUR)).is_empty());
-}
-
-#[test]
-fn skipped_runs_neither_count_nor_reset_the_streak() {
-    let base = DAY0 - 10 * DAY;
-    let runs = [
-        refused("a/b", base),
-        skipped("a/b", base + DAY),
-        refused("a/b", base + 2 * DAY),
-        skipped("a/b", base + 3 * DAY),
-        timed_out("a/b", base + 4 * DAY),
-    ];
-    assert!(breaker(&runs));
-    let only_skips: Vec<_> = (0..5).map(|i| skipped("a/b", base + i * DAY)).collect();
-    assert!(!breaker(&only_skips));
-}
-
-#[test]
-fn failures_before_the_workflow_was_last_enabled_do_not_count() {
-    let base = DAY0 - 10 * DAY;
-    let w = workflow(
-        "0 9 * * *",
-        "UTC",
-        &["a/b"],
-        enabled_since(base + 2 * DAY + HOUR),
-    );
-    let runs = [
-        refused("a/b", base),
-        refused("a/b", base + DAY),
-        refused("a/b", base + 2 * DAY),
-        refused("a/b", base + 3 * DAY),
-        refused("a/b", base + 4 * DAY),
-    ];
-    assert!(
-        workflow_breaker(&w, &runs).is_none(),
-        "only two since re-enabling"
-    );
-    let more = [runs.to_vec(), vec![refused("a/b", base + 5 * DAY)]].concat();
-    assert!(workflow_breaker(&w, &more).is_some());
-}
-
-#[test]
-fn a_disabled_workflow_has_nothing_to_trip() {
-    let w = workflow(
-        "0 9 * * *",
-        "UTC",
-        &["a/b"],
-        WorkflowState::Disabled { reason: None },
-    );
-    let runs: Vec<_> = (0..4).map(|i| refused("a/b", i * DAY)).collect();
-    assert!(workflow_breaker(&w, &runs).is_none());
 }
 
 fn with_prior(prior: Option<PriorRun>) -> WorkflowVerdict {

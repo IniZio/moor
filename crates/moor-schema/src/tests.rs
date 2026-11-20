@@ -15,6 +15,7 @@ mod box_inbox;
 mod box_state;
 mod drop_box_deaths;
 mod drop_checkpoints;
+mod drop_workflow_breaker;
 mod effect_backfill;
 mod hands_ended;
 mod inbox_prompts;

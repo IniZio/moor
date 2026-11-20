@@ -242,10 +242,7 @@ fn list(store: &Store, user: UserId, now: Ts) -> Result<serde_json::Value, Comma
 
 /// `w` as shown.
 fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
-    let (enabled, disabled_reason) = match &w.state {
-        moor_core::workflow::WorkflowState::Enabled { .. } => (true, None),
-        moor_core::workflow::WorkflowState::Disabled { reason } => (false, reason.clone()),
-    };
+    let enabled = matches!(w.state, moor_core::workflow::WorkflowState::Enabled { .. });
     WorkflowView {
         name: w.name.to_string(),
         cron: w.schedule.expr().to_owned(),
@@ -254,7 +251,6 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
         config: w.config.clone(),
         prompt: w.prompt.clone(),
         enabled,
-        disabled_reason,
         timeout_minutes: w.timeout.minutes(),
         next_due: enabled
             .then(|| w.schedule.first_after(now).map(Ts::as_millis))
