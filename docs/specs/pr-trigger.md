@@ -236,8 +236,8 @@ signed replay. The real delivery runs on the team cluster last.
 
 1. **App setup.** The manifest flow, the stored credentials, the install link and the
    installation token. Live check. Create an App for a test account from the local
-   portal, install it on `IniZio/moor-pilot-example`, and read a fixture pull request and
-   an author's collaborator permission with its token.
+   portal and install it on `IniZio/moor-pilot-example`. Its token reads a fixture pull
+   request and an author's collaborator permission.
 2. **A run can have a pull request.** `RunCause`, the subject columns, the claim key, the
    Box name and the run's env. `run_workflow` gains an optional `pull`. Live check. Run
    a copy of the evidence workflow with `pull` set to a fixture pull request. Its Box
