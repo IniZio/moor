@@ -8,6 +8,19 @@ use crate::boxes::provider::ProvideError;
 use crate::boxes::Slug;
 
 impl Docker {
+    /// Counts the cache volumes the work place `work` mounts as used now, so a Box that ran long
+    /// does not leave them looking old when it closes.
+    async fn touch_mounted(&self, work: &str) {
+        let format = "{{range .Mounts}}{{.Name}} {{end}}";
+        let said = Cli::ok(["inspect", "-f", format, work])
+            .await
+            .unwrap_or_default();
+        let names = said
+            .split_whitespace()
+            .filter(|n| n.starts_with("moor-cache-"));
+        self.caches.uses.touch(names);
+    }
+
     /// Waits for the agent place's init to make the key and the tools the work place starts from.
     pub(super) async fn await_agent(&self, names: &Names) -> Result<(), ProvideError> {
         for _ in 0..AGENT_READY_TRIES {
@@ -47,6 +60,7 @@ impl Docker {
     /// them to the canonical ones. A save that fails is said and never keeps a Box open.
     #[allow(clippy::print_stderr, reason = "the agent has no log but its stderr")]
     pub(super) async fn keep_caches(&self, slug: &Slug, names: &Names) -> Result<(), ProvideError> {
+        self.touch_mounted(&names.work).await;
         if Cli::state(&names.work).await? == Some(State::Running) {
             Cli::ok(["stop", "-t", STOP_SECONDS, &names.work]).await?;
         }

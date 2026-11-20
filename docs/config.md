@@ -304,6 +304,11 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 A preset, the work tree, and a repo config volume are kept per user and repo.
 A user config volume is kept per user. Another user's Box never sees a cache.
 
+A Docker machine deletes a repo's kept volumes once no Box has used them for 30 days.
+A Box's open and close count as use, and a volume a live or asleep Box holds is never
+deleted. The machine logs each deletion with its size. [`--cache-max-age`](cli.md) sets the
+age, and `0` turns this off.
+
 The kept work tree lives at `~/moor/repos/<repo name>` in every Box of the repo.
 On a new Box, moor fetches, checks out the Box branch, resets tracked files,
 and removes untracked ones. Ignored files stay. Any failure falls back to a
