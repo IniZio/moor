@@ -143,7 +143,12 @@ fn a_box_without_the_entry_may_not_post_an_issue_or_pr_comment() {
         .filter(|s| s.authorization.is_some())
         .collect();
     assert_eq!(with_token.len(), 1, "{with_token:?}");
-    assert!(with_token[0].line.starts_with("GET "), "{with_token:?}");
+    assert!(
+        with_token
+            .first()
+            .is_some_and(|s| s.line.starts_with("GET ")),
+        "{with_token:?}"
+    );
     assert!(withheld_recorded(&b), "no credential_withheld event");
     b.stop();
 }
@@ -164,6 +169,9 @@ fn a_box_with_the_entry_may_post_a_comment_on_its_own_repo_only() {
         .filter(|s| s.authorization.is_some())
         .collect();
     assert_eq!(with_token.len(), 1, "{with_token:?}");
-    assert_eq!(with_token[0].authorization, Some(format!("token {SECRET}")));
+    assert_eq!(
+        with_token.first().and_then(|s| s.authorization.clone()),
+        Some(format!("token {SECRET}"))
+    );
     a.stop();
 }
