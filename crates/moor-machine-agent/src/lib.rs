@@ -14,7 +14,7 @@ use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
 use tokio::sync::mpsc;
 
-pub use crate::boxes::{Host, Images};
+pub use crate::boxes::{parse_age, Host, Images};
 pub use crate::release::{update, Updated};
 pub use crate::serve::Machine;
 

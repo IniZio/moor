@@ -21,6 +21,8 @@ trait Serving: Send + Sync {
     fn offer(&self) -> BoxOffer;
     /// Whether its Boxes keep cache volumes.
     fn keeps_caches(&self) -> bool;
+    /// Deletes the cache volumes no Box has used for too long.
+    fn expire_caches(self: Arc<Self>) -> Later<'static, ()>;
     /// Serves the one request on `stream`.
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()>;
     /// Every Box's health.
@@ -34,6 +36,10 @@ impl<P: BoxProvider> Serving for Boxes<P> {
 
     fn keeps_caches(&self) -> bool {
         self.provider.keeps_caches()
+    }
+
+    fn expire_caches(self: Arc<Self>) -> Later<'static, ()> {
+        Box::pin(async move { self.provider.expire_caches().await })
     }
 
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()> {
@@ -73,7 +79,10 @@ impl Host {
     /// `home`.
     #[must_use]
     pub fn docker(images: Images, home: &Path) -> Self {
-        Self(Arc::new(Boxes::new(Docker::new(images, None), home)))
+        Self(Arc::new(Boxes::new(
+            Docker::new(images, None).kept_in(home),
+            home,
+        )))
     }
 
     /// What the machine offers.
@@ -86,6 +95,11 @@ impl Host {
     #[must_use]
     pub fn keeps_caches(&self) -> bool {
         self.0.keeps_caches()
+    }
+
+    /// Deletes the cache volumes no Box has used for too long.
+    pub(crate) async fn expire_caches(&self) {
+        Arc::clone(&self.0).expire_caches().await;
     }
 
     /// Serves the one request on `stream`.

@@ -26,7 +26,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
-pub use docker::Images;
+pub use docker::{parse_age, Images};
 pub use host::Host;
 
 #[cfg(any(test, feature = "fake-boxes"))]

@@ -9,7 +9,11 @@
 
 use moor_client::link::lease::{Cache, CacheVolume};
 
+use std::time::Duration;
+
+use super::expire::{line, parse_age, verdict, Verdict, DEFAULT_MAX_AGE};
 use super::marker::{marker, standing, Private};
+use super::uses::Uses;
 use super::{args, mounts};
 use crate::boxes::Slug;
 
@@ -143,4 +147,91 @@ fn the_marker_is_its_own_volume_named_from_the_private_one() {
     let private = m[0].private.as_deref().unwrap();
     assert_eq!(marker(private), format!("{private}.ok"));
     assert_ne!(marker(private), private);
+}
+
+const DAY: Duration = Duration::from_hours(24);
+
+#[test]
+fn the_age_is_thirty_days_unless_set_and_zero_turns_expiry_off() {
+    assert_eq!(DEFAULT_MAX_AGE, 30 * DAY);
+    assert_eq!(parse_age("30d").unwrap(), 30 * DAY);
+    assert_eq!(parse_age("7").unwrap(), 7 * DAY);
+    assert_eq!(parse_age("12h").unwrap(), Duration::from_hours(12));
+    assert_eq!(parse_age("20s").unwrap(), Duration::from_secs(20));
+    assert_eq!(parse_age("0").unwrap(), Duration::ZERO);
+    assert!(parse_age("soon").is_err());
+    assert!(parse_age("5w").is_err());
+}
+
+#[test]
+fn nothing_goes_when_expiry_is_off() {
+    assert_eq!(
+        verdict(Some(0), 10 * 365 * 86_400, Duration::ZERO, false),
+        Verdict::Off
+    );
+}
+
+#[test]
+fn a_volume_with_no_recorded_use_starts_its_clock_and_stays() {
+    assert_eq!(verdict(None, 1_000_000, DAY, false), Verdict::Learn);
+}
+
+#[test]
+fn a_volume_used_within_the_age_stays() {
+    assert_eq!(
+        verdict(Some(1_000), 1_000 + 86_399, DAY, false),
+        Verdict::Fresh
+    );
+}
+
+#[test]
+fn an_old_volume_no_box_holds_goes() {
+    assert_eq!(
+        verdict(Some(1_000), 1_000 + 86_400, DAY, false),
+        Verdict::Expire
+    );
+}
+
+#[test]
+fn an_old_volume_a_live_or_asleep_box_holds_stays() {
+    assert_eq!(verdict(Some(1_000), 10_000_000, DAY, true), Verdict::Held);
+}
+
+#[test]
+fn the_log_line_names_the_volume_and_its_size() {
+    let said = line(
+        "moor-cache-0123456789abcdef-go-0",
+        Some(4_914_000_000),
+        90_000,
+    );
+    assert!(said.contains("moor-cache-0123456789abcdef-go-0"), "{said}");
+    assert!(said.contains("4914000000 bytes"), "{said}");
+    assert!(line("v", None, 1).contains("size unknown"));
+}
+
+#[test]
+fn use_is_recorded_kept_across_restarts_and_forgotten_with_the_volume() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("cache-use.json");
+    let uses = Uses::default();
+    uses.keep_in(file.clone());
+    assert_eq!(uses.last("a"), None);
+    uses.touch_at(["a", "b"], 100);
+    uses.touch_at(["a"], 200);
+    assert_eq!((uses.last("a"), uses.last("b")), (Some(200), Some(100)));
+    let again = Uses::default();
+    again.keep_in(file.clone());
+    assert_eq!((again.last("a"), again.last("b")), (Some(200), Some(100)));
+    again.forget("a");
+    let third = Uses::default();
+    third.keep_in(file);
+    assert_eq!((third.last("a"), third.last("b")), (None, Some(100)));
+}
+
+#[test]
+fn a_new_open_counts_as_use_now() {
+    let uses = Uses::default();
+    uses.touch(["moor-cache-x-go-0"]);
+    let at = uses.last("moor-cache-x-go-0").unwrap();
+    assert!((crate::unix_now() - at).abs() < 5);
 }

@@ -79,6 +79,7 @@ fn rig(home: &std::path::Path) -> Rig {
     let images = Images {
         agent: Some(image("MOOR_TEST_AGENT_IMAGE")),
         work: Some(image("MOOR_TEST_WORK_IMAGE")),
+        ..Images::default()
     };
     Arc::new(Boxes::new(Docker::new(images, Some(NETWORK)), home))
 }

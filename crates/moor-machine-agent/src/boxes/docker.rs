@@ -16,6 +16,7 @@ use tokio::process::Command;
 use super::provider::{BoxProvider, Env, Notes, Observed, ProvideError, Spec};
 use super::Slug;
 use args::{agent_run, kvm_gid, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
+pub use cache::parse_age;
 use cli::{Cli, State};
 use names::Names;
 
@@ -28,6 +29,7 @@ mod live;
 mod names;
 mod net;
 mod observe;
+mod ready;
 #[cfg(test)]
 mod tests;
 
@@ -47,6 +49,9 @@ pub struct Images {
     pub agent: Option<String>,
     /// The work place's image.
     pub work: Option<String>,
+    /// How long a repo's cache volumes may sit unused before they are deleted; zero keeps them,
+    /// and none is 30 days.
+    pub cache_max_age: Option<std::time::Duration>,
 }
 
 /// What the provider is set up with.
@@ -58,6 +63,8 @@ pub(super) struct Settings {
     pub(super) work_image: String,
     /// The network both places join, made on first use.
     pub(super) network: String,
+    /// How long a canonical cache volume may sit unused before it is deleted; zero keeps it.
+    pub(super) cache_max_age: std::time::Duration,
 }
 
 impl Settings {
@@ -68,6 +75,7 @@ impl Settings {
             agent_image: images.agent.unwrap_or_else(|| release("moor-agent")),
             work_image: images.work.unwrap_or_else(|| release("moor-work")),
             network: network.to_owned(),
+            cache_max_age: images.cache_max_age.unwrap_or(cache::DEFAULT_MAX_AGE),
         }
     }
 }
@@ -82,7 +90,7 @@ pub(crate) struct Docker {
     /// The hosts each Box reached.
     egress: Arc<egress::Watches>,
     /// What keeps a save of a cache volume and a copy of it apart.
-    caches: Arc<cache::Locks>,
+    caches: Arc<cache::Caches>,
 }
 
 impl Docker {
@@ -94,6 +102,13 @@ impl Docker {
             egress: Arc::default(),
             caches: Arc::default(),
         }
+    }
+
+    /// Keeps when each cache volume was last used under `home`.
+    #[must_use]
+    pub(crate) fn kept_in(self, home: &std::path::Path) -> Self {
+        self.caches.uses.keep_in(home.join("cache-use.json"));
+        self
     }
 
     /// Pulls the images that are not on this host.
@@ -202,77 +217,6 @@ impl Docker {
             None => Err(ProvideError::Missing),
         }
     }
-
-    /// Waits for the agent place's init to make the key and the tools the work place starts from.
-    async fn await_agent(&self, names: &Names) -> Result<(), ProvideError> {
-        for _ in 0..AGENT_READY_TRIES {
-            let ready = ["exec", &names.agent, "test", "-e", "/run/moor/agent.ready"];
-            if Cli::passes(ready).await {
-                return Ok(());
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-        Err(ProvideError::Failed(
-            "the agent place did not become ready".to_owned(),
-        ))
-    }
-
-    /// Waits until a command in the work place runs, which is when its sshd answers.
-    async fn await_work(&self, names: &Names) -> Result<(), ProvideError> {
-        for _ in 0..WORK_READY_TRIES {
-            if Cli::passes(["exec", &names.agent, "box-shell", "-c", "true"]).await {
-                return Ok(());
-            }
-            if Cli::state(&names.work).await? != Some(State::Running) {
-                let logs = Cli::output(["logs", "--tail", "20", &names.work]).await?;
-                let tail = String::from_utf8_lossy(&logs.stderr);
-                return Err(ProvideError::Failed(format!(
-                    "the work place stopped while starting: {}",
-                    tail.trim()
-                )));
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        }
-        Err(ProvideError::Failed(
-            "the work place did not answer over ssh".to_owned(),
-        ))
-    }
-
-    /// Stops the work place so nothing writes while its private cache volumes are read, then saves
-    /// them to the canonical ones. A save that fails is said and never keeps a Box open.
-    #[allow(clippy::print_stderr, reason = "the agent has no log but its stderr")]
-    async fn keep_caches(&self, slug: &Slug, names: &Names) -> Result<(), ProvideError> {
-        if Cli::state(&names.work).await? == Some(State::Running) {
-            Cli::ok(["stop", "-t", STOP_SECONDS, &names.work]).await?;
-        }
-        if let Err(e) = cache::save(&self.caches, &self.settings.agent_image, slug).await {
-            eprintln!(
-                "moor-machine-agent: cache of {} not saved: {e}",
-                slug.as_str()
-            );
-        }
-        Ok(())
-    }
-
-    /// Writes `content` to `path` in the agent place, through a rename so a reader never sees half.
-    async fn write_run_file(
-        &self,
-        names: &Names,
-        path: &str,
-        content: &str,
-    ) -> Result<(), ProvideError> {
-        let script = format!("cat > {path}.new && mv -f {path}.new {path}");
-        Cli::feed(["exec", "-i", &names.agent, "sh", "-c", &script], content).await
-    }
-
-    /// The OOM kills the work place's memory limit has made, from the run volume.
-    async fn oom_kills(&self, names: &Names) -> u32 {
-        Cli::ok(["exec", &names.agent, "cat", "/run/moor/oom"])
-            .await
-            .ok()
-            .and_then(|text| text.parse().ok())
-            .unwrap_or(0)
-    }
 }
 
 /// The `box.env` file for `env`: one `export` per variable.
@@ -334,6 +278,11 @@ impl BoxProvider for Docker {
 
     fn keeps_caches(&self) -> bool {
         true
+    }
+
+    async fn expire_caches(&self) {
+        let (caches, image) = (&self.caches, &self.settings.agent_image);
+        cache::expire(caches, image, self.settings.cache_max_age).await;
     }
 
     /// Sealing, a `docker commit` of the work place, is not built yet; nothing starts a repair

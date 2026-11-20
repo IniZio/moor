@@ -9,7 +9,7 @@ use moor_machine_agent::pair::Token;
 use moor_machine_agent::service::Manager;
 use moor_machine_agent::up::{self, down, Runtime, Up};
 use moor_machine_agent::{
-    run_hosting, state_dir, until_stopped, update, Ended, Host, Images, Machine,
+    parse_age, run_hosting, state_dir, until_stopped, update, Ended, Host, Images, Machine,
 };
 
 /// The kind of Boxes a machine makes unless it is told otherwise.
@@ -97,6 +97,7 @@ fn up_here(flags: UpFlags) -> ExitCode {
             kind: flags.boxes.unwrap_or_else(|| DOCKER.to_owned()),
             agent_image: flags.images.agent_image,
             work_image: flags.images.work_image,
+            cache_max_age: flags.images.cache_max_age,
         }
     };
     let home = Machine::from_env().home;
@@ -147,6 +148,10 @@ struct ImageFlags {
     /// The work place's image, such as one built from `images/work` for development.
     #[arg(long, env = "MOOR_WORK_IMAGE", value_name = "IMAGE")]
     work_image: Option<String>,
+    /// How long a repo's cache volumes may sit unused before moor deletes them, such as `30d`,
+    /// `12h` or `20s`; a bare number is days and `0` keeps them for good. Default `30d`.
+    #[arg(long, env = "MOOR_CACHE_MAX_AGE", value_name = "AGE", value_parser = parse_age)]
+    cache_max_age: Option<std::time::Duration>,
 }
 
 impl ImageFlags {
@@ -156,6 +161,7 @@ impl ImageFlags {
             let images = Images {
                 agent: self.agent_image,
                 work: self.work_image,
+                cache_max_age: self.cache_max_age,
             };
             return Ok(Host::docker(images, home));
         }

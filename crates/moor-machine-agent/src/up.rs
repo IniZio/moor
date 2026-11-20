@@ -35,6 +35,8 @@ pub enum Runtime {
         agent_image: Option<String>,
         /// The work place's image.
         work_image: Option<String>,
+        /// How long cache volumes may sit unused before they are deleted; none is the default.
+        cache_max_age: Option<std::time::Duration>,
     },
     /// No Boxes; it runs the `exec` scripts the server sends.
     Exec,
@@ -169,6 +171,7 @@ fn service(runtime: &Runtime, dir: &Path, manager: &Manager) -> Result<Service, 
             kind,
             agent_image,
             work_image,
+            cache_max_age,
         } => {
             if kind != DOCKER {
                 args.extend(["--boxes".to_owned(), kind.clone()]);
@@ -177,6 +180,9 @@ fn service(runtime: &Runtime, dir: &Path, manager: &Manager) -> Result<Service, 
                 if let Some(image) = image {
                     args.extend([flag.to_owned(), image.clone()]);
                 }
+            }
+            if let Some(age) = cache_max_age {
+                args.extend(["--cache-max-age".to_owned(), format!("{}s", age.as_secs())]);
             }
         }
     }
