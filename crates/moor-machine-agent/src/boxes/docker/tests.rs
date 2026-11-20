@@ -25,6 +25,7 @@ fn settings() -> Settings {
         Images {
             agent: Some("agent:dev".to_owned()),
             work: Some("work:dev".to_owned()),
+            ..Images::default()
         },
         "net",
     )

@@ -144,7 +144,7 @@ async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) -> O
     match op {
         Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,
         Op::Pull { box_id, path } => files::pull(machine, ch, box_id, &path).await,
-        Op::Sweep { keep, .. } => return sweep::serve(machine, ch, &keep).await,
+        Op::Sweep { keep, .. } => return sweep::serve(machine, link, ch, &keep).await,
         Op::Remove { box_id } => return sweep::serve_remove(machine, ch, box_id).await,
         op => match start(machine, op) {
             Ok(Start::Run(script, timeout)) => ran(machine, ch, &script, timeout).await,

@@ -163,14 +163,22 @@ pub(super) fn args(mounts: &[Mount], work: bool) -> Vec<String> {
     a
 }
 
-/// One lock per canonical volume: a save writes it alone, copies in read it together.
+/// What the provider keeps about cache volumes: one lock per canonical volume, a save writing it
+/// alone and copies in reading it together, and when each was last used.
 #[derive(Default)]
-pub(super) struct Locks(Mutex<BTreeMap<String, Arc<RwLock<()>>>>);
+pub(super) struct Caches {
+    /// The locks.
+    locks: Mutex<BTreeMap<String, Arc<RwLock<()>>>>,
+    /// When each canonical volume was last used.
+    pub(super) uses: uses::Uses,
+    /// Whether an expiry pass is running.
+    pub(super) sweeping: std::sync::atomic::AtomicBool,
+}
 
-impl Locks {
+impl Caches {
     /// The lock of `canonical`.
-    fn of(&self, canonical: &str) -> Arc<RwLock<()>> {
-        let mut held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+    pub(super) fn of(&self, canonical: &str) -> Arc<RwLock<()>> {
+        let mut held = self.locks.lock().unwrap_or_else(PoisonError::into_inner);
         Arc::clone(held.entry(canonical.to_owned()).or_default())
     }
 }
@@ -233,7 +241,7 @@ async fn settle(private: &str, mark: &str) -> Result<bool, ProvideError> {
 
 /// Makes one mount's volumes ready; whether it holds a save from an earlier Box.
 async fn prepare_one(
-    locks: &Locks,
+    locks: &Caches,
     image: &str,
     slug: &Slug,
     m: &Mount,
@@ -254,7 +262,7 @@ async fn prepare_one(
 /// Makes the private volume and fills it from the canonical one, then marks it finished. Whether it
 /// holds a save.
 async fn fill(
-    locks: &Locks,
+    locks: &Caches,
     image: &str,
     slug: &Slug,
     m: &Mount,
@@ -295,12 +303,15 @@ async fn fill(
 /// Makes the volumes of `mounts` ready for Box `slug`: each canonical volume exists, and each
 /// private one that is new is filled from the canonical volume.
 pub(super) async fn prepare(
-    locks: &Locks,
+    locks: &Caches,
     image: &str,
     slug: &Slug,
     mounts: &[Mount],
     note: &Notes,
 ) -> Result<(), ProvideError> {
+    locks
+        .uses
+        .touch(mounts.iter().map(|m| m.canonical.as_str()));
     let mut warm = 0;
     for m in mounts {
         if prepare_one(locks, image, slug, m).await? {
@@ -319,7 +330,7 @@ pub(super) async fn prepare(
 /// Saves each private cache volume of Box `slug` into its canonical volume, skipping a volume that
 /// is empty so a Box that never set up cannot wipe a good save. The caller has stopped the Box.
 /// A failed save is the last error; the others still run.
-pub(super) async fn save(locks: &Locks, image: &str, slug: &Slug) -> Result<(), ProvideError> {
+pub(super) async fn save(locks: &Caches, image: &str, slug: &Slug) -> Result<(), ProvideError> {
     let format = format!("{{{{.Name}}}} {{{{.Label \"{COPY_LABEL}\"}}}}");
     let listed = Cli::ok([
         "volume",
@@ -349,8 +360,9 @@ pub(super) async fn save(locks: &Locks, image: &str, slug: &Slug) -> Result<(), 
             Ok(()) => copy(image, private, canonical, SAVE).await.map(drop),
             Err(e) => Err(e),
         };
-        if let Err(e) = saved {
-            last = Err(e);
+        match saved {
+            Ok(()) => locks.uses.touch([canonical]),
+            Err(e) => last = Err(e),
         }
     }
     last
@@ -376,7 +388,11 @@ pub(super) async fn drop_private(slug: &Slug) -> Result<(), ProvideError> {
     Ok(())
 }
 
+mod expire;
+pub use expire::parse_age;
+pub(super) use expire::{pass as expire, DEFAULT_MAX_AGE};
 mod marker;
+mod uses;
 use marker::{marker, standing, Private};
 
 #[cfg(test)]

@@ -111,6 +111,12 @@ pub(crate) trait BoxProvider: Send + Sync + 'static {
         false
     }
 
+    /// Deletes the cache volumes it keeps that no Box has used for as long as it was set up to
+    /// allow. Providers that keep none do nothing.
+    fn expire_caches(&self) -> impl Future<Output = ()> + Send {
+        async {}
+    }
+
     /// Makes what is missing of `slug` and starts what is stopped; repeating it finds the same
     /// Box. The workdir.
     fn open(

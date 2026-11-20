@@ -23,6 +23,7 @@ use moor_client::link::{ops, Channel};
 use moor_core::box_key::{BoxKey, STATE_ROOT, WORK_ROOT};
 use moor_core::BoxId;
 
+use crate::listen::Link;
 use crate::serve::{self, Machine};
 
 /// How old a Box's folders must be before a sweep removes them; far longer than the seconds
@@ -34,13 +35,21 @@ const RELEASE_TIMEOUT: Duration = Duration::from_secs(600);
 const QUOTED: usize = 120;
 
 /// Sweeps the Boxes not in `keep` and answers what came of it; why any failed.
-pub(crate) async fn serve(machine: &Machine, ch: Channel, keep: &[i64]) -> Option<String> {
+pub(crate) async fn serve(
+    machine: &Machine,
+    link: &Link,
+    ch: Channel,
+    keep: &[i64],
+) -> Option<String> {
     let swept = sweep(machine, keep).await;
     let failed = swept
         .errors
         .first()
         .map(|e| format!("Box {}: {}", e.box_id, e.reason));
     serve::end(ch, Reply::Swept(swept)).await;
+    if let Some(host) = link.host.clone() {
+        tokio::spawn(async move { host.expire_caches().await });
+    }
     failed
 }
 

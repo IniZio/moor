@@ -192,7 +192,8 @@ success, else `{kind, message, hints, context}`.
 | `--allow-exec` | off | Host no Boxes. Run the `exec` commands Boxes send. |
 | `--agent-image IMAGE` | this release's | The image of a Box's agent place. `MOOR_AGENT_IMAGE` also sets it. |
 | `--work-image IMAGE` | this release's | The image of a Box's work place. `MOOR_WORK_IMAGE` also sets it. |
+| `--cache-max-age AGE` | `30d` | How long a repo's cache volumes may sit unused before the machine deletes them. Use `30d`, `12h`, `20s`, or a bare number of days. `0` keeps them. `MOOR_CACHE_MAX_AGE` also sets it. |
 
-`run` takes `--allow-exec`, `--agent-image`, `--work-image`, and
+`run` takes `--allow-exec`, `--agent-image`, `--work-image`, `--cache-max-age`, and
 `--auto-update`, which installs the release the server names, then restarts.
 The user service runs it with the image flags `up` was given.
