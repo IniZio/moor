@@ -93,6 +93,14 @@ kubectl -n NAMESPACE rollout restart deployment/RELEASE deployment/RELEASE-egres
 | `blobs.s3.accessKey`, `blobs.s3.secretKey` | none | Secret. The bucket's keys. They need list, read, and write. |
 | `blobs.copyFromVolume` | `false` | Copy blobs from the volume to the bucket once. |
 
+## GitHub App
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `githubApp.id` | empty | The App id. Empty turns every App feature off. See [`github_app`](config.md#github_app). |
+| `githubApp.privateKey` | empty | Secret. The PEM GitHub generated for the App. Required with `githubApp.id`. |
+| `githubApp.webhookSecret` | empty | Secret. The App's webhook secret. Only the webhook event source needs it. |
+
 With `database.url` and `blobs.s3` both set, the controller mounts no volume
 and rolls with `maxSurge: 1`.
 

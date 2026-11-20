@@ -23,6 +23,7 @@ pub(crate) mod env;
 pub(crate) mod exec;
 pub(crate) mod forward;
 mod gate;
+mod github_app;
 pub(crate) mod host_session;
 mod inspect;
 mod machine_box;
@@ -139,6 +140,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         }
         Request::MachineBox(r) => to_value(&machine_box::run(cx, r.op)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
+        Request::GitHubApp(_) => to_value(&github_app::installed(cx)?),
         Request::NodeAdd(r) => to_value(&node_add::run(cx, &r)?),
         Request::NodeSettingsGet(r) => to_value(&node_settings::get(cx, &r)?),
         Request::NodeSettingsSet(r) => to_value(&node_settings::set(cx, &r)?),

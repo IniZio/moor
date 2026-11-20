@@ -14,6 +14,16 @@ data:
       endpoint: {{ required "blobs.s3.endpoint is required" .endpoint | quote }}
       bucket: {{ required "blobs.s3.bucket is required" .bucket | quote }}
     {{- end }}
+    {{- with .Values.githubApp }}
+    {{- if .id }}
+    github_app:
+      id: {{ .id | int64 }}
+      private_key_file: /var/lib/moor/config/github-app.pem
+      {{- if .webhookSecret }}
+      webhook_secret_file: /var/lib/moor/config/github-app-webhook-secret
+      {{- end }}
+    {{- end }}
+    {{- end }}
     {{- if or .Values.gate.enabled .Values.notify.enabled }}
     fronts:
       {{- if include "moor.gateSeparate" . }}

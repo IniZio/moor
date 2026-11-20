@@ -43,6 +43,11 @@ pub(super) fn answer(configs: &mut Configs, cmd: &str, who: &str, inner: &Value)
             Some(json!({"boxes": [{"repo": "acme/web"},
                 {"repo": "acme/api", "other_repos": ["acme/web", "acme/lib"]}]})),
         ),
+        "github-app" => Response::ok(
+            "x",
+            Some(json!({"install_url": "https://github.com/apps/moor",
+                "repos": ["acme/other-a", "acme/other-b", "acme/web"]})),
+        ),
         "repo-config-get" => Response::ok("x", Some(held(configs))),
         "repo-config-set" if !can_edit => {
             let why = format!("your GitHub account cannot push to {repo}");
@@ -112,6 +117,19 @@ fn the_list_holds_each_repo_of_the_persons_boxes_once_sorted() {
         json!({"repos": ["acme/api", "acme/lib", "acme/web"]})
     );
     assert_eq!(get(&w.addr, "/account/api/repos", None).status, 401);
+}
+
+#[test]
+fn the_app_lists_only_the_installed_repos_the_person_has_in_moor() {
+    let w = world(true, &[]);
+    let cookie = sign_in(&w.addr);
+    let reply = get(&w.addr, "/account/api/github-app", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    assert_eq!(
+        json_of(&reply),
+        json!({"install_url": "https://github.com/apps/moor", "repos": ["acme/web"]})
+    );
+    assert!(!reply.body.contains("other-"), "{}", reply.body);
 }
 
 #[test]

@@ -86,6 +86,43 @@ fn ledger_tls_parses_its_address_cert_key_and_client_ca() {
 }
 
 #[test]
+fn github_app_parses_its_id_and_key_files() {
+    let c = parse_controller(
+        "c.yaml",
+        "github_app:\n  id: 123456\n  private_key_file: /run/app/key.pem\n  webhook_secret_file: /run/app/secret\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let app = c.github_app.unwrap_or_else(|| panic!("no github_app"));
+    assert_eq!(app.id, 123_456);
+    assert_eq!(
+        app.private_key_file,
+        std::path::Path::new("/run/app/key.pem")
+    );
+    assert_eq!(
+        app.webhook_secret_file.as_deref(),
+        Some(std::path::Path::new("/run/app/secret"))
+    );
+    assert_eq!(ControllerConfig::default().github_app, None);
+}
+
+#[test]
+fn github_app_needs_an_id_and_a_key_file_but_not_a_webhook_secret() {
+    let c = parse_controller(
+        "c.yaml",
+        "github_app:\n  id: 1\n  private_key_file: /k.pem\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.github_app.and_then(|a| a.webhook_secret_file), None);
+    for text in [
+        "github_app:\n  private_key_file: /k.pem\n",
+        "github_app:\n  id: 1\n",
+        "github_app:\n  id: 1\n  private_key_file: /k.pem\n  slug: x\n",
+    ] {
+        assert!(err(text).to_string().contains("github_app"), "{text}");
+    }
+}
+
+#[test]
 fn ledger_tls_needs_every_key_and_a_socket_address() {
     for (text, path) in [
         (

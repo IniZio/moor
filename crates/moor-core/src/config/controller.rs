@@ -47,6 +47,23 @@ pub struct ControllerConfig {
     pub ledger_tls: Option<LedgerTls>,
     /// Where artifacts, reports and transcripts live; the state directory by default.
     pub blobs: BlobsConfig,
+    /// The GitHub App the operator created for this install; none turns every App feature off.
+    pub github_app: Option<GitHubAppConfig>,
+}
+
+/// The `github_app` entry: the id and key files of a GitHub App the operator created on GitHub.
+/// moor only reads with it: installations, pull requests and collaborator permissions.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitHubAppConfig {
+    /// The App id GitHub shows on the App's settings page.
+    pub id: u64,
+    /// The PEM private key GitHub generated for the App; `~` allowed.
+    pub private_key_file: PathBuf,
+    /// The file holding the App's webhook secret; `~` allowed. Only the webhook event source
+    /// needs it.
+    #[serde(default)]
+    pub webhook_secret_file: Option<PathBuf>,
 }
 
 /// The `ledger_tls` entry: the ledger on TCP, behind the controller's certificate, answering

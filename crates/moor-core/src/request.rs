@@ -217,6 +217,10 @@ pub enum Request {
     MachineList(AsReq),
     /// List the nodes the caller may start Boxes on; the operator sees every node.
     NodeList(AsReq),
+    /// The operator's GitHub App: its install page and the repos it is installed on; null when
+    /// the controller has none.
+    #[serde(rename = "github-app")]
+    GitHubApp(AsReq),
     /// Add or replace a shared node's machine, which no user owns; the operator's only.
     NodeAdd(NodeAddReq),
     /// Read a node's cap and labels.

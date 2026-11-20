@@ -27,6 +27,11 @@ database:
 blobs:
   copyFromVolume: false
 
+githubApp:
+  id: ""
+  privateKey: ""
+  webhookSecret: ""
+
 controller:
   uid: 10001
   # agent.model in the controller config: the model a Box's agent starts with. Empty leaves the agent's own default.

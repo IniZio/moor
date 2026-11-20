@@ -89,3 +89,10 @@ export const SourceInput = v.pipe(
 	v.nonEmpty('Paste the URL of a GitHub repo.'),
 	v.regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?(#[^\s#]+)?$/, 'Use https://github.com/OWNER/NAME, then #ref to pin a branch, tag or commit.'),
 );
+
+const GitHubAppSchema = v.nullable(v.object({ install_url: v.string(), repos: v.array(v.string()) }));
+
+/** The operator's GitHub App: its install page and the repos it is installed on; null when moor has none. */
+export async function githubApp() {
+	return answer(await fetch('/account/api/github-app'), GitHubAppSchema);
+}
