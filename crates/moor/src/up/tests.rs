@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use super::files::{controller, converge_user, Layout};
 use super::gate::{self, Gate, Plan as GatePlan};
-use super::node::{agent_unit, runner_unit, Plan, Ports};
+use super::node::{agent_unit, relay_unit, rootless_checks, runner_unit, Plan, Ports, Relay};
 use super::service::{service_unit, socket_unit, Unit};
 use crate::env::Env;
+use moor_client::rootless::Facts;
 
 fn env() -> Env {
     Env::from_pairs([("HOME", "/home/ada")])
@@ -323,4 +324,106 @@ fn a_user_config_routing_moor_service_elsewhere_gets_no_gate() {
     std::fs::write(&l.user_config, "moor_service:\n  upstream: 10.0.0.9:8444\n").unwrap();
     let got = gate::decide(&env(), &l, dir.path()).unwrap();
     assert_eq!(got, Gate::Left("moor_service names a listener of your own"));
+}
+
+fn relay() -> Relay {
+    Relay {
+        forward: PathBuf::from("/home/ada/.local/bin/moor-egress-forward"),
+        state: PathBuf::from("/run/user/1000/dockerd-rootless"),
+        docker: "docker.service".to_owned(),
+    }
+}
+
+#[test]
+fn the_relay_enters_the_daemons_namespace_at_start_and_follows_the_rootless_docker_unit() {
+    let mut p = plan();
+    p.egress = "10.0.2.100:20003".parse().unwrap();
+    assert_eq!(
+        relay_unit(&p, &layout(), &relay(), Some("/usr/bin")),
+        "[Unit]
+Description=moor egress relay: carries Box egress into the rootless Docker namespace
+BindsTo=docker.service
+PartOf=docker.service
+After=docker.service
+
+[Service]
+ExecStart=\"/bin/sh\" \"-c\" \"exec nsenter -U --preserve-credentials -n -t $$(cat \\\"$$1\\\"/child_pid) \\\"$$2\\\" --relay \\\"$$3\\\" --socket \\\"$$4\\\"\" \"moor-relay\" \"/run/user/1000/dockerd-rootless\" \"/home/ada/.local/bin/moor-egress-forward\" \"10.0.2.100:20003\" \"/home/ada/.local/state/moor/egress/egress.sock\"
+Environment=\"PATH=/usr/bin\"
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    );
+}
+
+#[test]
+fn a_dollar_or_percent_in_a_relay_path_is_not_expanded_by_systemd() {
+    let mut r = relay();
+    r.state = PathBuf::from("/run/$u/100%/dockerd-rootless");
+    let text = relay_unit(&plan(), &layout(), &r, None);
+    assert!(
+        text.contains("\"/run/$$u/100%%/dockerd-rootless\""),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_controller_unit_names_a_relayed_address_and_never_asks_to_bind_it() {
+    let egress = "10.0.2.100:20003".parse().unwrap();
+    let env = Env::from_pairs([("HOME", "/home/ada")]);
+    let relayed = Unit::new(&env, &layout(), egress, true, None).unwrap();
+    assert!(relayed.env.contains(&(
+        "MOOR_EGRESS_RELAYED".to_owned(),
+        "10.0.2.100:20003".to_owned()
+    )));
+    assert!(relayed.env.iter().all(|(k, _)| k != "MOOR_EGRESS_LISTEN"));
+    let bound = Unit::new(&env, &layout(), egress, false, None).unwrap();
+    assert!(bound.env.contains(&(
+        "MOOR_EGRESS_LISTEN".to_owned(),
+        "10.0.2.100:20003".to_owned()
+    )));
+    assert!(bound.env.iter().all(|(k, _)| k != "MOOR_EGRESS_RELAYED"));
+}
+
+/// A rootless host where every preflight check passes.
+fn rootless_host() -> Facts {
+    Facts {
+        user: "ada".to_owned(),
+        uid: 1000,
+        subuid: Some("ada:100000:65536\n".to_owned()),
+        subgid: Some("ada:100000:65536\n".to_owned()),
+        missing: Vec::new(),
+        apparmor_restrict: Some("0\n".to_owned()),
+        unit: Some("enabled".to_owned()),
+        linger: Some(true),
+        rootlesskit: Ok(vec![
+            "/proc/self/exe".to_owned(),
+            "--net=slirp4netns".to_owned(),
+            "--disable-host-loopback".to_owned(),
+        ]),
+        kvm_mode: Some(0o666),
+    }
+}
+
+#[test]
+fn up_stops_on_a_rootless_daemon_that_opens_the_hosts_loopback() {
+    assert!(rootless_checks(&rootless_host()).is_ok());
+    let mut open = rootless_host();
+    open.rootlesskit = Ok(vec![
+        "/proc/self/exe".to_owned(),
+        "--net=slirp4netns".to_owned(),
+    ]);
+    let stopped = rootless_checks(&open).unwrap_err();
+    assert!(
+        stopped.detail.contains("--disable-host-loopback"),
+        "{stopped:?}"
+    );
+    open.missing = vec!["nsenter".to_owned()];
+    let stopped = rootless_checks(&open).unwrap_err();
+    assert!(
+        stopped.detail.contains("nsenter"),
+        "the relay needs nsenter: {stopped:?}"
+    );
 }

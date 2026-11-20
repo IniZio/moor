@@ -36,6 +36,8 @@ const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's wor
 /// What `up` tells the person about the images of a rootless daemon.
 const IMAGES: &str = "the rootless daemon keeps its own images and cache volumes under your home, \
     so the first Box here pulls the Box images again";
+/// The rootless Docker daemon's own user unit.
+const DOCKER_UNIT: &str = "docker.service";
 /// The file in the state dir that keeps the ports `up` chose.
 const PORTS_FILE: &str = "up-ports.json";
 /// Seconds to wait for the agent's link; `MOOR_UP_LINK_WAIT_SECS` sets another.
@@ -108,7 +110,7 @@ pub(crate) struct Plan {
 ///
 /// # Errors
 /// Docker is not usable, an executable is missing, or no port is free.
-pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Check> {
+pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Option<Relay>, Vec<Check>), Check> {
     let version = docker(&["info", "--format", "{{.ServerVersion}}"]).map_err(|why| {
         Check::fail(
             "docker",
@@ -116,8 +118,44 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Che
             "install Docker and let this user run it, such as by joining the docker group, then rerun moor up",
         )
     })?;
-    let notes = trust(env)?;
-    let gateway = docker(&[
+    let rootless = rootless::detect();
+    let notes = trust(env, rootless)?;
+    let (host, relay) = if rootless {
+        let (ip, relay) = relayed(env)?;
+        (ip, Some(relay))
+    } else {
+        (bridge_gateway()?, None)
+    };
+    let missing = |bin: &str| {
+        Check::fail(
+            "node",
+            format!("{bin} is neither beside moor nor on PATH"),
+            INSTALL,
+        )
+    };
+    let runner = binary(env, RUNNER_BIN).ok_or_else(|| missing(RUNNER_BIN))?;
+    let agent = binary(env, AGENT_BIN).ok_or_else(|| missing(AGENT_BIN))?;
+    // The relay's namespace is not this host's, so a port free on loopback stands in for one free there.
+    let probe = if relay.is_some() {
+        Ipv4Addr::LOCALHOST
+    } else {
+        host
+    };
+    let ports = Ports::read_or_pick(&layout.state_dir, probe)?;
+    let mut checks = vec![Check::ok("docker", format!("Docker {version} answers"))];
+    checks.extend(notes);
+    let plan = Plan {
+        runner,
+        agent,
+        ports,
+        egress: SocketAddr::new(IpAddr::V4(host), ports.egress),
+    };
+    Ok((plan, relay, checks))
+}
+
+/// The address of Docker's default bridge on this host.
+fn bridge_gateway() -> Result<Ipv4Addr, Check> {
+    docker(&[
         "network",
         "inspect",
         "bridge",
@@ -132,36 +170,58 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Vec<Check>), Che
             "cannot read the address of Docker's bridge network",
             "check `docker network inspect bridge`",
         )
-    })?;
-    let missing = |bin: &str| {
-        Check::fail(
-            "node",
-            format!("{bin} is neither beside moor nor on PATH"),
+    })
+}
+
+/// What the egress relay of a rootless daemon needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Relay {
+    /// The `moor-egress-forward` executable, which has a relay mode.
+    pub forward: PathBuf,
+    /// The state dir of the daemon's rootlesskit, which holds `child_pid`.
+    pub state: PathBuf,
+    /// The user unit that runs the daemon.
+    pub docker: String,
+}
+
+/// The rootless daemon's namespace address, which the relay listens on and a Box dials, and the
+/// relay's own facts.
+fn relayed(env: &Env) -> Result<(Ipv4Addr, Relay), Check> {
+    let fail = |why: String| Check::fail("relay", why, "check that the rootless daemon is running");
+    let state = rootless::daemon_state().map_err(fail)?;
+    let ip = rootless::child_ip(&state).map_err(fail)?;
+    let forward = crate::proxy::route::binary(env);
+    if !fs::metadata(&forward).is_ok_and(|m| m.is_file()) {
+        return Err(Check::fail(
+            "relay",
+            format!("{} does not exist", forward.display()),
             INSTALL,
-        )
-    };
-    let runner = binary(env, RUNNER_BIN).ok_or_else(|| missing(RUNNER_BIN))?;
-    let agent = binary(env, AGENT_BIN).ok_or_else(|| missing(AGENT_BIN))?;
-    let ports = Ports::read_or_pick(&layout.state_dir, gateway)?;
-    let mut checks = vec![Check::ok("docker", format!("Docker {version} answers"))];
-    checks.extend(notes);
-    let plan = Plan {
-        runner,
-        agent,
-        ports,
-        egress: SocketAddr::new(IpAddr::V4(gateway), ports.egress),
-    };
-    Ok((plan, checks))
+        ));
+    }
+    let docker = DOCKER_UNIT.to_owned();
+    Ok((
+        ip,
+        Relay {
+            forward,
+            state,
+            docker,
+        },
+    ))
 }
 
 /// What `up` says about the privileges Docker Boxes take. Under rootless Docker it first checks
 /// the daemon is set up for them, and fails with every check that does not hold.
-fn trust(env: &Env) -> Result<Vec<Check>, Check> {
-    if !rootless::detect() {
+fn trust(env: &Env, rootless: bool) -> Result<Vec<Check>, Check> {
+    if !rootless {
         return Ok(vec![Check::ok("docker", PRIVILEGED)]);
     }
-    let facts = rootless::Facts::read(env.get("PATH"), env.get("USER"));
-    let failed = rootless::failures(&facts, true);
+    rootless_checks(&rootless::Facts::read(env.get("PATH"), env.get("USER")))
+}
+
+/// What `up` says under rootless Docker for the host `facts` describe, or every check that
+/// fails, with an open host loopback and a missing `nsenter` among them.
+pub(crate) fn rootless_checks(facts: &rootless::Facts) -> Result<Vec<Check>, Check> {
+    let failed = rootless::failures(facts, true);
     if !failed.is_empty() {
         return Err(Check::fail("docker", rootless::report(&failed), ""));
     }
@@ -170,7 +230,7 @@ fn trust(env: &Env) -> Result<Vec<Check>, Check> {
         Check::ok("docker", IMAGES),
     ];
     checks.extend(
-        rootless::warnings(&facts)
+        rootless::warnings(facts)
             .into_iter()
             .map(|w| Check::warn(w.check, w.detail, w.fix)),
     );
@@ -261,6 +321,54 @@ pub(crate) fn agent_unit(plan: &Plan, home: &Path, env: &Env) -> String {
     )
 }
 
+/// The relay's unit text: it enters the rootless daemon's namespace as it is when the unit starts,
+/// and follows the daemon's own unit, so a new namespace gets a new relay.
+pub(crate) fn relay_unit(
+    plan: &Plan,
+    layout: &Layout,
+    relay: &Relay,
+    path: Option<&str>,
+) -> String {
+    let script = "exec nsenter -U --preserve-credentials -n -t $(cat \"$1\"/child_pid) \"$2\" --relay \"$3\" --socket \"$4\"";
+    let words = [
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        script.to_owned(),
+        "moor-relay".to_owned(),
+        relay.state.display().to_string(),
+        relay.forward.display().to_string(),
+        plan.egress.to_string(),
+        crate::proxy::route::local_socket(&layout.state_dir)
+            .display()
+            .to_string(),
+    ];
+    let exec = words
+        .iter()
+        .map(|w| service::quoted(&w.replace('$', "$$")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let vars = path.map_or_else(String::new, |p| {
+        format!("Environment={}\n", service::quoted(&format!("PATH={p}")))
+    });
+    let docker = &relay.docker;
+    format!(
+        "[Unit]
+Description=moor egress relay: carries Box egress into the rootless Docker namespace
+BindsTo={docker}
+PartOf={docker}
+After={docker}
+
+[Service]
+ExecStart={exec}
+{vars}Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+"
+    )
+}
+
 /// Installs the runner, adds the node, installs the agent and waits for its link; one check
 /// for each.
 ///
@@ -271,23 +379,37 @@ pub(crate) fn converge(
     ask: Ask<'_>,
     layout: &Layout,
     plan: &Plan,
+    relay: Option<&Relay>,
     dir: &Path,
 ) -> Result<Vec<Check>, Check> {
     let path = env.get("PATH");
+    let mut checks = Vec::new();
+    if let Some(relay) = relay {
+        let text = relay_unit(plan, layout, relay, path);
+        service::install_one(dir, service::RELAY, &text, false)?;
+        checks.push(Check::ok(
+            "relay",
+            format!(
+                "{} relays Box egress on {} inside the rootless Docker namespace",
+                service::RELAY,
+                plan.egress
+            ),
+        ));
+    }
     service::install_one(
         dir,
         service::RUNNER,
         &runner_unit(plan, layout, path),
         false,
     )?;
-    let mut checks = vec![Check::ok(
+    checks.push(Check::ok(
         "runner",
         format!(
             "{} takes agent links on 127.0.0.1:{}",
             service::RUNNER,
             plan.ports.agents
         ),
-    )];
+    ));
     let add = Add {
         name: NODE.to_owned(),
         agent_home: layout.agent_home(),

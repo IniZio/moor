@@ -1,10 +1,14 @@
 //! Reads what the preflight checks, and asks Docker whether it is rootless.
 
+use std::io::{Read as _, Write as _};
+use std::net::Ipv4Addr;
 use std::os::unix::fs::MetadataExt as _;
-use std::path::Path;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
-use super::{cmdline_words, is_rootless, state_dir, SECURITY_ARGS};
+use super::{child_ip_from, cmdline_words, is_rootless, state_dir, SECURITY_ARGS};
 
 /// The programs a rootless daemon, and a relay, need on `PATH`.
 const BINARIES: [&str; 4] = ["newuidmap", "newgidmap", "slirp4netns", "nsenter"];
@@ -102,10 +106,11 @@ fn lingers(user: &str) -> Option<bool> {
     }
 }
 
-/// The arguments of the rootlesskit that runs the daemon `docker` talks to. `docker context
-/// inspect` names the daemon's socket, whose directory holds rootlesskit's state dir, where
-/// `child_pid` names rootlesskit's child; the child's `/proc` command line repeats the flags.
-fn rootlesskit_args() -> Result<Vec<String>, String> {
+/// The state dir of the rootlesskit that runs the daemon `docker` talks to.
+///
+/// # Errors
+/// The daemon's address cannot be read, or is not a Unix socket.
+pub fn daemon_state() -> Result<PathBuf, String> {
     let host = run(
         "docker",
         &[
@@ -117,7 +122,32 @@ fn rootlesskit_args() -> Result<Vec<String>, String> {
     )
     .filter(|h| !h.is_empty())
     .ok_or("cannot read the address of the Docker daemon with `docker context inspect`")?;
-    let state = state_dir(&host)?;
+    state_dir(&host)
+}
+
+/// The address of the namespace of the rootlesskit whose state dir is `state`, which its `api.sock` reports.
+///
+/// # Errors
+/// The socket does not answer, or its network driver names no address.
+pub fn child_ip(state: &Path) -> Result<Ipv4Addr, String> {
+    let sock = state.join("api.sock");
+    let say = |e: std::io::Error| format!("cannot ask rootlesskit at {}: {e}", sock.display());
+    let mut conn = UnixStream::connect(&sock).map_err(say)?;
+    let wait = Some(Duration::from_secs(5));
+    conn.set_read_timeout(wait).map_err(say)?;
+    conn.write_all(b"GET /v1/info HTTP/1.0\r\nHost: rootlesskit\r\n\r\n")
+        .map_err(say)?;
+    let mut reply = String::new();
+    conn.read_to_string(&mut reply).map_err(say)?;
+    let body = reply.split_once("\r\n\r\n").map_or("", |(_, body)| body);
+    child_ip_from(body)
+}
+
+/// The arguments of the rootlesskit that runs the daemon `docker` talks to. `docker context
+/// inspect` names the daemon's socket, whose directory holds rootlesskit's state dir, where
+/// `child_pid` names rootlesskit's child; the child's `/proc` command line repeats the flags.
+fn rootlesskit_args() -> Result<Vec<String>, String> {
+    let state = daemon_state()?;
     let pid_file = state.join("child_pid");
     let pid = std::fs::read_to_string(&pid_file)
         .map_err(|e| format!("cannot read {}: {e}", pid_file.display()))?;

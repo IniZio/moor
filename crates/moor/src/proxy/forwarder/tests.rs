@@ -193,19 +193,19 @@ fn a_relayed_proxy_is_dialed_like_a_bound_one_but_the_controller_never_binds_it(
     let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
     let relayed = route(&[
         ("MOOR_STATE_DIR", "/s"),
-        ("MOOR_EGRESS_RELAYED", "172.17.0.1:8443"),
+        ("MOOR_EGRESS_RELAYED", "10.0.2.100:8443"),
     ])
     .unwrap();
     assert_eq!(
         relayed,
         EgressRoute::Relayed {
             socket: "/s/egress/egress.sock".into(),
-            host: "172.17.0.1:8443".parse().unwrap(),
+            host: "10.0.2.100:8443".parse().unwrap(),
         }
     );
     assert_eq!(
         relayed.upstream(),
-        Ok("ws://moor-host:8443/egress".to_owned())
+        Ok("ws://10.0.2.100:8443/egress".to_owned())
     );
     assert_eq!(relayed.socket(), Some(Path::new("/s/egress/egress.sock")));
     assert_eq!(relayed.bind(), None);
@@ -214,7 +214,10 @@ fn a_relayed_proxy_is_dialed_like_a_bound_one_but_the_controller_never_binds_it(
         ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
     ])
     .unwrap();
-    assert_eq!(bound.upstream(), relayed.upstream());
+    assert_eq!(
+        bound.upstream(),
+        Ok("ws://moor-host:8443/egress".to_owned())
+    );
     assert_eq!(bound.bind(), Some("172.17.0.1:8443".parse().unwrap()));
 }
 
