@@ -46,7 +46,8 @@ impl Store {
         Ok(self.claim_workflow_run(run)?.is_some())
     }
 
-    /// Like [`Store::record_workflow_run`], giving the id of the run it recorded.
+    /// Records one firing under the same unique keys and gives the id of the run it recorded, or
+    /// none when a key already holds it.
     pub(crate) fn claim_workflow_run(&self, run: &NewRun) -> Result<Option<RunId>, StoreError> {
         let mut id = None;
         self.numbered(|tx, seq| {
