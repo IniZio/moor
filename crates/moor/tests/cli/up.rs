@@ -2,12 +2,11 @@
 //! `ExecStart` as a real controller.
 
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use moor_testkit::{write_executable, ChildGuard};
+use moor_testkit::write_executable;
 
 use super::{fresh_dir, Dir, Run};
 
@@ -52,14 +51,14 @@ esac
 "#;
 
 /// A temp HOME with fake tools on `PATH`; stops the controller it ran on drop.
-struct Host {
-    home: Dir,
-    state: tempfile::TempDir,
-    bin: Dir,
+pub(super) struct Host {
+    pub(super) home: Dir,
+    pub(super) state: tempfile::TempDir,
+    pub(super) bin: Dir,
 }
 
 impl Host {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self::with_docker(true)
     }
 
@@ -87,41 +86,12 @@ impl Host {
         }
     }
 
-    fn path(&self) -> String {
+    pub(super) fn path(&self) -> String {
         format!("{}:/usr/bin:/bin", self.bin.display())
     }
 
-    fn moor(&self, args: &[&str], stdin: &str) -> Run {
-        let child = Command::new(env!("CARGO_BIN_EXE_moor"))
-            .args(args)
-            .current_dir(&self.home)
-            .env_clear()
-            .env("PATH", self.path())
-            .env("HOME", &self.home)
-            .env("MOOR_UP_LINK_WAIT_SECS", "0")
-            .env("MOOR_STATE_DIR", self.state.path())
-            .env(
-                "MOOR_EGRESS_FORWARD_BIN",
-                self.bin.join("moor-egress-forward"),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut child = ChildGuard::new(child);
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(stdin.as_bytes())
-            .unwrap();
-        let out = child.wait_with_output().unwrap();
-        Run {
-            code: out.status.code().unwrap(),
-            stdout: String::from_utf8(out.stdout).unwrap(),
-            stderr: String::from_utf8(out.stderr).unwrap(),
-        }
+    pub(super) fn moor(&self, args: &[&str], stdin: &str) -> Run {
+        self.moor_with(args, stdin, &[])
     }
 
     fn units(&self) -> PathBuf {

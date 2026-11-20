@@ -8,6 +8,7 @@ use super::*;
 use crate::cli::GlobalOpts;
 
 mod on_host;
+mod on_images;
 mod on_nodes;
 mod on_setup;
 mod on_user;
@@ -24,6 +25,9 @@ pub(super) fn answered(cmd: &str, value: Value) -> Result<Response, ClientError>
 /// What the controller says to each request.
 pub(super) type Script = Box<dyn Fn(Request) -> Result<Response, ClientError>>;
 
+/// What an agent at a path reports as its version.
+pub(super) type VersionOf = Box<dyn Fn(&str) -> Option<String>>;
+
 /// What a GET of the gate answers.
 pub(super) type Get = Box<dyn Fn(&str) -> Result<u16, String>>;
 
@@ -37,6 +41,9 @@ pub(super) struct Rig {
     pub public_url: Option<String>,
     pub repo: Option<moor_core::name::ForgeRepo>,
     pub get: Get,
+    pub present: Box<dyn Fn(&str) -> images::Presence + Sync>,
+    pub agent_version: VersionOf,
+    pub images_fail: bool,
 }
 
 impl Rig {
@@ -51,6 +58,9 @@ impl Rig {
             public_url: None,
             repo: None,
             get: Box::new(|_| Err("unscripted".to_owned())),
+            present: Box::new(|_| images::Presence::Local),
+            agent_version: Box::new(|_| None),
+            images_fail: true,
         }
     }
 
@@ -78,6 +88,9 @@ impl Rig {
             get: &*self.get,
             public_url: self.public_url.as_deref(),
             repo: self.repo.clone(),
+            present: &*self.present,
+            agent_version: &*self.agent_version,
+            images_fail: self.images_fail,
         })
     }
 

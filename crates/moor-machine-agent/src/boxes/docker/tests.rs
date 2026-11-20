@@ -8,7 +8,7 @@
 )]
 
 use super::args::{agent_run, gid_of, kvm_group, work_memory_mib, work_run};
-use super::cli::parse_ended;
+use super::cli::{parse_ended, read_state, State};
 use super::names::Names;
 use super::observe::held_by_box;
 use super::{net, Images, Settings};
@@ -30,6 +30,61 @@ fn settings() -> Settings {
         },
         "net",
     )
+}
+
+const SOCKET_GONE: &str = "failed to connect to the docker API at unix:///run/user/1003/docker.sock; check if the path is correct and if the daemon is running: dial unix /run/user/1003/docker.sock: connect: no such file or directory";
+const NOT_RUNNING: &str = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
+
+#[test]
+fn a_container_that_runs_or_is_stopped_is_read_from_its_state() {
+    assert_eq!(
+        read_state(true, "true\n", "", None).unwrap(),
+        Some(State::Running)
+    );
+    assert_eq!(
+        read_state(true, "false\n", "", None).unwrap(),
+        Some(State::Stopped)
+    );
+}
+
+#[test]
+fn a_container_docker_does_not_know_is_missing() {
+    for said in [
+        "Error response from daemon: No such container: moor-3b3b3b3b-9001-agent",
+        "Error: No such object: moor-3b3b3b3b-9001-agent",
+    ] {
+        assert_eq!(read_state(false, "", said, None).unwrap(), None, "{said}");
+    }
+}
+
+#[test]
+fn a_daemon_that_does_not_answer_is_not_a_missing_box_even_when_the_socket_is_gone() {
+    for said in [SOCKET_GONE, NOT_RUNNING] {
+        let err = read_state(false, "", said, None).unwrap_err().to_string();
+        assert!(err.contains("is not answering"), "{err}");
+        assert!(!err.contains("does not exist"), "{err}");
+    }
+}
+
+#[test]
+fn the_unanswering_daemons_address_comes_from_docker_then_docker_host() {
+    let err = |said, host| read_state(false, "", said, host).unwrap_err().to_string();
+    assert!(err(SOCKET_GONE, Some("unix:///elsewhere.sock"))
+        .starts_with("the Docker daemon at unix:///run/user/1003/docker.sock is not answering"),);
+    assert!(err(NOT_RUNNING, None)
+        .starts_with("the Docker daemon at unix:///var/run/docker.sock is not answering"));
+    let odd = "error during connect: something broke. Is the docker daemon running?";
+    assert!(err(odd, Some("tcp://10.0.0.5:2375"))
+        .starts_with("the Docker daemon at tcp://10.0.0.5:2375 is not answering"));
+    assert!(err(odd, None).starts_with("the Docker daemon at the default address is not answering"));
+}
+
+#[test]
+fn any_other_docker_failure_is_said_as_docker_said_it() {
+    let err = read_state(false, "", "permission denied while trying to connect", None)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(err, "docker: permission denied while trying to connect");
 }
 
 #[test]

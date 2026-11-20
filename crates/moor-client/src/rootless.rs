@@ -8,9 +8,11 @@ mod probe;
 mod tests;
 
 pub use probe::{child_ip, daemon_state, detect, Facts};
-
 /// Docker's security options as JSON; `name=rootless` is among them under rootless Docker.
 pub const SECURITY_ARGS: [&str; 3] = ["info", "--format", "{{json .SecurityOptions}}"];
+
+/// Whether the daemon runs with live-restore, as `true` or `false`.
+const LIVE_RESTORE_ARGS: [&str; 3] = ["info", "--format", "{{.LiveRestoreEnabled}}"];
 
 /// Ids a user needs in each of `/etc/subuid` and `/etc/subgid`.
 const SUBIDS_MIN: u64 = 65_536;
@@ -24,6 +26,15 @@ pub fn is_rootless(options: &str) -> bool {
         .unwrap_or_default()
         .iter()
         .any(|o| o.split(',').any(|field| field == "name=rootless"))
+}
+
+/// `docker info`'s live-restore line as a flag; none when it says neither `true` nor `false`.
+fn live_restore_of(line: &str) -> Option<bool> {
+    match line.trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
 /// What the notice about Docker Boxes says to `user` under rootless Docker.
@@ -85,7 +96,7 @@ pub fn failures(facts: &Facts, local_relay: bool) -> Vec<Failure> {
 /// Every finding for `facts` that leaves Docker Boxes working, so `up` says it and goes on.
 #[must_use]
 pub fn warnings(facts: &Facts) -> Vec<Failure> {
-    kvm(facts).into_iter().collect()
+    kvm(facts).into_iter().chain(live_restore(facts)).collect()
 }
 
 /// The user's ids in `file` for the name or uid `user`: every range counts.
@@ -217,6 +228,19 @@ fn kvm(f: &Facts) -> Option<Failure> {
                  it is mode {mode:04o}, and rootless Docker drops its group"
             ),
             "add a udev rule with MODE=\"0666\" for KERNEL==\"kvm\", such as in /etc/udev/rules.d/65-kvm.rules",
+        )
+    })
+}
+
+/// Rootlesskit makes a new network namespace per daemon, so live-restore cannot adopt old containers.
+fn live_restore(f: &Facts) -> Option<Failure> {
+    (f.live_restore == Some(true)).then(|| {
+        fail(
+            "live-restore",
+            "live-restore is on, and a restart of the rootless daemon then leaves Box processes in \
+             the old network namespace, so `moor wake` fails with \"container with given ID already \
+             exists\"",
+            "turn live-restore off in ~/.config/docker/daemon.json, then restart the daemon",
         )
     })
 }

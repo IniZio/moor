@@ -10,7 +10,7 @@ mod gate;
 mod node;
 mod relay;
 mod secrets;
-mod service;
+pub(crate) mod service;
 #[cfg(test)]
 mod tests;
 
@@ -18,7 +18,7 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::request::EnrollReq;
+use moor_core::request::{EnrollReq, ShowReq};
 use moor_core::seam::clock::Clock as _;
 use moor_core::view::user::EnrollValue;
 use moor_core::Request;
@@ -26,7 +26,7 @@ use moor_core::Request;
 use crate::adapters::clock::SystemClock;
 use crate::cli::GlobalOpts;
 use crate::client::{self, ClientError, Target};
-use crate::doctor::{answer, line, Check, Status};
+use crate::doctor::{answer, line, Ask, Check, Status};
 use crate::env::Env;
 
 use files::Layout;
@@ -54,7 +54,7 @@ pub fn up(
         let _ = out.write_all(line(&failed).as_bytes());
         return 1;
     }
-    let report = crate::doctor::run(env, opts, None);
+    let report = crate::doctor::run_with(env, opts, None, false);
     let _ = out.write_all(report.stdout.as_bytes());
     if report.code == 0 {
         let _ = writeln!(out, "next: {NEXT}");
@@ -160,8 +160,64 @@ fn wait_for(socket: &Path, wait: Duration) -> Result<Check, Check> {
     ))
 }
 
-/// Stops the controller, the gate, the local node's runner, agent and relay, and removes their units; config, state and secrets stay.
-pub fn down(env: &Env, out: &mut dyn Write) -> u8 {
+/// The names of the Boxes open and running; none when no controller answers.
+fn open_boxes(ask: Ask<'_>) -> Vec<String> {
+    #[derive(serde::Deserialize)]
+    struct Open {
+        name: String,
+        lifecycle: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Listed {
+        boxes: Option<Vec<Open>>,
+    }
+    let req = Request::Show(ShowReq {
+        target: None,
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+        transcript: false,
+    });
+    answer::<Listed>(ask, req)
+        .ok()
+        .and_then(|l| l.boxes)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|b| matches!(b.lifecycle.as_str(), "ready" | "setting_up"))
+        .map(|b| b.name)
+        .collect()
+}
+
+/// The failure `down` ends with when `boxes` are open and running.
+fn refusal(boxes: &[String]) -> Option<Check> {
+    if boxes.is_empty() {
+        return None;
+    }
+    Some(Check::fail(
+        "boxes",
+        format!(
+            "{} open and running: {}; stopping the services leaves their containers with no controller or agent",
+            if boxes.len() == 1 { "1 Box is" } else { "Boxes are" },
+            boxes.join(", ")
+        ),
+        "close each with `moor close <name>`, or run `moor down --force` to stop anyway",
+    ))
+}
+
+/// Stops and removes every unit `up` wrote; config, state and secrets stay. Refuses while Boxes run, unless `force`.
+pub fn down(env: &Env, force: bool, out: &mut dyn Write) -> u8 {
+    if !force {
+        if let Some(Target::Socket(socket)) = client::configured_target(env) {
+            let target = Target::Socket(socket);
+            let ask = |req: Request| client::call(env, &target, &req, |_| {}, |_| {});
+            if let Some(refused) = refusal(&open_boxes(&ask)) {
+                let _ = out.write_all(line(&refused).as_bytes());
+                return 1;
+            }
+        }
+    }
     let result = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", ""))
         .and_then(|dir| service::remove(&dir));

@@ -122,6 +122,8 @@ pub enum Parsed {
     Down {
         /// Global options.
         opts: GlobalOpts,
+        /// Stop although Boxes are open and running.
+        force: bool,
     },
     /// Enroll a machine agent on this host as a shared node.
     NodeAdd {
@@ -189,7 +191,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::BoxTerm(term))) => Parsed::BoxTerm { opts, term },
         Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
         Ok((opts, Action::Up)) => Parsed::Up { opts },
-        Ok((opts, Action::Down)) => Parsed::Down { opts },
+        Ok((opts, Action::Down { force })) => Parsed::Down { opts, force },
         Ok((opts, Action::NodeAdd(add))) => Parsed::NodeAdd { opts, add },
         Ok((
             opts,

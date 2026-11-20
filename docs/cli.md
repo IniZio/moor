@@ -119,8 +119,8 @@ These act as your local identity through the controller.
 | Command | What it does |
 | --- | --- |
 | `moor up` | Sets the host up with a controller and a Docker node, as [Self-host on one machine](run.md) describes. A rerun changes nothing. |
-| `moor down` | Stops and removes the units `moor up` wrote: the controller, the runner, and the agent. Config, state, and secrets stay. |
-| `moor doctor [--public-url URL]` | Checks the setup, one `ok`, `warn`, or `fail` line per check, each with its fix. Exits 1 when a check failed. |
+| `moor down [--force]` | Stops and removes the units `moor up` wrote. These are the controller, the runner, and the agent. Config, state, and secrets stay. It refuses while Boxes are open and running, and it names them. Close each with `moor close NAME`, or pass `--force` to stop anyway. |
+| `moor doctor [--public-url URL]` | Checks the setup, one `ok`, `warn`, or `fail` line per check, each with its fix. Exits 1 when a check failed. It fails when an image the agent needs is neither on this host nor in its registry. A source build's default image is one of those. `moor up` only warns. A registry that cannot be reached is a warning. |
 | `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that repo would get. Operator only. |
 | `moor controller serve --config FILE` | Runs the controller. |
 | `moor controller attach [--socket PATH]` | Connects stdin and stdout to the controller socket, for use over ssh. |
