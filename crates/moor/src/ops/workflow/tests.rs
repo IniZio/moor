@@ -85,10 +85,28 @@ impl Rig {
     fn put(&self, timeout: u32) -> WorkflowId {
         let def = WorkflowDef::new(
             WorkflowName::parse("daily-fix").unwrap(),
-            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo()],
             "fix what is broken",
             (true, TimeoutMinutes::new(timeout).unwrap()),
+        )
+        .unwrap();
+        self.cx
+            .store()
+            .unwrap()
+            .put_workflow(REQUESTER_USER, &def)
+            .unwrap()
+    }
+
+    /// Stores a workflow of the repo with no cron, so only a person or a pull request fires it,
+    /// owned by the test requester.
+    fn put_by_hand(&self) -> WorkflowId {
+        let def = WorkflowDef::new(
+            WorkflowName::parse("daily-fix").unwrap(),
+            None,
+            vec![repo()],
+            "fix what is broken",
+            (true, TimeoutMinutes::DEFAULT),
         )
         .unwrap();
         self.cx

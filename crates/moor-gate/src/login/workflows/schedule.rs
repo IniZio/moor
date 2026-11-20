@@ -56,6 +56,16 @@ pub(super) fn words(cron: &str) -> Option<String> {
     }
 }
 
+/// What a workflow list shows for a schedule: the cron in words when it has a shape the form
+/// offers, and for a workflow with no cron what does fire it.
+pub(super) fn summary_words(cron: Option<&str>, on_pull_request: bool) -> Option<String> {
+    match cron {
+        Some(cron) => words(cron),
+        None if on_pull_request => Some("On pull requests".to_owned()),
+        None => Some("By hand".to_owned()),
+    }
+}
+
 /// When `ms` falls in `zone`, with the zone named, such as "Fri 20 Nov, 08:30 (`Asia/Hong_Kong`)".
 pub(super) fn at_in_zone(ms: i64, zone: &str) -> Option<String> {
     let tz = jiff::tz::TimeZone::get(zone).ok()?;
@@ -88,6 +98,10 @@ pub(crate) fn preview(stream: &mut TcpStream, query: &str) {
             .unwrap_or_default()
     };
     let (cron, zone) = (param("cron"), param("timezone"));
+    if cron.trim().is_empty() {
+        json(stream, "200 OK", &json!({"words": null, "next": []}));
+        return;
+    }
     #[allow(
         clippy::disallowed_methods,
         reason = "a preview reads the wall clock once"
@@ -109,7 +123,20 @@ pub(crate) fn preview(stream: &mut TcpStream, query: &str) {
 mod tests {
     use moor_core::seam::clock::Ts;
 
-    use super::{at_in_zone, next_three, words};
+    use super::{at_in_zone, next_three, summary_words, words};
+
+    #[test]
+    fn no_cron_says_what_fires_it_instead() {
+        assert_eq!(summary_words(None, false).as_deref(), Some("By hand"));
+        assert_eq!(
+            summary_words(None, true).as_deref(),
+            Some("On pull requests")
+        );
+        assert_eq!(
+            summary_words(Some("0 9 * * *"), true).as_deref(),
+            Some("Every day at 9:00")
+        );
+    }
 
     #[test]
     fn a_firing_reads_in_its_own_zone_on_a_day_clock() {

@@ -27,7 +27,7 @@ pub(super) fn name(s: &str) -> WorkflowName {
 pub(super) fn def(n: &str, repos: &[&str], enabled: bool) -> WorkflowDef {
     WorkflowDef::new(
         name(n),
-        WorkflowSchedule::parse("0 9 * * *", "Europe/London").unwrap(),
+        Some(WorkflowSchedule::parse("0 9 * * *", "Europe/London").unwrap()),
         repos.iter().map(|r| repo(r)).collect(),
         "fix the security alerts",
         (enabled, TimeoutMinutes::DEFAULT),
@@ -84,8 +84,8 @@ fn a_workflow_round_trips() {
     assert_eq!(got.owner, alice);
     assert_eq!(got.repos, [repo("a/one"), repo("a/two")]);
     assert_eq!(got.prompt, "fix the security alerts");
-    assert_eq!(got.schedule.expr(), "0 9 * * *");
-    assert_eq!(got.schedule.zone(), "Europe/London");
+    assert_eq!(got.schedule.as_ref().unwrap().expr(), "0 9 * * *");
+    assert_eq!(got.schedule.as_ref().unwrap().zone(), "Europe/London");
     assert_eq!(
         got.state,
         WorkflowState::Enabled {
@@ -94,6 +94,27 @@ fn a_workflow_round_trips() {
     );
     assert_eq!(got.timeout, TimeoutMinutes::DEFAULT);
     assert!(store.workflow(alice, &name("absent")).unwrap().is_none());
+}
+
+#[test]
+fn a_workflow_with_no_cron_round_trips_and_a_cron_can_be_added_and_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = user(&store, "local:1");
+    let mut by_hand = def("manual", &["a/one"], true);
+    by_hand.schedule = None;
+    store.put_workflow(alice, &by_hand).unwrap();
+    let got = store.workflow(alice, &name("manual")).unwrap().unwrap();
+    assert_eq!(got.schedule, None);
+    store
+        .put_workflow(alice, &def("manual", &["a/one"], true))
+        .unwrap();
+    let got = store.workflow(alice, &name("manual")).unwrap().unwrap();
+    assert_eq!(got.schedule.as_ref().unwrap().expr(), "0 9 * * *");
+    store.put_workflow(alice, &by_hand).unwrap();
+    let got = store.workflow(alice, &name("manual")).unwrap().unwrap();
+    assert_eq!(got.schedule, None);
+    assert_eq!(store.workflows(alice).unwrap().len(), 1);
 }
 
 #[test]

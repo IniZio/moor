@@ -195,12 +195,15 @@ fn summary(w: &WorkflowView) -> Value {
         "name": w.name,
         "repos": w.repos,
         "cron": w.cron,
-        "words": schedule::words(&w.cron),
+        "words": schedule::summary_words(w.cron.as_deref(), w.on_pull_request),
         "timezone": w.timezone,
         "enabled": w.enabled,
         "on_pull_request": w.on_pull_request,
         "next_due": w.next_due,
-        "next_text": w.next_due.and_then(|ms| schedule::at_in_zone(ms, &w.timezone)),
+        "next_text": w
+            .next_due
+            .zip(w.timezone.as_deref())
+            .and_then(|(ms, zone)| schedule::at_in_zone(ms, zone)),
         "has_plan": w.plan.is_some(),
         "plan_stale": w.plan_stale,
         "last": last.map(|r| json!({

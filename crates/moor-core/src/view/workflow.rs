@@ -73,10 +73,12 @@ pub struct HistoryLineView {
 pub struct WorkflowView {
     /// Its name.
     pub name: String,
-    /// Its cron expression.
-    pub cron: String,
-    /// The zone the cron is read in.
-    pub timezone: String,
+    /// Its cron expression; none when it has no cron.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    /// The zone the cron is read in; none when it has no cron.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
     /// The repos each run's Box clones, in order; the first is where the agent works.
     pub repos: Vec<String>,
     /// The partial repo config laid over the repo's for each of its Boxes.

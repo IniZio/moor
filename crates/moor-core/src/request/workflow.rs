@@ -15,10 +15,13 @@ pub struct WorkflowAddReq {
     pub identity: Option<Identity>,
     /// The workflow's name, unique per user; adding a name again replaces it.
     pub name: String,
-    /// Five-field cron expression.
-    pub cron: String,
-    /// IANA time zone the cron is read in.
-    pub timezone: String,
+    /// Five-field cron expression; none for a workflow that runs only by hand or on a pull
+    /// request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    /// IANA time zone the cron is read in; required with a cron, ignored without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
     /// The repos, each `OWNER/NAME`, that each firing's one Box clones, in order. Its agent works
     /// in the first and the rest sit beside it. The controller's own `box.also` never applies.
     pub repos: Vec<String>,

@@ -103,6 +103,31 @@ fn parse_repos(field: &str, repos: &[String]) -> Result<Vec<ForgeRepo>, CommandE
         .collect()
 }
 
+/// The schedule `req` asks for: none without a cron, which fires only by hand or on a pull
+/// request. A cron needs its zone.
+fn parse_schedule(
+    req: &WorkflowAddReq,
+    floor: std::time::Duration,
+) -> Result<Option<WorkflowSchedule>, CommandError> {
+    let Some(cron) = req.cron.as_deref().map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok(None);
+    };
+    let zone = req
+        .timezone
+        .as_deref()
+        .map(str::trim)
+        .filter(|z| !z.is_empty())
+        .ok_or_else(|| usage("a cron needs a timezone"))?;
+    WorkflowSchedule::parse_with_min_interval(cron, zone, floor)
+        .map(Some)
+        .map_err(usage)
+}
+
+/// The first firing of `schedule` after `now`, in Unix milliseconds; none with no schedule.
+fn next_due(schedule: Option<&WorkflowSchedule>, now: Ts) -> Option<i64> {
+    schedule?.first_after(now).map(Ts::as_millis)
+}
+
 /// `workflow-add`: checks every field and says which one is wrong.
 fn add(
     cx: &Cx,
@@ -113,8 +138,7 @@ fn add(
 ) -> Result<serde_json::Value, CommandError> {
     let name = parse_name(&req.name)?;
     let floor = cx.env().workflow_min_interval();
-    let schedule = WorkflowSchedule::parse_with_min_interval(&req.cron, &req.timezone, floor)
-        .map_err(usage)?;
+    let schedule = parse_schedule(req, floor)?;
     let repos = parse_repos("repos", &req.repos)?;
     box_config::check(req.config.as_deref())?;
     let timeout = req
@@ -158,11 +182,7 @@ fn add(
         changed: true,
         next_due: def
             .enabled
-            .then(|| {
-                def.schedule
-                    .first_after(cx.clock().now())
-                    .map(Ts::as_millis)
-            })
+            .then(|| next_due(def.schedule.as_ref(), cx.clock().now()))
             .flatten(),
         revision: Some(revision),
         plan: def.plan.as_ref().map(Plan::outline).unwrap_or_default(),
@@ -215,7 +235,7 @@ fn set_enabled(
         ));
     }
     let next_due = match store.workflow(user, &name)? {
-        Some(w) if enabled => w.schedule.first_after(now).map(Ts::as_millis),
+        Some(w) if enabled => next_due(w.schedule.as_ref(), now),
         _ => None,
     };
     to_value(&WorkflowChangeValue {
@@ -245,15 +265,15 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
     let enabled = matches!(w.state, moor_core::workflow::WorkflowState::Enabled { .. });
     WorkflowView {
         name: w.name.to_string(),
-        cron: w.schedule.expr().to_owned(),
-        timezone: w.schedule.zone().to_owned(),
+        cron: w.schedule.as_ref().map(|s| s.expr().to_owned()),
+        timezone: w.schedule.as_ref().map(|s| s.zone().to_owned()),
         repos: w.repos.iter().map(ToString::to_string).collect(),
         config: w.config.clone(),
         prompt: w.prompt.clone(),
         enabled,
         timeout_minutes: w.timeout.minutes(),
         next_due: enabled
-            .then(|| w.schedule.first_after(now).map(Ts::as_millis))
+            .then(|| next_due(w.schedule.as_ref(), now))
             .flatten(),
         plan: (!w.plan.is_single_of(&w.prompt))
             .then(|| serde_json::to_value(w.plan.to_doc()).ok())

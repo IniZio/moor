@@ -198,7 +198,7 @@ fn another_workflows_box_and_an_owner_box_are_not_closed() {
     let other = {
         let def = moor_core::workflow::WorkflowDef::new(
             WorkflowName::parse("nightly-lint").unwrap(),
-            moor_core::workflow::WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(moor_core::workflow::WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo()],
             "lint",
             (true, moor_core::workflow::TimeoutMinutes::new(180).unwrap()),

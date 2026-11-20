@@ -27,7 +27,7 @@ fn fired_with(also: Vec<ForgeRepo>) -> (Vec<ForgeRepo>, Vec<ForgeRepo>) {
     }
     let def = WorkflowDef::new(
         WorkflowName::parse("audit").unwrap(),
-        WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+        Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
         [vec![repo()], also].concat(),
         "review the alerts",
         (true, TimeoutMinutes::DEFAULT),

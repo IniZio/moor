@@ -24,8 +24,8 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
     WorkflowAddReq {
         identity: None,
         name: name.to_owned(),
-        cron: cron.to_owned(),
-        timezone: tz.to_owned(),
+        cron: Some(cron.to_owned()),
+        timezone: Some(tz.to_owned()),
         repos: vec!["o/n".to_owned()],
         config: None,
         prompt: "fix what is broken".to_owned(),
@@ -553,4 +553,5 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
 }
 
 mod enabled_and_filter;
+mod no_cron;
 mod plan;

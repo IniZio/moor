@@ -35,7 +35,7 @@ fn two_workflows(r: &Rig, timeout: u32) -> (WorkflowId, WorkflowId) {
     let put = |name: &str, repo: ForgeRepo| {
         let def = WorkflowDef::new(
             WorkflowName::parse(name).unwrap(),
-            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo],
             "fix what is broken",
             (true, TimeoutMinutes::new(timeout).unwrap()),

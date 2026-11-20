@@ -1,5 +1,6 @@
 /** A schedule as the form offers it: a preset in words, or raw cron under Advanced. */
 export type Schedule =
+	| { kind: 'none' }
 	| { kind: 'weekdays'; at: string }
 	| { kind: 'daily'; at: string }
 	| { kind: 'weekly'; day: number; at: string }
@@ -19,6 +20,7 @@ function clock(at: string): [number, number] {
 }
 
 export function toCron(s: Schedule): string {
+	if (s.kind === 'none') return '';
 	if (s.kind === 'cron') return s.cron.trim();
 	if (s.kind === 'hours') return s.every === 1 ? '0 * * * *' : `0 */${s.every} * * *`;
 	const [h, m] = clock(s.at);
@@ -27,7 +29,9 @@ export function toCron(s: Schedule): string {
 }
 
 /** The preset a stored cron is, so an edit opens on it; raw cron for any other. */
-export function fromCron(cron: string): Schedule {
+export function fromCron(stored: string | null | undefined): Schedule {
+	if (stored == null) return { kind: 'none' };
+	const cron = stored;
 	const f = cron.trim().split(/\s+/);
 	const asCron: Schedule = { kind: 'cron', cron: cron.trim() };
 	if (f.length !== 5 || f[2] !== '*' || f[3] !== '*') return asCron;
@@ -56,7 +60,8 @@ export function zones(): string[] {
 	}
 }
 
-/** A schedule as a person reads it: the words the gate gave, else the raw cron, with the zone. */
-export function scheduleText(words: string | null | undefined, cron: string, zone: string): string {
-	return `${words ?? cron} (${zone})`;
+/** A schedule as a person reads it: the words the gate gave, else the raw cron, with the zone. A workflow with no cron reads as the words alone. */
+export function scheduleText(words: string | null | undefined, cron: string | null | undefined, zone: string | null | undefined): string {
+	if (cron == null) return words ?? 'By hand';
+	return `${words ?? cron} (${zone ?? 'UTC'})`;
 }

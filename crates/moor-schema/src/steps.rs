@@ -50,6 +50,7 @@ mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
 mod workflow_on_pull;
+mod workflow_optional_cron;
 mod workflow_plans;
 mod workflow_repo_set;
 mod workflow_run_pull;
@@ -110,4 +111,5 @@ pub const STEPS: &[Step] = &[
     step("V93__workflow_run_pull", workflow_run_pull::write),
     step("V94__workflow_on_pull", workflow_on_pull::write),
     step("V95__drop_workflow_breaker", drop_workflow_breaker::write),
+    step("V96__workflow_optional_cron", workflow_optional_cron::write),
 ];

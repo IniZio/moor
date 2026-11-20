@@ -42,6 +42,22 @@ fn fire(r: &Rig) -> Result<RunNowValue, String> {
 }
 
 #[test]
+fn a_workflow_with_no_cron_is_never_claimed_by_the_tick_and_still_runs_by_hand() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put_by_hand();
+    r.advance_to(FIRST_DUE + 400 * 86_400_000);
+    assert!(r.pass().is_empty());
+    assert!(r.runs(id).is_empty());
+    assert_eq!(r.open_boxes(), 0);
+    let line = fire(&r).unwrap();
+    assert_eq!(line.status, "started", "{line:?}");
+    assert_eq!(r.latest(id).cause.trigger(), RunTrigger::Manual);
+    assert!(r.pass().is_empty());
+    assert_eq!(r.runs(id).len(), 1);
+}
+
+#[test]
 fn a_manual_run_starts_a_box_named_to_the_second_and_records_its_trigger() {
     let r = rig();
     r.answer_repo();

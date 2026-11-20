@@ -157,7 +157,7 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 					<RepoSet repos={w.repos} />
 				</dd>
 				<dt>Schedule</dt>
-				<dd title={w.cron}>
+				<dd title={w.cron ?? undefined}>
 					{scheduleText(w.words, w.cron, w.timezone)}
 					{w.on_pull_request && (
 						<>
@@ -182,8 +182,12 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 						'none yet'
 					)}
 				</dd>
-				<dt>Next due</dt>
-				<dd>{w.enabled ? (w.next_text ?? when(w.next_due)) : 'disabled'}</dd>
+				{w.cron != null && (
+					<>
+						<dt>Next due</dt>
+						<dd>{w.enabled ? (w.next_text ?? when(w.next_due)) : 'disabled'}</dd>
+					</>
+				)}
 			</dl>
 			{w.last?.status !== 'failure' && (
 				<p class="run-now">
@@ -277,15 +281,15 @@ function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 				</span>
 			</div>
 			<p class="muted">
-				<RepoSet repos={flow.repos} /> · <span title={flow.cron}>{scheduleText(flow.words, flow.cron, flow.timezone)}</span>
+				<RepoSet repos={flow.repos} /> · <span title={flow.cron ?? undefined}>{scheduleText(flow.words, flow.cron, flow.timezone)}</span>
 				{flow.on_pull_request && (
 					<>
 						{' '}
 						<PullTag />
 					</>
-				)}{' '}
-				·{' '}
-				{flow.enabled ? `next run ${flow.next_text ?? when(flow.next_due)}` : 'disabled'}
+				)}
+				{flow.cron != null && <> · {flow.enabled ? `next run ${flow.next_text ?? when(flow.next_due)}` : 'disabled'}</>}
+				{flow.cron == null && !flow.enabled && ' · disabled'}
 			</p>
 			{flow.plan_stale && flow.plan && (
 				<div class="notice warn plan-stale" role="status">

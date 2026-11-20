@@ -65,7 +65,7 @@ fn a_definition_needs_repos_and_a_prompt() {
     let name = || WorkflowName::parse("fix").unwrap();
     assert!(WorkflowDef::new(
         name(),
-        schedule(),
+        Some(schedule()),
         vec![repo("a/b")],
         "go",
         (true, TimeoutMinutes::DEFAULT)
@@ -74,7 +74,7 @@ fn a_definition_needs_repos_and_a_prompt() {
     assert_eq!(
         WorkflowDef::new(
             name(),
-            schedule(),
+            Some(schedule()),
             vec![],
             "go",
             (true, TimeoutMinutes::DEFAULT)
@@ -84,7 +84,7 @@ fn a_definition_needs_repos_and_a_prompt() {
     assert_eq!(
         WorkflowDef::new(
             name(),
-            schedule(),
+            Some(schedule()),
             vec![repo("a/b"), repo("a/b")],
             "go",
             (true, TimeoutMinutes::DEFAULT)
@@ -94,7 +94,7 @@ fn a_definition_needs_repos_and_a_prompt() {
     assert_eq!(
         WorkflowDef::new(
             name(),
-            schedule(),
+            Some(schedule()),
             vec![repo("a/b")],
             "  ",
             (true, TimeoutMinutes::DEFAULT)
@@ -108,7 +108,7 @@ fn each_repo_of_the_set_needs_a_name_no_other_has() {
     let def = |repos: Vec<ForgeRepo>| {
         WorkflowDef::new(
             WorkflowName::parse("fix").unwrap(),
-            schedule(),
+            Some(schedule()),
             repos,
             "go",
             (true, TimeoutMinutes::DEFAULT),

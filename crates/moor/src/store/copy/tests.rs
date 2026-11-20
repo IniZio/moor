@@ -241,7 +241,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
         .unwrap();
     let def = WorkflowDef::new(
         WorkflowName::parse("daily").unwrap(),
-        WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+        Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
         vec![ForgeRepo::new("o", "n")],
         "fix",
         (true, TimeoutMinutes::DEFAULT),

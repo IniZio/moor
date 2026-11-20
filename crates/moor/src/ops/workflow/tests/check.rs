@@ -345,7 +345,7 @@ fn a_checks_deadline_is_the_smaller_of_the_run_remaining_and_thirty_minutes() {
         r.answer_repo();
         let mut def = WorkflowDef::new(
             WorkflowName::parse("deps").unwrap(),
-            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo()],
             PROMPT,
             (true, TimeoutMinutes::new(minutes).unwrap()),

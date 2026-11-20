@@ -158,13 +158,31 @@ impl Rig {
     pub(super) fn put_pr(&self, name: &str, on: bool, enabled: bool) -> WorkflowId {
         let mut def = WorkflowDef::new(
             WorkflowName::parse(name).unwrap(),
-            WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
+            Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
             vec![repo()],
             "check the pull request",
             (enabled, TimeoutMinutes::DEFAULT),
         )
         .unwrap();
         def.on_pull_request = on;
+        self.cx
+            .store()
+            .unwrap()
+            .put_workflow(REQUESTER_USER, &def)
+            .unwrap()
+    }
+
+    /// Stores a workflow of the repo with no cron and the pull request trigger on.
+    pub(super) fn put_pr_only(&self, name: &str) -> WorkflowId {
+        let mut def = WorkflowDef::new(
+            WorkflowName::parse(name).unwrap(),
+            None,
+            vec![repo()],
+            "check the pull request",
+            (true, TimeoutMinutes::DEFAULT),
+        )
+        .unwrap();
+        def.on_pull_request = true;
         self.cx
             .store()
             .unwrap()
@@ -234,6 +252,21 @@ pub(super) fn cancelled(run: &WorkflowRun) -> Option<&CancelCause> {
 fn a_signed_opened_fires_a_pull_request_run_with_its_head() {
     let r = hooked();
     let id = r.put_pr("evidence", true, true);
+    r.signed("opened", 65, OLD);
+    let run = r.one_at(id, 65, OLD);
+    assert!(
+        matches!(run.state, RunState::Running { .. }),
+        "{:?}",
+        run.state
+    );
+    assert_eq!(run.cause.trigger().as_str(), "pull_request");
+    assert_eq!(r.open_boxes(), 1);
+}
+
+#[test]
+fn a_workflow_with_no_cron_still_fires_on_a_pull_request() {
+    let r = hooked();
+    let id = r.put_pr_only("evidence");
     r.signed("opened", 65, OLD);
     let run = r.one_at(id, 65, OLD);
     assert!(

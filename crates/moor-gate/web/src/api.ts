@@ -164,10 +164,11 @@ const LastRunSchema = v.object({
 const WorkflowRowSchema = v.object({
 	name: v.string(),
 	repos: v.array(v.string()),
-	cron: v.string(),
-	/** The schedule in words, when it is one of the shapes the form offers. */
+	/** None for a workflow with no cron, which runs only by hand or on pull requests. */
+	cron: v.nullish(v.string()),
+	/** The schedule in words, when it is one of the shapes the form offers, or what fires a workflow with no cron. */
 	words: v.nullish(v.string()),
-	timezone: v.string(),
+	timezone: v.nullish(v.string()),
 	enabled: v.boolean(),
 	/** Whether a pull request event on the first repo fires a run. */
 	on_pull_request: v.optional(v.boolean(), false),

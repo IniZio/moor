@@ -145,8 +145,9 @@ pub struct WorkflowOrigin {
 pub struct WorkflowDef {
     /// Unique per owner.
     pub name: WorkflowName,
-    /// When it fires.
-    pub schedule: WorkflowSchedule,
+    /// When its cron fires; none for a workflow with no cron, which fires only by hand or on a
+    /// pull request.
+    pub schedule: Option<WorkflowSchedule>,
     /// The repos each firing's one Box clones, in order: the first is where its agent works, and
     /// the rest sit beside it. Never empty, and no two share a name, so a folder.
     pub repos: Vec<ForgeRepo>,
@@ -175,7 +176,7 @@ impl WorkflowDef {
     /// [`WorkflowError::SameName`] or [`WorkflowError::NoPrompt`].
     pub fn new(
         name: WorkflowName,
-        schedule: WorkflowSchedule,
+        schedule: Option<WorkflowSchedule>,
         repos: Vec<ForgeRepo>,
         prompt: &str,
         (enabled, timeout): (bool, TimeoutMinutes),
@@ -220,8 +221,8 @@ pub struct Workflow {
     pub owner: UserId,
     /// Unique per owner.
     pub name: WorkflowName,
-    /// When it fires.
-    pub schedule: WorkflowSchedule,
+    /// When its cron fires; none for a workflow with no cron, which is never due.
+    pub schedule: Option<WorkflowSchedule>,
     /// The repos each firing's one Box clones, in order; the first is where its agent works.
     pub repos: Vec<ForgeRepo>,
     /// A partial repo config laid over the repo's for each Box it starts.

@@ -55,7 +55,7 @@ function fromFlow(flow: Workflow): Draft {
 		repos: flow.repos,
 		prompt: flow.prompt,
 		schedule: fromCron(flow.cron),
-		timezone: flow.timezone,
+		timezone: flow.timezone ?? browserZone(),
 		timeout: String(flow.timeout_minutes),
 		onPull: flow.on_pull_request,
 	};
@@ -68,7 +68,8 @@ function blank(draft: Partial<Draft>): Draft {
 function SchedulePicker({ value, onChange }: { value: Schedule; onChange: (s: Schedule) => void }) {
 	const at = 'at' in value ? value.at : '09:00';
 	const pick = (kind: string) => {
-		if (kind === 'weekdays' || kind === 'daily') onChange({ kind, at });
+		if (kind === 'none') onChange({ kind });
+		else if (kind === 'weekdays' || kind === 'daily') onChange({ kind, at });
 		else if (kind === 'weekly') onChange({ kind, day: 1, at });
 		else if (kind === 'hours') onChange({ kind, every: 6 });
 		else onChange({ kind: 'cron', cron: toCron(value) });
@@ -76,6 +77,7 @@ function SchedulePicker({ value, onChange }: { value: Schedule; onChange: (s: Sc
 	return (
 		<div class="wf-when">
 			<select aria-label="How often" value={value.kind} onChange={(e) => pick(e.currentTarget.value)}>
+				<option value="none">No schedule (run by hand)</option>
 				<option value="weekdays">Every weekday</option>
 				<option value="daily">Every day</option>
 				<option value="weekly">Every week on</option>
@@ -208,13 +210,14 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 	const cron = toCron(draft.schedule);
 	const timeout = draft.timeout.trim() === '' ? undefined : Number(draft.timeout);
 	const nameOk = NAME.test(draft.name);
-	const ready = nameOk && draft.repos.length > 0 && draft.prompt.trim() !== '' && cron !== '' && !busy && textProblems(plan).length === 0;
+	const scheduled = draft.schedule.kind !== 'none';
+	const ready = nameOk && draft.repos.length > 0 && draft.prompt.trim() !== '' && (!scheduled || cron !== '') && !busy && textProblems(plan).length === 0;
 	const submit = async (e: Event) => {
 		e.preventDefault();
 		if (!ready) return;
 		setBusy(true);
 		setProblem(null);
-		const fields = { repos: draft.repos, prompt: draft.prompt, cron, timezone: draft.timezone.trim(), timeout_minutes: timeout, on_pull_request: draft.onPull };
+		const fields = { repos: draft.repos, prompt: draft.prompt, cron, timezone: scheduled ? draft.timezone.trim() : '', timeout_minutes: timeout, on_pull_request: draft.onPull };
 		try {
 			const saved = flow ? await workflowEdit(csrf, flow.name, fields, flow.revision) : await workflowCreate(csrf, draft.name, fields, opened.copyOf, plan.trim() || undefined);
 			location.hash = `#/workflows/${encodeURIComponent(saved.name)}`;
@@ -267,17 +270,23 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			<div class="wf-field">
 				<span>Schedule</span>
 				<SchedulePicker value={draft.schedule} onChange={(schedule) => set({ schedule })} />
-				<label class="wf-zone">
-					Time zone
-					<input list="wf-zones" value={draft.timezone} onInput={(e) => set({ timezone: e.currentTarget.value })} />
-				</label>
-				<datalist id="wf-zones">
-					{zones().map((z) => (
-						<option value={z} key={z} />
-					))}
-				</datalist>
-				{draft.schedule.kind !== 'cron' && <span class="muted t-mono" title="The same schedule as cron">{cron}</span>}
-				<Preview cron={cron} zone={draft.timezone.trim()} />
+				{scheduled ? (
+					<>
+						<label class="wf-zone">
+							Time zone
+							<input list="wf-zones" value={draft.timezone} onInput={(e) => set({ timezone: e.currentTarget.value })} />
+						</label>
+						<datalist id="wf-zones">
+							{zones().map((z) => (
+								<option value={z} key={z} />
+							))}
+						</datalist>
+						{draft.schedule.kind !== 'cron' && <span class="muted t-mono" title="The same schedule as cron">{cron}</span>}
+						<Preview cron={cron} zone={draft.timezone.trim()} />
+					</>
+				) : (
+					<span class="muted">It runs only when you press Run now or call run_workflow, or on a pull request if it has that trigger.</span>
+				)}
 			</div>
 			<PullSwitch on={draft.onPull} onChange={(onPull) => set({ onPull })} />
 			<details>

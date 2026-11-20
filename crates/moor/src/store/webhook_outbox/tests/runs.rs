@@ -53,7 +53,7 @@ pub(super) fn plan() -> Plan {
 fn def(with_plan: bool) -> WorkflowDef {
     let mut def = WorkflowDef::new(
         WorkflowName::parse("deps").unwrap(),
-        WorkflowSchedule::parse("0 9 * * *", "Europe/London").unwrap(),
+        Some(WorkflowSchedule::parse("0 9 * * *", "Europe/London").unwrap()),
         vec![repo()],
         PROMPT,
         (true, TimeoutMinutes::DEFAULT),

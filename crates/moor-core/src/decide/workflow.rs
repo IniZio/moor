@@ -71,7 +71,8 @@ pub fn workflow_due(workflow: &Workflow, facts: &WorkflowFacts, now: Ts) -> Work
     };
     let due = workflow
         .schedule
-        .latest_at_or_before(now)
+        .as_ref()
+        .and_then(|s| s.latest_at_or_before(now))
         .filter(|&d| d >= since && facts.last_due.is_none_or(|l| d > l));
     due.map_or(WorkflowVerdict::NotDue, |due_at| {
         overlap_policy(facts.prior, due_at)
