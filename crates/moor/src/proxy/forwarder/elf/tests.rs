@@ -1,4 +1,8 @@
-#![allow(clippy::indexing_slicing, reason = "test fixtures")]
+#![allow(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    reason = "test fixtures"
+)]
 
 use super::interpreter;
 
@@ -13,7 +17,7 @@ pub(crate) fn elf64(kind: u32, body: &[u8]) -> Vec<u8> {
     b[0x38..0x3a].copy_from_slice(&1_u16.to_le_bytes());
     b[64..68].copy_from_slice(&kind.to_le_bytes());
     b[72..80].copy_from_slice(&120_u64.to_le_bytes());
-    b[96..104].copy_from_slice(&(body.len() as u64).to_le_bytes());
+    b[96..104].copy_from_slice(&u64::try_from(body.len()).unwrap().to_le_bytes());
     b.extend_from_slice(body);
     b
 }
@@ -29,7 +33,7 @@ fn elf32_big(kind: u32, body: &[u8]) -> Vec<u8> {
     b[0x2c..0x2e].copy_from_slice(&1_u16.to_be_bytes());
     b[52..56].copy_from_slice(&kind.to_be_bytes());
     b[56..60].copy_from_slice(&84_u32.to_be_bytes());
-    b[68..72].copy_from_slice(&(body.len() as u32).to_be_bytes());
+    b[68..72].copy_from_slice(&u32::try_from(body.len()).unwrap().to_be_bytes());
     b.extend_from_slice(body);
     b
 }

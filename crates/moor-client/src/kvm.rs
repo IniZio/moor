@@ -26,9 +26,10 @@ pub fn mode_of(device: &str) -> Option<u32> {
         .map(|m| m.mode() & 0o777)
 }
 
-/// Why Boxes on a daemon that is, or is not, `rootless` cannot open `device`, whose permission
-/// bits are `mode` when it exists; none when they can. Rootless Docker drops the device's group,
-/// so only bits open to everyone count there; rootful Boxes join its group.
+/// Why Boxes cannot open `device`, with permission bits `mode`; none when they can.
+///
+/// Rootless Docker drops the device's group, so only bits open to everyone count there. Rootful
+/// Boxes join its group. `mode` is none when the device is missing.
 #[must_use]
 pub fn refusal(rootless: bool, device: &str, mode: Option<u32>) -> Option<Failure> {
     let udev = format!(

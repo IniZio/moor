@@ -86,12 +86,15 @@ impl Layout {
             .as_ref()
             .and_then(|c| c.socket.as_ref().map(expand))
             .unwrap_or_else(|| state_dir.join("controller.sock"));
-        Ok(Self {
+        let layout = Self {
             controller_config,
             user_config,
             state_dir,
             socket,
-        })
+        };
+        layout
+            .socket_too_long()
+            .map_or(Ok(layout), |why| Err(Check::fail("config", why, "")))
     }
 }
 

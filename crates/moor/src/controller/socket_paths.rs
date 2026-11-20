@@ -60,11 +60,13 @@ pub(super) fn check(controller: &Path, cfg: &ControllerConfig, env: &Env) -> Res
     if let Some(state) = env.state_dir() {
         sockets.extend(under_state(&state, cfg).into_iter().map(|s| (s, SHORTER)));
     }
-    match sockets.iter().find_map(|(s, advice)| too_long(s, advice)) {
-        Some(message) => Err(Stop {
-            code: REFUSED,
-            message,
-        }),
-        None => Ok(()),
-    }
+    sockets
+        .iter()
+        .find_map(|(s, advice)| too_long(s, advice))
+        .map_or(Ok(()), |message| {
+            Err(Stop {
+                code: REFUSED,
+                message,
+            })
+        })
 }
