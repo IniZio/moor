@@ -1,6 +1,7 @@
 //! The App's webhook: a signed `pull_request` delivery fires every enabled workflow of its repo
 //! that has the trigger on, a newer head cancels the older run, a close cancels the open run even
-//! while its Box is being started, and the same head twice claims once.
+//! while its Box is being started, and the same head twice claims once. Here the fake GitHub the
+//! App reads back agrees with each payload; [`super::eligible`] tests where they differ.
 #![allow(
     clippy::panic,
     clippy::cognitive_complexity,
@@ -9,6 +10,7 @@
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
+use std::ops::Deref;
 
 use hmac::{Hmac, Mac as _};
 use moor_core::domain::box_state::BoxLifecycle;
@@ -19,11 +21,12 @@ use moor_core::workflow::{
     WorkflowName, WorkflowRun, WorkflowSchedule,
 };
 use moor_core::BoxName;
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::Sha256;
 
 use super::previous::lifecycle;
 use super::{repo, rig, Rig};
+use crate::adapters::github::app::fake::{pull_json, PullsApi};
 use crate::adapters::github::hook::HookSecret;
 use crate::error::CommandError;
 use crate::ops::github_hook::check;
@@ -31,11 +34,11 @@ use crate::ops::workflow::{on_pull_request, run_start, StartJob};
 use crate::testing::cx::REQUESTER_USER;
 
 /// The secret the test controller holds.
-const SECRET: &[u8] = b"test-webhook-secret";
+pub(super) const SECRET: &[u8] = b"test-webhook-secret";
 /// One head of a pull request.
-const OLD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+pub(super) const OLD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 /// A head pushed after [`OLD`].
-const NEW: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+pub(super) const NEW: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 /// `sha256=` and the hex HMAC of `body` under `key`, as GitHub signs.
 fn sign(key: &[u8], body: &str) -> String {
@@ -51,7 +54,7 @@ fn sign(key: &[u8], body: &str) -> String {
 }
 
 /// A `pull_request` body for `action` on pull request `number` of `repo` at `head`.
-fn body(action: &str, (repo, number): (&str, u64), head: &str) -> String {
+pub(super) fn body(action: &str, (repo, number): (&str, u64), head: &str) -> String {
     json!({
         "action": action,
         "number": number,
@@ -63,7 +66,7 @@ fn body(action: &str, (repo, number): (&str, u64), head: &str) -> String {
 }
 
 /// A delivery of `event` with `body`, signed with `key` when there is one.
-fn delivery(event: &str, body: String, key: Option<&[u8]>) -> GitHubHookReq {
+pub(super) fn delivery(event: &str, body: String, key: Option<&[u8]>) -> GitHubHookReq {
     GitHubHookReq {
         event: event.to_owned(),
         delivery: Some("d-1".to_owned()),
@@ -72,12 +75,77 @@ fn delivery(event: &str, body: String, key: Option<&[u8]>) -> GitHubHookReq {
     }
 }
 
-/// A rig whose controller holds [`SECRET`].
-fn hooked() -> Rig {
+/// A rig whose controller holds [`SECRET`] and an App that reads [`Hooked::github`].
+pub(super) struct Hooked {
+    /// The rig.
+    pub(super) rig: Rig,
+    /// The GitHub the App reads pull requests back from.
+    pub(super) github: PullsApi,
+}
+
+impl Deref for Hooked {
+    type Target = Rig;
+
+    fn deref(&self) -> &Rig {
+        &self.rig
+    }
+}
+
+pub(super) fn hooked() -> Hooked {
     let mut r = rig();
-    r.cx = r.cx.sharing(HookSecret::new(SECRET).unwrap());
+    let github = PullsApi::start();
+    r.cx =
+        r.cx.sharing(HookSecret::new(SECRET).unwrap())
+            .sharing(github.api.client());
     r.answer_repo();
-    r
+    Hooked { rig: r, github }
+}
+
+impl Hooked {
+    /// Sets the fake GitHub to what `req`'s payload says: its pull request open, or closed on
+    /// `closed`, at its head, in the base repo, by a person.
+    fn agree(&self, req: &GitHubHookReq) {
+        let Ok(p) = serde_json::from_str::<Value>(&req.body) else {
+            return;
+        };
+        let (Some(number), Some(head), Some(repo)) = (
+            p.get("number").and_then(Value::as_u64),
+            p.pointer("/pull_request/head/sha").and_then(Value::as_str),
+            p.pointer("/repository/full_name").and_then(Value::as_str),
+        ) else {
+            return;
+        };
+        let open = p.get("action").and_then(Value::as_str) != Some("closed");
+        let pull = pull_json((open, false), (head, repo), ("someone", "User"));
+        self.github.set_pull(number, pull);
+    }
+
+    /// Delivers `req` from the gate once GitHub agrees with it, handling its event on the spot
+    /// and starting each claimed Box at once.
+    pub(super) fn deliver(&self, req: &GitHubHookReq) -> Result<GitHubHookValue, CommandError> {
+        self.agree(req);
+        self.rig.deliver(req)
+    }
+
+    /// Like [`Hooked::deliver`], handing each claimed start to `start`.
+    fn deliver_holding(
+        &self,
+        req: &GitHubHookReq,
+        start: &dyn Fn(StartJob),
+    ) -> Result<GitHubHookValue, CommandError> {
+        self.agree(req);
+        self.rig.deliver_holding(req, start)
+    }
+
+    /// Delivers a signed `action` on pull request `number` at `head`, which must be accepted.
+    pub(super) fn signed(&self, action: &str, number: u64, head: &str) {
+        let req = delivery(
+            "pull_request",
+            body(action, ("o/n", number), head),
+            Some(SECRET),
+        );
+        assert_eq!(self.deliver(&req).unwrap(), GitHubHookValue::Accepted);
+    }
 }
 
 /// The gate's front.
@@ -87,7 +155,7 @@ fn gate() -> Caller {
 
 impl Rig {
     /// Stores workflow `name` of the repo with the trigger `on`, enabled when `enabled`.
-    fn put_pr(&self, name: &str, on: bool, enabled: bool) -> WorkflowId {
+    pub(super) fn put_pr(&self, name: &str, on: bool, enabled: bool) -> WorkflowId {
         let mut def = WorkflowDef::new(
             WorkflowName::parse(name).unwrap(),
             WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap(),
@@ -106,7 +174,7 @@ impl Rig {
 
     /// Delivers `req` from the gate, handling its event on the spot and starting each claimed
     /// Box at once.
-    fn deliver(&self, req: &GitHubHookReq) -> Result<GitHubHookValue, CommandError> {
+    pub(super) fn deliver(&self, req: &GitHubHookReq) -> Result<GitHubHookValue, CommandError> {
         self.deliver_holding(req, &|job| {
             run_start(&self.cx, &job);
         })
@@ -130,18 +198,8 @@ impl Rig {
         check(&self.cx, &Ok(gate()), req, &handle)
     }
 
-    /// Delivers a signed `action` on pull request `number` at `head`, which must be accepted.
-    fn signed(&self, action: &str, number: u64, head: &str) {
-        let req = delivery(
-            "pull_request",
-            body(action, ("o/n", number), head),
-            Some(SECRET),
-        );
-        assert_eq!(self.deliver(&req).unwrap(), GitHubHookValue::Accepted);
-    }
-
     /// The runs of `id` for pull request `number` at `head`.
-    fn runs_at(&self, id: WorkflowId, number: u64, head: &str) -> Vec<WorkflowRun> {
+    pub(super) fn runs_at(&self, id: WorkflowId, number: u64, head: &str) -> Vec<WorkflowRun> {
         self.runs(id)
             .into_iter()
             .filter(|r| {
@@ -153,14 +211,14 @@ impl Rig {
     }
 
     /// The one run of `id` for pull request `number` at `head`.
-    fn one_at(&self, id: WorkflowId, number: u64, head: &str) -> WorkflowRun {
+    pub(super) fn one_at(&self, id: WorkflowId, number: u64, head: &str) -> WorkflowRun {
         let mut found = self.runs_at(id, number, head);
         assert_eq!(found.len(), 1, "{found:?}");
         found.remove(0)
     }
 }
 
-fn cancelled(run: &WorkflowRun) -> Option<&CancelCause> {
+pub(super) fn cancelled(run: &WorkflowRun) -> Option<&CancelCause> {
     match &run.state {
         RunState::Done(
             RunEnd::Ended {

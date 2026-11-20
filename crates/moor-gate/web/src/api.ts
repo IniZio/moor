@@ -183,6 +183,8 @@ const RunRowSchema = v.object({
 	id: v.number(),
 	due_at: v.number(),
 	trigger: v.string(),
+	/** The pull request the run is for, `OWNER/NAME#NUMBER`. */
+	pull: v.nullish(v.string()),
 	started_at: v.nullish(v.number()),
 	duration_ms: v.nullish(v.number()),
 	status: StatusSchema,
@@ -229,8 +231,11 @@ const RunSchema = v.object({
 	started_at: v.nullish(v.number()),
 	duration_ms: v.nullish(v.number()),
 	phase: v.string(),
+	outcome: v.nullish(v.string()),
 	status: StatusSchema,
 	label: v.string(),
+	/** The pull request the run is for, `OWNER/NAME#NUMBER`. */
+	pull: v.nullish(v.string()),
 	result: v.nullish(v.string()),
 	detail: v.nullish(v.string()),
 	box: v.nullish(v.string()),

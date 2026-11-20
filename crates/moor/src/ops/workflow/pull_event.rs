@@ -1,41 +1,46 @@
 //! A pull request event from the App's webhook, for every workflow whose first repo it is on.
 //!
-//! Opened, reopened, ready for review and a push fire each enabled workflow that has
-//! `on_pull_request`, through the claim a manual run for a pull request uses. A newer head
-//! cancels the open run of an older one, and the same head again records nothing. A close
-//! cancels the pull request's open run on every workflow of the repo, enabled or not.
+//! The payload only names the pull request. What fires is decided on the pull request as GitHub
+//! has it now, read back as the App, so a late delivery of an older head never cancels a newer
+//! one. An open pull request that is no draft, no bot's, and no fork of an author who cannot
+//! write fires each enabled workflow that has `on_pull_request`, through the claim a manual run
+//! for a pull request uses. A newer head cancels the open run of an older one, and the same head
+//! again records nothing. Such a fork records `skipped_fork` with its author. A closed pull
+//! request cancels its open run on every workflow of the repo, enabled or not.
+//!
+//! A read that fails records a refused run at the payload's head on each workflow that would
+//! fire, with the reason, and nothing retries it. A close whose read fails cancels nothing.
 
 use moor_core::name::ForgeRepo;
 use moor_core::workflow::{
-    CancelCause, CommitSha, PullRef, PullTarget, RunCause, Workflow, WorkflowState,
+    CancelCause, CommitSha, NewRun, PullRef, PullTarget, RunCause, RunEnd, RunState, Workflow,
+    WorkflowState,
 };
 
 use super::cancel::cancel_pull;
+use super::eligible::{read_back, Verdict};
 use super::now::{fire, Start};
 use crate::cx::Cx;
 use crate::store::Store;
 
-/// What a pull request event asks of the workflows on its repo.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PullEvent {
-    /// Opened, reopened, marked ready for review or pushed to: fire at `head_sha`.
-    Fire {
-        /// The pull request, its repo as the payload spells it.
-        target: PullTarget,
-        /// Its head commit.
-        head_sha: CommitSha,
-    },
-    /// Closed, merged or not: cancel its open runs.
-    Closed(PullTarget),
+/// What a payload asks for, before GitHub is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PullAction {
+    /// Opened, reopened, marked ready for review or pushed to.
+    Fire,
+    /// Closed, merged or not.
+    Close,
 }
 
-impl PullEvent {
-    /// The pull request the event is about.
-    const fn target(&self) -> &PullTarget {
-        match self {
-            Self::Fire { target, .. } | Self::Closed(target) => target,
-        }
-    }
+/// A pull request event as its payload names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PullEvent {
+    /// The pull request, its repo as the payload spells it.
+    pub(crate) target: PullTarget,
+    /// The head the payload names. Only a read that fails records a run at it.
+    pub(crate) head_sha: CommitSha,
+    /// What the payload asks for.
+    pub(crate) action: PullAction,
 }
 
 /// Handles `event` for every workflow on its repo, handing each recorded claim to `start`.
@@ -46,38 +51,55 @@ pub(crate) fn on_pull_request(
     event: &PullEvent,
     start: Start<'_>,
 ) -> Vec<String> {
-    let target = event.target();
+    let target = &event.target;
     let workflows = match store.workflows_on(&target.repo) {
         Ok(found) => found,
         Err(e) => return vec![format!("pull request {target}: {e}")],
     };
+    if workflows.is_empty() {
+        return Vec::new();
+    }
+    let verdict = match read_back(cx, target) {
+        Ok(verdict) => verdict,
+        Err(why) => return unread(cx, store, event, &workflows, &why),
+    };
     let mut out = Vec::new();
+    if let Verdict::Skip(why) = verdict {
+        out.push(format!("pull request {target}: nothing fired, {why}"));
+    }
     for w in &workflows {
         let Some(first) = w.repos.first() else {
             continue;
         };
-        match event {
-            PullEvent::Fire { head_sha, .. } if fires(w) => {
-                let pull = PullRef {
-                    repo: first.clone(),
-                    number: target.number,
-                    head_sha: head_sha.clone(),
-                };
-                let line = match fire(cx, store, w, &RunCause::PullRequest { pull }, start) {
+        let at = |head_sha: &CommitSha| PullRef {
+            repo: first.clone(),
+            number: target.number,
+            head_sha: head_sha.clone(),
+        };
+        match &verdict {
+            Verdict::Closed => out.extend(closed(cx, store, w, (first, target))),
+            Verdict::Fire { head_sha } if fires(w) => {
+                let cause = RunCause::PullRequest { pull: at(head_sha) };
+                let line = match fire(cx, store, w, &cause, start) {
                     Ok(v) => match v.reason {
                         Some(why) => format!("{}: {why}", v.status),
                         None => v.status,
                     },
                     Err(e) => format!("failed: {}", e.error),
                 };
-                out.push(format!(
-                    "workflow {} on {target} at {}: {line}",
-                    w.name,
-                    head_sha.short()
-                ));
+                out.push(said(w, target, head_sha, &line));
             }
-            PullEvent::Fire { .. } => {}
-            PullEvent::Closed(_) => out.extend(closed(cx, store, w, (first, target))),
+            Verdict::Fork { head_sha, author } if fires(w) => {
+                let state = RunState::Done(RunEnd::SkippedFork {
+                    author: author.clone(),
+                });
+                let line = record(cx, store, w, (at(head_sha), state)).map_or_else(
+                    |why| why,
+                    |_| format!("skipped_fork: {author} cannot write to the repo"),
+                );
+                out.push(said(w, target, head_sha, &line));
+            }
+            Verdict::Fire { .. } | Verdict::Fork { .. } | Verdict::Skip(_) => {}
         }
     }
     out.extend(cx.take_warnings().into_iter().map(|w| w.message));
@@ -87,6 +109,80 @@ pub(crate) fn on_pull_request(
 /// Whether `w` fires on a pull request event: it is enabled and has the trigger on.
 const fn fires(w: &Workflow) -> bool {
     w.on_pull_request && matches!(w.state, WorkflowState::Enabled { .. })
+}
+
+/// The log line for workflow `w` on `target` at `head_sha`.
+fn said(w: &Workflow, target: &PullTarget, head_sha: &CommitSha, line: &str) -> String {
+    format!(
+        "workflow {} on {target} at {}: {line}",
+        w.name,
+        head_sha.short()
+    )
+}
+
+/// Records a pull request run of `w` for `pull` that never starts a Box, already in `state`.
+/// Whether it was recorded; a run at that head already holds the key otherwise. The error is
+/// what to log.
+fn record(
+    cx: &Cx,
+    store: &Store,
+    w: &Workflow,
+    (pull, state): (PullRef, RunState),
+) -> Result<bool, String> {
+    let now = cx.clock().now();
+    let run = NewRun {
+        workflow: w.id,
+        repo: pull.repo.clone(),
+        due_at: now,
+        state,
+        recorded_at: now,
+        plan: None,
+        cause: RunCause::PullRequest { pull },
+    };
+    store
+        .claim_workflow_run(&run)
+        .map(|id| id.is_some())
+        .map_err(|e| format!("failed: {e}"))
+}
+
+/// What a read of `event`'s pull request that failed with `why` comes to. Each workflow that
+/// would fire records a refused run at the payload's head, so the failure shows in its runs. A
+/// close cancels nothing on a payload alone.
+fn unread(
+    cx: &Cx,
+    store: &Store,
+    event: &PullEvent,
+    workflows: &[Workflow],
+    why: &str,
+) -> Vec<String> {
+    let target = &event.target;
+    let detail = format!("could not read {target} from GitHub: {why}");
+    if event.action == PullAction::Close {
+        return vec![format!(
+            "pull request {target}: {detail}; nothing cancelled"
+        )];
+    }
+    let mut out = Vec::new();
+    for w in workflows.iter().filter(|w| fires(w)) {
+        let Some(first) = w.repos.first() else {
+            continue;
+        };
+        let pull = PullRef {
+            repo: first.clone(),
+            number: target.number,
+            head_sha: event.head_sha.clone(),
+        };
+        let state = RunState::Done(RunEnd::Refused {
+            detail: detail.clone(),
+        });
+        let line = match record(cx, store, w, (pull, state)) {
+            Ok(true) => format!("refused: {detail}"),
+            Ok(false) => format!("{detail}; a run at this head is already recorded"),
+            Err(e) => e,
+        };
+        out.push(said(w, target, &event.head_sha, &line));
+    }
+    out
 }
 
 /// Cancels the open run of `w` for `target`, which is on `first`, because it was closed. What

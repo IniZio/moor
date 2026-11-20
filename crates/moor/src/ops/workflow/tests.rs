@@ -567,6 +567,7 @@ mod approve;
 mod auto_close;
 mod check;
 mod death_cap;
+mod eligible;
 mod hook;
 mod manual;
 mod plan;

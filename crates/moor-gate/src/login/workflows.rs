@@ -182,7 +182,7 @@ fn status(phase: &str, outcome: &str) -> &'static str {
         ("running", _) => "running",
         ("waiting", _) => "waiting",
         (_, "finished") => "success",
-        (_, "skipped_overlap") => "skipped",
+        (_, "skipped_overlap" | "skipped_fork") => "skipped",
         (_, "declined") => "stopped",
         _ => "failure",
     }
@@ -230,7 +230,7 @@ fn span(run: &moor_core::view::workflow::LastRunView) -> (Option<i64>, Option<i6
         .find(|l| {
             matches!(
                 l.entry.get("kind").and_then(Value::as_str),
-                Some("ended" | "refused" | "skipped")
+                Some("ended" | "refused" | "skipped" | "skipped_fork")
             )
         })
         .map(|l| l.at);
@@ -246,6 +246,7 @@ fn run_row(row: &RunRowView) -> Value {
         "id": row.id,
         "due_at": run.due_at,
         "trigger": run.trigger,
+        "pull": run.pull,
         "started_at": started,
         "duration_ms": duration,
         "status": status(&run.phase, &run.outcome),

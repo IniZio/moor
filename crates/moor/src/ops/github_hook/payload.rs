@@ -4,7 +4,7 @@ use moor_core::name::ForgeRepo;
 use moor_core::workflow::{CommitSha, PullTarget};
 use serde::Deserialize;
 
-use crate::ops::workflow::PullEvent;
+use crate::ops::workflow::{PullAction, PullEvent};
 
 /// A `pull_request` payload, cut to what moor reads.
 #[derive(Deserialize)]
@@ -56,12 +56,14 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<PullEvent>, Strin
         repo,
         number: p.number,
     };
-    Ok(match p.action.as_str() {
-        "opened" | "reopened" | "ready_for_review" | "synchronize" => Some(PullEvent::Fire {
-            target,
-            head_sha: CommitSha::parse(&p.pull_request.head.sha).map_err(|e| bad(&e))?,
-        }),
-        "closed" => Some(PullEvent::Closed(target)),
-        _ => None,
-    })
+    let action = match p.action.as_str() {
+        "opened" | "reopened" | "ready_for_review" | "synchronize" => PullAction::Fire,
+        "closed" => PullAction::Close,
+        _ => return Ok(None),
+    };
+    Ok(Some(PullEvent {
+        target,
+        head_sha: CommitSha::parse(&p.pull_request.head.sha).map_err(|e| bad(&e))?,
+        action,
+    }))
 }

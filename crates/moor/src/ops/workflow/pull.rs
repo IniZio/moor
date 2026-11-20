@@ -19,11 +19,8 @@ pub(super) fn read_head(cx: &Cx, target: &PullTarget) -> Result<CommitSha, Comma
         )
         .with_hint("set github_app in the controller config"));
     };
-    let failed = |why: String| CommandError::new(ErrorKind::Failed, why);
-    let sha = app
-        .head_of(&target.repo, target.number, cx.clock().now())
-        .map_err(failed)?;
-    CommitSha::parse(&sha).map_err(|e| failed(format!("GitHub answered {target}: {e}")))
+    app.head_of(&target.repo, target.number, cx.clock().now())
+        .map_err(|why| CommandError::new(ErrorKind::Failed, why))
 }
 
 /// The override and prompt a run's Box starts with. A run for `pull` adds `MOOR_PULL_*` to the
