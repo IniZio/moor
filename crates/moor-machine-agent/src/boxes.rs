@@ -21,6 +21,7 @@ mod fake;
 mod held;
 mod host;
 mod inside;
+mod memory;
 mod provider;
 mod stream;
 #[cfg(test)]
@@ -222,6 +223,7 @@ impl<P: BoxProvider> Boxes<P> {
         let Some(mut held) = self.held(&slug)? else {
             return Ok(BoxAnswer::Gone);
         };
+        self.keep_slept_mib(&slug, &mut held).await;
         match self.provider.stop(&slug).await {
             Err(ProvideError::Missing) => return Ok(BoxAnswer::Gone),
             other => other.map_err(|e| e.to_string())?,

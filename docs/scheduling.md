@@ -27,9 +27,16 @@ memory pressure (PSI `some avg10`) every 10 seconds. A node has room for one
 more Box when all of these hold:
 
 - Its last report is under 60 seconds old.
-- `MemAvailable`, less the host reserve and 2 GiB for each Box still setting
-  up, leaves at least 2 GiB.
+- `MemAvailable`, less the host reserve, 2 GiB for each Box still setting up,
+  and the headroom of each running Box, leaves at least 2 GiB.
 - PSI `some avg10` is under 10, or the host has no PSI.
+
+`MemAvailable` already counts each running Box at what it uses. The agent also
+measures that use per Box with `docker stats`. That is what both its containers
+hold, less the file cache the kernel takes back first.
+
+moor keeps 1 GiB of headroom above that use for each measured Box, so the Box
+has room to grow. The headroom never goes past the Box's ceiling.
 
 The reserve is 4096 MiB plus a tenth of the host's memory, and
 `moor-machine-agent run --reserve-mib` changes it. A node whose agent reports
@@ -48,8 +55,9 @@ seconds. A suspended Box keeps its whole state on disk and wakes later as if
 nothing happened. A Box that is working, waiting on a question, or still
 starting is never suspended to admit another.
 
-A woken Box needs what its VM held when it slept, which the provider reports.
-It passes the same checks as a new Box before it resumes.
+A woken Box needs what it used when it went to sleep, which the agent measured
+then. With no measure, it needs its whole ceiling. It passes the same checks as
+a new Box before it resumes.
 
 ## Pressure relief
 

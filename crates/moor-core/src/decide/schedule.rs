@@ -6,9 +6,9 @@ use crate::user::UserId;
 
 mod memory;
 pub use memory::{
-    default_reserve_mib, disk_floor_mib, gib, needed_to_resume, Memory, ResumeAsk, Shortfall,
-    ALONE_MARGIN_MIB, BOOT_FLOOR_MIB, DISK_FLOOR_MIB, DISK_FLOOR_PERCENT, PSI_LIMIT_CENTI,
-    REPORT_FRESH_SECS,
+    default_reserve_mib, disk_floor_mib, gib, headroom_mib, needed_to_resume, Memory, ResumeAsk,
+    Shortfall, ALONE_MARGIN_MIB, BOOT_FLOOR_MIB, DISK_FLOOR_MIB, DISK_FLOOR_PERCENT, HEADROOM_MIB,
+    PSI_LIMIT_CENTI, REPORT_FRESH_SECS,
 };
 
 /// Who may use a node.

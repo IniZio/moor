@@ -5,12 +5,14 @@ use std::collections::{BTreeMap, HashMap};
 
 use moor_core::config::NodeConfig;
 use moor_core::decide::capacity::counts;
-use moor_core::decide::schedule::{Memory, Node, Online, Scope};
+use moor_core::decide::schedule::{headroom_mib, Memory, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
-use moor_schema::tables::{BoxHands, BoxState, Boxes, MachineLinks, UserMachinesV2};
+use moor_schema::tables::{
+    BoxHands, BoxState, Boxes, MachineBoxMemory, MachineLinks, UserMachinesV2,
+};
 use sea_query::{Asterisk, Expr, ExprTrait as _, Func, Order, Query, SelectStatement};
 
 use crate::store::db::{Db, DbExt as _};
@@ -66,6 +68,41 @@ fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
     Ok((live, pending, starting))
 }
 
+/// The growth room kept on each machine for the running Boxes whose use it reports, by machine
+/// id: [`headroom_mib`] of each, against the ceiling its current hands were given.
+fn headroom_per_machine(conn: &dyn Db) -> Result<HashMap<i64, u64>, StoreError> {
+    let used = (MachineBoxMemory::Table, MachineBoxMemory::HostMemoryMib);
+    let rows = conn.rows(
+        join_current(
+            Query::select()
+                .column((MachineBoxMemory::Table, MachineBoxMemory::MachineId))
+                .column(used)
+                .column((BoxHands::Table, BoxHands::MemMib))
+                .from(Boxes::Table)
+                .inner_join(
+                    MachineBoxMemory::Table,
+                    Expr::col((MachineBoxMemory::Table, MachineBoxMemory::BoxId))
+                        .equals((Boxes::Table, Boxes::Id)),
+                ),
+        )
+        .and_where(Expr::col(used).gt(0)),
+        |r| {
+            Ok::<_, crate::store::db::Error>((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<i64>>(2)?,
+            ))
+        },
+    )?;
+    let mib = |m: i64| u64::try_from(m).unwrap_or(0);
+    let mut room: HashMap<i64, u64> = HashMap::new();
+    for row in rows {
+        let (machine, used, ceiling) = row?;
+        *room.entry(machine).or_default() += headroom_mib(mib(used), ceiling.map(mib));
+    }
+    Ok(room)
+}
+
 /// One machine's node from a `user_machines_v2` row joined with its link; personal when a user
 /// owns the machine, shared when none does. `load` gives a node's live, pending and setting-up
 /// Boxes by name.
@@ -102,6 +139,7 @@ fn machine_node(
             disk_total_mib: mib(15)?,
             reported_at: at / 1000,
             starting,
+            headroom_mib: 0,
         }),
         _ => None,
     };
@@ -206,6 +244,12 @@ impl Store {
         })?;
         for row in rows {
             nodes.extend(row?);
+        }
+        let room = headroom_per_machine(&conn)?;
+        for n in &mut nodes {
+            if let (Some(memory), Some(machine)) = (n.memory.as_mut(), n.machine) {
+                memory.headroom_mib = room.get(&machine).copied().unwrap_or(0);
+            }
         }
         Ok(nodes)
     }

@@ -573,4 +573,5 @@ fn a_close_after_a_suspend_parked_the_box_ends_closed() {
     assert_eq!(wanted_kind(&w, shut), None);
 }
 
+mod measured;
 mod room_made;

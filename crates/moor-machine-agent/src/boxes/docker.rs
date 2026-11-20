@@ -6,6 +6,7 @@
 //! `images/README.md` describes. Docker restarts nothing (`--restart no`): this agent is the only
 //! actor that restarts a place.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -336,6 +337,10 @@ impl BoxProvider for Docker {
 
     async fn observe(&self) -> Result<Vec<Observed>, ProvideError> {
         self.observe_all().await
+    }
+
+    async fn held_mib(&self) -> BTreeMap<Slug, u64> {
+        Self::held_mib_all().await
     }
 
     fn carrier(&self, slug: &Slug, place: Place, tty: bool) -> Command {
