@@ -75,6 +75,9 @@ fn steps(
         let _ = out.write_all(line(c).as_bytes());
     };
     let layout = Layout::read(env)?;
+    if let Some(why) = layout.socket_too_long() {
+        return Err(Check::fail("config", why, ""));
+    }
     std::fs::create_dir_all(&layout.state_dir).map_err(|e| {
         Check::fail(
             "config",

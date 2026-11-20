@@ -169,6 +169,30 @@ fn layout() -> Layout {
     }
 }
 
+#[test]
+fn a_state_dir_too_long_for_the_runners_forward_socket_is_named_with_its_length_and_the_limit() {
+    let fits = layout();
+    assert_eq!(fits.socket_too_long(), None);
+    let limit = crate::controller::socket_paths::LIMIT;
+    let state = format!(
+        "/{}",
+        "s".repeat(limit - "/runner/machine-forwards.sock".len())
+    );
+    let long = Layout {
+        state_dir: PathBuf::from(&state),
+        socket: PathBuf::from("/c.sock"),
+        ..layout()
+    };
+    let why = long.socket_too_long().unwrap();
+    assert!(
+        why.starts_with(&format!(
+            "socket path {state}/runner/machine-forwards.sock is too long for a Unix socket: {} bytes, the limit is {limit}",
+            limit + 1
+        )),
+        "{why}"
+    );
+}
+
 fn plan() -> Plan {
     Plan {
         runner: PathBuf::from("/home/ada/.local/bin/moor-machine-runner"),
