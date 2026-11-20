@@ -41,6 +41,14 @@ pub(super) fn named(path: &str) -> Option<&str> {
 
 /// Answers the repos of the person's Boxes: the ones they have used, that is.
 pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
+    match used(gate, session) {
+        Ok(repos) => json(stream, "200 OK", &json!({"repos": repos})),
+        Err(why) => failed(stream, "repo list", &why),
+    }
+}
+
+/// The distinct repos of the person's Boxes, sorted: the repos they have in moor.
+pub(super) fn used(gate: &Gate, session: &Session) -> Result<BTreeSet<String>, String> {
     let show = ControllerRequest::Show(ShowReq {
         target: None,
         events: None,
@@ -50,10 +58,8 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
         pane: false,
         transcript: false,
     });
-    match tools::act_as(&gate.controller, &session.person, show) {
-        Ok(shown) => json(stream, "200 OK", &json!({"repos": repos_of(&shown)})),
-        Err(why) => failed(stream, "repo list", &why),
-    }
+    let shown = tools::act_as(&gate.controller, &session.person, show)?;
+    Ok(repos_of(&shown).into_iter().map(str::to_owned).collect())
 }
 
 /// The distinct repos of the Boxes in a `show` list, sorted.

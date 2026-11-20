@@ -9,14 +9,14 @@ use moor_core::request::{
     AsReq, MachineRemoveReq, PairOp, PairOwner, ProfileCheckReq, ProfileSetReq,
     Request as ControllerRequest,
 };
-use moor_core::response::ExitClass;
+use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::user::{MachinePairValue, ProfileCheckValue};
 use oauth2::CsrfToken;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use super::account::{failed, json, signed_out};
-use super::repos::answered;
+use super::repos::{self, answered};
 use super::routes::{read_body, Request};
 use super::{check_csrf, Session, RANDOM_BYTES};
 use crate::{tools, Gate};
@@ -84,7 +84,7 @@ pub(super) fn serve(
     let ask = |request| tools::ask_as(&gate.controller, &session.person, request);
     let reply = match (req.method, path) {
         ("POST", TOKEN) => return token(stream, gate, session),
-        ("GET", GITHUB_APP) => ask(ControllerRequest::GitHubApp(AsReq { identity: None })),
+        ("GET", GITHUB_APP) => github_app(&ask, gate, session),
         ("GET", _) => ask(check(None)),
         ("POST", _) | ("PUT", PROFILE) => match source(body.as_deref()) {
             Ok(source) if req.method == "POST" => ask(check(Some(source))),
@@ -101,6 +101,31 @@ pub(super) fn serve(
         Ok(reply) => answered(stream, &reply),
         Err(why) => failed(stream, "settings", &why),
     }
+}
+
+/// The App's answer with its repos cut to the ones the person has in moor, so a repo the App
+/// serves for someone else never leaves the gate. A failed read of their repos fails the answer.
+fn github_app(
+    ask: &impl Fn(ControllerRequest) -> Result<ControllerResponse, String>,
+    gate: &Gate,
+    session: &Session,
+) -> Result<ControllerResponse, String> {
+    let mut reply = ask(ControllerRequest::GitHubApp(AsReq { identity: None }))?;
+    if reply.class != ExitClass::Ok {
+        return Ok(reply);
+    }
+    if let Some(app) = reply.value.as_mut().filter(|v| !v.is_null()) {
+        let theirs = repos::used(gate, session)?;
+        let kept: Vec<Value> = app["repos"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|r| r.as_str().is_some_and(|r| theirs.contains(r)))
+            .cloned()
+            .collect();
+        app["repos"] = Value::Array(kept);
+    }
+    Ok(reply)
 }
 
 /// The profile check request for `source`, or for the stored profile.
