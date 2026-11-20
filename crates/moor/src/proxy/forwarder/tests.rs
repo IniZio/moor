@@ -399,6 +399,28 @@ fn a_proxy_from_before_the_forwarder_is_refused_on_the_shared_route() {
 }
 
 #[test]
+fn a_dynamically_linked_binary_is_refused_and_nothing_is_written_or_minted() {
+    let r = rig();
+    let loader = "/lib64/ld-linux-x86-64.so.2";
+    std::fs::write(
+        r.binary.path(),
+        crate::proxy::forwarder::elf::tests::elf64(3, format!("{loader}\0").as_bytes()),
+    )
+    .unwrap();
+    let err = r.deliver(&tunneled(), &Rig::endpoint()).unwrap_err();
+    assert!(
+        err.contains(&format!("dynamically linked (it needs {loader})")),
+        "{err}"
+    );
+    assert!(err.contains("unknown-linux-musl"), "{err}");
+    assert!(r.written().is_empty());
+    assert!(!r
+        .store
+        .egress_token_delivered(r.id, token::key_id(KEY))
+        .unwrap());
+}
+
+#[test]
 fn a_missing_binary_is_named_and_nothing_is_minted() {
     let r = rig();
     let gone = Path::new("/nonexistent/moor-egress-forward");

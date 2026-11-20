@@ -7,8 +7,9 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields};
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::driver::DriverError;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{BoxId, BoxPath, BoxReq, ErrorKind, Warning};
+use moor_core::{BoxId, BoxName, BoxPath, BoxReq, ErrorKind, Warning};
 
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
@@ -330,7 +331,7 @@ pub(crate) fn wake_box(
             )
         })
     };
-    let woke = wake_and_revive(cx, store, &reload()?)?;
+    let woke = wake_and_revive(cx, store, &reload()?).map_err(|e| gone(e, &req.box_name))?;
     let row = reload()?;
     held(&row)?;
     let boxed = box_view(&row, cx.config()).driver;
@@ -339,6 +340,22 @@ pub(crate) fn wake_box(
         driver: boxed,
         woke,
     })
+}
+
+/// `e`, unless it says the machine no longer has Box `name`: then that, with what to do.
+fn gone(e: CommandError, name: &BoxName) -> CommandError {
+    if e.error.downcast_ref::<DriverError>() != Some(&DriverError::NotFound) {
+        return e;
+    }
+    let name = name.as_str();
+    CommandError::new(
+        ErrorKind::Failed,
+        format!("{name}'s containers are gone from its machine, so it cannot wake"),
+    )
+    .with_hint(format!("`moor close {name}` closes it"))
+    .with_hint(format!(
+        "then `moor start {name}` with its repo starts it again in new containers"
+    ))
 }
 
 mod owed;

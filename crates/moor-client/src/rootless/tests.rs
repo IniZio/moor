@@ -31,7 +31,6 @@ fn good() -> Facts {
         unit: Some("enabled".to_owned()),
         linger: Some(true),
         rootlesskit: Ok(cmdline_words(CMDLINE)),
-        kvm_mode: Some(0o666),
         live_restore: Some(false),
     }
 }
@@ -159,25 +158,6 @@ fn the_loopback_flag_may_carry_true_and_never_false() {
 }
 
 #[test]
-fn a_kvm_device_not_open_to_everyone_is_a_warning_not_a_failure() {
-    let mut f = good();
-    assert_eq!(warnings(&f), []);
-    f.kvm_mode = Some(0o660);
-    assert_eq!(failures(&f, true), []);
-    let [one] = warnings(&f).try_into().unwrap();
-    assert_eq!(one.check, "kvm");
-    assert!(
-        one.detail.starts_with(
-            "KVM Boxes (Android emulators) will not work on this node until /dev/kvm is 0666"
-        ),
-        "{one:?}"
-    );
-    assert!(one.fix.contains("0666"), "{one:?}");
-    f.kvm_mode = None;
-    assert_eq!(warnings(&f), []);
-}
-
-#[test]
 fn live_restore_is_a_warning_that_names_the_daemon_json_fix() {
     let mut f = good();
     assert_eq!(warnings(&f), []);
@@ -208,7 +188,6 @@ fn docker_infos_live_restore_line_reads_as_a_flag_or_not_at_all() {
 fn every_failure_is_reported_at_once() {
     let mut f = good();
     f.linger = Some(false);
-    f.kvm_mode = Some(0o600);
     f.unit = None;
     assert_eq!(names(&f, true), ["docker.service", "linger"]);
 }

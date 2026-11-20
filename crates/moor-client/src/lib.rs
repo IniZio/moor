@@ -31,6 +31,7 @@ mod attach;
 mod conn;
 mod error;
 pub mod forward;
+pub mod kvm;
 #[cfg(feature = "link")]
 pub mod link;
 pub mod oidc;

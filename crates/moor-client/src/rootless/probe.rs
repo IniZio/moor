@@ -17,9 +17,6 @@ use super::{
 const BINARIES: [&str; 4] = ["newuidmap", "newgidmap", "slirp4netns", "nsenter"];
 /// The sysctl that stops unprivileged user namespaces under `AppArmor`.
 const APPARMOR_SYSCTL: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
-/// The host's KVM device.
-const KVM: &str = "/dev/kvm";
-
 /// What the host says, before any check reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facts {
@@ -41,8 +38,6 @@ pub struct Facts {
     pub linger: Option<bool>,
     /// The arguments rootlesskit runs with, else why they could not be read.
     pub rootlesskit: Result<Vec<String>, String>,
-    /// The permission bits of `/dev/kvm`, when the host has it.
-    pub kvm_mode: Option<u32>,
     /// Whether the daemon runs with live-restore, when `docker info` says.
     pub live_restore: Option<bool>,
 }
@@ -70,7 +65,6 @@ impl Facts {
             apparmor_restrict: std::fs::read_to_string(APPARMOR_SYSCTL).ok(),
             unit: run("systemctl", &["--user", "is-enabled", "docker"]),
             rootlesskit: rootlesskit_args(),
-            kvm_mode: std::fs::metadata(KVM).ok().map(|m| m.mode() & 0o777),
             live_restore: run("docker", &LIVE_RESTORE_ARGS).and_then(|out| live_restore_of(&out)),
             user,
             uid,

@@ -80,6 +80,9 @@ impl Host {
         }
         write_executable(&bin.join("systemctl"), format!("#!/bin/sh\n{SYSTEMCTL}")).unwrap();
         write_executable(&bin.join("moor-egress-forward"), "#!/bin/sh\nexit 0\n").unwrap();
+        let kvm = bin.join("kvm");
+        fs::write(&kvm, "").unwrap();
+        fs::set_permissions(&kvm, fs::Permissions::from_mode(0o666)).unwrap();
         Self {
             home: fresh_dir("up-home"),
             state: moor_testkit::short_tempdir("up").unwrap(),
@@ -117,11 +120,11 @@ impl Host {
         self.moor_with(args, stdin, &[])
     }
 
-    fn units(&self) -> PathBuf {
+    pub(super) fn units(&self) -> PathBuf {
         self.home.join(".config/systemd/user")
     }
 
-    fn systemctl_log(&self) -> String {
+    pub(super) fn systemctl_log(&self) -> String {
         fs::read_to_string(self.bin.join("systemctl.log")).unwrap_or_default()
     }
 

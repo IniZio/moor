@@ -30,6 +30,25 @@ async fn a_box_meant_to_run_is_listed_down_when_its_provider_lost_every_box() {
 }
 
 #[tokio::test]
+async fn a_box_meant_to_run_whose_places_were_removed_is_listed_down_as_gone() {
+    let rig = rig();
+    rig.opened().await;
+    rig.boxes.provider.remove_behind(&slug());
+    let boxes = listed(&rig).await;
+    assert_eq!(
+        (boxes[0].state.clone(), boxes[0].down.as_deref()),
+        (
+            ReportState::Mending,
+            Some("the Box's containers are gone from its machine")
+        )
+    );
+    assert_eq!(
+        rig.one(&BoxOp::Wake { slug: s(SLUG) }).await,
+        BoxAnswer::Gone
+    );
+}
+
+#[tokio::test]
 async fn a_provider_that_cannot_look_is_not_a_box_that_is_down() {
     let rig = rig();
     rig.opened().await;

@@ -52,6 +52,21 @@ fn a_long_configured_socket_is_refused() {
 }
 
 #[test]
+fn a_runner_socket_of_exactly_the_limit_is_refused_as_its_staged_name_cannot_bind() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let limit = super::super::socket_paths::LIMIT;
+    let state = deep(tmp.path(), limit - "/runner/runner.sock".len());
+    let env = env_with(tmp.path(), &[("MOOR_STATE_DIR", &state)]);
+    let cfg = config(tmp.path(), "socket: /tmp/moor-short-ok.sock\n");
+    let msg = refusal(&env, &cfg);
+    assert!(msg.contains("runner.sock"), "{msg}");
+    assert!(
+        msg.contains(&format!("{limit} bytes, the limit is {}", limit - 1)),
+        "{msg}"
+    );
+}
+
+#[test]
 fn a_state_dir_whose_runner_socket_is_too_long_is_refused() {
     let tmp = tempfile::tempdir().expect("tmp");
     let state = deep(tmp.path(), super::super::socket_paths::LIMIT - 17);

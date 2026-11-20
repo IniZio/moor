@@ -32,7 +32,6 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
             ),
         ));
     }
-    store.forget_egress_delivery(row.id)?;
     let turn = cx.turn(row.id, Cmd::Retry)?;
     let Some(provisioned) = reprovision(cx, store, &row, &Flags::default(), &turn)? else {
         return Err(CommandError::new(

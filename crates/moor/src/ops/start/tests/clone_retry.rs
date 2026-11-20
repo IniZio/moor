@@ -245,3 +245,18 @@ fn a_box_that_failed_setup_on_lost_hands_with_a_live_launch_gets_new_hands_that_
     );
     assert!(!kinds(&w, id).iter().any(|k| k == "transcript_skipped"));
 }
+
+#[test]
+fn start_after_a_failed_clone_delivers_the_egress_forwarder_again() {
+    let (w, _) = world_with_setup([Ok(exit(1)), Ok(exit(2))]);
+    start(&w).unwrap_err();
+    let store = w.cx.store().unwrap();
+    let id = row(&w).id;
+    let _ = store
+        .reserve(id, &crate::testing::rng::FakeRng::default())
+        .unwrap();
+    assert!(store.set_egress_token(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());
+    start(&w).unwrap_err();
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
+}

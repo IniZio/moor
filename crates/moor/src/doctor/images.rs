@@ -107,7 +107,7 @@ fn line(role: &str, image: &str, found: Presence, strict: bool) -> Check {
 }
 
 /// The value of `name` in the unit's `Environment=` lines.
-fn unit_var(unit: &str, name: &str) -> Option<String> {
+pub(super) fn unit_var(unit: &str, name: &str) -> Option<String> {
     let prefix = format!("Environment=\"{name}=");
     unit.lines()
         .find_map(|l| l.strip_prefix(prefix.as_str()))

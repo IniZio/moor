@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use moor_core::config::{parse_controller, parse_user};
+use moor_core::config::{parse_controller, parse_user, ControllerConfig};
 
 use super::gate::{BOX_LISTEN, FRONT};
 use crate::config_load::user_path;
@@ -42,6 +42,24 @@ impl Layout {
         crate::runner_dir::of(&self.state_dir).join(crate::runner_dir::SOCKET)
     }
 
+    /// Why a socket the controller or the machine runner binds under these paths cannot fit a
+    /// Unix socket address; none when every one fits.
+    pub(crate) fn socket_too_long(&self) -> Option<String> {
+        use crate::controller::socket_paths::{too_long, under_state, SHORTER};
+        let runner = self.runner_socket();
+        let mut sockets = vec![(self.socket.clone(), true)];
+        sockets.extend(under_state(&self.state_dir, &ControllerConfig::default()));
+        sockets.extend([
+            (
+                runner.with_file_name(moor_client::link::broker::SOCKET),
+                false,
+            ),
+            (runner.with_file_name(moor_client::forward::SOCKET), false),
+            (self.runner_state().join("rsh.sock"), false),
+        ]);
+        sockets.iter().find_map(|s| too_long(s, SHORTER))
+    }
+
     /// The paths for `env`, with the socket and state dir an existing controller config sets.
     pub(crate) fn read(env: &Env) -> Result<Self, Check> {
         let no_home = || Check::fail("config", "HOME is unset", "run moor up as a login user");
@@ -68,12 +86,15 @@ impl Layout {
             .as_ref()
             .and_then(|c| c.socket.as_ref().map(expand))
             .unwrap_or_else(|| state_dir.join("controller.sock"));
-        Ok(Self {
+        let layout = Self {
             controller_config,
             user_config,
             state_dir,
             socket,
-        })
+        };
+        layout
+            .socket_too_long()
+            .map_or(Ok(layout), |why| Err(Check::fail("config", why, "")))
     }
 }
 
@@ -195,3 +216,6 @@ pub(crate) fn write(path: &Path, text: &str) -> Result<(), Check> {
     fs::write(&tmp, text).map_err(fail)?;
     fs::rename(&tmp, path).map_err(fail)
 }
+
+#[cfg(test)]
+mod tests;

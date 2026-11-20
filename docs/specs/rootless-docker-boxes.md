@@ -184,7 +184,7 @@ with the fix. They do not change the host.
 | `kernel.apparmor_restrict_unprivileged_userns` is 0 where the sysctl exists | set it to 0 |
 | The rootless `docker.service` user unit is enabled and the user lingers | `systemctl --user enable docker`, `loginctl enable-linger` |
 | rootlesskit runs with `--disable-host-loopback` | unset `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK` |
-| `/dev/kvm` is mode `0666`, for a node that offers KVM | a udev rule with `MODE="0666"` |
+| `/dev/kvm` exists and is mode `0666` | a udev rule with `MODE="0666"` |
 
 Live-restore is a warning, not a failure. Boxes start with it on. A restart of a rootless daemon
 makes a new network namespace, so the new daemon cannot adopt the old containers. The old
@@ -193,11 +193,20 @@ warning says to turn live-restore off in the daemon.json under the user's .confi
 
 ## KVM
 
-A node that offers KVM under rootless Docker needs `/dev/kvm` at mode `0666`. The agent
-passes the device and no `MOOR_KVM_GID`. With that mode an Android emulator booted in
-the work place in 23 s. crun's `keep_original_groups` is the other way. The host owner
-chose `0666` because it keeps runc, and the crun way is not tested. The cost is that
-every user of the host can open `/dev/kvm`.
+Every Box gets KVM. `moor up` and `moor-machine-agent up` refuse, and `moor doctor` fails, when
+Boxes cannot open `/dev/kvm`. That holds on rootful Docker too, so the check runs before the
+rootless ones. It fails in three cases:
+
+- `/dev/kvm` is missing.
+- Rootless Docker, and `/dev/kvm` is not open to everyone.
+- Rootful Docker, and `/dev/kvm` is open neither to its group nor to everyone. The agent hands
+  the device's gid to the work place as `MOOR_KVM_GID`, and the Box user joins that group.
+
+Under rootless Docker the agent passes the device and no `MOOR_KVM_GID`. With mode `0666` an
+Android emulator booted in the work place in 23 s. crun's `keep_original_groups` is the other
+way. The host owner chose `0666` because it keeps runc, and the crun way is not tested. The
+cost is that every user of the host can open `/dev/kvm`. The teammate runbook,
+[rootless-docker.md](../rootless-docker.md#kvm), keeps this step in one section.
 
 ## Privilege notice
 

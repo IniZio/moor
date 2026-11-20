@@ -17,7 +17,7 @@ mod relay;
 mod serving;
 mod settle;
 mod socket_bind;
-mod socket_paths;
+pub(crate) mod socket_paths;
 mod watch;
 
 pub use local::watch_local;

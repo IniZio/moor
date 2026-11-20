@@ -88,6 +88,12 @@ impl FakeProvider {
         }
     }
 
+    /// Removes `slug`'s places behind the agent's back, as `docker rm -f` does.
+    #[cfg(test)]
+    pub(crate) fn remove_behind(&self, slug: &Slug) {
+        self.boxes().remove(slug);
+    }
+
     /// Has every later `observe` fail with `e`, as a Docker daemon that stopped answering does.
     #[cfg(test)]
     pub(crate) fn fail_observe(&self, e: ProvideError) {

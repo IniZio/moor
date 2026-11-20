@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use super::files::{Layout, NODE};
 use super::relay::{bridge_gateway, relay_unit, relayed, Relay};
 use super::service;
-use moor_client::rootless;
+use moor_client::{kvm, rootless};
 
 use crate::doctor::{answer, Ask, Check};
 use crate::env::Env;
@@ -91,6 +91,9 @@ impl Ports {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 /// What the node's units need, found before `up` writes anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Plan {
@@ -118,6 +121,10 @@ pub(crate) fn plan(env: &Env, layout: &Layout) -> Result<(Plan, Option<Relay>, V
         )
     })?;
     let rootless = rootless::detect();
+    let device = kvm::device(env.get(kvm::DEVICE_VAR));
+    if let Some(f) = kvm::refusal(rootless, device, kvm::mode_of(device)) {
+        return Err(Check::fail(f.check, f.detail, f.fix));
+    }
     let notes = trust(env, rootless)?;
     let (host, relay) = if rootless {
         let (ip, relay) = relayed(env)?;

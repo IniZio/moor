@@ -211,6 +211,14 @@ struct Ran {
 }
 
 impl World {
+    /// A KVM device every user may open, so the agent's KVM check passes on any test host.
+    fn kvm(&self) -> PathBuf {
+        let kvm = self.home.path().join("kvm");
+        std::fs::write(&kvm, "").unwrap();
+        std::fs::set_permissions(&kvm, std::fs::Permissions::from_mode(0o666)).unwrap();
+        kvm
+    }
+
     fn units(&self) -> PathBuf {
         self.home.path().join("units")
     }
@@ -237,6 +245,7 @@ impl World {
                 .env("XDG_STATE_HOME", self.home.path().join("state"))
                 .env("XDG_CONFIG_HOME", self.home.path().join("config"))
                 .env("MOOR_AGENT_SERVICE_DIR", self.units())
+                .env("MOOR_KVM_DEVICE", self.kvm())
                 .env("PATH", path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
