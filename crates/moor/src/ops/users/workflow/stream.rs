@@ -29,6 +29,12 @@ pub(super) fn run_view(
 ) -> Result<LastRunView, CommandError> {
     let (detail, result) = match &run.state {
         RunState::Done(RunEnd::Refused { detail }) => (Some(detail.clone()), None),
+        RunState::Done(RunEnd::SkippedFork { author }) => (
+            Some(format!(
+                "the fork's author {author} cannot write to the repo"
+            )),
+            None,
+        ),
         RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
             RunOutcome::Failed { reason, .. } => (Some(reason.clone()), None),
             RunOutcome::Delivered { result } => {
@@ -36,7 +42,8 @@ pub(super) fn run_view(
             }
             RunOutcome::Incomplete { .. }
             | RunOutcome::Declined { .. }
-            | RunOutcome::TimedOut { .. } => (None, None),
+            | RunOutcome::TimedOut { .. }
+            | RunOutcome::Cancelled { .. } => (None, None),
         },
         RunState::Queued
         | RunState::Running { .. }
@@ -51,7 +58,7 @@ pub(super) fn run_view(
         run.state,
         RunState::Queued | RunState::Done(RunEnd::Refused { .. })
     )
-    .then(|| box_name(run.workflow, workflow, run.due_at, run.trigger).ok())
+    .then(|| box_name(run.workflow, workflow, run.due_at, &run.cause).ok())
     .flatten()
     .map(|name| name.as_str().to_owned());
     let history = store
@@ -66,7 +73,12 @@ pub(super) fn run_view(
         due_at: run.due_at.as_millis(),
         outcome: run.state.tag().to_owned(),
         phase: run.state.phase().as_str().to_owned(),
-        trigger: run.trigger.as_str().to_owned(),
+        trigger: run.cause.trigger().as_str().to_owned(),
+        pull: run
+            .cause
+            .subject()
+            .map(|p| format!("{}#{}", p.repo, p.number)),
+        head_sha: run.cause.subject().map(|p| p.head_sha.to_string()),
         step: run.state.step().map(ToString::to_string),
         result,
         detail,

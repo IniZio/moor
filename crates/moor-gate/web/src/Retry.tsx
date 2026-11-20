@@ -57,7 +57,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 	};
 	const runAgain = async () => {
 		if (!flow) return;
-		const started = await workflowRunNow(csrf, flow.name);
+		const started = await workflowRunNow(csrf, flow.name, flow.pull);
 		if (started.box) location.hash = `#/box/${encodeURIComponent(started.box)}`;
 	};
 	return (

@@ -1,6 +1,7 @@
 //! The reads the pull request trigger makes with an installation token: a pull request and its
 //! author's permission.
 
+use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::Secret;
 use serde::Deserialize;
@@ -50,14 +51,24 @@ impl Permission {
 }
 
 impl AppClient {
+    /// The head commit of pull request `number` on `repo`, read with a token of the installation
+    /// that covers `repo`.
+    ///
+    /// # Errors
+    /// The App is not installed on `repo`, GitHub cannot be reached, or the pull request is not
+    /// there.
+    pub(crate) fn head_of(&self, repo: &ForgeRepo, number: u64, now: Ts) -> Result<String, String> {
+        let installation = self
+            .installation_of(repo, now)?
+            .ok_or_else(|| format!("the GitHub App is not installed on {repo}"))?;
+        let token = self.token(installation, now)?;
+        Ok(self.pull(repo, number, &token)?.head_sha)
+    }
+
     /// Pull request `number` on `repo`, read with an installation `token`.
     ///
     /// # Errors
     /// GitHub cannot be reached, or the pull request is not there.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the pull request trigger reads it")
-    )]
     pub(crate) fn pull(
         &self,
         repo: &ForgeRepo,

@@ -29,6 +29,7 @@ mod user_inbox;
 mod vm_inc;
 mod workflow_plans;
 mod workflow_repo_set;
+mod workflow_run_pull;
 mod workflow_run_trigger;
 
 /// The steps before the one `name`s, and that step, rendered for `backend`.

@@ -124,7 +124,7 @@ impl Store {
                 seq,
                 workflow: WorkflowName::parse(&name).map_err(|e| corrupt("name", e))?,
                 origin: front.map(|front| WorkflowOrigin { front, key }),
-                what: ChangeKind::Run(run_of(WorkflowId::new(workflow), &run)?),
+                what: ChangeKind::Run(Box::new(run_of(WorkflowId::new(workflow), &run)?)),
             });
         }
         Ok(out)

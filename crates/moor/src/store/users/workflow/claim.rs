@@ -11,8 +11,8 @@ use moor_core::BoxId;
 use moor_schema::tables::{BoxState, WorkflowRuns};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
-use super::history::{append_history, run_id};
-use super::row::{read_run, run_of, state_cols, STARTED, STARTING, WAITING};
+use super::history::append_history;
+use super::row::{read_run, run_of, state_cols, subject_cols, STARTED, STARTING, WAITING};
 use super::runs::real_run;
 use crate::store::db::{Db, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
@@ -23,89 +23,97 @@ pub(crate) enum ManualClaim {
     /// The run is recorded.
     Recorded,
     /// A run of the workflow is open, so nothing was recorded. It is that run.
-    Open(WorkflowRun),
-    /// A run of the workflow already has that due time, so nothing was recorded.
-    Taken,
+    Open(Box<WorkflowRun>),
 }
 
 impl Store {
-    /// Records one firing. False, with nothing changed, when that workflow, repo and due time
-    /// already have one, so a firing repeated after a crash records once. The run's history
-    /// opens with the line for its state.
+    /// Records one firing. False, with nothing changed, when a unique key already holds it: a cron
+    /// firing on its workflow, repo and due time, a pull request run on its pull request and head.
+    /// A firing repeated after a crash then records once. The run's history opens with the line
+    /// for its state.
     pub(crate) fn record_workflow_run(&self, run: &NewRun) -> Result<bool, StoreError> {
         self.numbered(|tx, seq| insert(tx, seq, run))
     }
 
     /// Records a run its owner asked for, unless the workflow has a run open, which is looked for
     /// in the transaction that inserts the row. A read before the write would race the tick, which
-    /// could claim a cron run with another due time in between, and the unique key on workflow,
-    /// repo and due time would not stop two runs of one workflow.
+    /// could claim a cron run with another due time in between. No unique key covers a manual
+    /// run, so the open run is the only thing that stops it.
     pub(crate) fn claim_manual_run(&self, run: &NewRun) -> Result<ManualClaim, StoreError> {
         let mut open = None;
-        let recorded = self.numbered(|tx, seq| {
+        self.numbered(|tx, seq| {
             open = blocking(tx, run.workflow)?;
             if open.is_some() {
                 return Ok(0);
             }
             insert(tx, seq, run)
         })?;
-        Ok(match (recorded, open) {
-            (true, _) => ManualClaim::Recorded,
-            (false, Some(run)) => ManualClaim::Open(run),
-            (false, None) => ManualClaim::Taken,
-        })
+        Ok(open.map_or(ManualClaim::Recorded, |run| {
+            ManualClaim::Open(Box::new(run))
+        }))
     }
 }
 
-/// Inserts `run` and the first line of its history; the rows inserted, none when it exists.
+/// Inserts `run` and the first line of its history; the rows inserted, none when a unique key
+/// already holds it.
 fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<usize, StoreError> {
     let cols = state_cols(&run.state);
     let plan = run.plan.as_ref().map(Plan::to_json).transpose()?;
-    let inserted = tx.run(
-        Query::insert()
-            .into_table(WorkflowRuns::Table)
-            .columns([
-                WorkflowRuns::Workflow,
-                WorkflowRuns::Repo,
-                WorkflowRuns::DueAt,
-                WorkflowRuns::Box,
-                WorkflowRuns::Outcome,
-                WorkflowRuns::Detail,
-                WorkflowRuns::EndedAt,
-                WorkflowRuns::RecordedAt,
-                WorkflowRuns::Seq,
-                WorkflowRuns::Step,
-                WorkflowRuns::TryN,
-                WorkflowRuns::WaitingSince,
-                WorkflowRuns::EndedStep,
-                WorkflowRuns::Plan,
-                WorkflowRuns::Trigger,
-            ])
-            .values_panic([
-                run.workflow.get().into(),
-                run.repo.to_string().into(),
-                run.due_at.as_millis().into(),
-                cols.box_id.into(),
-                run.state.tag().into(),
-                cols.detail.clone().into(),
-                cols.ended_at.into(),
-                run.recorded_at.as_millis().into(),
-                seq.into(),
-                cols.step.clone().into(),
-                cols.try_n.into(),
-                cols.waiting_since.into(),
-                cols.ended_step.into(),
-                plan.into(),
-                run.trigger.as_str().into(),
-            ])
-            .on_conflict(OnConflict::new().do_nothing().to_owned()),
-    )?;
-    if inserted == 1 {
-        let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
-        let key = (run.workflow, &run.repo, run.due_at);
-        append_history(tx, run_id(tx, key)?, run.recorded_at, &entry)?;
-    }
-    Ok(inserted)
+    let (pull_number, head_sha) = subject_cols(&run.cause);
+    let id = tx
+        .rows(
+            Query::insert()
+                .into_table(WorkflowRuns::Table)
+                .columns([
+                    WorkflowRuns::Workflow,
+                    WorkflowRuns::Repo,
+                    WorkflowRuns::DueAt,
+                    WorkflowRuns::Box,
+                    WorkflowRuns::Outcome,
+                    WorkflowRuns::Detail,
+                    WorkflowRuns::EndedAt,
+                    WorkflowRuns::RecordedAt,
+                    WorkflowRuns::Seq,
+                    WorkflowRuns::Step,
+                    WorkflowRuns::TryN,
+                    WorkflowRuns::WaitingSince,
+                    WorkflowRuns::EndedStep,
+                    WorkflowRuns::Plan,
+                    WorkflowRuns::Trigger,
+                    WorkflowRuns::PullNumber,
+                    WorkflowRuns::HeadSha,
+                ])
+                .values_panic([
+                    run.workflow.get().into(),
+                    run.repo.to_string().into(),
+                    run.due_at.as_millis().into(),
+                    cols.box_id.into(),
+                    run.state.tag().into(),
+                    cols.detail.clone().into(),
+                    cols.ended_at.into(),
+                    run.recorded_at.as_millis().into(),
+                    seq.into(),
+                    cols.step.clone().into(),
+                    cols.try_n.into(),
+                    cols.waiting_since.into(),
+                    cols.ended_step.into(),
+                    plan.into(),
+                    run.cause.trigger().as_str().into(),
+                    pull_number.into(),
+                    head_sha.into(),
+                ])
+                .on_conflict(OnConflict::new().do_nothing().to_owned())
+                .returning_col(WorkflowRuns::Id),
+            |r| r.get::<_, i64>(0),
+        )?
+        .next()
+        .transpose()?;
+    let Some(id) = id else {
+        return Ok(0);
+    };
+    let entry = HistoryEntry::moving(RunPhase::Queued, &run.state);
+    append_history(tx, id, run.recorded_at, &entry)?;
+    Ok(1)
 }
 
 /// The run that keeps another of `workflow` from starting: one that is claimed, working or waiting,

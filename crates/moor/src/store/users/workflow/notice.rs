@@ -108,7 +108,7 @@ pub(super) fn record(
 }
 
 /// The Box, outcome name, step and reason of an end the owner hears of; none for a delivery, a
-/// decline, a skip, and a refusal that never had a Box.
+/// decline, a cancel, a skip, and a refusal that never had a Box.
 fn failure(end: &RunEnd, held: &Held) -> Option<(i64, &'static str, Option<String>, String)> {
     match end {
         RunEnd::Refused { detail } => {
@@ -130,11 +130,13 @@ fn failure(end: &RunEnd, held: &Held) -> Option<(i64, &'static str, Option<Strin
                     at,
                     "the run worked past its timeout".to_owned(),
                 ),
-                RunOutcome::Delivered { .. } | RunOutcome::Declined { .. } => return None,
+                RunOutcome::Delivered { .. }
+                | RunOutcome::Declined { .. }
+                | RunOutcome::Cancelled { .. } => return None,
             };
             Some((box_id.get(), kind, Some(at.as_str().to_owned()), reason))
         }
-        RunEnd::SkippedOverlap => None,
+        RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } => None,
     }
 }
 

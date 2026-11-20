@@ -229,7 +229,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
     use moor_core::name::ForgeRepo;
     use moor_core::user::Identity;
     use moor_core::workflow::{
-        NewRun, RunEnd, RunState, RunTrigger, TimeoutMinutes, WorkflowDef, WorkflowName,
+        NewRun, RunCause, RunEnd, RunState, TimeoutMinutes, WorkflowDef, WorkflowName,
         WorkflowSchedule,
     };
 
@@ -255,7 +255,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
         state: RunState::Done(RunEnd::SkippedOverlap),
         recorded_at: Ts::from_millis(due),
         plan: None,
-        trigger: RunTrigger::Cron,
+        cause: RunCause::Cron,
     };
     source.record_workflow_run(&run(1)).unwrap();
     source.record_workflow_run(&run(2)).unwrap();

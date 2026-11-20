@@ -13,8 +13,8 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    NewRun, Plan, RunOutcome, RunState, RunTrigger, StepId, TimeoutMinutes, WorkflowDef,
-    WorkflowId, WorkflowName, WorkflowSchedule,
+    NewRun, Plan, RunCause, RunOutcome, RunState, StepId, TimeoutMinutes, WorkflowDef, WorkflowId,
+    WorkflowName, WorkflowSchedule,
 };
 use moor_core::{BoxId, Secret};
 use serde_json::json;
@@ -73,7 +73,7 @@ pub(super) fn new_run(id: WorkflowId, due: i64, state: RunState, plan: Option<Pl
         state,
         recorded_at: Ts::from_millis(due),
         plan,
-        trigger: RunTrigger::Cron,
+        cause: RunCause::Cron,
     }
 }
 

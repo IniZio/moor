@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{Plan, StepId, WorkflowId};
+use super::{CommitSha, Plan, RunCause, StepId, WorkflowId};
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 
@@ -41,6 +41,8 @@ pub enum RunTrigger {
     Cron,
     /// Its owner asked for one run now.
     Manual,
+    /// A pull request event.
+    PullRequest,
 }
 
 impl RunTrigger {
@@ -50,13 +52,14 @@ impl RunTrigger {
         match self {
             Self::Cron => "cron",
             Self::Manual => "manual",
+            Self::PullRequest => "pull_request",
         }
     }
 
     /// The trigger a stored name stands for.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
-        [Self::Cron, Self::Manual]
+        [Self::Cron, Self::Manual, Self::PullRequest]
             .into_iter()
             .find(|t| t.as_str() == name)
     }
@@ -100,6 +103,12 @@ pub enum RunState {
 pub enum RunEnd {
     /// The previous firing's Box was still open, so none was started.
     SkippedOverlap,
+    /// A pull request from a fork whose author lacks write access to the base repo, so none was
+    /// started.
+    SkippedFork {
+        /// The author's GitHub login.
+        author: String,
+    },
     /// The start was refused, or no agent could run in the Box.
     Refused {
         /// Why, as the start reported it.
@@ -148,6 +157,26 @@ pub enum RunOutcome {
         /// The step the run was at.
         at: StepId,
     },
+    /// A newer head or the pull request's close ended the run.
+    Cancelled {
+        /// The step the run was at.
+        at: StepId,
+        /// What ended it.
+        cause: CancelCause,
+    },
+}
+
+/// What cancelled a pull request run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CancelCause {
+    /// A push moved the pull request to head `sha`.
+    NewerHead {
+        /// The new head.
+        sha: CommitSha,
+    },
+    /// The pull request was closed.
+    Closed,
 }
 
 /// The phase as shown in lists, the way GitHub Actions shows a run's status.
@@ -198,6 +227,7 @@ impl RunState {
             Self::Running { .. } => "started",
             Self::Waiting { .. } => "waiting",
             Self::Done(RunEnd::SkippedOverlap) => "skipped_overlap",
+            Self::Done(RunEnd::SkippedFork { .. }) => "skipped_fork",
             Self::Done(RunEnd::Refused { .. }) => "refused",
             Self::Done(RunEnd::Ended { outcome, .. }) => match outcome {
                 RunOutcome::Delivered { .. } => "finished",
@@ -205,6 +235,7 @@ impl RunState {
                 RunOutcome::Incomplete { .. } => "incomplete",
                 RunOutcome::Declined { .. } => "declined",
                 RunOutcome::TimedOut { .. } => "timed_out",
+                RunOutcome::Cancelled { .. } => "cancelled",
             },
         }
     }
@@ -219,10 +250,14 @@ impl RunState {
                 RunOutcome::Failed { at, .. }
                 | RunOutcome::Incomplete { at }
                 | RunOutcome::Declined { at }
-                | RunOutcome::TimedOut { at } => Some(at),
+                | RunOutcome::TimedOut { at }
+                | RunOutcome::Cancelled { at, .. } => Some(at),
                 RunOutcome::Delivered { .. } => None,
             },
-            Self::Queued | Self::Done(RunEnd::SkippedOverlap | RunEnd::Refused { .. }) => None,
+            Self::Queued
+            | Self::Done(
+                RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::Refused { .. },
+            ) => None,
         }
     }
 
@@ -233,7 +268,10 @@ impl RunState {
             Self::Running { box_id, .. }
             | Self::Waiting { box_id, .. }
             | Self::Done(RunEnd::Ended { box_id, .. }) => Some(*box_id),
-            Self::Queued | Self::Done(RunEnd::SkippedOverlap | RunEnd::Refused { .. }) => None,
+            Self::Queued
+            | Self::Done(
+                RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::Refused { .. },
+            ) => None,
         }
     }
 }
@@ -254,8 +292,8 @@ pub struct NewRun {
     /// The workflow's plan, frozen with the claim; none for a run that never starts a Box and
     /// for a workflow nobody planned.
     pub plan: Option<Plan>,
-    /// What fired it.
-    pub trigger: RunTrigger,
+    /// Why it started, and the pull request it is for when it has one.
+    pub cause: RunCause,
 }
 
 /// What a firing records: one repo at one due time.
@@ -273,6 +311,6 @@ pub struct WorkflowRun {
     pub state: RunState,
     /// When it was recorded, which for a started run is when it started.
     pub recorded_at: Ts,
-    /// What fired it.
-    pub trigger: RunTrigger,
+    /// Why it started, and the pull request it is for when it has one.
+    pub cause: RunCause,
 }

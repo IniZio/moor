@@ -204,12 +204,14 @@ review code, run a check or do nothing on GitHub at all.
   or a new push. That covers a close, then `reopened` at the same SHA.
 - **Settling.** `run_start` and `resolve_interrupted` settle a claim by its run id. Two
   events in one millisecond then never collide. `due_at` is the time the event arrived.
-- **Box name.** `<workflow>/w<id>-pr<number>-<first 7 of SHA>`. It is derived from the
-  row, so `resolve_interrupted` still settles a claim a crash left.
+- **Box name.** `<workflow>/w<id>-pr<number>-<first 7 of SHA>`. A manual run for a pull
+  request adds `-m<UTC time to the second>`, so Run again at an unchanged head never meets
+  the name of an earlier run's Box. It is derived from the row, so `resolve_interrupted`
+  still settles a claim a crash left.
 - **Checkout.** The Box fetches `refs/pull/<number>/head` from the base repo, which
   also works for a fork.
 - **Run input.** The Box gets `MOOR_PULL_REPO`, `MOOR_PULL_NUMBER`, `MOOR_PULL_HEAD_SHA` and
-  `MOOR_PULL_BASE_REF` in the run config's `env`. The first message opens with one line
+  `MOOR_PULL_URL` in the run config's `env`. The first message opens with one line
   naming the same pull request. The prompt stays the workflow's own.
 
 ## Concurrency

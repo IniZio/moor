@@ -17,8 +17,8 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 use super::history::{append_history, run_id};
 use super::notice;
 use super::row::{
-    read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_OVERLAP, STARTED, STARTING,
-    WAITING,
+    read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_FORK, SKIPPED_OVERLAP,
+    STARTED, STARTING, WAITING,
 };
 use crate::store::db::{self, Db, DbExt as _};
 use crate::store::{Store, StoreError};
@@ -265,7 +265,9 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Outcome).ne(SKIPPED_OVERLAP))
+                    .and_where(
+                        Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, SKIPPED_FORK]),
+                    )
                     .order_by(WorkflowRuns::DueAt, Order::Desc)
                     .limit(limit),
                 |r| read_run(r, 0),
@@ -361,7 +363,11 @@ pub(super) fn real_run(
             .columns(RUN_COLS)
             .from(WorkflowRuns::Table)
             .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-            .and_where(Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, REFUSED]))
+            .and_where(Expr::col(WorkflowRuns::Outcome).is_not_in([
+                SKIPPED_OVERLAP,
+                SKIPPED_FORK,
+                REFUSED,
+            ]))
             .order_by(WorkflowRuns::Id, Order::Desc)
             .limit(1),
         |r| read_run(r, 0),

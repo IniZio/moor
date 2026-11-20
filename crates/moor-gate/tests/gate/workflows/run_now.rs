@@ -53,6 +53,25 @@ fn run_now_asks_as_the_session_person_and_a_started_run_is_ok() {
 }
 
 #[test]
+fn run_again_on_a_pull_request_run_sends_its_pull_request_and_a_bad_one_sends_nothing() {
+    let w = world(true, &[]);
+    let cookie = as_user(&w, "alice-35");
+    assert_eq!(answer_run(&w, &cookie, "yes", true).status, 200);
+    let token = csrf(&w, &cookie);
+    let bad = run_now(&w, &cookie, &token, r#"{"pull": "o/n"}"#);
+    assert_eq!(bad.status, 400, "{}", bad.body);
+    assert!(!w.cmds().contains(&"workflow-run-now".to_owned()));
+    let reply = run_now(&w, &cookie, &token, r#"{"pull": "o/n#65"}"#);
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let seen = w.seen.lock().unwrap().clone();
+    let sent = seen
+        .iter()
+        .find(|r| r["request"]["cmd"] == "workflow-run-now")
+        .unwrap();
+    assert_eq!(sent["request"]["pull"], "o/n#65");
+}
+
+#[test]
 fn a_workflow_with_an_open_run_is_a_conflict_that_says_why() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-32");

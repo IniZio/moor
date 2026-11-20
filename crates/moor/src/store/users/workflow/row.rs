@@ -3,7 +3,8 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    Plan, RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId, WorkflowId, WorkflowRun,
+    CancelCause, CommitSha, Plan, PullRef, RunCause, RunEnd, RunId, RunOutcome, RunState,
+    RunTrigger, StepId, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -30,8 +31,14 @@ const DECLINED: &str = "declined";
 const TIMED_OUT: &str = "timed_out";
 /// The `outcome` of a run skipped for an open previous Box.
 pub(super) const SKIPPED_OVERLAP: &str = "skipped_overlap";
+/// The `outcome` of a pull request run skipped because its fork's author may not write.
+pub(super) const SKIPPED_FORK: &str = "skipped_fork";
 /// The `outcome` of a run whose start was refused.
 pub(super) const REFUSED: &str = "refused";
+/// The `outcome` of a pull request run a newer head or a close cancelled.
+const CANCELLED: &str = "cancelled";
+/// The `detail` of a run cancelled by its pull request's close; a newer head stores its SHA.
+const CLOSED: &str = "closed";
 
 /// A `workflow_runs` row as read.
 pub(super) struct RunRow {
@@ -61,10 +68,14 @@ pub(super) struct RunRow {
     pub(super) ended_step: Option<String>,
     /// `trigger`.
     trigger: String,
+    /// `pull_number`.
+    pull_number: Option<i64>,
+    /// `head_sha`.
+    head_sha: Option<String>,
 }
 
 /// The columns of a `workflow_runs` row, in the order [`read_run`] reads them.
-pub(super) const RUN_COLS: [WorkflowRuns; 13] = [
+pub(super) const RUN_COLS: [WorkflowRuns; 15] = [
     WorkflowRuns::Id,
     WorkflowRuns::Repo,
     WorkflowRuns::DueAt,
@@ -78,6 +89,8 @@ pub(super) const RUN_COLS: [WorkflowRuns; 13] = [
     WorkflowRuns::WaitingSince,
     WorkflowRuns::EndedStep,
     WorkflowRuns::Trigger,
+    WorkflowRuns::PullNumber,
+    WorkflowRuns::HeadSha,
 ];
 
 /// Reads one `workflow_runs` row whose columns start at `first`.
@@ -96,6 +109,8 @@ pub(super) fn read_run(r: &db::Row, first: usize) -> Result<RunRow, db::Error> {
         waiting_since: r.get(first + 10)?,
         ended_step: r.get(first + 11)?,
         trigger: r.get(first + 12)?,
+        pull_number: r.get(first + 13)?,
+        head_sha: r.get(first + 14)?,
     })
 }
 
@@ -117,6 +132,21 @@ fn try_of(try_n: Option<i64>) -> Result<u8, StoreError> {
 
 /// The run a stored row holds; a state whose box, detail or end do not fit it is corrupt.
 pub(super) fn run_of(workflow: WorkflowId, row: &RunRow) -> Result<WorkflowRun, StoreError> {
+    let repo = ForgeRepo::parse(&row.repo).map_err(|e| corrupt("run repo", e))?;
+    Ok(WorkflowRun {
+        id: RunId::new(row.id),
+        workflow,
+        cause: cause_of(row, &repo)?,
+        repo,
+        due_at: Ts::from_millis(row.due_at),
+        state: state_of(row)?,
+        recorded_at: Ts::from_millis(row.recorded_at),
+    })
+}
+
+/// The state a row's `outcome` and its columns stand for; a state whose box, detail or end do not
+/// fit it is corrupt.
+fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
     let box_id = row.box_id.map(BoxId::new);
     let ended_at = row.ended_at.map(Ts::from_millis);
     let bad = || corrupt("run outcome", &row.outcome);
@@ -159,21 +189,56 @@ pub(super) fn run_of(workflow: WorkflowId, row: &RunRow) -> Result<WorkflowRun, 
         TIMED_OUT => ended(RunOutcome::TimedOut {
             at: ended_step(row)?,
         })?,
+        CANCELLED => ended(RunOutcome::Cancelled {
+            at: ended_step(row)?,
+            cause: row.detail.as_deref().and_then(cancel_of).ok_or_else(bad)?,
+        })?,
         SKIPPED_OVERLAP => RunState::Done(RunEnd::SkippedOverlap),
+        SKIPPED_FORK => RunState::Done(RunEnd::SkippedFork {
+            author: row.detail.clone().ok_or_else(bad)?,
+        }),
         REFUSED => RunState::Done(RunEnd::Refused {
             detail: row.detail.clone().ok_or_else(bad)?,
         }),
         _ => return Err(bad()),
     };
-    Ok(WorkflowRun {
-        id: RunId::new(row.id),
-        workflow,
-        repo: ForgeRepo::parse(&row.repo).map_err(|e| corrupt("run repo", e))?,
-        due_at: Ts::from_millis(row.due_at),
-        state,
-        recorded_at: Ts::from_millis(row.recorded_at),
-        trigger: RunTrigger::from_name(&row.trigger)
-            .ok_or_else(|| corrupt("run trigger", &row.trigger))?,
+    Ok(state)
+}
+
+/// The cancel cause a `detail` holds: `closed`, or the newer head's SHA.
+fn cancel_of(detail: &str) -> Option<CancelCause> {
+    if detail == CLOSED {
+        return Some(CancelCause::Closed);
+    }
+    CommitSha::parse(detail)
+        .ok()
+        .map(|sha| CancelCause::NewerHead { sha })
+}
+
+/// The cause a row's `trigger`, `pull_number` and `head_sha` stand for; a trigger that does not
+/// fit its pull request columns is corrupt.
+fn cause_of(row: &RunRow, repo: &ForgeRepo) -> Result<RunCause, StoreError> {
+    let bad = || corrupt("run trigger", &row.trigger);
+    let trigger = RunTrigger::from_name(&row.trigger).ok_or_else(bad)?;
+    let pull = match (row.pull_number, row.head_sha.as_deref()) {
+        (None, None) => None,
+        (Some(number), Some(sha)) => Some(PullRef {
+            repo: repo.clone(),
+            number: u64::try_from(number).map_err(|e| corrupt("run pull request", e))?,
+            head_sha: CommitSha::parse(sha).map_err(|e| corrupt("run head", e))?,
+        }),
+        _ => return Err(bad()),
+    };
+    RunCause::from_parts(trigger, pull).ok_or_else(bad)
+}
+
+/// The `pull_number` and `head_sha` a run's cause is stored in.
+pub(super) fn subject_cols(cause: &RunCause) -> (Option<i64>, Option<String>) {
+    cause.subject().map_or((None, None), |pull| {
+        (
+            i64::try_from(pull.number).ok(),
+            Some(pull.head_sha.to_string()),
+        )
     })
 }
 
@@ -181,7 +246,7 @@ pub(super) fn run_of(workflow: WorkflowId, row: &RunRow) -> Result<WorkflowRun, 
 pub(super) struct StateCols {
     /// `box`.
     pub(super) box_id: Option<i64>,
-    /// `detail`: a refusal's reason, a failure's reason, a delivery's result.
+    /// `detail`: a refusal's reason, a failure's reason, a delivery's result, a cancel's cause.
     pub(super) detail: Option<String>,
     /// `ended_at`.
     pub(super) ended_at: Option<i64>,
@@ -220,6 +285,7 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
             cols.waiting_since = Some(since.as_millis());
         }
         RunState::Done(RunEnd::Refused { detail }) => cols.detail = Some(detail.clone()),
+        RunState::Done(RunEnd::SkippedFork { author }) => cols.detail = Some(author.clone()),
         RunState::Done(RunEnd::Ended {
             ended_at, outcome, ..
         }) => {
@@ -235,6 +301,13 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
                 RunOutcome::Incomplete { at }
                 | RunOutcome::Declined { at }
                 | RunOutcome::TimedOut { at } => cols.ended_step = Some(at.to_string()),
+                RunOutcome::Cancelled { at, cause } => {
+                    cols.detail = Some(match cause {
+                        CancelCause::NewerHead { sha } => sha.to_string(),
+                        CancelCause::Closed => CLOSED.to_owned(),
+                    });
+                    cols.ended_step = Some(at.to_string());
+                }
             }
         }
     }

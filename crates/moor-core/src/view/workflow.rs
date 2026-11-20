@@ -23,9 +23,15 @@ pub struct LastRunView {
     /// `queued`, `running`, `waiting` or `done`.
     #[serde(default)]
     pub phase: String,
-    /// What fired the run: `cron` or `manual`.
+    /// What fired the run: `cron`, `manual` or `pull_request`.
     #[serde(default = "cron")]
     pub trigger: String,
+    /// The pull request the run is for, `OWNER/NAME#NUMBER`; none for a run for no pull request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<String>,
+    /// The head commit of that pull request the run is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_sha: Option<String>,
     /// The step a run in flight is at, or the step a failed, incomplete, declined or timed-out
     /// run ended at.
     #[serde(default, skip_serializing_if = "Option::is_none")]

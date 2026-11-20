@@ -214,10 +214,6 @@ impl AppClient {
     ///
     /// # Errors
     /// GitHub cannot be reached or answers anything but `200` or `404`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the pull request trigger reads it")
-    )]
     pub(crate) fn installation_of(
         &self,
         repo: &ForgeRepo,

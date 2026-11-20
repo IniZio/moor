@@ -186,7 +186,7 @@ fn workflow_route(
             workflows::answer(stream, gate, session, csrf, (name, id), body.as_deref());
         }
         ("POST", Route::RunNow(name)) => {
-            workflows::run_now(stream, gate, session, csrf, name);
+            workflows::run_now(stream, gate, session, csrf, (name, body.as_deref()));
         }
         ("GET", Route::Artifact) => workflows::artifact(stream, gate, session, query),
         ("GET", Route::Schedule) => workflows::preview(stream, query),
