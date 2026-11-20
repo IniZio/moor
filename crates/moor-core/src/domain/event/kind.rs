@@ -71,6 +71,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "copied",
     "exec_ran",
     "turn_changes",
+    "diff_kept",
     "port_forward_opened",
     "port_forward_closed",
     "port_forward_refused",

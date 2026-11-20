@@ -64,7 +64,6 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/box/answer"
                 | "/account/api/plan/draft"
                 | "/account/api/box/retry"
-                | "/account/api/box/wake"
                 | "/account/api/box/steer"
                 | "/account/api/box/stop"
                 | "/account/api/box/close"
@@ -95,9 +94,6 @@ pub(super) fn serve(
         }
         ("POST", "/account/api/box/retry") => {
             retry::retry(stream, gate, login, session, req.csrf, body.as_deref());
-        }
-        ("POST", "/account/api/box/wake") => {
-            changes::wake(stream, gate, session, req.csrf, body.as_deref());
         }
         ("POST", "/account/api/box/steer") => {
             steer::steer(stream, gate, session, req.csrf, body.as_deref());

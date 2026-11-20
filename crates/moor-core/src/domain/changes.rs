@@ -64,3 +64,23 @@ pub struct RepoReceipt {
     /// The first [`RECEIPT_FILES`] files of `total`.
     pub files: Vec<FileChange>,
 }
+
+/// One repo of what `changes` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoChanges {
+    /// The repo, as `OWNER/NAME`.
+    pub repo: String,
+    /// Everything against the base.
+    pub total: Tally,
+    /// Each file changed; a receipt keeps only the first [`RECEIPT_FILES`].
+    pub files: Vec<FileChange>,
+    /// The unified diff against the base, cut at the byte budget; none for a receipt that kept no diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+    /// True when the patch was cut.
+    #[serde(default)]
+    pub cut: bool,
+    /// Why the repo could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
+}

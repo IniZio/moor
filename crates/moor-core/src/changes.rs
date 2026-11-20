@@ -8,35 +8,16 @@
 use serde::{Deserialize, Serialize};
 
 use crate::boxscript::quote;
-pub use crate::domain::changes::{FileChange, RepoReceipt, Tally, RECEIPT_FILES};
+pub use crate::domain::changes::{FileChange, RepoChanges, RepoReceipt, Tally, RECEIPT_FILES};
 
-/// The most bytes of patch a view carries for one repo.
-pub const PATCH_BYTES: usize = 512 * 1024;
-
-/// One repo of what `changes` answers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepoChanges {
-    /// The repo, as `OWNER/NAME`.
-    pub repo: String,
-    /// Everything against the base.
-    pub total: Tally,
-    /// Each file changed; a receipt keeps only the first [`RECEIPT_FILES`].
-    pub files: Vec<FileChange>,
-    /// The unified diff against the base, cut at [`PATCH_BYTES`]; none unless read from the Box now.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub patch: Option<String>,
-    /// True when the patch was cut.
-    #[serde(default)]
-    pub cut: bool,
-    /// Why the repo could not be read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub problem: Option<String>,
-}
+/// The most bytes of patch a view carries for one repo, and the most a Box keeps for all its repos.
+pub const PATCH_BYTES: usize = 1024 * 1024;
 
 /// What `changes` answers: a Box's changes in git, each repo first one first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangesView {
-    /// True when read from the Box now; false for what the last turn's receipt saw.
+    /// True when read from the Box now; false for what moor kept: the diff of the last turn end or
+    /// sleep, else the last turn's receipt.
     pub live: bool,
     /// Why the Box was not read now.
     #[serde(default, skip_serializing_if = "Option::is_none")]
