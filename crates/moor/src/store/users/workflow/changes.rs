@@ -1,7 +1,7 @@
 //! The change stream of a user's workflow runs.
 
 use moor_core::user::UserId;
-use moor_core::workflow::{WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
+use moor_core::workflow::{PullTarget, WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
 use moor_schema::tables::{WorkflowRuns, WorkflowSeq, Workflows};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
@@ -53,25 +53,18 @@ impl Store {
     }
 
     /// The changes to `owner`'s workflows after `after`, oldest first, at most `limit`: every
-    /// run recorded or moved on. With `only`, just the changes of the workflow of that name.
+    /// run recorded or moved on. With `only`, just the changes of the workflow of that name and
+    /// of the runs for that pull request. The filters are in the query, so `limit` counts only
+    /// the changes they keep.
     pub(crate) fn workflow_changes(
         &self,
         owner: UserId,
         after: i64,
         limit: u64,
-        only: Option<&WorkflowName>,
+        only: (Option<&WorkflowName>, Option<&PullTarget>),
     ) -> Result<Vec<WorkflowChange>, StoreError> {
-        self.run_changes(owner, after, limit, only)
-    }
-
-    /// The runs of `owner`'s workflows numbered after `after`.
-    fn run_changes(
-        &self,
-        owner: UserId,
-        after: i64,
-        limit: u64,
-        only: Option<&WorkflowName>,
-    ) -> Result<Vec<WorkflowChange>, StoreError> {
+        let (workflow, pull) = only;
+        let pull_number = pull.and_then(|p| i64::try_from(p.number).ok());
         let reader = self.reader()?;
         let runs = reader.rows(
             Query::select()
@@ -90,8 +83,16 @@ impl Store {
                 .and_where(Expr::col((Workflows::Table, Workflows::User)).eq(owner.get()))
                 .and_where(Expr::col((WorkflowRuns::Table, WorkflowRuns::Seq)).gt(after))
                 .and_where_option(
-                    only.map(|n| Expr::col((Workflows::Table, Workflows::Name)).eq(n.as_str())),
+                    workflow.map(|n| Expr::col((Workflows::Table, Workflows::Name)).eq(n.as_str())),
                 )
+                .and_where_option(pull.map(|p| {
+                    Expr::col((WorkflowRuns::Table, WorkflowRuns::Repo))
+                        .eq(p.repo.to_string())
+                        .and(
+                            Expr::col((WorkflowRuns::Table, WorkflowRuns::PullNumber))
+                                .eq(pull_number),
+                        )
+                }))
                 .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), Order::Asc)
                 .limit(limit),
             |r| {

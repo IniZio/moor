@@ -243,6 +243,27 @@ fn add_workflow_enabled_false_and_the_runs_filter_reach_the_controller() {
 }
 
 #[test]
+fn list_workflow_runs_sends_its_pull_request_and_refuses_one_it_cannot_read() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let args = json!({"workflow": "held", "pull": "o/n#7", "after": 3});
+    let listed = m.call(&token, "list_workflow_runs", args);
+    assert_ne!(listed["isError"], true, "{listed}");
+    let bad = m.call(&token, "list_workflow_runs", json!({"pull": "o/n"}));
+    assert_eq!(bad["isError"], true, "{bad}");
+    let sent: Vec<_> = m
+        .requests()
+        .iter()
+        .map(|r| r["request"]["request"].clone())
+        .collect();
+    assert_eq!(
+        sent,
+        [json!({"cmd": "workflow-runs", "after": 3, "workflow": "held", "pull": "o/n#7"})],
+        "the unreadable pull request never reaches the controller"
+    );
+}
+
+#[test]
 fn the_tool_texts_say_repo_expands_to_every_box_repo_and_how_to_add_disabled() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read");

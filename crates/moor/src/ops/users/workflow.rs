@@ -74,7 +74,13 @@ pub(super) fn run(
             after,
             limit,
             workflow,
-        } => runs(store, user, (*after, *limit), workflow.as_deref()),
+            pull,
+        } => runs(
+            store,
+            user,
+            (*after, *limit),
+            (workflow.as_deref(), pull.as_ref()),
+        ),
         WorkflowCmd::RunList {
             workflow,
             run,

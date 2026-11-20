@@ -339,6 +339,7 @@ fn runs(f: &Fixture, who: &Identity, after: Option<i64>, limit: Option<u32>) -> 
             after,
             limit,
             workflow: None,
+            pull: None,
         }),
     )
 }
@@ -585,3 +586,4 @@ fn a_delivered_run_lists_the_outcome_moor_found_and_stays_finished() {
         "a run without gates has none"
     );
 }
+mod pull_filter;

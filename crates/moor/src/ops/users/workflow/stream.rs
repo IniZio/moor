@@ -6,7 +6,7 @@ use moor_core::view::workflow::{
     ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowRunListValue,
     WorkflowRunsValue,
 };
-use moor_core::workflow::{box_name, RunEnd, RunOutcome, RunState, WorkflowRun};
+use moor_core::workflow::{box_name, PullTarget, RunEnd, RunOutcome, RunState, WorkflowRun};
 use moor_core::ErrorKind;
 
 use super::{parse_name, to_value};
@@ -109,14 +109,14 @@ pub(super) fn runs(
     store: &Store,
     user: UserId,
     (after, limit): (Option<i64>, Option<u32>),
-    workflow: Option<&str>,
+    (workflow, pull): (Option<&str>, Option<&PullTarget>),
 ) -> Result<serde_json::Value, CommandError> {
     let only = workflow.map(parse_name).transpose()?;
     let after = after.unwrap_or(0).max(0);
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let mut changes = Vec::new();
     let mut next = after;
-    for change in store.workflow_changes(user, after, u64::from(limit), only.as_ref())? {
+    for change in store.workflow_changes(user, after, u64::from(limit), (only.as_ref(), pull))? {
         next = next.max(change.seq);
         let origin = change.origin.map(|o| OriginView {
             front: o.front,

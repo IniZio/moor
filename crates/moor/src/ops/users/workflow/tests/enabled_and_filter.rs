@@ -98,6 +98,7 @@ fn the_runs_stream_filters_by_workflow_name_in_the_store_query() {
                 after: None,
                 limit,
                 workflow: Some(name.to_owned()),
+                pull: None,
             }),
         )
     };

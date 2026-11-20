@@ -143,4 +143,7 @@ pub(super) struct RunsArgs {
     /// A workflow name, as `list_workflows` shows it, to read only that workflow's changes;
     /// every workflow's when left out.
     pub(super) workflow: Option<String>,
+    /// A pull request, `OWNER/NAME#NUMBER`, to read only the changes of its runs; runs for any
+    /// pull request or none when left out.
+    pub(super) pull: Option<String>,
 }

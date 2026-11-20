@@ -283,21 +283,34 @@ impl Tools {
                        moves on, from started to finished or timed out. For a run of a Box \
                        with gates, `verdict` names what it found, such as `check failed`, while \
                        `outcome` stays `finished`. Pass the previous \
-                       `next` as `after` to get only newer changes, and `workflow` to read one \
-                       workflow's changes only. Needs the moor:read scope."
+                       `next` as `after` to get only newer changes, `workflow` to read one \
+                       workflow's changes only, and `pull`, such as `owner/name#12`, to read \
+                       only the runs for that pull request. The filters apply before `limit`, \
+                       so paging with `after` still works. To follow runs as they move, use \
+                       `moor listen --workflow NAME` rather than calling this in a loop. Needs \
+                       the moor:read scope."
     )]
     async fn list_workflow_runs(
         &self,
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunsArgs>,
     ) -> CallToolResult {
-        let request = ControllerRequest::WorkflowRuns(WorkflowRunsReq {
-            identity: None,
-            after: args.after,
-            limit: args.limit,
-            workflow: args.workflow,
+        let pull = args
+            .pull
+            .as_deref()
+            .map(PullTarget::parse)
+            .transpose()
+            .map_err(|e| e.to_string());
+        let request = pull.map(|pull| {
+            ControllerRequest::WorkflowRuns(WorkflowRunsReq {
+                identity: None,
+                after: args.after,
+                limit: args.limit,
+                workflow: args.workflow,
+                pull,
+            })
         });
-        self.run(&context, READ, Ok(request), Reply::AsIs).await
+        self.run(&context, READ, request, Reply::AsIs).await
     }
 }
 

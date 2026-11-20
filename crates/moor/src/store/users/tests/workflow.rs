@@ -507,7 +507,7 @@ fn concurrent_settles_get_gapless_numbers_in_commit_order() {
         }
     });
     let seqs: Vec<_> = store
-        .workflow_changes(alice, 0, 1000, None)
+        .workflow_changes(alice, 0, 1000, (None, None))
         .unwrap()
         .iter()
         .map(|c| c.seq)
@@ -517,7 +517,10 @@ fn concurrent_settles_get_gapless_numbers_in_commit_order() {
         .record_workflow_run(&started(id, "a/one", 0, 1))
         .unwrap());
     assert_eq!(
-        store.workflow_changes(alice, 0, 1000, None).unwrap().len(),
+        store
+            .workflow_changes(alice, 0, 1000, (None, None))
+            .unwrap()
+            .len(),
         100,
         "a repeated record takes no number"
     );
