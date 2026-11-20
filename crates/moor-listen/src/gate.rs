@@ -93,8 +93,9 @@ impl Gate {
             .header("Accept", "application/json, text/event-stream")
             .header("MCP-Protocol-Version", PROTOCOL)
             .header("Mcp-Method", method);
-        if let Some(uri) = params.get("uri").and_then(Value::as_str) {
-            req = req.header("Mcp-Name", uri);
+        let named = params.get("uri").or_else(|| params.get("name"));
+        if let Some(name) = named.and_then(Value::as_str) {
+            req = req.header("Mcp-Name", name);
         }
         let limit = if long { LIFE } else { CALL };
         let body = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});

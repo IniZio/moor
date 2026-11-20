@@ -556,6 +556,7 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
     assert!(listed["workflows"][0]["last_runs"][0].get("box").is_none());
 }
 
+mod change_stream;
 mod enabled_and_filter;
 mod gates;
 mod keep_omitted;
@@ -586,4 +587,3 @@ fn a_delivered_run_lists_the_outcome_moor_found_and_stays_finished() {
         "a run without gates has none"
     );
 }
-mod pull_filter;

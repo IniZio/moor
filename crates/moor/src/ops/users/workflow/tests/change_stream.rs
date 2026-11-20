@@ -1,4 +1,5 @@
-//! `workflow-runs` filtered by pull request in the store query, with paging intact.
+//! `workflow-runs`: filtered by pull request in the store query with paging intact, and each
+//! change naming its run and the step it is at.
 
 use moor_core::name::ForgeRepo;
 use moor_core::request::WorkflowCmd;
@@ -9,7 +10,7 @@ use serde_json::Value;
 use super::{cmd, daily, me, ok};
 use crate::ops::users::run;
 use crate::ops::users::tests::fixture;
-use crate::testing::runs::skipped;
+use crate::testing::runs::{running, skipped};
 
 fn cause(repo: &str, number: u64, head: char) -> RunCause {
     let (owner, name) = repo.split_once('/').unwrap();
@@ -110,4 +111,59 @@ fn a_pull_request_with_no_runs_reads_as_no_changes() {
     )
     .unwrap();
     assert_eq!(due_ats(&none), Vec::<i64>::new());
+}
+
+#[test]
+fn a_change_names_its_run_and_the_title_of_the_step_it_is_at() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    let store = f.cx.store().unwrap();
+    let user = store.user_of(&who).unwrap().unwrap();
+    let w = store
+        .workflow(user, &WorkflowName::parse("daily").unwrap())
+        .unwrap()
+        .unwrap();
+    for (due, state) in [(100, running(4)), (200, skipped())] {
+        let run = NewRun {
+            workflow: w.id,
+            repo: ForgeRepo::new("o", "n"),
+            due_at: Ts::from_millis(due),
+            state,
+            recorded_at: Ts::from_millis(due),
+            plan: None,
+            cause: RunCause::Cron,
+        };
+        store.record_workflow_run(&run).unwrap();
+    }
+    let ids: Vec<i64> = store
+        .recent_workflow_runs(w.id, 10)
+        .unwrap()
+        .iter()
+        .rev()
+        .map(|r| r.id.get())
+        .collect();
+    let read = ok(
+        &f,
+        &who,
+        cmd(WorkflowCmd::Runs {
+            after: None,
+            limit: None,
+            workflow: None,
+            pull: None,
+        }),
+    );
+    let got: Vec<(Value, Value)> = read["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["id"].clone(), c["step_title"].clone()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (ids[0].into(), "Deliver".into()),
+            (ids[1].into(), Value::Null),
+        ]
+    );
 }

@@ -1,7 +1,7 @@
-//! The arguments of the workflow tools.
+//! The arguments of the workflow tools, and the pull request a tool argument names.
 
 use moor_core::gate::GateDoc;
-use moor_core::workflow::PlanDoc;
+use moor_core::workflow::{PlanDoc, PullTarget};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -66,7 +66,7 @@ pub(super) struct AddArgs {
 
 /// A field that tells null from absent: absent stays `None` through `default`, and null is
 /// `Some(None)`.
-fn some<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(super) fn some<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
@@ -146,4 +146,11 @@ pub(super) struct RunsArgs {
     /// A pull request, `OWNER/NAME#NUMBER`, to read only the changes of its runs; runs for any
     /// pull request or none when left out.
     pub(super) pull: Option<String>,
+}
+
+/// The pull request `arg` names, or why it names none.
+pub(super) fn pull_arg(arg: Option<&str>) -> Result<Option<PullTarget>, String> {
+    arg.map(PullTarget::parse)
+        .transpose()
+        .map_err(|e| e.to_string())
 }
