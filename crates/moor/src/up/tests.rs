@@ -6,7 +6,7 @@ use super::files::{controller, converge_user, Layout};
 use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
 use super::relay::{relay_unit, Relay};
-use super::service::{service_unit, socket_unit, Unit};
+use super::service::{front_socket_unit, service_unit, socket_unit, Unit};
 use super::wait_for;
 use crate::env::Env;
 use moor_client::rootless::Facts;
@@ -440,5 +440,25 @@ fn the_wait_fails_on_a_socket_that_takes_connections_but_never_answers() {
     assert!(
         failed.fix.contains("journalctl --user -u moor.service"),
         "{failed:?}"
+    );
+}
+
+#[test]
+fn the_front_socket_template_names_each_front_for_the_controller_under_its_state_dir() {
+    let text = front_socket_unit(Path::new("/home/ada/.local/state/moor"));
+    for line in [
+        "ListenStream=/home/ada/.local/state/moor/fronts/%i/front\n",
+        "FileDescriptorName=front-%i\n",
+        "Service=moor.service\n",
+        "SocketMode=0600\n",
+        "DirectoryMode=0700\n",
+        "WantedBy=sockets.target\n",
+    ] {
+        assert!(text.contains(line), "{line} missing from {text}");
+    }
+    let odd = front_socket_unit(Path::new("/srv/100%/moor"));
+    assert!(
+        odd.contains("ListenStream=/srv/100%%/moor/fronts/%i/front\n"),
+        "{odd}"
     );
 }
