@@ -120,11 +120,11 @@ impl Host {
         self.moor_with(args, stdin, &[])
     }
 
-    fn units(&self) -> PathBuf {
+    pub(super) fn units(&self) -> PathBuf {
         self.home.join(".config/systemd/user")
     }
 
-    fn systemctl_log(&self) -> String {
+    pub(super) fn systemctl_log(&self) -> String {
         fs::read_to_string(self.bin.join("systemctl.log")).unwrap_or_default()
     }
 
@@ -354,28 +354,6 @@ fn up_without_docker_says_what_to_fix_and_writes_nothing() {
         "{r:?}"
     );
     assert!(host.written().iter().all(|(_, t)| t.is_empty()));
-    assert_eq!(host.systemctl_log(), "");
-}
-
-#[test]
-fn up_on_a_host_whose_boxes_cannot_open_kvm_refuses_and_writes_nothing() {
-    let host = Host::new();
-    let missing = host.bin.join("no-kvm");
-    let r = host.moor_with(
-        &["up"],
-        "",
-        &[("MOOR_KVM_DEVICE", missing.to_str().unwrap())],
-    );
-    assert_eq!(r.code, 1, "{r:?}");
-    assert!(
-        r.stdout.starts_with(&format!(
-            "fail  kvm         {} is missing, and every Box gets KVM; fix: ",
-            missing.display()
-        )),
-        "{r:?}"
-    );
-    assert!(r.stdout.contains("docs/rootless-docker.md#kvm"), "{r:?}");
-    assert!(!host.units().exists());
     assert_eq!(host.systemctl_log(), "");
 }
 

@@ -116,3 +116,25 @@ fn an_image_override_up_copied_into_the_agent_unit_is_what_the_doctor_checks() {
     assert!(doctor.stdout.contains("fail  images"), "{doctor:?}");
     assert!(doctor.stdout.contains("agent:dev"), "{doctor:?}");
 }
+
+#[test]
+fn up_on_a_host_whose_boxes_cannot_open_kvm_refuses_and_writes_nothing() {
+    let host = Host::new();
+    let missing = host.bin.join("no-kvm");
+    let r = host.moor_with(
+        &["up"],
+        "",
+        &[("MOOR_KVM_DEVICE", missing.to_str().unwrap())],
+    );
+    assert_eq!(r.code, 1, "{r:?}");
+    assert!(
+        r.stdout.starts_with(&format!(
+            "fail  kvm         {} is missing, and every Box gets KVM; fix: ",
+            missing.display()
+        )),
+        "{r:?}"
+    );
+    assert!(r.stdout.contains("docs/rootless-docker.md#kvm"), "{r:?}");
+    assert!(!host.units().exists());
+    assert_eq!(host.systemctl_log(), "");
+}
