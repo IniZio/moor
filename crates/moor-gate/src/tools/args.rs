@@ -20,6 +20,8 @@ pub(super) struct StartArgs {
     pub(super) node: Option<String>,
     /// A partial repo config, as YAML in the repo config format, laid over the repo's stored
     /// config for this Box only: a key you set wins, `env` merges by name, lists replace.
+    /// `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default Proxy
+    /// rule for this Box only.
     pub(super) config: Option<String>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.

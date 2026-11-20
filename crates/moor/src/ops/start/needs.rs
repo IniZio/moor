@@ -1,6 +1,6 @@
 //! The secrets a start needs from its requester's user: the ones its Proxy rules inject.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use moor_core::request::StartNeedsReq;
 use moor_core::seam::forge::ForgeRepo;
@@ -79,9 +79,15 @@ fn needs(
     user: Option<UserId>,
 ) -> Result<Vec<SecretName>, CommandError> {
     let mcp = crate::ops::users::mcp::for_box(cx, user)?;
-    let rules = plan(cx, repo.cloned().as_slice(), &mcp.servers, false)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
-        .rules;
+    let rules = plan(
+        cx,
+        repo.cloned().as_slice(),
+        &mcp.servers,
+        false,
+        &BTreeMap::new(),
+    )
+    .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
+    .rules;
     let names: BTreeSet<SecretName> = rules
         .iter()
         .map(|r| SecretName::parse(&r.credential))

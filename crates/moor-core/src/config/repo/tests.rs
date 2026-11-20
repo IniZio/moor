@@ -1,5 +1,10 @@
 //! Repo config parse and validation tables.
-#![allow(clippy::panic, clippy::indexing_slicing, reason = "test assertions")]
+#![allow(
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::literal_string_with_formatting_args,
+    reason = "test assertions, and entries that spell repo slots"
+)]
 
 use super::{parse_repo, RepoConfig};
 use crate::config::BoxSize;
@@ -203,8 +208,8 @@ fn changed_keys_lists_env_and_box_in_file_order() {
 }
 
 #[test]
-fn proxy_is_an_unknown_repo_key() {
-    rejects("proxy: {direct: [pub.dev]}", "proxy", "unknown field");
+fn proxy_takes_only_allow() {
+    rejects("proxy: {direct: [pub.dev]}", "proxy.direct", "unknown field");
 }
 
 #[test]
@@ -323,4 +328,62 @@ fn a_repo_config_cannot_list_more_repos() {
 fn a_checkpoint_section_from_before_still_parses_and_changes_nothing() {
     let out = ok("checkpoint: {across_commits: false}\n");
     assert_eq!(out.changed_keys(&ok("")), Vec::<&str>::new());
+}
+
+const COMMENT: &str = "PATCH /repos/{repo}/issues/comments/*";
+const STATUS: &str = "POST /repos/{repo}/statuses/*";
+
+#[test]
+fn proxy_allow_adds_entries_to_a_default_rule() {
+    let cfg = ok(&format!(
+        "proxy: {{allow: {{github-api: [\"{COMMENT}\", \"{STATUS}\"]}}}}"
+    ));
+    assert_eq!(cfg.proxy.allow["github-api"], [COMMENT, STATUS]);
+    assert!(ok("proxy:").proxy.allow.is_empty());
+    assert_eq!(ok("proxy: {allow: {github-api: []}}").proxy.allow.len(), 1);
+}
+
+#[test]
+fn proxy_allow_refuses_what_is_not_a_plain_repo_entry() {
+    let at = |entry: &str, needle: &str| {
+        rejects(
+            &format!("proxy: {{allow: {{github-api: [\"{entry}\"]}}}}"),
+            "proxy.allow.github-api[0]",
+            needle,
+        );
+    };
+    at("*", "must be");
+    at("PATCH", "must be");
+    at("patch /repos/{repo}/issues/comments/*", "must be");
+    at("* /repos/{repo}/issues/comments/*", "must be");
+    at("PATCH repos/{repo}/x", "must be");
+    at("PATCH /repos/o/n/issues/comments/*", "must name {repo}");
+    at("PATCH /repos/{any_repo}/issues/comments/*", "{repo} only");
+    at(
+        "PATCH /repos/{repo:urlenc}/issues/comments/*",
+        "{repo} only",
+    );
+    at("PATCH /repos/{repo}/{other}", "{repo} only");
+    at("PATCH /repos/{repo}/**", "cannot use");
+    at("GET|* /repos/{repo}/x", "must be");
+}
+
+#[test]
+fn proxy_allow_refuses_a_rule_that_is_not_a_default() {
+    rejects(
+        "proxy: {allow: {my-npm: [\"GET /repos/{repo}/x\"]}}",
+        "proxy.allow.my-npm",
+        "only a default rule",
+    );
+}
+
+#[test]
+fn proxy_refuses_hosts_credentials_and_unknown_keys() {
+    for text in [
+        "proxy: {rules: {github-api: {allow: [\"PATCH /repos/{repo}/x\"]}}}",
+        "proxy: {hosts: [evil.example]}",
+        "proxy: {allow: {github-api: {hosts: [evil.example]}}}",
+    ] {
+        assert!(parse_repo("m.yaml", text).is_err(), "{text}");
+    }
 }

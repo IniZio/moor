@@ -3,7 +3,8 @@
 //! The override is written in the repo config's own YAML, so [`parse_repo`] checks it and no
 //! second schema exists. What it *sets* is the top-level keys it names: a key it names replaces
 //! the repo's value whole (lists such as `setup` and sections such as `cache`), except `env`,
-//! which adds to the repo's variables by name, the override winning a clash. A key it leaves
+//! which adds to the repo's variables by name, the override winning a clash, and `proxy`, whose
+//! extra `allow` entries add to the repo's for the same rule. A key it leaves
 //! out keeps the repo's value, so `setup: []` clears the setup lines and no `setup` leaves them.
 //!
 //! [`RepoOverride::over`] destructures [`RepoConfig`] in full, so a field added to it fails to
@@ -70,6 +71,7 @@ impl RepoOverride {
             checkpoint,
             machine,
             node,
+            proxy,
         } = self.config.clone();
         let mut out = base;
         self.replace("brief", brief, &mut out.brief);
@@ -83,6 +85,16 @@ impl RepoOverride {
         self.replace("checkpoint", checkpoint, &mut out.checkpoint);
         self.replace("machine", machine, &mut out.machine);
         self.replace("node", node, &mut out.node);
+        if self.set.contains("proxy") {
+            for (rule, entries) in proxy.allow {
+                let slot = out.proxy.allow.entry(rule).or_default();
+                for entry in entries {
+                    if !slot.contains(&entry) {
+                        slot.push(entry);
+                    }
+                }
+            }
+        }
         out
     }
 

@@ -47,8 +47,7 @@ again. Everything else applies to Boxes started afterwards.
 | `brief` | The next time the agent launches. |
 | `setup` | A new Box, and `moor retry` on a Box whose setup failed. |
 | `box.size`, `cache` | A new Box, or one that is rebuilt on a new machine. |
-| `node.labels`, `box_credentials` | A new Box. |
-
+| `node.labels`, `box_credentials`, `proxy.allow` | A new Box. |
 ## Override for one Box
 
 A start can carry a partial config, in the same YAML, that applies to that Box

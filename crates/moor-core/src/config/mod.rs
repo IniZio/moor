@@ -15,6 +15,7 @@ pub use controller::{
 };
 pub use repo::{
     override_text, parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine, RepoOverride,
+    RepoProxy,
 };
 
 pub use user::{

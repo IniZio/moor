@@ -47,6 +47,14 @@ The rules are narrower than the token, so a Box cannot do everything you can.
 - **Anthropic.** The `claude` rule adds your Claude token to
   `api.anthropic.com`.
 
+Some jobs need a write the default rules refuse, such as a workflow that edits
+its own comment (`PATCH /repos/{repo}/issues/comments/*`) or sets a commit
+status (`POST /repos/{repo}/statuses/*`). The default rules stay as they are.
+A workflow, a start, or a repo config can ask for such entries for its own Boxes
+only, under `proxy.allow`. See
+[Extra Proxy entries](config.md#extra-proxy-entries). Other Boxes are
+unchanged, and any other request is still refused and recorded.
+
 An operator can add rules under `proxy.rules`, such as a private npm registry,
 and each rule names the secret it adds. A person's own MCP servers work the
 same way. The Box sees `moor-proxy` in place of the key, and the Proxy sets the

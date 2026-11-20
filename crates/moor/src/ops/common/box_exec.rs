@@ -1,5 +1,6 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use moor_core::box_key::is_machine_handle;
@@ -46,7 +47,7 @@ pub(crate) fn proxy(
     repo: Option<&ForgeRepo>,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
-    let (user, plan) = box_plan(cx, box_id, repo)?;
+    let (user, plan) = box_plan(cx, box_id, repo, &cfg.proxy_allow)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let (box_handle, hands_inc) = hands.map_or((None, None), |(h, inc)| (Some(h), Some(inc.get())));
     let spec = ProxySpec {
@@ -140,6 +141,7 @@ fn box_plan(
     cx: &Cx,
     box_id: BoxId,
     repo: Option<&ForgeRepo>,
+    extra: &BTreeMap<String, Vec<String>>,
 ) -> Result<(UserId, ProxyPlan), String> {
     let (user, others) = requester(cx, box_id)?;
     let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
@@ -151,7 +153,7 @@ fn box_plan(
         .map_err(|e| e.to_string())?
         .is_some();
     let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
-    Ok((user, plan(cx, &repos, &mcp.servers, has_profile)?))
+    Ok((user, plan(cx, &repos, &mcp.servers, has_profile, extra)?))
 }
 
 /// The user the Box acts for and the repos it lists after its primary, read from its row.

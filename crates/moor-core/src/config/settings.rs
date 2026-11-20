@@ -103,6 +103,8 @@ pub struct BoxSettings {
     pub teardown: Vec<String>,
     /// Repo `env`.
     pub env: BTreeMap<String, String>,
+    /// Extra Proxy `allow` entries by default rule name, from the repo config and the Box override only.
+    pub proxy_allow: BTreeMap<String, Vec<String>>,
     /// Repo compose project prefix.
     pub compose_prefix: Option<String>,
     /// User tool path overrides.
@@ -178,6 +180,7 @@ impl BoxSettings {
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),
             env: r.env.clone(),
+            proxy_allow: r.proxy.allow.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
             tool_paths: user.tools.clone(),
             cache: CacheLayers {

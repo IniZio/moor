@@ -244,6 +244,7 @@ Secrets belong to each user, and a host that no rule serves is already direct.
 | `cache` | map | See [Cache volumes](#cache-volumes). |
 | `box_credentials` | list | Secrets the user must hold for a start. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
+| `proxy.allow` | map | Extra `METHOD /path` entries for a default Proxy rule. See [Extra Proxy entries](#extra-proxy-entries). |
 
 A group that a `setup` line adds to the Box user, such as `usermod -aG docker`,
 does not reach an agent held under `systemd --user`. The user manager keeps the
@@ -253,6 +254,35 @@ group.
 
 moor keeps this config per repo, in its store. [Set up a repo](repo.md) shows
 the keys in use and says which changes reach a running Box.
+
+### Extra Proxy entries
+
+A repo config, a start's `config`, or a workflow's `config` can ask the Proxy
+for GitHub writes the default rules refuse. The entries go under
+`proxy.allow`, by default rule name:
+
+```yaml
+proxy:
+  allow:
+    github-api:
+      - "PATCH /repos/{repo}/issues/comments/*"
+      - "POST /repos/{repo}/statuses/*"
+```
+
+The entries join that rule for the Boxes that carry them, and for no other Box.
+They are narrow, and moor refuses the config with the reason otherwise:
+
+- The name must be a default rule. These are `claude`, `github-api`,
+  `github-git`, and `github-uploads`. A repo config cannot add a host or a credential.
+- Each entry is `METHOD /path`, with an upper-case method. `*` is not a method
+  and not an entry.
+- The path names `{repo}`, the Box's own repos. `{any_repo}` and
+  `{repo:urlenc}` are refused, and so is `**`.
+
+The Proxy reads these entries from config the controller stores. That is the
+repo config, or the `config` of a Box or a workflow. moor does not read a config
+from the repo's checkout. An agent cannot add entries by committing a file.
+Use `proxy.rules` in the user config for anything wider.
 
 ### Cache volumes
 
