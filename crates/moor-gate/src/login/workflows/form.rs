@@ -34,6 +34,9 @@ struct Fields {
     /// Minutes a run may take; the default when absent.
     #[serde(default)]
     timeout_minutes: Option<u32>,
+    /// Whether a pull request event on the first repo fires a run; the stored value when absent.
+    #[serde(default)]
+    on_pull_request: Option<bool>,
 }
 
 /// The body of a create.
@@ -125,6 +128,9 @@ fn non_empty(text: &str) -> Option<String> {
 
 /// The add request for `name` with `fields`, the plan and config of `kept`.
 fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddReq {
+    let on_pull_request = fields
+        .on_pull_request
+        .unwrap_or_else(|| kept.is_some_and(|w| w.on_pull_request));
     WorkflowAddReq {
         identity: None,
         name: name.to_owned(),
@@ -139,7 +145,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         origin_key: None,
         keep_state: false,
         enabled: true,
-        on_pull_request: kept.is_some_and(|w| w.on_pull_request),
+        on_pull_request,
     }
 }
 

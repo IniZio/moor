@@ -198,6 +198,7 @@ fn summary(w: &WorkflowView) -> Value {
         "words": schedule::summary_words(w.cron.as_deref(), w.on_pull_request),
         "timezone": w.timezone,
         "enabled": w.enabled,
+        "on_pull_request": w.on_pull_request,
         "next_due": w.next_due,
         "next_text": w
             .next_due

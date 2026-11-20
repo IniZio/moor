@@ -29,8 +29,8 @@ use super::{repo, rig, Rig};
 use crate::adapters::github::app::fake::{pull_json, PullsApi};
 use crate::adapters::github::hook::HookSecret;
 use crate::error::CommandError;
-use crate::ops::github_hook::check;
-use crate::ops::workflow::{on_pull_request, run_start, StartJob};
+use crate::ops::github_hook::{check, handle_with};
+use crate::ops::workflow::{run_start, StartJob};
 use crate::testing::cx::REQUESTER_USER;
 
 /// The secret the test controller holds.
@@ -204,13 +204,12 @@ impl Rig {
         req: &GitHubHookReq,
         start: &dyn Fn(StartJob),
     ) -> Result<GitHubHookValue, CommandError> {
-        let store = self.cx.store().unwrap();
         let start = |job| {
             start(job);
             Ok(())
         };
-        let handle = |event| {
-            drop(on_pull_request(&self.cx, store, &event, &start));
+        let handle = |pulled| {
+            handle_with(&self.cx, req.delivery.as_deref(), &pulled, &start);
             Ok(())
         };
         check(&self.cx, &Ok(gate()), req, &handle)

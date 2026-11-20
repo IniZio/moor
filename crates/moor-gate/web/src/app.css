@@ -144,6 +144,11 @@ main.wide { max-width: 64rem; }
 .runs li:last-child a { border-bottom-width: 1px; border-radius: 0 0 var(--moor-radius-md) var(--moor-radius-md); }
 .runs li:first-child a { border-radius: var(--moor-radius-md) var(--moor-radius-md) 0 0; }
 .runs li a:hover { background: var(--moor-color-accent-soft); }
+.runs li.has-pr { display: flex; }
+.runs li.has-pr > a:first-child { flex: 1; min-width: 0; border-right-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.runs li.has-pr > a.run-pr { border-top-left-radius: 0; border-bottom-left-radius: 0; color: var(--moor-color-accent); font-family: var(--moor-font-mono); font-size: var(--moor-text-xs); white-space: nowrap; }
+.wf-switch { display: flex; align-items: center; gap: var(--moor-space-2); }
+.wf-switch input { flex: none; width: auto; margin: 0; padding: 0; accent-color: var(--moor-color-accent); }
 .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .outcome { font-weight: var(--moor-weight-strong); }
 .run-title { margin: 0; display: flex; align-items: center; gap: var(--moor-space-2); }

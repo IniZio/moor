@@ -170,6 +170,8 @@ const WorkflowRowSchema = v.object({
 	words: v.nullish(v.string()),
 	timezone: v.nullish(v.string()),
 	enabled: v.boolean(),
+	/** Whether a pull request event on the first repo fires a run. */
+	on_pull_request: v.optional(v.boolean(), false),
 	next_due: v.nullish(v.number()),
 	/** The next run in the workflow's own zone, such as "Fri 20 Nov, 08:30 (Asia/Hong_Kong)". */
 	next_text: v.nullish(v.string()),
@@ -307,7 +309,7 @@ export async function workflowSet(
 }
 
 /** What the workflow form sets. */
-export type WorkflowFields = { repos: string[]; prompt: string; cron: string; timezone: string; timeout_minutes?: number };
+export type WorkflowFields = { repos: string[]; prompt: string; cron: string; timezone: string; timeout_minutes?: number; on_pull_request?: boolean };
 
 type Body = Record<string, string | number | boolean | string[] | undefined>;
 

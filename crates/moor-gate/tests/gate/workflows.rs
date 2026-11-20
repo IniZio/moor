@@ -20,6 +20,7 @@ struct Held {
     prompt: String,
     plan: Option<Value>,
     enabled: bool,
+    on_pull_request: bool,
     waiting: bool,
     answered: Vec<String>,
 }
@@ -47,6 +48,7 @@ fn fresh() -> Held {
         prompt: format!("Update the deps {HOSTILE}"),
         plan: Some(plan()),
         enabled: true,
+        on_pull_request: false,
         waiting: true,
         answered: Vec::new(),
     }
@@ -130,7 +132,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
         json!({"name": "weekly-deps", "cron": "0 6 * * 1", "timezone": "UTC",
             "repos": ["acme/web"], "prompt": held.prompt, "enabled": held.enabled,
             "timeout_minutes": 180, "next_due": 9_999_000, "plan": held.plan,
-            "plan_stale": false, "revision": held.revision,
+            "plan_stale": false, "revision": held.revision, "on_pull_request": held.on_pull_request,
             "last_run": waiting_run(held)})
     };
     match cmd {
@@ -168,6 +170,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
                 .unwrap()
                 .clone_into(&mut held.prompt);
             held.plan = plan;
+            held.on_pull_request = inner["on_pull_request"] == true;
             held.enabled = held.enabled || inner["keep_state"] != true;
             held.revision += 1;
             Response::ok("x", Some(json!({"name": "weekly-deps", "changed": true})))
@@ -592,6 +595,6 @@ fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
     let unknown = get(&w.addr, "/account/api/workflows/nope", Some(&alice));
     assert_eq!(unknown.status, 404, "{}", unknown.body);
 }
-
+mod pull;
 mod review;
 mod run_now;
