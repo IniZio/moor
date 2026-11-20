@@ -247,7 +247,6 @@ pub(crate) fn agent_unit(plan: &Plan, home: &Path, env: &Env) -> String {
         "DOCKER_HOST",
         "DOCKER_CONTEXT",
         "DOCKER_CONFIG",
-        // A source build has no released images; the agent would ask for ones that don't exist.
         "MOOR_AGENT_IMAGE",
         "MOOR_WORK_IMAGE",
     ] {
