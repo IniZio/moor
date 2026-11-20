@@ -57,8 +57,12 @@ pub use workflow::{
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
+mod steer;
+pub use steer::SteerReq;
 mod step_report;
 pub use step_report::StepReportReq;
+mod github_hook;
+pub use github_hook::{GitHubHookReq, GitHubHookValue};
 mod machine_pair;
 pub use machine_pair::{MachinePairReq, PairOp, PairOwner};
 mod webhook_outbox;
@@ -228,7 +232,6 @@ pub enum Request {
     /// Change a node's cap or labels: its owner's for a personal node, the operator's for a
     /// shared one.
     NodeSettingsSet(NodeSettingsSetReq),
-    /// Ask the controller whether each node runtime's provider credentials are in place.
     /// Ask one of the caller's user's machine agents for its status.
     MachineStatus(MachineStatusReq),
     /// List every enrolled machine's key; the operator's only.
@@ -249,6 +252,9 @@ pub enum Request {
     StepReport(StepReportReq),
     /// Start, show, confirm or collect a code a machine pairs by; only a front.
     MachinePair(MachinePairReq),
+    /// A delivery GitHub posted to the gate's `/hooks/github`; only a front.
+    #[serde(rename = "github-hook")]
+    GitHubHook(GitHubHookReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
     /// Print version information.
@@ -334,28 +340,6 @@ pub struct RunReq {
     /// Never read from or written to JSON.
     #[serde(skip)]
     pub inherit_output: bool,
-}
-
-/// Arguments of `steer`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SteerReq {
-    /// The Box: by name, the newest open Box of that name.
-    #[serde(rename = "box")]
-    pub target: BoxTarget,
-    /// Text to send.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    /// Menu entry to pick.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub menu: Option<u32>,
-    /// Send the agent's interrupt key instead of text or a menu entry.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub interrupt: bool,
-    /// The prompt this answers (a `progress` card's `needs.id`). A menu choice is refused when
-    /// the agent waits at another prompt by now, so a stale click never answers a later one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ask: Option<String>,
 }
 
 /// Arguments of `show`.

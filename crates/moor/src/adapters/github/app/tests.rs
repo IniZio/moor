@@ -342,35 +342,6 @@ fn an_author_permission_reads_with_the_installation_token() {
 }
 
 #[test]
-fn the_delivery_log_and_a_delivery_payload_read_with_the_app_jwt() {
-    let api = FakeGitHub::start(|_, path| match path {
-        "/app/hook/deliveries?per_page=100" => (
-            200,
-            json!([
-                {"id": 12, "guid": "g2", "event": "pull_request", "action": "opened", "status_code": 200},
-                {"id": 11, "guid": "g1", "event": "ping", "action": null, "status_code": 200},
-            ]),
-        ),
-        "/app/hook/deliveries/12" => (
-            200,
-            json!({
-                "id": 12, "request": {"headers": {}, "payload": {"action": "opened", "number": 5}},
-            }),
-        ),
-        "/app/hook/deliveries/11" => (200, json!({"id": 11, "request": {"payload": null}})),
-        _ => (404, json!({})),
-    });
-    let app = api.client();
-    let log = app.deliveries(now()).unwrap();
-    assert_eq!(log.iter().map(|d| d.id).collect::<Vec<_>>(), [12, 11]);
-    assert_eq!(log[0].event, "pull_request");
-    assert_eq!(log[0].action.as_deref(), Some("opened"));
-    assert_eq!(app.delivery_payload(12, now()).unwrap()["number"], 5);
-    assert!(app.delivery_payload(11, now()).is_err());
-    assert!(api.seen().iter().all(|s| claims(&s.auth)["iss"] == "42"));
-}
-
-#[test]
 fn only_a_pkcs1_rsa_key_loads_and_a_refusal_never_shows_the_key() {
     assert!(AppClient::from_pem(1, key().pkcs1.as_bytes(), "http://x").is_ok());
     let broken = pem::encode(&pem::Pem::new("RSA PRIVATE KEY", b"secret".to_vec()));
@@ -386,23 +357,16 @@ fn only_a_pkcs1_rsa_key_loads_and_a_refusal_never_shows_the_key() {
 }
 
 #[test]
-fn load_reads_the_key_file_and_checks_the_webhook_secret() {
+fn load_reads_the_key_file() {
     let dir = tempfile::tempdir().unwrap();
     let key_file = dir.path().join("key.pem");
     std::fs::write(&key_file, &key().pkcs1).unwrap();
-    let secret = dir.path().join("secret");
-    std::fs::write(&secret, "  \n").unwrap();
     let mut config = GitHubAppConfig {
         id: 42,
         private_key_file: key_file,
         webhook_secret_file: None,
     };
     let same = |p: &std::path::Path| p.to_path_buf();
-    assert!(AppClient::load(&config, same).is_ok());
-    config.webhook_secret_file = Some(secret.clone());
-    let err = AppClient::load(&config, same).err().unwrap();
-    assert!(err.contains("is empty"), "{err}");
-    std::fs::write(&secret, "s3cret").unwrap();
     assert!(AppClient::load(&config, same).is_ok());
     config.private_key_file = dir.path().join("missing.pem");
     let err = AppClient::load(&config, same).err().unwrap();

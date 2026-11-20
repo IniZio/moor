@@ -38,7 +38,7 @@ token's audience.
 | `list_webhooks` | none |
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
-| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `config`, `timeout_minutes`, `plan`, `expected_revision`, `enabled` (false stores it disabled) |
+| `add_workflow` | `name`, `cron`, `timezone`, `repos`, `prompt`; optional `config`, `timeout_minutes`, `plan`, `expected_revision`, `enabled` (false stores it disabled), `on_pull_request` (true also fires on the first repo's pull requests) |
 | `list_workflows` | none |
 | `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs) |
 | `remove_workflow` | `name` |

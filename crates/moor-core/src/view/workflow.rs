@@ -105,6 +105,9 @@ pub struct WorkflowView {
     /// Counts the writes of the workflow; send it as `expected_revision` to change it.
     #[serde(default)]
     pub revision: u64,
+    /// Whether a pull request event on its first repo fires a run.
+    #[serde(default)]
+    pub on_pull_request: bool,
     /// Its latest run, when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run: Option<LastRunView>,

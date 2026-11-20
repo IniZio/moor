@@ -1,6 +1,6 @@
 //! One line of a run's history. Rows are only appended.
 
-use super::{Answer, RunEnd, RunOutcome, RunPhase, RunState, StepId, StepReport};
+use super::{Answer, CancelCause, RunEnd, RunOutcome, RunPhase, RunState, StepId, StepReport};
 use crate::user::UserId;
 
 /// What happened to a run. The store keeps each line as tagged JSON, so a later kind of line
@@ -105,6 +105,12 @@ pub enum HistoryEntry {
         /// Why.
         detail: String,
     },
+    /// A newer head or the pull request's close cancelled the run while its Box was being
+    /// started.
+    CancelledUnstarted {
+        /// What ended it.
+        cause: CancelCause,
+    },
     /// The run ended.
     Ended {
         /// The phase the run was in.
@@ -134,6 +140,9 @@ impl HistoryEntry {
             RunState::Done(RunEnd::Refused { detail }) => Self::Refused {
                 phase_before: from,
                 detail: detail.clone(),
+            },
+            RunState::Done(RunEnd::CancelledUnstarted { cause }) => Self::CancelledUnstarted {
+                cause: cause.clone(),
             },
             RunState::Done(RunEnd::Ended { outcome, .. }) => Self::Ended {
                 phase_before: from,

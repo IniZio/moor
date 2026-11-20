@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::workflow::{
@@ -11,7 +12,7 @@ use moor_core::workflow::{
 use moor_schema::tables::{WorkflowRuns, Workflows};
 use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 
-pub(crate) use claim::ManualClaim;
+pub(crate) use claim::OpenClaim;
 pub(crate) use put::Put;
 pub(crate) use runs::RunOfBox;
 
@@ -67,10 +68,12 @@ struct WorkflowRow {
     revision: i64,
     /// `plan`, as JSON.
     plan: Option<String>,
+    /// `on_pull_request`.
+    on_pull_request: i64,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 17] = [
+const WORKFLOW_COLS: [Workflows; 18] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -88,6 +91,7 @@ const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Config,
     Workflows::Revision,
     Workflows::Plan,
+    Workflows::OnPullRequest,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -115,6 +119,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         config: r.get(14)?,
         revision: r.get(15)?,
         plan: r.get(16)?,
+        on_pull_request: r.get(17)?,
     })
 }
 
@@ -165,6 +170,7 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
             None => Plan::single(&row.prompt),
         },
         revision: u64::try_from(row.revision).map_err(|e| corrupt("revision", e))?,
+        on_pull_request: row.on_pull_request != 0,
     })
 }
 
@@ -225,6 +231,30 @@ impl Store {
             read_workflow,
         )?;
         rows.map(|row| workflow_of(row?)).collect()
+    }
+
+    /// Every workflow of every owner whose first repo is `repo`, compared as GitHub does,
+    /// without case, by id.
+    pub(crate) fn workflows_on(&self, repo: &ForgeRepo) -> Result<Vec<Workflow>, StoreError> {
+        let reader = self.reader()?;
+        let rows = reader.rows(
+            Query::select()
+                .columns(WORKFLOW_COLS)
+                .from(Workflows::Table)
+                .order_by(Workflows::Id, Order::Asc),
+            read_workflow,
+        )?;
+        let mut found = Vec::new();
+        for row in rows {
+            let w = workflow_of(row?)?;
+            let first = w.repos.first().is_some_and(|f| {
+                f.owner.eq_ignore_ascii_case(&repo.owner) && f.name.eq_ignore_ascii_case(&repo.name)
+            });
+            if first {
+                found.push(w);
+            }
+        }
+        Ok(found)
     }
 
     /// Workflow `id`, whoever owns it.

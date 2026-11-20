@@ -127,15 +127,32 @@ How it sits beside the schedule:
   is open.
 - A run for a newer head of a pull request cancels the open run of the older
   head. That run ends `cancelled`, its agent is stopped, and its Box stays
-  like any ended run's Box. A Box whose agent never launched is closed. An older run still starting is not cancelled, and
-  the new run is refused until it has a Box. A cancelled run neither counts
-  toward the breaker nor resets it.
+  like any ended run's Box. A Box whose agent never launched is closed. An
+  older run still starting is cancelled too, and its start closes the Box it
+  makes. A cancelled run neither counts toward the breaker nor resets it.
 - A new run's Box closes only the earlier Boxes of runs about the same subject.
 - A cron run is skipped while a manual run for no pull request is open. Both
   are about the workflow itself.
 - A manual run never swallows a due time the schedule missed.
 - A manual run that fails does not count toward the breaker. One that delivers
   resets it, so a fix you proved by hand clears the earlier failures.
+
+## Run on pull requests
+
+A workflow with `on_pull_request` on also fires when a pull request on its first
+repo is opened, reopened, marked ready for review or pushed to. The controller's
+[GitHub App](config.md#github_app) must be installed on that repo and send its
+webhook to the gate at `<public url>/hooks/github`.
+
+- Each event fires one run per enabled workflow with the trigger on. Its trigger
+  is `pull_request`.
+- The run is for the pull request at the head the event names. Its Box gets the
+  same `MOOR_PULL_*` env and first line as `run_workflow` with `pull`.
+- A push cancels the open run of the older head, as a manual run does.
+- The same head fires once, whatever came of its run. A close and a reopen at
+  the same head fire nothing. Run again or a new push fires it again.
+- Closing the pull request cancels its open run on every workflow of the repo.
+- Drafts, bot authors and forks still fire for now.
 
 ## Follow runs and retry
 
@@ -245,6 +262,8 @@ The agent calls `add_workflow` with these values.
   as the editor writes it.
 - `expected_revision`, optional, the `revision` that `list_workflows` showed.
   The call is refused when the workflow changed after you read it.
+- `on_pull_request`, optional, true to also fire on the first repo's pull
+  requests. See [Run on pull requests](#run-on-pull-requests).
 
 Other tools:
 
@@ -264,13 +283,14 @@ Other tools:
   waiting runs and no `pull` is refused with the list.
 - `list_workflows` shows each workflow, its next due time, its plan and its
   latest run. `list_workflow_runs` lists each change oldest first, with an
-  outcome, a `trigger` of `cron` or `manual`, and the `pull` and `head_sha` of
-  a run for a pull request.
+  outcome and a `trigger` of `cron`, `manual` or `pull_request`. A run for a
+  pull request also shows its `pull` and `head_sha`.
 - `set_workflow_enabled` and `remove_workflow` pause and remove.
 
 A cron run's Box is named `<workflow>/w<id>-<due time>`, and a run by hand
 `<workflow>/w<id>-m<UTC time to the second>`. A run by hand for a pull request
 is `<workflow>/w<id>-pr<number>-<first 7 of the head SHA>-m<UTC time to the second>`.
+A pull request event's run is `<workflow>/w<id>-pr<number>-<first 7 of the head SHA>`.
 
 ## Move a workflow from `also`
 

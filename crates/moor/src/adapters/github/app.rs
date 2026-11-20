@@ -70,8 +70,8 @@ impl AppClient {
     /// The App `config` names, with its key read from the file. `expand` resolves `~`.
     ///
     /// # Errors
-    /// The key or webhook secret file cannot be read, or the key is not an RSA PEM. The error
-    /// names the file, never its content.
+    /// The key file cannot be read, or the key is not an RSA PEM. The error names the file,
+    /// never its content.
     pub(crate) fn load(
         config: &GitHubAppConfig,
         expand: impl Fn(&Path) -> std::path::PathBuf,
@@ -81,16 +81,6 @@ impl AppClient {
             fs::read(&path)
                 .map_err(|e| format!("github_app: cannot read {}: {e}", path.display()))?,
         );
-        if let Some(secret) = &config.webhook_secret_file {
-            let secret = expand(secret);
-            let read = Zeroizing::new(
-                fs::read(&secret)
-                    .map_err(|e| format!("github_app: cannot read {}: {e}", secret.display()))?,
-            );
-            if read.trim_ascii().is_empty() {
-                return Err(format!("github_app: {} is empty", secret.display()));
-            }
-        }
         Self::from_pem(config.id, &pem, API)
             .map_err(|e| format!("github_app: {}: {e}", path.display()))
     }
@@ -301,7 +291,6 @@ fn bearer(token: &Secret) -> Result<Zeroizing<String>, String> {
     Ok(auth)
 }
 
-pub(crate) mod deliveries;
 pub(crate) mod pull;
 
 #[cfg(test)]

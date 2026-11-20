@@ -143,6 +143,7 @@ fn add(
         _ => None,
     };
     def.config = override_text(req.config.clone());
+    def.on_pull_request = req.on_pull_request;
     def.plan = req
         .plan
         .as_deref()
@@ -263,6 +264,7 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
             .flatten(),
         plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
         revision: w.revision,
+        on_pull_request: w.on_pull_request,
         last_run,
     }
 }

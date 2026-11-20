@@ -140,6 +140,7 @@ impl Request {
             | Self::MachineBox(_)
             | Self::StepReport(_)
             | Self::MachinePair(_)
+            | Self::GitHubHook(_)
             | Self::WebhookClaim(_)
             | Self::WebhookReport(_)
             | Self::Version {} => Vec::new(),

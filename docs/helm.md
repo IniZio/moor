@@ -99,7 +99,7 @@ kubectl -n NAMESPACE rollout restart deployment/RELEASE deployment/RELEASE-egres
 | --- | --- | --- |
 | `githubApp.id` | empty | The App id. Empty turns every App feature off. See [`github_app`](config.md#github_app). |
 | `githubApp.privateKey` | empty | Secret. The PEM GitHub generated for the App. Required with `githubApp.id`. |
-| `githubApp.webhookSecret` | empty | Secret. The App's webhook secret. Only the webhook event source needs it. |
+| `githubApp.webhookSecret` | empty | Secret. The App's webhook secret. With it the gate Ingress routes `/hooks/github`. Without it the gate takes no deliveries. |
 
 With `database.url` and `blobs.s3` both set, the controller mounts no volume
 and rolls with `maxSurge: 1`.

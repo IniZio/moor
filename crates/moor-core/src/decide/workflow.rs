@@ -230,7 +230,11 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
             RunState::Queued
             | RunState::Running { .. }
             | RunState::Waiting { .. }
-            | RunState::Done(RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. }) => {}
+            | RunState::Done(
+                RunEnd::SkippedOverlap
+                | RunEnd::SkippedFork { .. }
+                | RunEnd::CancelledUnstarted { .. },
+            ) => {}
         }
     }
     (streak >= BREAKER_STREAK).then(|| WorkflowDisable {

@@ -25,8 +25,9 @@ use advance::finish_runs;
 pub(crate) use answer::run as answer_run;
 pub(crate) use check::{run_check, CheckJob};
 use facts::history;
-pub(crate) use now::run as run_now;
+pub(crate) use now::{run as run_now, spawn_start};
 use previous::close_previous;
+pub(crate) use pull_event::{on_pull_request, PullEvent};
 pub(crate) use report::run as step_report;
 use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
 
@@ -376,6 +377,7 @@ mod facts;
 mod now;
 mod previous;
 mod pull;
+mod pull_event;
 mod report;
 mod settle;
 #[cfg(test)]

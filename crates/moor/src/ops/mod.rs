@@ -24,6 +24,7 @@ pub(crate) mod exec;
 pub(crate) mod forward;
 mod gate;
 mod github_app;
+pub(crate) mod github_hook;
 pub(crate) mod host_session;
 mod inspect;
 mod machine_box;
@@ -126,6 +127,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::MachinePair(_) => Err(CommandError::new(
             ErrorKind::Refused,
             machine_pair::FRONT_ONLY,
+        )),
+        Request::GitHubHook(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            github_hook::FRONT_ONLY,
         )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,

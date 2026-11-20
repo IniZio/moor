@@ -34,6 +34,7 @@ use std::time::Duration;
 use moor_core::config::{parse_controller, AutoClose, ControllerConfig};
 
 use crate::adapters::github::app::AppClient;
+use crate::adapters::github::hook::HookSecret;
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
@@ -151,8 +152,15 @@ fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
         .with_front_step_reports(cfg.step_report_fronts());
     let env = match &cfg.github_app {
         Some(app) => {
-            let app = AppClient::load(app, |p| env.expand_home(p))?;
-            env.sharing(app)
+            let client = AppClient::load(app, |p| env.expand_home(p))?;
+            let env = env.sharing(client);
+            match &app.webhook_secret_file {
+                Some(path) => {
+                    let secret = HookSecret::load(path, |p| env.expand_home(p))?;
+                    env.sharing(secret)
+                }
+                None => env,
+            }
         }
         None => env,
     };

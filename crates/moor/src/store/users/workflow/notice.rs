@@ -137,7 +137,9 @@ fn failure(end: &RunEnd, held: &Held) -> Option<(i64, &'static str, Option<Strin
             };
             Some((box_id.get(), kind, Some(at.as_str().to_owned()), reason))
         }
-        RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } => None,
+        RunEnd::SkippedOverlap | RunEnd::SkippedFork { .. } | RunEnd::CancelledUnstarted { .. } => {
+            None
+        }
     }
 }
 

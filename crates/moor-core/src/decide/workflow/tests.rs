@@ -42,6 +42,7 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         updated_at: ts(0),
         plan: Plan::single("go"),
         revision: 0,
+        on_pull_request: false,
     }
 }
 

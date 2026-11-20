@@ -1,10 +1,12 @@
 //! The controller's workflow pass, behind the `Moor` facade.
 
-use moor_core::request::{UserCmd, WorkflowCmd};
-use moor_core::user::{Identity, Viewer};
+use moor_core::request::{GitHubHookReq, UserCmd, WorkflowCmd};
+use moor_core::user::{Caller, Identity, Viewer};
+use moor_core::Response;
 
 use super::Moor;
 use crate::env::Env;
+use crate::ops;
 use crate::ops::workflow::{self, CheckJob, StartJob};
 
 impl Moor {
@@ -45,6 +47,18 @@ impl Moor {
                 }
             }
             _ => self,
+        }
+    }
+
+    /// Run `github-hook` for `caller`, which must be a front.
+    pub(crate) fn call_github_hook(
+        &self,
+        caller: &Result<Caller, String>,
+        req: &GitHubHookReq,
+    ) -> Response {
+        match ops::github_hook::run(&self.cx, caller, req) {
+            Ok(value) => Response::ok("github-hook", Some(value)),
+            Err(e) => e.into_response("github-hook", vec![]),
         }
     }
 

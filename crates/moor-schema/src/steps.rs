@@ -48,6 +48,7 @@ mod wanted_effect;
 mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
+mod workflow_on_pull;
 mod workflow_plans;
 mod workflow_repo_set;
 mod workflow_run_pull;
@@ -106,4 +107,5 @@ pub const STEPS: &[Step] = &[
     step("V91__workflow_repo_set", workflow_repo_set::write),
     step("V92__box_base_ref", box_base_ref::write),
     step("V93__workflow_run_pull", workflow_run_pull::write),
+    step("V94__workflow_on_pull", workflow_on_pull::write),
 ];

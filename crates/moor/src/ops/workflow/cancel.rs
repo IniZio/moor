@@ -19,13 +19,6 @@ use crate::store::Store;
 /// Cancels the open run of `w` for pull request `number` on `repo` with `cause`, and stops its
 /// agent. The run as it was before the cancel, none when nothing was open to cancel, and what
 /// to log.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the closed event that calls it comes with the receiver"
-    )
-)]
 pub(crate) fn cancel_pull(
     cx: &Cx,
     store: &Store,

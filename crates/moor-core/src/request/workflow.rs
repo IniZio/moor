@@ -52,6 +52,10 @@ pub struct WorkflowAddReq {
     /// enable. Yes (the default) enables it. Ignored with `keep_state`.
     #[serde(default = "enabled_by_default", skip_serializing_if = "is_true")]
     pub enabled: bool,
+    /// Yes to fire a run when a pull request on the first repo is opened, reopened, marked
+    /// ready for review or pushed to. No (the default) fires on the cron and by hand only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_pull_request: bool,
 }
 
 /// The default of `WorkflowAddReq::enabled`.

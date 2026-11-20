@@ -168,6 +168,8 @@ pub struct WorkflowDef {
     pub origin: Option<WorkflowOrigin>,
     /// The steps a run walks; none stores no plan, which reads back as [`Plan::single`].
     pub plan: Option<Plan>,
+    /// Whether a pull request event on its first repo fires a run.
+    pub on_pull_request: bool,
 }
 
 impl WorkflowDef {
@@ -210,6 +212,7 @@ impl WorkflowDef {
             timeout,
             origin: None,
             plan: None,
+            on_pull_request: false,
         })
     }
 }
@@ -245,6 +248,8 @@ pub struct Workflow {
     pub plan: Plan,
     /// Counts the writes of the workflow, from 0.
     pub revision: u64,
+    /// Whether a pull request event on its first repo fires a run.
+    pub on_pull_request: bool,
 }
 
 mod box_name;

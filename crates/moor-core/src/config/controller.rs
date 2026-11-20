@@ -60,8 +60,8 @@ pub struct GitHubAppConfig {
     pub id: u64,
     /// The PEM private key GitHub generated for the App; `~` allowed.
     pub private_key_file: PathBuf,
-    /// The file holding the App's webhook secret; `~` allowed. Only the webhook event source
-    /// needs it.
+    /// The file holding the App's webhook secret; `~` allowed. Without it the gate's
+    /// `/hooks/github` takes no deliveries.
     #[serde(default)]
     pub webhook_secret_file: Option<PathBuf>,
 }

@@ -62,8 +62,18 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "machine-hold" => json!({"cmd": kind, "id": 1, "op": "release"}),
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
         "machine-pair" => json!({"cmd": kind, "op": {"do": "show", "code": "BCDF-GHJK"}}),
+        "github-hook" => json!({"cmd": kind, "event": "ping", "body": "{}"}),
         _ => return None,
     })
+}
+
+/// What a front gets for `kind`, a front-only request it may send with no identity.
+fn front_value(kind: &str) -> Option<Value> {
+    match kind {
+        "machine-pair" => Some(json!({"pairing": "gone"})),
+        "github-hook" => Some(json!({"hook": "off"})),
+        _ => None,
+    }
 }
 
 #[test]
@@ -90,8 +100,8 @@ fn every_front_request_but_version_the_webhook_outbox_step_reports_and_pairing_m
             refused(&got, "`webhooks: true`");
         } else if kind == "step-report" {
             refused(&got, "`step_reports: true`");
-        } else if kind == "machine-pair" {
-            assert_eq!(got["value"], json!({"pairing": "gone"}), "{got}");
+        } else if let Some(want) = front_value(kind) {
+            assert_eq!(got["value"], want, "{got}");
         } else {
             refused(&got, "the herdr front socket must assert an identity");
         }

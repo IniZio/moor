@@ -60,8 +60,9 @@ pub(super) fn open_run(
 }
 
 /// Ends `open` `Cancelled` with `cause` at `at`, in `tx` numbered `seq`, compare-and-set on the
-/// step and try it was read at; the rows changed. A run still being started has no Box and no
-/// step, so it is never cancelled.
+/// state, step and try it was read at; the rows changed. A run still being started has no Box
+/// and no step yet, so it ends [`RunEnd::CancelledUnstarted`], and its start then finds the claim
+/// settled and closes the Box it made.
 pub(super) fn cancel_in(
     tx: &Tx<'_>,
     seq: i64,
@@ -74,7 +75,11 @@ pub(super) fn cancel_in(
         RunState::Waiting {
             box_id, at, try_n, ..
         } => (Open::Waiting, *box_id, at, *try_n),
-        RunState::Queued | RunState::Done(_) => return Ok(0),
+        RunState::Queued => {
+            let to = RunState::Done(RunEnd::CancelledUnstarted { cause });
+            return move_in(tx, seq, open.id, (Open::Queued, &to), (None, &[], at, true));
+        }
+        RunState::Done(_) => return Ok(0),
     };
     let to = RunState::Done(RunEnd::Ended {
         box_id,
@@ -95,15 +100,8 @@ pub(super) fn cancel_in(
 
 impl Store {
     /// Cancels the open run of `workflow` for pull request `number` on `repo` with `cause`, at
-    /// `at`, when it is at a step or waits. The run as it was before the cancel; none when there
-    /// was nothing to cancel, so a repeated cancel changes nothing.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the closed event that calls it comes with the receiver"
-        )
-    )]
+    /// `at`, whether it is being started, at a step or waiting. The run as it was before the
+    /// cancel; none when there was nothing to cancel, so a repeated cancel changes nothing.
     pub(crate) fn cancel_pull_run(
         &self,
         workflow: WorkflowId,
