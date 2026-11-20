@@ -127,6 +127,7 @@ egress:
   port: 8080
   # The address Boxes dial; empty is wss://<host>/egress, through the gate ingress.
   url: ""
+  ingress: {enabled: false, className: "", host: "", annotations: {}}
   # How long open tunnels get to finish after SIGTERM (serve-egress --grace).
   graceSecs: 300
   # The controller serves its ledger on this port, over TLS, to the egress pods.

@@ -57,9 +57,10 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled` or `egress.url`. |
+| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled`, `egress.ingress.enabled` or `egress.url`. |
 | `egress.replicas` | 2 | Replicas, rolled one at a time. |
-| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. |
+| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. With `egress.ingress.enabled`, the default is `wss://EGRESS_HOST/egress`. |
+| `egress.ingress.enabled`, `.className`, `.host`, `.annotations` | off | A second Ingress that serves only `/egress` on `.host`, for Boxes outside the gate's network. The gate Ingress then drops `/egress`. |
 | `egress.graceSecs` | 300 | How long open tunnels get after SIGTERM. |
 | `egress.ledgerPort` | 7443 | The controller's ledger port for the egress pods. |
 | `egress.key` | made on first install | Secret. The key Box tokens are signed with. |
