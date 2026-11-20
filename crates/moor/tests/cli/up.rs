@@ -185,8 +185,8 @@ fn converged() -> (Host, Run) {
 }
 
 /// The `systemctl` calls of a first `up`.
-const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service\n\
-                           --user start moor.socket\n--user restart moor.service\n\
+const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
+                           --user start moor.socket moor-front@authgear.socket\n--user restart moor.service\n\
                            --user daemon-reload\n--user enable moor-gate.service\n\
                            --user restart moor-gate.service\n\
                            --user daemon-reload\n--user enable moor-runner.service\n\
@@ -275,7 +275,7 @@ fn a_rerun_changes_nothing_and_prints_the_same_state() {
     );
     assert_eq!(
         host.systemctl_log().strip_prefix(FIRST_CALLS).unwrap(),
-        "--user enable moor.socket moor.service\n--user start moor.socket\n--user start moor.service\n\
+        "--user enable moor.socket moor.service moor-front@authgear.socket\n--user start moor.socket moor-front@authgear.socket\n--user start moor.service\n\
          --user enable moor-gate.service\n--user start moor-gate.service\n\
          --user enable moor-runner.service\n--user start moor-runner.service\n\
          --user enable moor-agent.service\n--user start moor-agent.service\n"
@@ -292,7 +292,7 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     assert!(host
         .systemctl_log()
         .ends_with(
-            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
+            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor-front@authgear.socket moor.socket\n--user daemon-reload\n"
         ));
     let left = fs::read_dir(host.units()).unwrap().count();
     assert_eq!(
