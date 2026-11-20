@@ -138,3 +138,44 @@ async fn a_report_lists_the_health_of_the_boxes_a_host_provides() {
     assert_eq!(health["generation"], 1);
     sending.abort();
 }
+
+#[tokio::test]
+async fn a_report_lists_what_each_box_holds_and_an_asleep_box_holds_nothing() {
+    use moor_client::link::boxes::{BoxAnswer, BoxOp};
+    use moor_client::link::ops::write_line;
+    use moor_client::link::BoxMemory;
+    let dir = scratch("held");
+    fake_proc(&dir, None);
+    let host = crate::Host::named("fake", &dir).unwrap();
+    let slug = "moor-1a2b3c4d-417".to_owned();
+    let open = BoxOp::Open {
+        slug: slug.clone(),
+        class: None,
+        cache: None,
+    };
+    for op in [open, BoxOp::Sleep { slug: slug.clone() }] {
+        let (mut ask, serving) = tokio::io::duplex(4096);
+        write_line(&mut ask, &op).await.unwrap();
+        host.serve(serving).await;
+        while let Ok(said) = read_line::<_, BoxAnswer>(&mut ask).await {
+            assert!(!matches!(said, BoxAnswer::Refused { .. }), "{said:?}");
+        }
+    }
+    let (near, mut far) = tokio::io::duplex(4096);
+    let sending = tokio::spawn({
+        let dir = dir.clone();
+        async move { send_reports(near, &dir, None, Some(&host)).await }
+    });
+    let Opened::Report { report } = read_line(&mut far).await.unwrap() else {
+        unreachable!("not a report");
+    };
+    assert_eq!(
+        report.boxes,
+        [BoxMemory {
+            slug,
+            host_memory_mib: 0,
+            resume_memory_mib: None,
+        }]
+    );
+    sending.abort();
+}
