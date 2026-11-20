@@ -42,7 +42,8 @@ pub(super) fn run_view(
             }
             RunOutcome::Incomplete { .. }
             | RunOutcome::Declined { .. }
-            | RunOutcome::TimedOut { .. } => (None, None),
+            | RunOutcome::TimedOut { .. }
+            | RunOutcome::Cancelled { .. } => (None, None),
         },
         RunState::Queued
         | RunState::Running { .. }

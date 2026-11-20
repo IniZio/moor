@@ -1,11 +1,13 @@
 //! Give a workflow run the pull request it is for: `pull_number` and `head_sha`, a
-//! `pull_request` trigger, the `skipped_fork` outcome, and a key on pull request and head.
+//! `pull_request` trigger, the `skipped_fork` and `cancelled` outcomes, and a key on pull request
+//! and head.
 //!
 //! A check ties the trigger to the two columns. A cron run has neither, a pull request run has
 //! both, and a manual run has both or neither. Only a pull request run may be `skipped_fork`. A
 //! partial unique index keeps one run per workflow, repo, pull request and head, so an event
 //! delivered twice records once. A `skipped_fork` row sits outside it, so Run again on that row
-//! can later fire the same head.
+//! can later fire the same head. The key on due time narrows to cron runs, so two manual or pull
+//! request runs recorded in one millisecond both stay.
 //!
 //! Postgres replaces the checks in place. `SQLite` cannot, so it rebuilds `workflow_runs` as
 //! `V85__workflow_plans` did. `workflow_run_history` cascades from it now, so its rows are set
@@ -15,10 +17,10 @@
 use moor_migrate::sea_query::{Expr, ExprTrait, Table};
 use moor_migrate::{Backend, Script};
 
-use crate::{fk_cascade, index, int, key, row_id, text};
+use crate::{fk_cascade, index, int, row_id, text};
 
 /// Every value `workflow_runs.outcome` may hold.
-const OUTCOMES: [&str; 11] = [
+const OUTCOMES: [&str; 12] = [
     "starting",
     "started",
     "waiting",
@@ -30,6 +32,7 @@ const OUTCOMES: [&str; 11] = [
     "skipped_overlap",
     "skipped_fork",
     "refused",
+    "cancelled",
 ];
 
 /// Every value `workflow_runs.trigger` may hold.
@@ -45,12 +48,17 @@ const SUBJECT: &str = "((\"trigger\" = 'cron' AND \"pull_number\" IS NULL AND \"
 const OLD_COLUMNS: &str = "id, workflow, repo, due_at, box, outcome, detail, ended_at, \
                            recorded_at, seq, plan, step, try_n, waiting_since, ended_step, trigger";
 
-/// Add the pull request columns, widen the checks and add the pull request key.
+/// Add the pull request columns, widen the checks, narrow the due time key to cron runs and add
+/// the pull request key.
 pub(super) fn write(s: &mut Script) {
     match s.backend() {
         Backend::Postgres => widen_postgres(s),
         Backend::Sqlite => rebuild(s),
     }
+    s.raw(
+        "CREATE UNIQUE INDEX \"workflow_runs_cron\" ON \"workflow_runs\" \
+         (\"workflow\", \"repo\", \"due_at\") WHERE \"trigger\" = 'cron'",
+    );
     s.raw(
         "CREATE UNIQUE INDEX \"workflow_runs_pull\" ON \"workflow_runs\" \
          (\"workflow\", \"repo\", \"pull_number\", \"head_sha\") \
@@ -67,8 +75,11 @@ fn listed(values: &[&str]) -> String {
         .join(", ")
 }
 
-/// Add the columns and replace the `outcome` and `trigger` checks.
+/// Add the columns, replace the `outcome` and `trigger` checks and drop the key on due time.
 fn widen_postgres(s: &mut Script) {
+    s.raw(
+        "ALTER TABLE \"workflow_runs\" DROP CONSTRAINT \"workflow_runs_workflow_repo_due_at_key\"",
+    );
     for column in [int("pull_number"), text("head_sha")] {
         s.schema(
             &Table::alter()
@@ -93,8 +104,8 @@ fn widen_postgres(s: &mut Script) {
     ));
 }
 
-/// Rebuild `workflow_runs` with the new columns and checks, keeping every row, id and history
-/// line.
+/// Rebuild `workflow_runs` with the new columns and checks and without the key on due time,
+/// keeping every row, id and history line.
 fn rebuild(s: &mut Script) {
     s.raw(
         "CREATE TEMP TABLE \"workflow_run_history_keep\" AS SELECT * FROM \"workflow_run_history\"",
@@ -131,7 +142,6 @@ fn rebuild(s: &mut Script) {
             .col(int("pull_number"))
             .col(text("head_sha"))
             .check(Expr::cust(SUBJECT))
-            .index(key(&["workflow", "repo", "due_at"]).unique())
             .foreign_key(&mut fk_cascade("workflow", "workflows", "id")),
     );
     s.raw(&format!(

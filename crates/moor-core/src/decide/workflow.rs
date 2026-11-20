@@ -228,7 +228,7 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
                 | RunOutcome::Incomplete { .. }
                 | RunOutcome::TimedOut { .. } => streak += usize::from(counts),
                 RunOutcome::Delivered { .. } => break,
-                RunOutcome::Declined { .. } => {}
+                RunOutcome::Declined { .. } | RunOutcome::Cancelled { .. } => {}
             },
             RunState::Queued
             | RunState::Running { .. }

@@ -145,10 +145,6 @@ fn fire(
                 ),
             ))
         }
-        ManualClaim::Taken => Ok(declined(
-            w,
-            format!("a run of {} was fired at this very moment already", w.name),
-        )),
         ManualClaim::Recorded => {
             let name = job.name.as_str().to_owned();
             start(job)?;

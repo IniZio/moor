@@ -1,6 +1,6 @@
 //! `V93__workflow_run_pull` keeps every run, its id and its history, takes a pull request run,
-//! keeps one per workflow, repo, pull request and head, and refuses a trigger that does not fit
-//! its pull request columns.
+//! keeps one per workflow, repo, pull request and head, keys only cron runs on due time, takes a
+//! cancelled run, and refuses a trigger that does not fit its pull request columns.
 
 use moor_migrate::Backend;
 use postgres::{Client, NoTls};
@@ -74,6 +74,13 @@ fn sqlite_keeps_runs_and_history_and_keys_a_pull_request_run_on_its_head() {
     ok(run(6, "pull_request", ("65", &sha), "skipped_fork")).unwrap();
     ok(run(7, "manual", ("65", &sha), "starting")).unwrap();
     ok(run(8, "manual", ("NULL", "NULL"), "starting")).unwrap();
+    ok(run(8, "manual", ("NULL", "NULL"), "refused")).unwrap();
+    ok(run(3, "pull_request", ("66", &sha), "starting")).unwrap();
+    ok(run(10, "pull_request", ("67", &sha), "cancelled")).unwrap();
+    assert!(
+        ok(run(1, "cron", ("NULL", "NULL"), "starting")).is_err(),
+        "a cron run records once per due time"
+    );
     for (trigger, subject, outcome) in [
         ("cron", ("65", sha.as_str()), "starting"),
         ("pull_request", ("NULL", "NULL"), "starting"),
@@ -117,6 +124,9 @@ fn postgres_keys_a_pull_request_run_on_its_head_and_refuses_a_misfit() {
             run(6, "manual", ("65", &sha), "starting"),
             run(7, "cron", ("65", &sha), "starting"),
             run(8, "manual", ("65", "NULL"), "starting"),
+            run(6, "manual", ("NULL", "NULL"), "starting"),
+            run(3, "pull_request", ("66", &sha), "cancelled"),
+            run(1, "cron", ("NULL", "NULL"), "starting"),
         ];
         let took = tries
             .iter()
@@ -130,5 +140,8 @@ fn postgres_keys_a_pull_request_run_on_its_head_and_refuses_a_misfit() {
         .unwrap();
     let (kept, took) = got.unwrap();
     assert_eq!(kept, ["1|cron|-|-|starting", "2|manual|-|-|refused"]);
-    assert_eq!(took, [true, false, true, true, false, false]);
+    assert_eq!(
+        took,
+        [true, false, true, true, false, false, true, true, false]
+    );
 }

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{Plan, RunCause, StepId, WorkflowId};
+use super::{CommitSha, Plan, RunCause, StepId, WorkflowId};
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 
@@ -157,6 +157,26 @@ pub enum RunOutcome {
         /// The step the run was at.
         at: StepId,
     },
+    /// A newer head or the pull request's close ended the run.
+    Cancelled {
+        /// The step the run was at.
+        at: StepId,
+        /// What ended it.
+        cause: CancelCause,
+    },
+}
+
+/// What cancelled a pull request run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CancelCause {
+    /// A push moved the pull request to head `sha`.
+    NewerHead {
+        /// The new head.
+        sha: CommitSha,
+    },
+    /// The pull request was closed.
+    Closed,
 }
 
 /// The phase as shown in lists, the way GitHub Actions shows a run's status.
@@ -215,6 +235,7 @@ impl RunState {
                 RunOutcome::Incomplete { .. } => "incomplete",
                 RunOutcome::Declined { .. } => "declined",
                 RunOutcome::TimedOut { .. } => "timed_out",
+                RunOutcome::Cancelled { .. } => "cancelled",
             },
         }
     }
@@ -229,7 +250,8 @@ impl RunState {
                 RunOutcome::Failed { at, .. }
                 | RunOutcome::Incomplete { at }
                 | RunOutcome::Declined { at }
-                | RunOutcome::TimedOut { at } => Some(at),
+                | RunOutcome::TimedOut { at }
+                | RunOutcome::Cancelled { at, .. } => Some(at),
                 RunOutcome::Delivered { .. } => None,
             },
             Self::Queued

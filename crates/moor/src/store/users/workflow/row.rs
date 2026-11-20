@@ -3,8 +3,8 @@
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    CommitSha, Plan, PullRef, RunCause, RunEnd, RunId, RunOutcome, RunState, RunTrigger, StepId,
-    WorkflowId, WorkflowRun,
+    CancelCause, CommitSha, Plan, PullRef, RunCause, RunEnd, RunId, RunOutcome, RunState,
+    RunTrigger, StepId, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -35,6 +35,10 @@ pub(super) const SKIPPED_OVERLAP: &str = "skipped_overlap";
 pub(super) const SKIPPED_FORK: &str = "skipped_fork";
 /// The `outcome` of a run whose start was refused.
 pub(super) const REFUSED: &str = "refused";
+/// The `outcome` of a pull request run a newer head or a close cancelled.
+const CANCELLED: &str = "cancelled";
+/// The `detail` of a run cancelled by its pull request's close; a newer head stores its SHA.
+const CLOSED: &str = "closed";
 
 /// A `workflow_runs` row as read.
 pub(super) struct RunRow {
@@ -185,6 +189,10 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
         TIMED_OUT => ended(RunOutcome::TimedOut {
             at: ended_step(row)?,
         })?,
+        CANCELLED => ended(RunOutcome::Cancelled {
+            at: ended_step(row)?,
+            cause: row.detail.as_deref().and_then(cancel_of).ok_or_else(bad)?,
+        })?,
         SKIPPED_OVERLAP => RunState::Done(RunEnd::SkippedOverlap),
         SKIPPED_FORK => RunState::Done(RunEnd::SkippedFork {
             author: row.detail.clone().ok_or_else(bad)?,
@@ -195,6 +203,16 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
         _ => return Err(bad()),
     };
     Ok(state)
+}
+
+/// The cancel cause a `detail` holds: `closed`, or the newer head's SHA.
+fn cancel_of(detail: &str) -> Option<CancelCause> {
+    if detail == CLOSED {
+        return Some(CancelCause::Closed);
+    }
+    CommitSha::parse(detail)
+        .ok()
+        .map(|sha| CancelCause::NewerHead { sha })
 }
 
 /// The cause a row's `trigger`, `pull_number` and `head_sha` stand for; a trigger that does not
@@ -228,7 +246,7 @@ pub(super) fn subject_cols(cause: &RunCause) -> (Option<i64>, Option<String>) {
 pub(super) struct StateCols {
     /// `box`.
     pub(super) box_id: Option<i64>,
-    /// `detail`: a refusal's reason, a failure's reason, a delivery's result.
+    /// `detail`: a refusal's reason, a failure's reason, a delivery's result, a cancel's cause.
     pub(super) detail: Option<String>,
     /// `ended_at`.
     pub(super) ended_at: Option<i64>,
@@ -283,6 +301,13 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
                 RunOutcome::Incomplete { at }
                 | RunOutcome::Declined { at }
                 | RunOutcome::TimedOut { at } => cols.ended_step = Some(at.to_string()),
+                RunOutcome::Cancelled { at, cause } => {
+                    cols.detail = Some(match cause {
+                        CancelCause::NewerHead { sha } => sha.to_string(),
+                        CancelCause::Closed => CLOSED.to_owned(),
+                    });
+                    cols.ended_step = Some(at.to_string());
+                }
             }
         }
     }

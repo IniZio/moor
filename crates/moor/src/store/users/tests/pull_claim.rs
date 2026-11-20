@@ -1,7 +1,10 @@
 //! The claim key of a run for a pull request: one run per workflow, repo, pull request and head.
 
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{CommitSha, PullRef, RunCause, RunEnd, RunState, WorkflowRun};
+use moor_core::workflow::{
+    CancelCause, CommitSha, Plan, PullRef, RunCause, RunEnd, RunOutcome, RunState, WorkflowRun,
+};
+use moor_core::BoxId;
 
 use super::workflow::{def, repo, run, user};
 use crate::store::tests::open;
@@ -87,4 +90,75 @@ fn a_skipped_fork_and_a_manual_run_at_a_claimed_head_still_record() {
     let oldest = store.recent_workflow_runs(id, 10).unwrap().pop().unwrap();
     assert_eq!(oldest.state, fork, "the skip reads back with its author");
     assert_eq!(oldest.due_at, Ts::from_millis(1_000));
+}
+
+#[test]
+fn two_pull_request_runs_in_one_millisecond_both_record_each_with_its_own_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let owner = user(&store, "local:1");
+    let id = store
+        .put_workflow(owner, &def("review", &["o/n"], true))
+        .unwrap();
+    for sha in [HEAD, NEWER] {
+        let mut new = run(id, "o/n", 1_000, RunState::Queued);
+        new.cause = RunCause::PullRequest { pull: pull(sha) };
+        assert!(store.record_workflow_run(&new).unwrap(), "{sha} records");
+    }
+    let runs = store.recent_workflow_runs(id, 10).unwrap();
+    assert_eq!(runs.len(), 2);
+    for r in runs {
+        assert_eq!(
+            store.run_history(r.id).unwrap().len(),
+            1,
+            "run {:?} opens its own history",
+            r.cause
+        );
+    }
+}
+
+#[test]
+fn a_cancelled_run_reads_back_with_its_cause() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let owner = user(&store, "local:1");
+    let id = store
+        .put_workflow(owner, &def("review", &["o/n"], true))
+        .unwrap();
+    let causes = [
+        CancelCause::NewerHead {
+            sha: CommitSha::parse(NEWER).unwrap(),
+        },
+        CancelCause::Closed,
+    ];
+    for ((due, head), cause) in [(1_000, HEAD), (2_000, NEWER)]
+        .into_iter()
+        .zip(causes.clone())
+    {
+        let state = RunState::Done(RunEnd::Ended {
+            box_id: BoxId::new(7),
+            ended_at: Ts::from_millis(due + 1),
+            outcome: RunOutcome::Cancelled {
+                at: Plan::single_id(),
+                cause,
+            },
+        });
+        let mut new = run(id, "o/n", due, state);
+        new.cause = RunCause::PullRequest { pull: pull(head) };
+        assert!(store.record_workflow_run(&new).unwrap());
+    }
+    let got: Vec<Option<CancelCause>> = store
+        .recent_workflow_runs(id, 10)
+        .unwrap()
+        .into_iter()
+        .rev()
+        .map(|r| match r.state {
+            RunState::Done(RunEnd::Ended {
+                outcome: RunOutcome::Cancelled { cause, .. },
+                ..
+            }) => Some(cause),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(got, causes.map(Some));
 }
