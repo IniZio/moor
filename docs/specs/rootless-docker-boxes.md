@@ -186,6 +186,11 @@ with the fix. They do not change the host.
 | rootlesskit runs with `--disable-host-loopback` | unset `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK` |
 | `/dev/kvm` is mode `0666`, for a node that offers KVM | a udev rule with `MODE="0666"` |
 
+Live-restore is a warning, not a failure. Boxes start with it on. A restart of a rootless daemon
+makes a new network namespace, so the new daemon cannot adopt the old containers. The old
+processes stay, and `moor wake` fails with "container with given ID already exists". The
+warning says to turn live-restore off in the daemon.json under the user's .config/docker.
+
 ## KVM
 
 A node that offers KVM under rootless Docker needs `/dev/kvm` at mode `0666`. The agent

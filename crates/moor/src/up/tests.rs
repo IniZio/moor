@@ -7,7 +7,7 @@ use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
 use super::relay::{relay_unit, Relay};
 use super::service::{front_socket_unit, service_unit, socket_unit, Unit};
-use super::wait_for;
+use super::{down_with, open_boxes, refusal, wait_for};
 use crate::env::Env;
 use moor_client::rootless::Facts;
 
@@ -422,6 +422,7 @@ fn rootless_host() -> Facts {
             "--disable-host-loopback".to_owned(),
         ]),
         kvm_mode: Some(0o666),
+        live_restore: Some(false),
     }
 }
 
@@ -444,6 +445,95 @@ fn up_stops_on_a_rootless_daemon_that_opens_the_hosts_loopback() {
         stopped.detail.contains("nsenter"),
         "the relay needs nsenter: {stopped:?}"
     );
+}
+
+#[test]
+fn up_goes_on_with_a_warning_when_live_restore_is_on_under_rootless_docker() {
+    let mut host = rootless_host();
+    host.live_restore = Some(true);
+    let checks = rootless_checks(&host).unwrap();
+    let warn = checks
+        .iter()
+        .find(|c| c.status == crate::doctor::Status::Warn)
+        .unwrap();
+    assert_eq!(warn.name, "live-restore");
+    assert!(
+        warn.fix.contains("~/.config/docker/daemon.json"),
+        "{warn:?}"
+    );
+}
+
+fn controller_with(
+    states: &[&str],
+) -> impl Fn(moor_core::Request) -> Result<moor_core::Response, crate::client::ClientError> {
+    let boxes: Vec<_> = states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| serde_json::json!({"name": format!("box{}", i + 1), "lifecycle": s, "id": i}))
+        .collect();
+    move |req| {
+        Ok(moor_core::Response::ok(
+            req.cmd(),
+            Some(serde_json::json!({"boxes": boxes})),
+        ))
+    }
+}
+
+#[test]
+fn down_counts_only_the_boxes_that_run() {
+    let ask = controller_with(&["ready", "asleep", "setting_up", "setup_failed", "pending"]);
+    assert_eq!(open_boxes(&ask), ["box1", "box3"]);
+    assert_eq!(open_boxes(&controller_with(&[])), Vec::<String>::new());
+}
+
+#[test]
+fn down_goes_on_when_the_controller_does_not_answer_or_is_not_moors() {
+    let gone = |_: moor_core::Request| -> Result<moor_core::Response, crate::client::ClientError> {
+        Err(crate::client::ClientError::Usage(
+            "no controller".to_owned(),
+        ))
+    };
+    assert_eq!(open_boxes(&gone), Vec::<String>::new());
+    let odd = |req: moor_core::Request| {
+        Ok(moor_core::Response::ok(
+            req.cmd(),
+            Some(serde_json::json!(7)),
+        ))
+    };
+    assert_eq!(open_boxes(&odd), Vec::<String>::new());
+}
+
+#[test]
+fn down_refuses_open_boxes_and_names_close_and_force() {
+    assert_eq!(refusal(&[]), None);
+    let check = refusal(&["fix-login".to_owned(), "docs".to_owned()]).unwrap();
+    assert_eq!(check.status, crate::doctor::Status::Fail);
+    assert!(check.detail.contains("fix-login, docs"), "{check:?}");
+    assert!(check.fix.contains("moor close <name>"), "{check:?}");
+    assert!(check.fix.contains("moor down --force"), "{check:?}");
+}
+
+#[test]
+fn down_with_an_open_box_stops_nothing_unless_forced() {
+    let home = tempfile::tempdir().unwrap();
+    let env = Env::from_pairs([("HOME", home.path().to_str().unwrap())]);
+    let open = || vec!["fix-login".to_owned()];
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, false, &open, &mut out), 1);
+    let said = String::from_utf8(out).unwrap();
+    assert!(said.starts_with("fail  boxes"), "{said}");
+    assert!(
+        !said.contains("not installed"),
+        "it went on to the units: {said}"
+    );
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, true, &open, &mut out), 0);
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "ok    service     not installed\n"
+    );
+    let mut out = Vec::new();
+    assert_eq!(down_with(&env, false, &Vec::new, &mut out), 0);
 }
 
 #[test]

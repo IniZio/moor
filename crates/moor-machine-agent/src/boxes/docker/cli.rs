@@ -88,23 +88,62 @@ impl Cli {
     /// How container `name` stands; none when there is no such container.
     pub(super) async fn state(name: &str) -> Result<Option<State>, ProvideError> {
         let out = Self::output(["inspect", "-f", "{{.State.Running}}", name]).await?;
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        if out.status.success() {
-            return Ok(Some(if stdout.trim() == "true" {
-                State::Running
-            } else {
-                State::Stopped
-            }));
-        }
-        if String::from_utf8_lossy(&out.stderr)
-            .to_lowercase()
-            .contains("no such")
-        {
-            Ok(None)
-        } else {
-            Err(failed(&out))
-        }
+        read_state(
+            out.status.success(),
+            &String::from_utf8_lossy(&out.stdout),
+            &String::from_utf8_lossy(&out.stderr),
+            std::env::var("DOCKER_HOST").ok().as_deref(),
+        )
     }
+}
+
+/// A container's state from what `docker inspect` said; none when it has no such container. A dead
+/// daemon is an error, though its socket path reads "no such file". `host` is `DOCKER_HOST`.
+pub(super) fn read_state(
+    succeeded: bool,
+    stdout: &str,
+    stderr: &str,
+    host: Option<&str>,
+) -> Result<Option<State>, ProvideError> {
+    if succeeded {
+        return Ok(Some(if stdout.trim() == "true" {
+            State::Running
+        } else {
+            State::Stopped
+        }));
+    }
+    let said = stderr.to_lowercase();
+    if [
+        "cannot connect to the docker daemon",
+        "failed to connect to the docker api",
+        "is the docker daemon running",
+        "error during connect",
+    ]
+    .iter()
+    .any(|m| said.contains(m))
+    {
+        let at = address_in(stderr).or(host).unwrap_or("the default address");
+        return Err(ProvideError::Failed(format!(
+            "the Docker daemon at {at} is not answering: {}",
+            stderr.trim()
+        )));
+    }
+    if said.contains("no such container") || said.contains("no such object") {
+        return Ok(None);
+    }
+    Err(ProvideError::Failed(if stderr.trim().is_empty() {
+        "docker inspect failed".to_owned()
+    } else {
+        format!("docker: {}", stderr.trim())
+    }))
+}
+
+/// The daemon address Docker's own error names, such as the `unix:///…` after "daemon at".
+fn address_in(stderr: &str) -> Option<&str> {
+    let (_, after) = stderr.split_once(" at ")?;
+    let word = after.split_whitespace().next()?;
+    let addr = word.trim_end_matches(['.', ';', ',', ':']);
+    addr.contains("://").then_some(addr)
 }
 
 /// A failed `docker` run as an error.

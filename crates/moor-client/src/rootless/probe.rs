@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use super::{child_ip_from, cmdline_words, is_rootless, state_dir, SECURITY_ARGS};
+use super::{
+    child_ip_from, cmdline_words, is_rootless, live_restore_of, state_dir, LIVE_RESTORE_ARGS,
+    SECURITY_ARGS,
+};
 
 /// The programs a rootless daemon, and a relay, need on `PATH`.
 const BINARIES: [&str; 4] = ["newuidmap", "newgidmap", "slirp4netns", "nsenter"];
@@ -40,6 +43,8 @@ pub struct Facts {
     pub rootlesskit: Result<Vec<String>, String>,
     /// The permission bits of `/dev/kvm`, when the host has it.
     pub kvm_mode: Option<u32>,
+    /// Whether the daemon runs with live-restore, when `docker info` says.
+    pub live_restore: Option<bool>,
 }
 
 impl Facts {
@@ -66,6 +71,7 @@ impl Facts {
             unit: run("systemctl", &["--user", "is-enabled", "docker"]),
             rootlesskit: rootlesskit_args(),
             kvm_mode: std::fs::metadata(KVM).ok().map(|m| m.mode() & 0o777),
+            live_restore: run("docker", &LIVE_RESTORE_ARGS).and_then(|out| live_restore_of(&out)),
             user,
             uid,
         }

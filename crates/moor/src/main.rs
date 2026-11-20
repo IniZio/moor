@@ -86,7 +86,7 @@ fn main() -> ExitCode {
         Parsed::BoxTerm { opts, term } => return run_box_term(&scoped(env, &opts), &term),
         Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Up { opts } => return run_up(&scoped(env, &opts), &opts),
-        Parsed::Down { opts } => return run_down(&scoped(env, &opts)),
+        Parsed::Down { opts, force } => return run_down(&scoped(env, &opts), force),
         Parsed::NodeAdd { opts, add } => run_node_add(env, &opts, add),
         Parsed::Events {
             opts,
@@ -130,8 +130,8 @@ fn run_up(env: &Env, opts: &GlobalOpts) -> ExitCode {
 }
 
 /// Runs `moor down`.
-fn run_down(env: &Env) -> ExitCode {
-    ExitCode::from(moor::up::down(env, &mut std::io::stdout()))
+fn run_down(env: &Env, force: bool) -> ExitCode {
+    ExitCode::from(moor::up::down(env, force, &mut std::io::stdout()))
 }
 
 /// Runs `moor store migrate`: opens the store, which migrates it, and exits.

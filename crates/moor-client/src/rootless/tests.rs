@@ -7,8 +7,8 @@
 )]
 
 use super::{
-    child_ip_from, cmdline_words, failures, is_rootless, loopback_closed, notice, report,
-    state_dir, warnings, Facts, Failure,
+    child_ip_from, cmdline_words, failures, is_rootless, live_restore_of, loopback_closed, notice,
+    report, state_dir, warnings, Facts, Failure,
 };
 
 /// What rootless Docker 29.10 printed for its security options.
@@ -32,6 +32,7 @@ fn good() -> Facts {
         linger: Some(true),
         rootlesskit: Ok(cmdline_words(CMDLINE)),
         kvm_mode: Some(0o666),
+        live_restore: Some(false),
     }
 }
 
@@ -174,6 +175,33 @@ fn a_kvm_device_not_open_to_everyone_is_a_warning_not_a_failure() {
     assert!(one.fix.contains("0666"), "{one:?}");
     f.kvm_mode = None;
     assert_eq!(warnings(&f), []);
+}
+
+#[test]
+fn live_restore_is_a_warning_that_names_the_daemon_json_fix() {
+    let mut f = good();
+    assert_eq!(warnings(&f), []);
+    f.live_restore = None;
+    assert_eq!(warnings(&f), [], "an unreadable setting is not a finding");
+    f.live_restore = Some(true);
+    assert_eq!(failures(&f, true), [], "Boxes still start");
+    let [one] = warnings(&f).try_into().unwrap();
+    assert_eq!(one.check, "live-restore");
+    assert!(one.detail.contains("live-restore is on"), "{one:?}");
+    assert!(one.detail.contains("wake"), "{one:?}");
+    assert!(
+        one.fix
+            .contains("turn live-restore off in ~/.config/docker/daemon.json"),
+        "{one:?}"
+    );
+}
+
+#[test]
+fn docker_infos_live_restore_line_reads_as_a_flag_or_not_at_all() {
+    assert_eq!(live_restore_of("true"), Some(true));
+    assert_eq!(live_restore_of("false\n"), Some(false));
+    assert_eq!(live_restore_of(""), None);
+    assert_eq!(live_restore_of("<no value>"), None);
 }
 
 #[test]

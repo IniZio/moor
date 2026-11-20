@@ -5,6 +5,7 @@
 
 mod gate;
 mod host;
+pub(crate) mod images;
 mod nodes;
 mod render;
 mod setup;
@@ -126,6 +127,12 @@ pub(crate) struct Inputs<'a> {
     pub public_url: Option<&'a str>,
     /// The repo the checkout's origin names, which decides the secrets a start needs.
     pub repo: Option<ForgeRepo>,
+    /// Where an image is.
+    pub present: &'a images::Probe,
+    /// The version the agent at a path reports.
+    pub agent_version: &'a dyn Fn(&str) -> Option<String>,
+    /// Whether an image that exists nowhere fails, as in the doctor, or only warns, as in `up`.
+    pub images_fail: bool,
 }
 
 /// Sends `req` and reads its value as `T`.
@@ -167,6 +174,7 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
     let read = nodes::read(i);
     let mut out = vec![setup::config(i), setup::controller(i)];
     out.extend(host::checks(i));
+    out.extend(images::checks(i));
     out.push(nodes::check(&read));
     out.extend(user::checks(i));
     out.extend(gate::check(i));
@@ -176,6 +184,17 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
 /// Runs every check against this host and renders the report; exit 1 when one failed.
 #[must_use]
 pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
+    run_with(env, opts, public_url, true)
+}
+
+/// [`run`], where an image that exists nowhere fails only when `images_fail`.
+#[must_use]
+pub(crate) fn run_with(
+    env: &Env,
+    opts: &GlobalOpts,
+    public_url: Option<&str>,
+    images_fail: bool,
+) -> Output {
     let (config, config_error) = match load_user(env) {
         Ok(config) => (config, None),
         Err(e) => (UserConfig::default(), Some(e.error.to_string())),
@@ -201,6 +220,9 @@ pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
         get: &get,
         public_url,
         repo,
+        present: &images::present,
+        agent_version: &images::agent_version,
+        images_fail,
     };
     render::output(&checks(&inputs), opts)
 }

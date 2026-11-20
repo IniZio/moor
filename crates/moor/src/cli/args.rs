@@ -82,7 +82,10 @@ pub(super) enum Action {
     /// `up`: set this host up as a controller with a local node.
     Up,
     /// `down`: stop the controller's user service and remove it.
-    Down,
+    Down {
+        /// Stop it although Boxes are open and running.
+        force: bool,
+    },
     /// `node add`: enroll a machine agent on this host as a shared node.
     NodeAdd(NodeAddSpec),
     /// `events`: print the event stream as JSON lines.
@@ -182,8 +185,8 @@ enum Cmd {
     Repo(RepoCli),
     /// Set this host up: controller service, local node, your user and its secrets.
     Up,
-    /// Stop and remove the controller service; config, state and secrets stay.
-    Down,
+    /// Stop and remove the controller service; refuses while Boxes run.
+    Down(DownArgs),
     /// Check the setup after install and say how to fix what is wrong.
     Doctor(DoctorArgs),
     /// Show your identity, its user and that user's linked identities.
@@ -239,7 +242,7 @@ impl Cmd {
             Self::Node(n) => n.into_action(),
             Self::Repo(r) => Action::Request(r.into_request()),
             Self::Up => Action::Up,
-            Self::Down => Action::Down,
+            Self::Down(a) => Action::Down { force: a.force },
             Self::Doctor(a) => Action::Doctor {
                 public_url: a.public_url,
             },
@@ -249,6 +252,14 @@ impl Cmd {
             Self::Admin(a) => a.into_action(),
         }
     }
+}
+
+/// Arguments of `down`.
+#[derive(Debug, Args)]
+struct DownArgs {
+    /// Stop the services although Boxes are open and running.
+    #[arg(long)]
+    force: bool,
 }
 
 /// Arguments of `doctor`.

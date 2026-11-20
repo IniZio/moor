@@ -14,6 +14,7 @@ use super::{parse_ignoring_env as parse, Action};
 use crate::cli::GlobalOpts;
 
 mod box_term;
+mod down;
 mod events;
 mod node;
 mod repo;
