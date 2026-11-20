@@ -198,7 +198,6 @@ fn summary(w: &WorkflowView) -> Value {
         "words": schedule::words(&w.cron),
         "timezone": w.timezone,
         "enabled": w.enabled,
-        "disabled_reason": w.disabled_reason,
         "on_pull_request": w.on_pull_request,
         "next_due": w.next_due,
         "next_text": w.next_due.and_then(|ms| schedule::at_in_zone(ms, &w.timezone)),

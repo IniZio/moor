@@ -53,9 +53,6 @@ pub enum WorkflowError {
     },
 }
 
-/// How many failed runs in a row of one workflow disable it.
-pub const BREAKER_STREAK: usize = 3;
-
 /// The database id of a workflow.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -130,10 +127,7 @@ pub enum WorkflowState {
         since: Ts,
     },
     /// Never fires.
-    Disabled {
-        /// Why the controller disabled it, when its owner did not.
-        reason: Option<String>,
-    },
+    Disabled,
 }
 
 /// The front that created a workflow and the key it finds the workflow's runs by. Core never
@@ -282,7 +276,7 @@ pub use run::{
 };
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 
-/// One entry of a user's change stream, ordered by `seq` across runs and workflows.
+/// One entry of a user's change stream, ordered by `seq`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowChange {
     /// The position in the stream, rising with every change.
@@ -291,18 +285,6 @@ pub struct WorkflowChange {
     pub workflow: WorkflowName,
     /// The front that created the workflow, if one did.
     pub origin: Option<WorkflowOrigin>,
-    /// What changed.
-    pub what: ChangeKind,
-}
-
-/// What a [`WorkflowChange`] reports.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChangeKind {
-    /// A run was recorded or moved to its next outcome.
-    Run(Box<WorkflowRun>),
-    /// The controller disabled the workflow for this reason.
-    Disabled {
-        /// Why.
-        reason: String,
-    },
+    /// The run that was recorded or moved on.
+    pub run: Box<WorkflowRun>,
 }

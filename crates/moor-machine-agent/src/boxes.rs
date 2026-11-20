@@ -10,7 +10,7 @@ use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_client::link::boxes::{BoxAnswer, BoxOffer, BoxOp, BoxReport, ReportState, PROTOCOL};
+use moor_client::link::boxes::{BoxAnswer, BoxOffer, BoxOp, BoxReport, PROTOCOL};
 use moor_client::link::ops;
 use moor_core::box_key::{parse_pool_slug, ControllerId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -18,6 +18,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 mod docker;
 #[cfg(any(test, feature = "fake-boxes"))]
 mod fake;
+mod health;
 mod held;
 mod host;
 mod inside;
@@ -32,8 +33,9 @@ pub use host::Host;
 
 #[cfg(any(test, feature = "fake-boxes"))]
 use fake::FakeProvider;
+use health::report;
 use held::{Held, Store, Want};
-use provider::{BoxProvider, Ended, Env, Notes, Observed, PlaceState, ProvideError, Spec};
+use provider::{BoxProvider, Env, Notes, ProvideError, Spec};
 
 /// A Box's name on its machine: `moor-<controller>-<id>[-h<inc>]`, so two controllers sharing a
 /// machine never touch each other's Boxes. Only [`Slug::parse`] makes one, which keeps every
@@ -297,7 +299,11 @@ impl<P: BoxProvider> Boxes<P> {
 
     /// The health of each Box held, or each of `controller`'s.
     async fn reports_of(&self, controller: Option<&ControllerId>) -> Vec<BoxReport> {
-        let seen = self.provider.observe().await.unwrap_or_default();
+        let (seen, lost) = match self.provider.observe().await {
+            Ok(seen) => (seen, None),
+            Err(ProvideError::Lost(why)) => (Vec::new(), Some(why)),
+            Err(_) => (Vec::new(), None),
+        };
         let mut reports = Vec::new();
         for slug in self.store.slugs() {
             if controller.is_some_and(|c| slug.controller().as_ref() != Some(c)) {
@@ -305,7 +311,7 @@ impl<P: BoxProvider> Boxes<P> {
             }
             if let Ok(Some(held)) = self.store.load(&slug) {
                 let observed = seen.iter().find(|o| o.slug == slug);
-                let mut said = report(&slug, &held, observed);
+                let mut said = report(&slug, &held, observed, lost.as_deref());
                 if self.in_flight(&slug) {
                     said.down = None;
                 }
@@ -333,51 +339,6 @@ impl<P: BoxProvider> Boxes<P> {
             Some(_) => Ok(Some(slug)),
         }
     }
-}
-
-/// One Box's health from what is held and what the provider sees.
-fn report(slug: &Slug, held: &Held, seen: Option<&Observed>) -> BoxReport {
-    let up = seen.is_some_and(|o| o.agent == PlaceState::Up && o.work == PlaceState::Up);
-    let state = match (&held.broken, held.want) {
-        (Some(why), _) => ReportState::Broken { why: why.clone() },
-        (None, Want::Asleep) => ReportState::Asleep,
-        (None, Want::Awake) if up => ReportState::Awake,
-        (None, Want::Awake) => ReportState::Mending,
-    };
-    let down = match (&state, seen) {
-        (ReportState::Mending, Some(o)) => {
-            let mut said: Vec<String> = [o.agent, o.work]
-                .into_iter()
-                .filter_map(place_down)
-                .collect();
-            said.dedup();
-            Some(said.join("; "))
-        }
-        _ => None,
-    };
-    BoxReport {
-        slug: slug.as_str().to_owned(),
-        state,
-        generation: held.generation,
-        oom_kills: seen.map_or(0, |o| o.oom_kills),
-        last_mend: None,
-        mem_mib: seen.and_then(|o| o.mem_mib),
-        down,
-    }
-}
-
-/// How a place is down, worded for people; none when it runs.
-fn place_down(place: PlaceState) -> Option<String> {
-    Some(match place {
-        PlaceState::Up => return None,
-        PlaceState::Down => "the Box's container is not running".to_owned(),
-        PlaceState::Exited(Ended { code, oom: true }) => {
-            format!("the Box's container ran out of memory (exit {code})")
-        }
-        PlaceState::Exited(Ended { code, oom: false }) => {
-            format!("the Box's container stopped (exit {code})")
-        }
-    })
 }
 
 /// Whether `name` can be exported: `[A-Za-z_][A-Za-z0-9_]*`.

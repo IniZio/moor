@@ -7,7 +7,7 @@ use super::{failed_step, FORCED_CLOSE};
 use crate::cx::Cx;
 
 /// Why the machine lists the Box's container stopped, if it does; ssh's own words prove nothing.
-pub(super) fn container(cx: &Cx, handle: &BoxHandle) -> Option<String> {
+pub(crate) fn container(cx: &Cx, handle: &BoxHandle) -> Option<String> {
     if cx.env().cancel().is_cancelled() {
         return None;
     }

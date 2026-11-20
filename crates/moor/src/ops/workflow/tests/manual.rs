@@ -5,11 +5,11 @@ use moor_core::seam::clock::Ts;
 use moor_core::view::workflow::RunNowValue;
 use moor_core::workflow::{NewRun, RunCause, RunState, RunTrigger, WorkflowId};
 
-use super::{repo, rig, Rig, DAY, FIRST_DUE};
+use super::{repo, rig, Rig, FIRST_DUE};
 use crate::ops::workflow::now::run_with;
 use crate::ops::workflow::{run_now, run_start};
 use crate::testing::cx::REQUESTER_USER;
-use crate::testing::runs::{delivered, refused, running, skipped};
+use crate::testing::runs::{delivered, running, skipped};
 
 /// Records a run of the repo as the tick or a person would, never starting a Box.
 fn record_run(r: &Rig, id: WorkflowId, due: i64, (state, cause): (RunState, RunCause)) {
@@ -203,22 +203,6 @@ fn a_manual_firing_of_a_disabled_workflow_runs() {
         .unwrap());
     let line = fire(&r).unwrap();
     assert_eq!(line.status, "started", "{line:?}");
-}
-
-#[test]
-fn skips_between_failures_do_not_hide_the_breaker_streak() {
-    let r = rig();
-    let id = r.put(180);
-    let record = |due: i64, state: RunState| record_run(&r, id, due, (state, RunCause::Cron));
-    record(FIRST_DUE, refused("no"));
-    record(FIRST_DUE + DAY, refused("no"));
-    for day in 2..30 {
-        record(FIRST_DUE + day * DAY, skipped());
-    }
-    record(FIRST_DUE + 30 * DAY, refused("no"));
-    r.advance_to(FIRST_DUE + 31 * DAY);
-    let lines = r.pass();
-    assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
 }
 
 #[test]

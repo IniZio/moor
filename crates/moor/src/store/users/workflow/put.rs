@@ -15,35 +15,27 @@ struct Existing {
     id: i64,
     /// `enabled_at`.
     enabled_at: Option<i64>,
-    /// `disabled_reason`.
-    reason: Option<String>,
     /// `revision`.
     revision: u64,
 }
 
 /// The workflow `def` replaces, read in `tx`.
 fn existing(tx: &dyn Db, owner: UserId, def: &WorkflowDef) -> Result<Option<Existing>, StoreError> {
-    let found: Option<(i64, Option<i64>, Option<String>, i64)> = tx
+    let found: Option<(i64, Option<i64>, i64)> = tx
         .row(
             Query::select()
-                .columns([
-                    Workflows::Id,
-                    Workflows::EnabledAt,
-                    Workflows::DisabledReason,
-                    Workflows::Revision,
-                ])
+                .columns([Workflows::Id, Workflows::EnabledAt, Workflows::Revision])
                 .from(Workflows::Table)
                 .and_where(Expr::col(Workflows::User).eq(owner.get()))
                 .and_where(Expr::col(Workflows::Name).eq(def.name.as_str())),
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
     found
-        .map(|(id, enabled_at, reason, revision)| {
+        .map(|(id, enabled_at, revision)| {
             Ok(Existing {
                 id,
                 enabled_at,
-                reason,
                 revision: u64::try_from(revision).map_err(|e| corrupt("revision", e))?,
             })
         })
@@ -117,14 +109,14 @@ fn insert_workflow(
     )?)
 }
 
-/// Replaces the content of workflow `id` with `def`, at `state` (`enabled_at`, disabled reason)
+/// Replaces the content of workflow `id` with `def`, at `enabled_at`
 /// and time `now`, and raises its revision. The origin is written only when `def` has one.
 fn replace_workflow(
     conn: &dyn Db,
     id: i64,
     def: &WorkflowDef,
     (repos, plan): (String, Option<String>),
-    ((enabled_at, reason), now): ((Option<i64>, Option<String>), i64),
+    (enabled_at, now): (Option<i64>, i64),
 ) -> Result<(), StoreError> {
     let mut update = Query::update();
     update
@@ -137,7 +129,6 @@ fn replace_workflow(
         .value(Workflows::Plan, plan)
         .value(Workflows::OnPullRequest, i64::from(def.on_pull_request))
         .value(Workflows::EnabledAt, enabled_at)
-        .value(Workflows::DisabledReason, reason)
         .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
         .value(Workflows::UpdatedAt, now)
         .value(
@@ -157,8 +148,7 @@ fn replace_workflow(
 impl Store {
     /// Stores `def` as `owner`'s workflow of its name, replacing the one already there, and
     /// returns its id. A replaced workflow keeps its id, its runs and its creation time; it
-    /// counts as enabled since now unless it was enabled already. Enabling it clears the reason
-    /// the controller disabled it for; storing it disabled leaves that reason.
+    /// counts as enabled since now unless it was enabled already.
     #[cfg(test)]
     pub(crate) fn put_workflow(
         &self,
@@ -175,7 +165,7 @@ impl Store {
 
     /// Stores `def` as `put_workflow` does, writing only when the stored workflow is at revision `expected`,
     /// if one is given. The check and the write share one transaction. A replace with
-    /// `keep_state` leaves whether the workflow is enabled, and the reason it is not, as stored.
+    /// `keep_state` leaves whether the workflow is enabled as stored.
     /// A `def` with no origin leaves the stored origin as it is.
     pub(crate) fn put_workflow_at(
         &self,
@@ -197,19 +187,15 @@ impl Store {
         let (id, revision) = if let Some(Existing {
             id,
             enabled_at: was_enabled_at,
-            reason: was_reason,
             ..
         }) = found
         {
-            let state = if keep_state {
-                (was_enabled_at, was_reason)
+            let enabled_at = if keep_state {
+                was_enabled_at
             } else {
-                (
-                    def.enabled.then_some(was_enabled_at.unwrap_or(now)),
-                    if def.enabled { None } else { was_reason },
-                )
+                def.enabled.then_some(was_enabled_at.unwrap_or(now))
             };
-            replace_workflow(&tx, id, def, (repos, plan), (state, now))?;
+            replace_workflow(&tx, id, def, (repos, plan), (enabled_at, now))?;
             (id, current.unwrap_or_default() + 1)
         } else {
             (insert_workflow(&tx, owner, def, (repos, plan), now)?, 0)

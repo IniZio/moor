@@ -5,7 +5,7 @@ use moor_core::view::workflow::{
     ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowRunListValue,
     WorkflowRunsValue,
 };
-use moor_core::workflow::{box_name, ChangeKind, RunEnd, RunOutcome, RunState, WorkflowRun};
+use moor_core::workflow::{box_name, RunEnd, RunOutcome, RunState, WorkflowRun};
 use moor_core::ErrorKind;
 
 use super::{parse_name, to_value};
@@ -116,22 +116,12 @@ pub(super) fn runs(
         });
         let workflow = change.workflow.to_string();
         let seq = change.seq;
-        changes.push(match change.what {
-            ChangeKind::Run(run) => {
-                let run = Box::new(run_view(store, &workflow, &run)?);
-                ChangeView::Run {
-                    seq,
-                    workflow,
-                    origin,
-                    run,
-                }
-            }
-            ChangeKind::Disabled { reason } => ChangeView::Disabled {
-                seq,
-                workflow,
-                origin,
-                reason,
-            },
+        let run = Box::new(run_view(store, &workflow, &change.run)?);
+        changes.push(ChangeView::Run {
+            seq,
+            workflow,
+            origin,
+            run,
         });
     }
     to_value(&WorkflowRunsValue { changes, next })

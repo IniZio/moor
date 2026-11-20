@@ -169,7 +169,6 @@ const WorkflowRowSchema = v.object({
 	words: v.nullish(v.string()),
 	timezone: v.string(),
 	enabled: v.boolean(),
-	disabled_reason: v.nullish(v.string()),
 	/** Whether a pull request event on the first repo fires a run. */
 	on_pull_request: v.optional(v.boolean(), false),
 	next_due: v.nullish(v.number()),

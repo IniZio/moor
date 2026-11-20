@@ -1,7 +1,7 @@
 //! The change stream of a user's workflow runs.
 
 use moor_core::user::UserId;
-use moor_core::workflow::{ChangeKind, WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
+use moor_core::workflow::{WorkflowChange, WorkflowId, WorkflowName, WorkflowOrigin};
 use moor_schema::tables::{WorkflowRuns, WorkflowSeq, Workflows};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
@@ -53,8 +53,7 @@ impl Store {
     }
 
     /// The changes to `owner`'s workflows after `after`, oldest first, at most `limit`: every
-    /// run recorded or moved on, and every workflow the controller disabled. With `only`, just
-    /// the changes of the workflow of that name.
+    /// run recorded or moved on. With `only`, just the changes of the workflow of that name.
     pub(crate) fn workflow_changes(
         &self,
         owner: UserId,
@@ -62,11 +61,7 @@ impl Store {
         limit: u64,
         only: Option<&WorkflowName>,
     ) -> Result<Vec<WorkflowChange>, StoreError> {
-        let mut out = self.run_changes(owner, after, limit, only)?;
-        out.extend(self.disabled_changes(owner, after, limit, only)?);
-        out.sort_by_key(|c| c.seq);
-        out.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
-        Ok(out)
+        self.run_changes(owner, after, limit, only)
     }
 
     /// The runs of `owner`'s workflows numbered after `after`.
@@ -124,56 +119,7 @@ impl Store {
                 seq,
                 workflow: WorkflowName::parse(&name).map_err(|e| corrupt("name", e))?,
                 origin: front.map(|front| WorkflowOrigin { front, key }),
-                what: ChangeKind::Run(Box::new(run_of(WorkflowId::new(workflow), &run)?)),
-            });
-        }
-        Ok(out)
-    }
-
-    /// The workflows of `owner` the controller disabled, numbered after `after`.
-    fn disabled_changes(
-        &self,
-        owner: UserId,
-        after: i64,
-        limit: u64,
-        only: Option<&WorkflowName>,
-    ) -> Result<Vec<WorkflowChange>, StoreError> {
-        let reader = self.reader()?;
-        let disabled = reader.rows(
-            Query::select()
-                .columns([
-                    Workflows::ChangeSeq,
-                    Workflows::Name,
-                    Workflows::OriginFront,
-                    Workflows::OriginKey,
-                    Workflows::DisabledReason,
-                ])
-                .from(Workflows::Table)
-                .and_where(Expr::col(Workflows::User).eq(owner.get()))
-                .and_where(Expr::col(Workflows::ChangeSeq).gt(after))
-                .and_where(Expr::col(Workflows::EnabledAt).is_null())
-                .and_where(Expr::col(Workflows::DisabledReason).is_not_null())
-                .and_where_option(only.map(|n| Expr::col(Workflows::Name).eq(n.as_str())))
-                .order_by(Workflows::ChangeSeq, Order::Asc)
-                .limit(limit),
-            |r| {
-                Ok::<_, db::Error>((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                    r.get::<_, Option<String>>(3)?,
-                    r.get::<_, String>(4)?,
-                ))
-            },
-        )?;
-        let mut out = Vec::new();
-        for row in disabled {
-            let (seq, name, front, key, reason) = row?;
-            out.push(WorkflowChange {
-                seq,
-                workflow: WorkflowName::parse(&name).map_err(|e| corrupt("name", e))?,
-                origin: front.map(|front| WorkflowOrigin { front, key }),
-                what: ChangeKind::Disabled { reason },
+                run: Box::new(run_of(WorkflowId::new(workflow), &run)?),
             });
         }
         Ok(out)

@@ -425,31 +425,29 @@ fn a_closed_box_ends_its_run() {
 }
 
 #[test]
-fn three_failed_runs_in_a_row_disable_the_workflow_with_a_reason() {
+fn five_failed_runs_in_a_row_leave_the_workflow_enabled_and_firing() {
     let r = rig();
     let id = r.put(180);
-    for day in 0..3 {
+    for day in 0..5 {
         r.advance_to(FIRST_DUE + day * DAY + 1_000);
-        r.pass();
+        let lines = r.pass();
+        assert!(!lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
     }
-    assert_eq!(r.runs(id).len(), 3);
-    let lines = r.pass();
-    assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
-    let w =
+    let refused = |run: &WorkflowRun| matches!(run.state, RunState::Done(RunEnd::Refused { .. }));
+    assert_eq!(r.runs(id).len(), 5);
+    assert!(r.runs(id).iter().all(refused), "{:?}", r.runs(id));
+    let stored =
         r.cx.store()
             .unwrap()
             .workflow(REQUESTER_USER, &WorkflowName::parse("daily-fix").unwrap());
-    let reason = "the last 3 runs were refused or timed out".to_owned();
-    assert_eq!(
-        w.unwrap().unwrap().state,
-        WorkflowState::Disabled {
-            reason: Some(reason)
-        }
-    );
+    assert!(matches!(
+        stored.unwrap().unwrap().state,
+        WorkflowState::Enabled { .. }
+    ));
 
-    r.advance_to(FIRST_DUE + 3 * DAY + 1_000);
+    r.advance_to(FIRST_DUE + 5 * DAY + 1_000);
     r.pass();
-    assert_eq!(r.runs(id).len(), 3, "a disabled workflow fires nothing");
+    assert_eq!(r.runs(id).len(), 6, "the next cron still fires");
 }
 
 #[test]
@@ -531,11 +529,11 @@ fn a_timed_out_run_with_an_open_box_blocks_however_many_skips_follow() {
 }
 
 #[test]
-fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflow() {
+fn a_box_whose_setup_fails_refuses_its_run_and_the_next_due_time_still_starts_a_box() {
     let r = rig();
     r.answer_repo();
     let id = r.put(180);
-    for day in 0..3_i64 {
+    for day in 0..5_i64 {
         r.advance_to(FIRST_DUE + day * DAY + 1_000);
         r.pass();
         let box_id = r.latest_box(id);
@@ -548,12 +546,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
             .apply(Decision::new(box_id).lifecycle(failed))
             .unwrap();
         r.advance_to(FIRST_DUE + day * DAY + 41_000);
-        let lines = r.pass();
-        assert_eq!(
-            lines.iter().any(|l| l.contains("disabled")),
-            day == 2,
-            "{lines:?}"
-        );
+        r.pass();
         let outcome = r.latest(id).state;
         let named = |detail: &String| detail.contains(name.as_str()) && detail.contains("npm ci");
         assert!(
@@ -566,7 +559,7 @@ fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflo
             "Boxes are kept"
         );
     }
-    assert_eq!(r.runs(id).len(), 3, "each due time started its own Box");
+    assert_eq!(r.runs(id).len(), 5, "each due time started its own Box");
 }
 
 mod also;

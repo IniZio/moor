@@ -99,8 +99,7 @@ workflow wait. A `yes` follows `ok` and a
 The next step goes to the agent as a steer, which wakes the Box, and the note
 goes with it. Waiting does not count toward `timeout_minutes`. A wait with no
 answer ends the run `declined` after 7 days, so the next firing is not skipped
-forever. A waiting run blocks the next firing like a running one, and a
-declined run neither counts toward the breaker nor resets it.
+forever. A waiting run blocks the next firing like a running one.
 
 A saved prompt that changed after the plan was made marks the plan **plan
 stale**. It still runs. **Mark reviewed** saves it as made from the current
@@ -129,13 +128,10 @@ How it sits beside the schedule:
   head. That run ends `cancelled`, its agent is stopped, and its Box stays
   like any ended run's Box. A Box whose agent never launched is closed. An
   older run still starting is cancelled too, and its start closes the Box it
-  makes. A cancelled run neither counts toward the breaker nor resets it.
-- A new run's Box closes only the earlier Boxes of runs about the same subject.
+  makes.- A new run's Box closes only the earlier Boxes of runs about the same subject.
 - A cron run is skipped while a manual run for no pull request is open. Both
   are about the workflow itself.
 - A manual run never swallows a due time the schedule missed.
-- A manual run that fails does not count toward the breaker. One that delivers
-  resets it, so a fix you proved by hand clears the earlier failures.
 
 ## Run on pull requests
 
@@ -202,7 +198,7 @@ The controller config key `auto_close_run_after_secs` sets the wait. The default
 86400. 0 keeps run Boxes open. [Controller config](config.md#controller-config)
 lists the keys.
 
-## Limits and the breaker
+## Limits
 
 A run has one hour from the firing for its agent to start. A run that misses
 that is refused, and its Box is closed. The run then has `timeout_minutes`
@@ -217,11 +213,11 @@ would wake the Box. The Box stays open so you can look inside.
 A missing secret or a full node can refuse a run. The refusal is recorded with
 its reason, and the run is not retried. The next due time is the next try.
 
-Three refused or timed-out runs in a row disable the workflow.
-Runs you fired by hand do not count. `list_workflows` shows the reason. Ask to enable it again once you fix the
-cause.
+A failed run never disables the workflow. It shows as failed in
+`list_workflow_runs` and in the portal's run list, and the next due time fires
+as usual.
 
-## Limits and the breaker
+## Limits
 
 A run has one hour from the firing for its agent to start. A run that misses
 that is refused, and its Box is closed. The run then has its timeout from the
@@ -235,9 +231,8 @@ the step's fail edge or try again, because either would wake the Box.
 A missing secret or a full machine can refuse a run. The refusal is recorded
 with its reason.
 
-Three refused or timed-out runs in a row disable the workflow, and the
-workflow shows why in place of its next run. Runs you fired by hand do not count, and one that
-delivers resets the count. Enable it again once you fix the cause.
+A failed run never disables the workflow. It shows as failed in the run list,
+and the next due time fires as usual.
 
 ## Pause or remove a workflow
 

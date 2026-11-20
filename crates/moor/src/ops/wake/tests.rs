@@ -193,3 +193,30 @@ fn wake_refuses_while_another_op_holds_the_box_lock() {
     assert!(err.error.to_string().contains("box busy"), "{}", err.error);
     assert_eq!(wakes(&f), 0);
 }
+
+const NOT_ANSWERING: &str =
+    "the Docker daemon at unix:///run/user/1003/docker.sock is not answering";
+
+#[test]
+fn ready_box_whose_places_died_unseen_wakes_and_says_why_it_cannot() {
+    let f = fx_with(
+        FakeDriver::new()
+            .listed_by_handle()
+            .fail_wake(DriverError::Failed {
+                summary: NOT_ANSWERING.to_owned(),
+            }),
+    );
+    let store = f.cx.store().unwrap();
+    let handle = store
+        .box_row(f.id)
+        .unwrap()
+        .unwrap()
+        .hands
+        .unwrap()
+        .handle
+        .unwrap();
+    f.driver.die_behind(&handle, NOT_ANSWERING);
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert!(err.error.to_string().contains(NOT_ANSWERING), "{err:?}");
+    assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
+}

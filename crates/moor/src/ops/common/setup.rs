@@ -374,7 +374,7 @@ fn failed_step(log: &str, running: u32, steps: usize) -> usize {
 }
 
 mod attach;
-mod failed;
+pub(crate) mod failed;
 mod lines;
 mod link;
 
