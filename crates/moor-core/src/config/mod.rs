@@ -14,8 +14,8 @@ pub use controller::{
     parse_controller, AutoClose, ControllerConfig, FrontEntry, LedgerTls, RemoteFront,
 };
 pub use repo::{
-    override_text, parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine, RepoOverride,
-    RepoProxy,
+    override_text, parse_repo, ProxyExtras, RepoBox, RepoCompose, RepoConfig, RepoMachine,
+    RepoOverride,
 };
 
 pub use user::{

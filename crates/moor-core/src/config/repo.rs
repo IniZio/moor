@@ -45,7 +45,7 @@ pub struct RetiredCheckpoint {}
 /// `proxy:` section: what a repo or one Box asks of the Proxy beyond the default rules.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-pub struct RepoProxy {
+pub struct ProxyExtras {
     /// Default rule name to extra `METHODS /path` entries, each naming `{repo}`.
     pub allow: BTreeMap<String, Vec<String>>,
 }
@@ -78,7 +78,7 @@ pub struct RepoConfig {
     /// `node:` section.
     pub node: RepoNode,
     /// `proxy:` section.
-    pub proxy: RepoProxy,
+    pub proxy: ProxyExtras,
 }
 
 /// Parses and validates a repo config document.
