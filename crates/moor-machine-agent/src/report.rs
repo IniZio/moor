@@ -53,7 +53,7 @@ fn avg10(psi: &str, line: &str) -> Option<f64> {
 }
 
 /// Sends a [`report`] of `proc` on `stream` now and every [`link::REPORT_EVERY`] until it closes,
-/// with the health of the Boxes `host` provides.
+/// with the health and host memory of the Boxes `host` provides.
 pub(crate) async fn send_reports<W>(
     mut stream: W,
     proc: &Path,
@@ -70,6 +70,7 @@ pub(crate) async fn send_reports<W>(
         };
         if let Some(host) = host {
             report.box_health = health(host).await;
+            report.boxes = host.memory().await;
         }
         if ops::write_line(&mut stream, &Opened::Report { report })
             .await

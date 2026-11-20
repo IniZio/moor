@@ -10,6 +10,7 @@
 use super::args::{agent_run, gid_of, kvm_group, work_memory_mib, work_run};
 use super::cli::parse_ended;
 use super::names::Names;
+use super::observe::held_by_box;
 use super::{net, Images, Settings};
 use crate::boxes::provider::Ended;
 use crate::boxes::Slug;
@@ -198,4 +199,20 @@ fn the_docker_provider_keeps_cache_volumes_and_the_work_place_mounts_them() {
     )
     .join(" ");
     assert!(w.contains("-v moor-cache-0123456789abcdef-go-0:/home/agent/go/pkg/mod work:dev"));
+}
+
+#[test]
+fn docker_stats_count_both_places_of_a_box_and_skip_other_containers() {
+    let stats = [
+        r#"{"Name":"moor-1a2b3c4d-417-agent","MemUsage":"512MiB / 30.47GiB"}"#,
+        r#"{"Name":"moor-1a2b3c4d-417-work","MemUsage":"2.5GiB / 16GiB"}"#,
+        r#"{"Name":"swpa508-volume-mysql","MemUsage":"4.106GiB / 30.47GiB"}"#,
+        "not json",
+    ]
+    .join("\n");
+    let held = held_by_box(&stats);
+    assert_eq!(
+        held.into_iter().collect::<Vec<_>>(),
+        [(Slug::parse("moor-1a2b3c4d-417").unwrap(), 3 * 1024)]
+    );
 }

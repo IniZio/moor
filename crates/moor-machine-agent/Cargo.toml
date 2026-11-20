@@ -14,6 +14,7 @@ name = "moor-machine-agent"
 path = "src/main.rs"
 
 [dependencies]
+bytesize = "2"
 moor-client = { path = "../moor-client", features = ["link"] }
 moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }

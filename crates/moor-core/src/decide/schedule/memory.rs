@@ -17,6 +17,9 @@ pub struct Memory {
     pub reported_at: i64,
     /// Boxes Starting on it.
     pub starting: usize,
+    /// The growth room kept for the running Boxes whose use its agent measures, the sum of
+    /// [`headroom_mib`] over them.
+    pub headroom_mib: u64,
     /// Free MiB on the filesystem holding the host's Box data; `None` from an agent that does
     /// not report disk, which is then admitted without a disk check.
     pub disk_free_mib: Option<u64>,
@@ -26,6 +29,8 @@ pub struct Memory {
 
 /// What one more Box must find free to boot.
 pub const BOOT_FLOOR_MIB: u64 = 2048;
+/// The growth room kept for a running Box above what it uses now, short of its ceiling.
+pub const HEADROOM_MIB: u64 = 1024;
 /// What a Box resuming on a node with nothing running leaves available, in place of the reserve,
 /// so that a host whose own work ate into the reserve does not hold its only Box asleep.
 pub const ALONE_MARGIN_MIB: u64 = 1024;
@@ -48,6 +53,15 @@ pub const fn disk_floor_mib(total_mib: u64) -> u64 {
     } else {
         DISK_FLOOR_MIB
     }
+}
+
+/// The growth room a running Box using `used_mib` keeps: [`HEADROOM_MIB`], no more than its
+/// `ceiling_mib` leaves, when that is known.
+#[must_use]
+pub fn headroom_mib(used_mib: u64, ceiling_mib: Option<u64>) -> u64 {
+    ceiling_mib.map_or(HEADROOM_MIB, |c| {
+        c.saturating_sub(used_mib).min(HEADROOM_MIB)
+    })
 }
 
 /// The host's share when none is configured: 4 GiB plus a tenth of `total_mib`.
@@ -119,14 +133,15 @@ impl Memory {
         }
     }
 
-    /// What is free for another Box: available less the reserve and a boot floor per Box
-    /// Starting, since a booting guest has not shown up in the report yet.
+    /// What is free for another Box: available less the reserve, a boot floor per Box Starting,
+    /// since a booting guest has not shown up in the report yet, and the running Boxes' headroom.
     #[must_use]
     pub const fn free_mib(&self) -> u64 {
         let booting = BOOT_FLOOR_MIB.saturating_mul(self.starting as u64);
         self.available_mib
             .saturating_sub(self.reserve())
             .saturating_sub(booting)
+            .saturating_sub(self.headroom_mib)
     }
 
     /// The disk short of its floor, the larger of [`DISK_FLOOR_PERCENT`] of the filesystem and
