@@ -15,26 +15,13 @@ front of port 8443. You also need an OIDC client, as
 - `moor-gate.service` runs `moor-gate` for Boxes only. It has no public
   listener and no sign-in. It serves `report_step` at `127.0.0.1:8444`.
 
+- `moor-front@authgear.socket` holds the gate's front socket,
+  `~/.local/state/moor/fronts/authgear/front`.
+
 systemd holds each socket, so a client that connects during a restart waits
 and gets its answer from the new controller. Each front gets a socket of its
-own, from the template unit `moor-front@.socket`. `moor up` writes no front
-socket, so write the template once,
-`~/.config/systemd/user/moor-front@.socket`:
-
-```ini
-[Unit]
-Description=moor socket for the %i front
-
-[Socket]
-ListenStream=%S/moor/fronts/%i/front
-FileDescriptorName=front-%i
-Service=moor.service
-SocketMode=0600
-DirectoryMode=0700
-
-[Install]
-WantedBy=sockets.target
-```
+own, from the template unit `moor-front@.socket`, which `moor up` writes with
+the front sockets under its state directory.
 
 Set `XDG_STATE_HOME` to the same value in your login shell and in the systemd
 user manager, or leave it unset in both. Otherwise the CLI dials a socket the
@@ -51,12 +38,11 @@ units never bound.
        step_reports: true
    ```
 
-2. Enable its socket and restart the controller:
+2. Check that the front's socket listens. `moor up` enables it, so a rerun
+   adds it to a host from before:
 
    ```sh
-   systemctl --user daemon-reload
-   systemctl --user enable --now moor-front@authgear.socket
-   systemctl --user restart moor.service
+   systemctl --user is-active moor-front@authgear.socket
    ```
 
 3. Give `moor-gate.service` its public listener. A drop-in survives a rerun of
@@ -100,7 +86,12 @@ fronts:
     webhooks: true
 ```
 
-Enable `moor-front@notify.socket` and restart the controller, as for the gate.
+Enable its socket and restart the controller:
+
+```sh
+systemctl --user enable --now moor-front@notify.socket
+systemctl --user restart moor.service
+```
 `moor-notify` comes in the release image, not as a release binary. On a host,
 build it from a checkout, such as with `cargo install --path crates/moor-notify`.
 `moor-machine-runner` is a release binary, and the install script puts it in

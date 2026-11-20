@@ -6,6 +6,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use moor_client::link::boxes::{BoxOffer, BoxReport};
+use moor_client::link::BoxMemory;
 
 use super::docker::Docker;
 #[cfg(any(test, feature = "fake-boxes"))]
@@ -27,6 +28,8 @@ trait Serving: Send + Sync {
     fn serve(self: Arc<Self>, stream: Box<dyn Wire>) -> Later<'static, ()>;
     /// Every Box's health.
     fn reports(&self) -> Later<'_, Vec<BoxReport>>;
+    /// The host memory each Box holds.
+    fn memory(&self) -> Later<'_, Vec<BoxMemory>>;
 }
 
 impl<P: BoxProvider> Serving for Boxes<P> {
@@ -48,6 +51,10 @@ impl<P: BoxProvider> Serving for Boxes<P> {
 
     fn reports(&self) -> Later<'_, Vec<BoxReport>> {
         Box::pin(Self::reports(self))
+    }
+
+    fn memory(&self) -> Later<'_, Vec<BoxMemory>> {
+        Box::pin(Self::memory(self))
     }
 }
 
@@ -112,6 +119,11 @@ impl Host {
     /// Every Box's health.
     pub(crate) async fn reports(&self) -> Vec<BoxReport> {
         self.0.reports().await
+    }
+
+    /// The host memory each Box holds.
+    pub(crate) async fn memory(&self) -> Vec<BoxMemory> {
+        self.0.memory().await
     }
 }
 

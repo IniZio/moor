@@ -21,7 +21,7 @@ use crate::proxy::token::base64url;
 pub(super) const BOX_LISTEN: &str = "127.0.0.1:8444";
 
 /// The namespace the gate speaks as, which names its front.
-const NAMESPACE: &str = "authgear";
+pub(super) const NAMESPACE: &str = "authgear";
 
 /// The front `up` gives the controller for the gate, allowed to report steps.
 pub(super) const FRONT: &str = "fronts:\n  authgear:\n    step_reports: true\n";
@@ -57,6 +57,14 @@ impl Gate {
     /// Whether the controller config needs the gate's front.
     pub(super) const fn runs(&self) -> bool {
         matches!(self, Self::Run(_))
+    }
+
+    /// The fronts whose sockets `up` holds for the controller: the gate's, when it runs it.
+    pub(super) const fn fronts(&self) -> &'static [&'static str] {
+        match self {
+            Self::Run(_) => &[NAMESPACE],
+            Self::Left(_) => &[],
+        }
     }
 }
 

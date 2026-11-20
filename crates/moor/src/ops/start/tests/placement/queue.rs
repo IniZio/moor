@@ -6,7 +6,7 @@ use moor_core::domain::hands::HandsInc;
 use moor_core::request::BoxHostMemory;
 use moor_core::seam::driver::DriverError;
 
-use super::pressure::{agents_report, live_world_on, tick, wake_up, BELOW_RESERVE};
+use super::pressure::{agents_report, live_world_on, tick, wake_up, BELOW_RESERVE, CRITICAL};
 use super::*;
 
 const CEILING: u64 = 23 * 1024;
@@ -225,20 +225,20 @@ fn a_second_wake_waits_for_the_report_that_counts_the_first() {
 #[test]
 fn a_box_that_just_resumed_is_not_picked_again_until_it_settles() {
     let (w, hv) = live_world(32_768);
-    let (a, b, newest) = (started(&w, "a"), started(&w, "b"), started(&w, "newest"));
-    let (w, _) = agents_report(w, &[], &[a, b, newest]);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    idle(&w, a);
+    w.cx.clock().sleep(std::time::Duration::from_secs(60));
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[a, b], &[]);
     tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(lifecycle(&w, newest), Pending);
+    assert_eq!(states(&w, &[a, b]), [Asleep, Ready], "longest idle first");
     tick(&w, hv, 32_768, 0, 0);
-    assert_eq!(lifecycle(&w, newest), Ready, "resumed");
+    wake_up(&w, a).unwrap();
+    assert_eq!(states(&w, &[a, b]), [Ready, Ready], "resumed");
     tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(
-        states(&w, &[a, b, newest]),
-        [Ready, Ready, Ready],
-        "cooldown"
-    );
+    assert_eq!(states(&w, &[a, b]), [Ready, Ready], "cooldown");
     tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(states(&w, &[a, b, newest]), [Ready, Pending, Ready]);
+    assert_eq!(states(&w, &[a, b]), [Ready, Asleep]);
 }
 
 #[test]
@@ -246,13 +246,13 @@ fn a_box_whose_machine_vanished_while_it_waited_gets_a_new_one_only_when_there_i
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
     let (w, _) = agents_report(w, &[], &[a, b]);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending);
     let store = w.cx.store().unwrap();
     let row = store.box_row(b).unwrap().unwrap();
     w.driver.forget(&row.hands.unwrap().handle.unwrap());
     crate::ops::common::reconcile::run(&w.cx);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending, "no room yet");
     assert!(store.newest_event_of(b, "disk_lost").unwrap().is_none());
     tick(&w, hv, 32_768, 0, 0);
@@ -573,4 +573,5 @@ fn a_close_after_a_suspend_parked_the_box_ends_closed() {
     assert_eq!(wanted_kind(&w, shut), None);
 }
 
+mod measured;
 mod room_made;

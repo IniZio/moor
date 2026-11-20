@@ -38,6 +38,9 @@ pub(crate) struct Held {
     /// Why the machine gave up on it, when it did.
     #[serde(default)]
     pub(crate) broken: Option<String>,
+    /// MiB of the host it held when it last went to sleep, which its wake asks for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) slept_mib: Option<u64>,
 }
 
 impl Held {
@@ -50,6 +53,7 @@ impl Held {
             generation: 0,
             sealed: false,
             broken: None,
+            slept_mib: None,
         }
     }
 }

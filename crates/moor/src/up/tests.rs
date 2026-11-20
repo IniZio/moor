@@ -6,7 +6,8 @@ use super::files::{controller, converge_user, Layout};
 use super::gate::{self, Gate, Plan as GatePlan};
 use super::node::{agent_unit, rootless_checks, runner_unit, Plan, Ports};
 use super::relay::{relay_unit, Relay};
-use super::service::{service_unit, socket_unit, Unit};
+use super::service::{front_socket_unit, service_unit, socket_unit, Unit};
+use super::wait_for;
 use crate::env::Env;
 use moor_client::rootless::Facts;
 
@@ -200,6 +201,22 @@ RestartSec=2
 WantedBy=default.target
 "
     );
+}
+
+#[test]
+fn the_agent_keeps_the_images_the_user_chose_and_leaves_unset_ones_out() {
+    let env = Env::from_pairs([
+        ("HOME", "/nonexistent-home"),
+        ("PATH", "/usr/bin"),
+        ("MOOR_AGENT_IMAGE", "moor-agent:dev"),
+        ("MOOR_WORK_IMAGE", ""),
+    ]);
+    let text = agent_unit(&plan(), Path::new("/state/agent-home"), &env);
+    assert!(
+        text.contains("Environment=\"MOOR_AGENT_IMAGE=moor-agent:dev\""),
+        "{text}"
+    );
+    assert!(!text.contains("MOOR_WORK_IMAGE"), "{text}");
 }
 
 #[test]
@@ -426,5 +443,38 @@ fn up_stops_on_a_rootless_daemon_that_opens_the_hosts_loopback() {
     assert!(
         stopped.detail.contains("nsenter"),
         "the relay needs nsenter: {stopped:?}"
+    );
+}
+
+#[test]
+fn the_wait_fails_on_a_socket_that_takes_connections_but_never_answers() {
+    let dir = moor_testkit::short_tempdir("held").unwrap();
+    let socket = dir.path().join("controller.sock");
+    let _held = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let failed = wait_for(&socket, std::time::Duration::from_millis(500)).unwrap_err();
+    assert!(failed.detail.contains("no answer at"), "{failed:?}");
+    assert!(
+        failed.fix.contains("journalctl --user -u moor.service"),
+        "{failed:?}"
+    );
+}
+
+#[test]
+fn the_front_socket_template_names_each_front_for_the_controller_under_its_state_dir() {
+    let text = front_socket_unit(Path::new("/home/ada/.local/state/moor"));
+    for line in [
+        "ListenStream=/home/ada/.local/state/moor/fronts/%i/front\n",
+        "FileDescriptorName=front-%i\n",
+        "Service=moor.service\n",
+        "SocketMode=0600\n",
+        "DirectoryMode=0700\n",
+        "WantedBy=sockets.target\n",
+    ] {
+        assert!(text.contains(line), "{line} missing from {text}");
+    }
+    let odd = front_socket_unit(Path::new("/srv/100%/moor"));
+    assert!(
+        odd.contains("ListenStream=/srv/100%%/moor/fronts/%i/front\n"),
+        "{odd}"
     );
 }

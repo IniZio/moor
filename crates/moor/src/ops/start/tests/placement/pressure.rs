@@ -214,6 +214,8 @@ fn a_short_node_with_nothing_waiting_keeps_its_idle_boxes_up() {
 
 /// Below the 4 GiB reserve, above the critical 1 GiB.
 pub(super) const BELOW_RESERVE: u64 = 3072;
+/// Below the critical 1 GiB.
+pub(super) const CRITICAL: u64 = 512;
 
 /// A node `hv` whose driver is `driver`.
 pub(super) fn live_world_on(driver: FakeDriver) -> (World, i64) {
@@ -225,18 +227,43 @@ pub(super) fn live_world_on(driver: FakeDriver) -> (World, i64) {
 }
 
 #[test]
-fn below_the_reserve_two_working_boxes_lose_the_newest_without_reaching_critical() {
+fn below_the_reserve_working_boxes_keep_running_until_memory_is_critical() {
     use moor_core::domain::box_state::BoxLifecycle;
     let (w, hv) = live_world(32_768);
     let (b, c) = (started(&w, "b"), started(&w, "c"));
     let (w, _) = agents_report(w, &[], &[b, c]);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    for _ in 0..4 {
+        tick(&w, hv, BELOW_RESERVE, 0, 0);
+    }
+    assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
+    assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, c), BoxLifecycle::Pending);
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
     assert_eq!(
         asleep_reason(&w, c).as_deref(),
-        Some("last-resort suspend: memory below the host reserve on hv")
+        Some("last-resort suspend: memory critical on hv")
     );
+}
+
+#[test]
+fn below_the_reserve_the_oldest_idle_box_goes_and_working_boxes_keep_running() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
+    let (old, busy, new) = (started(&w, "old"), started(&w, "busy"), started(&w, "new"));
+    idle(&w, old);
+    w.cx.clock().sleep(std::time::Duration::from_secs(60));
+    idle(&w, new);
+    let (w, _) = agents_report(w, &[old, new], &[busy]);
+    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    assert_eq!(lifecycle(&w, old), BoxLifecycle::Asleep);
+    assert_eq!(lifecycle(&w, new), BoxLifecycle::Ready);
+    assert_eq!(lifecycle(&w, busy), BoxLifecycle::Ready);
+    for _ in 0..3 {
+        tick(&w, hv, BELOW_RESERVE, 0, 0);
+    }
+    assert_eq!(lifecycle(&w, new), BoxLifecycle::Asleep);
+    assert_eq!(lifecycle(&w, busy), BoxLifecycle::Ready);
 }
 
 #[test]
@@ -257,7 +284,7 @@ fn a_refused_pick_falls_through_to_the_next_box_on_the_same_report() {
     idle(&w, idle_box);
     let (w, _) = agents_report(w, &[idle_box], &[b, c]);
     let locks = [idle_box, c].map(|id| w.cx.owners_arc().hold(id, Cmd::Settle));
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Pending);
     assert_eq!(lifecycle(&w, idle_box), BoxLifecycle::Ready);
     assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready);
@@ -281,7 +308,7 @@ fn a_box_with_a_run_in_flight_is_suspended_only_when_no_other_remains() {
                 pid: 4242,
             })
             .unwrap();
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(
         lifecycle(&w, b),
         BoxLifecycle::Pending,
@@ -289,7 +316,7 @@ fn a_box_with_a_run_in_flight_is_suspended_only_when_no_other_remains() {
     );
     assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready);
     for _ in 0..3 {
-        tick(&w, hv, BELOW_RESERVE, 0, 0);
+        tick(&w, hv, CRITICAL, 0, 0);
     }
     assert_eq!(lifecycle(&w, a), BoxLifecycle::Pending);
     assert_eq!(
@@ -317,11 +344,11 @@ fn a_box_with_a_run_in_flight_goes_when_it_is_the_last_candidate() {
         store.begin_run(new_run(a)).unwrap(),
         store.begin_run(new_run(b)).unwrap(),
     );
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Pending);
     assert_eq!(
         asleep_reason(&w, b).as_deref(),
-        Some("last-resort suspend: memory below the host reserve on hv, with a run in flight")
+        Some("last-resort suspend: memory critical on hv, with a run in flight")
     );
 }
 
@@ -332,7 +359,7 @@ fn a_failed_suspend_is_told_and_the_next_box_goes_on_the_same_report() {
     let (w, hv) = live_world_on(FakeDriver::new().fail_sleep(DriverError::Unavailable("x".into())));
     let (b, c) = (started(&w, "b"), started(&w, "c"));
     let (w, _) = agents_report(w, &[], &[b, c]);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready, "its suspend failed");
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Pending);
     let told =
@@ -343,9 +370,7 @@ fn a_failed_suspend_is_told_and_the_next_box_goes_on_the_same_report() {
             .unwrap();
     let reason = told.payload.get("reason").and_then(|r| r.as_str()).unwrap();
     assert!(
-        reason.starts_with(
-            "could not suspend (last-resort suspend: memory below the host reserve on hv): "
-        ),
+        reason.starts_with("could not suspend (last-resort suspend: memory critical on hv): "),
         "{reason}"
     );
 }
@@ -367,10 +392,10 @@ fn the_same_suspend_failure_is_told_again_only_after_ten_minutes() {
             .filter(|e| e.kind == "stays_up")
             .count()
     };
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(told(&w), 1, "a retry ten seconds later stays quiet");
     w.cx.clock().sleep(std::time::Duration::from_secs(600));
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(told(&w), 2);
 }

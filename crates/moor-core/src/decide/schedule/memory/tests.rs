@@ -14,6 +14,7 @@ fn memory(available_mib: u64) -> Memory {
         psi_centi: None,
         reported_at: NOW,
         starting: 0,
+        headroom_mib: 0,
         disk_free_mib: None,
         disk_total_mib: None,
     }
@@ -91,6 +92,7 @@ fn a_box_of_unknown_size_keeps_the_reserve_even_with_nothing_running() {
 fn a_box_starting_counts_against_a_resume() {
     let m = Memory {
         starting: 1,
+        headroom_mib: 0,
         ..memory(RESERVE + REAL_USE)
     };
     assert_eq!(

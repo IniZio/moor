@@ -1,5 +1,6 @@
 //! How a machine provides Boxes. The rest of the agent knows a Box only through this.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
 
@@ -147,6 +148,12 @@ pub(crate) trait BoxProvider: Send + Sync + 'static {
 
     /// Every Box on this machine, as each place stands now.
     fn observe(&self) -> impl Future<Output = Result<Vec<Observed>, ProvideError>> + Send;
+
+    /// MiB of the host each running Box holds now, for those it can measure. A provider that
+    /// measures none says nothing, and a wake of one of its Boxes asks for its ceiling.
+    fn held_mib(&self) -> impl Future<Output = BTreeMap<Slug, u64>> + Send {
+        async { BTreeMap::new() }
+    }
 
     /// A command that runs one shell script, its last argument, in `place`; on a terminal when
     /// `tty`. It starts in the workdir.

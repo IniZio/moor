@@ -28,6 +28,8 @@ struct Fake {
     box_env: Env,
     /// Whether it was sealed.
     sealed: bool,
+    /// MiB of the host it holds while it runs, when a test set it.
+    mem_mib: Option<u64>,
 }
 
 /// Boxes made of directories under `root`.
@@ -80,6 +82,14 @@ impl FakeProvider {
     pub(crate) fn set_work_down(&self, slug: &Slug, down: bool) {
         if let Some(fake) = self.boxes().get_mut(slug) {
             fake.work_down = down;
+        }
+    }
+
+    /// Makes `slug` hold `mib` of the host while it runs.
+    #[cfg(test)]
+    pub(crate) fn set_mem(&self, slug: &Slug, mib: u64) {
+        if let Some(fake) = self.boxes().get_mut(slug) {
+            fake.mem_mib = Some(mib);
         }
     }
 
@@ -175,6 +185,14 @@ impl BoxProvider for FakeProvider {
                 mem_mib: None,
             })
             .collect())
+    }
+
+    async fn held_mib(&self) -> BTreeMap<Slug, u64> {
+        self.boxes()
+            .iter()
+            .filter(|(_, fake)| fake.awake)
+            .filter_map(|(slug, fake)| Some((slug.clone(), fake.mem_mib?)))
+            .collect()
     }
 
     fn carrier(&self, slug: &Slug, place: Place, _tty: bool) -> Command {

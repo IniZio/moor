@@ -185,8 +185,8 @@ fn converged() -> (Host, Run) {
 }
 
 /// The `systemctl` calls of a first `up`.
-const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service\n\
-                           --user start moor.socket\n--user restart moor.service\n\
+const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
+                           --user start moor.socket moor-front@authgear.socket\n--user restart moor.service\n\
                            --user daemon-reload\n--user enable moor-gate.service\n\
                            --user restart moor-gate.service\n\
                            --user daemon-reload\n--user enable moor-runner.service\n\
@@ -275,7 +275,7 @@ fn a_rerun_changes_nothing_and_prints_the_same_state() {
     );
     assert_eq!(
         host.systemctl_log().strip_prefix(FIRST_CALLS).unwrap(),
-        "--user enable moor.socket moor.service\n--user start moor.socket\n--user start moor.service\n\
+        "--user enable moor.socket moor.service moor-front@authgear.socket\n--user start moor.socket moor-front@authgear.socket\n--user start moor.service\n\
          --user enable moor-gate.service\n--user start moor-gate.service\n\
          --user enable moor-runner.service\n--user start moor-runner.service\n\
          --user enable moor-agent.service\n--user start moor-agent.service\n"
@@ -292,7 +292,7 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     assert!(host
         .systemctl_log()
         .ends_with(
-            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor.socket\n--user daemon-reload\n"
+            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor-front@authgear.socket moor.socket\n--user daemon-reload\n"
         ));
     let left = fs::read_dir(host.units()).unwrap().count();
     assert_eq!(
@@ -541,4 +541,59 @@ fn a_rootful_up_after_a_rootless_one_removes_the_stale_relay_once() {
         "a rerun touched the relay again: {}",
         host.systemctl_log()
     );
+}
+
+#[test]
+fn up_enables_the_gate_fronts_socket_before_it_starts_the_controller() {
+    let (host, first) = converged();
+    assert_eq!(first.code, 0, "{first:?}");
+    let template = fs::read_to_string(host.units().join("moor-front@.socket")).unwrap();
+    let front = host.state.path().join("fronts/%i/front");
+    assert!(
+        template.contains(&format!("ListenStream={}\n", front.display())),
+        "{template}"
+    );
+    let log = host.systemctl_log();
+    assert!(
+        log.starts_with(
+            "--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
+             --user start moor.socket moor-front@authgear.socket\n--user restart moor.service\n"
+        ),
+        "{log}"
+    );
+}
+
+#[test]
+fn up_writes_no_front_socket_for_fronts_of_the_controller_configs_own() {
+    let host = Host::new();
+    let config = host.home.join(".config/moor/controller.yaml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let state = host.state.path().display();
+    let own =
+        format!("socket: {state}/controller.sock\nstate_dir: {state}\nfronts:\n  authgear: {{}}\n");
+    fs::write(&config, &own).unwrap();
+    let r = host.moor(&["up"], "a\nb\n");
+    assert_eq!(r.code, 0, "{r:?}");
+    assert!(!host.units().join("moor-front@.socket").exists());
+    assert!(
+        !host.systemctl_log().contains("moor-front@"),
+        "{}",
+        host.systemctl_log()
+    );
+}
+
+#[test]
+fn down_stops_the_front_socket_and_removes_its_template() {
+    let (host, _) = converged();
+    let down = host.moor(&["down"], "");
+    assert_eq!(down.code, 0, "{down:?}");
+    assert!(
+        host.systemctl_log().contains(
+            "--user disable --now moor-gate.service moor-agent.service moor-runner.service \
+             moor.service moor-front@authgear.socket moor.socket\n"
+        ),
+        "{}",
+        host.systemctl_log()
+    );
+    assert!(!host.units().join("moor-front@.socket").exists());
 }

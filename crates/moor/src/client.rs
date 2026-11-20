@@ -189,6 +189,25 @@ fn with_transport<T>(
     }
 }
 
+/// Sends the hello on `socket` and waits up to `timeout` for the controller's reply: proof a
+/// controller serves there, not only that something holds the socket.
+///
+/// # Errors
+/// What went wrong, as text.
+pub(crate) fn hello(socket: &std::path::Path, timeout: std::time::Duration) -> Result<(), String> {
+    let stream = UnixStream::connect(socket).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .and_then(|()| stream.set_write_timeout(Some(timeout)))
+        .map_err(|e| e.to_string())?;
+    let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
+    match handshake(&mut BufReader::new(stream), &mut writer) {
+        Ok(()) => Ok(()),
+        Err(SessionError::LostBeforeHello(m) | SessionError::Restarting(m)) => Err(m),
+        Err(SessionError::Client(e)) => Err(e.to_string()),
+    }
+}
+
 /// Send the hello and check the controller's reply.
 fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), SessionError> {
     send(writer, &ClientFrame::Hello { protocol: PROTOCOL })
