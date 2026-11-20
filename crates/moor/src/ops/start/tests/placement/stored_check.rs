@@ -8,7 +8,7 @@ use moor_core::{BoxPath, ErrorKind};
 
 use crate::ops::common::autosleep;
 
-use super::pressure::{agents_report, tick, wake_up, BELOW_RESERVE};
+use super::pressure::{agents_report, tick, wake_up, BELOW_RESERVE, CRITICAL};
 use super::*;
 use crate::store::SuspendCheck;
 
@@ -103,7 +103,7 @@ fn a_working_box_is_not_asked_and_keeps_no_answer() {
         .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
         .unwrap();
     let before = calls(&w, "exec");
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending);
     assert_eq!(stored(&w, b), None);
     assert_eq!(calls(&w, "exec"), before, "the suspend stays fast");
@@ -116,7 +116,7 @@ fn a_working_box_with_no_room_refuses_a_close() {
     guest_memory(&w, b, CEILING);
     let (w, _) = agents_report(w, &[], &[a, b]);
     holds(&w, b, CLEAN);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     let refused = close_box(&w, b, false).unwrap_err();
     assert!(
         refused.error.to_string().contains("could not wake"),

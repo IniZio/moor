@@ -38,8 +38,8 @@ hold, less the file cache the kernel takes back first.
 moor keeps 1 GiB of headroom above that use for each measured Box, so the Box
 has room to grow. The headroom never goes past the Box's ceiling.
 
-The reserve is 4096 MiB plus a tenth of the host's memory, and
-`moor-machine-agent run --reserve-mib` changes it. A node whose agent reports
+The reserve is 4096 MiB plus a tenth of the host's memory. It has no setting.
+A node whose agent reports
 no memory admits by Box count alone. A shared node always does.
 
 ## Waiting and making room
@@ -51,8 +51,8 @@ other wakes, then new starts, each oldest first. A small Box never passes a big
 one ahead of it, so the head cannot starve.
 
 To make room, the node suspends its longest-idle Box, at most one every 30
-seconds. A suspended Box keeps its whole state on disk and wakes later as if
-nothing happened. A Box that is working, waiting on a question, or still
+seconds. A suspended Box keeps its files, branch and session on disk. Its
+running processes stop, so an idle Box wakes where it left off. A Box that is working, waiting on a question, or still
 starting is never suspended to admit another.
 
 A woken Box needs what it used when it went to sleep, which the agent measured
@@ -64,19 +64,26 @@ a new Box before it resumes.
 Running Boxes can still exhaust a host. Each report checks for that:
 
 - **Sustained pressure.** PSI `some avg10` of 10 or more on three reports in a
-  row, or `MemAvailable` below the reserve, suspends the longest-idle Box.
+  row, or `MemAvailable` below the reserve, suspends the Box idle longest. Only
+  idle Boxes go. A working Box, one waiting on a question, and one still
+  starting keep running, however long the pressure lasts.
 - **Critical memory.** PSI `full avg10` of 5 or more, or `MemAvailable` below
-  1 GiB, may suspend a working Box once no idle Box is left. The most recently
-  started goes first. The only running Box is never suspended while it works.
+  1 GiB, still suspends an idle Box first. Once no idle Box is left, it may
+  suspend a working Box. The most recently started goes first, and one with a
+  run in flight goes last. The only running Box is never suspended while it
+  works.
+
+Each report suspends at most one Box, and none within 30 seconds of the last.
 
 A Box suspended at work says so in its status, waits first in line, and
-resumes with no one needing to act. Its agent is told how long it was paused
-and that open network connections dropped. Every Box still finishes. Pressure
-only decides when it runs.
+resumes with no one needing to act. Suspending stops its processes, so the
+agent loses its current turn and is relaunched when the Box wakes. Its agent is
+told how long it was paused and that open network connections dropped. Every
+Box still finishes. Pressure only decides when it runs.
 
 This is a trade we prefer to the alternative. Killing a Box loses work, and
 letting the host swap stalls every Box on it. Suspending one to disk costs that
-Box some minutes and nothing else.
+Box some minutes and, if it was working, its current turn.
 
 ## Disk
 

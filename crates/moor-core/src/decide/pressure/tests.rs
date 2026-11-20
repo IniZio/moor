@@ -250,17 +250,24 @@ fn order(got: &[Suspend]) -> Vec<(i64, bool)> {
 }
 
 #[test]
-fn below_the_reserve_with_two_busy_boxes_suspends_the_newest_without_waiting_for_critical() {
+fn below_the_reserve_idle_boxes_go_oldest_idle_first_and_working_ones_keep_running() {
     let got = picks(
         &[reading(0, RESERVE - 1, 0, 0)],
-        &[working(1, 10), working(2, 30)],
+        &[working(1, 10), idle(2, 500), working(3, 30), idle(4, 100)],
         None,
     );
-    assert_eq!(order(&got), [(2, true), (1, true)]);
+    assert_eq!(order(&got), [(4, false), (2, false)]);
     assert_eq!(
         got.first().map(|s| s.reason.as_str()),
-        Some("last-resort suspend: memory below the host reserve on hv")
+        Some("memory pressure on hv")
     );
+}
+
+#[test]
+fn below_the_reserve_with_only_working_boxes_suspends_nothing() {
+    let boxes = [working(1, 10), working(2, 30), running_a_command(3, 50)];
+    assert_eq!(pick(&[reading(0, RESERVE - 1, 0, 0)], &boxes, None), None);
+    assert_eq!(pick(&[reading(0, 1024, 0, 0)], &boxes, None), None);
 }
 
 #[test]
@@ -281,7 +288,7 @@ fn the_only_running_box_is_never_suspended_while_it_works() {
 #[test]
 fn a_box_waiting_on_a_question_counts_as_running_but_is_not_picked() {
     let got = picks(
-        &[reading(0, RESERVE - 1, 0, 0)],
+        &[reading(0, 512, 0, 0)],
         &[working(1, 10), waiting(2)],
         None,
     );
@@ -291,21 +298,21 @@ fn a_box_waiting_on_a_question_counts_as_running_but_is_not_picked() {
 #[test]
 fn a_box_with_a_run_in_flight_comes_after_every_other_working_box() {
     let got = picks(
-        &[reading(0, RESERVE - 1, 0, 0)],
+        &[reading(0, 512, 0, 0)],
         &[running_a_command(1, 90), working(2, 10), working(3, 30)],
         None,
     );
     assert_eq!(order(&got), [(3, true), (2, true), (1, true)]);
     assert_eq!(
         got.last().map(|s| s.reason.as_str()),
-        Some("last-resort suspend: memory below the host reserve on hv, with a run in flight")
+        Some("last-resort suspend: memory critical on hv, with a run in flight")
     );
 }
 
 #[test]
 fn a_refused_idle_box_falls_through_to_the_next_idle_box_then_to_the_working_ones() {
     let got = picks(
-        &[reading(0, RESERVE - 1, 0, 0)],
+        &[reading(0, 512, 0, 0)],
         &[working(1, 10), idle(2, 50), idle(3, 20)],
         None,
     );
@@ -317,7 +324,7 @@ fn an_idle_box_with_a_run_in_flight_is_tried_only_as_a_last_resort() {
     let mut busy_idle = idle(1, 10);
     busy_idle.in_flight = true;
     let got = picks(
-        &[reading(0, RESERVE - 1, 0, 0)],
+        &[reading(0, 512, 0, 0)],
         &[busy_idle.clone(), working(2, 30)],
         None,
     );
@@ -342,18 +349,18 @@ fn a_box_is_not_picked_until_its_resume_has_settled() {
     let low = [reading(now, RESERVE - 1, 0, 0)];
     let boxes = [
         resumed(idle(1, 10), now - SETTLE_SECS + 1),
-        resumed(working(2, 50), now - SETTLE_SECS + 1),
-        working(3, 10),
+        working(2, 50),
+        idle(3, 20),
     ];
-    assert_eq!(order(&picks(&low, &boxes, None)), [(3, true)]);
+    assert_eq!(order(&picks(&low, &boxes, None)), [(3, false)]);
     let settled = [
         resumed(idle(1, 10), now - SETTLE_SECS),
-        resumed(working(2, 50), now - SETTLE_SECS),
-        working(3, 10),
+        working(2, 50),
+        idle(3, 20),
     ];
     assert_eq!(
         order(&picks(&low, &settled, None)),
-        [(1, false), (2, true), (3, true)]
+        [(1, false), (3, false)]
     );
 }
 

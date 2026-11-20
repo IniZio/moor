@@ -33,7 +33,7 @@ fn suspended_at_work() -> (World, BoxId) {
     guest_memory(&w, b, CEILING);
     let (w, _) = agents_report(w, &[], &[a, b]);
     holds(&w, b, CLEAN);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending);
     (w, b)
 }
@@ -205,7 +205,7 @@ fn an_idle_box_with_an_unread_agent_suspended_for_room_keeps_no_answer() {
     let (w, _) = agents_report(w, &[], &[a]);
     holds(&w, b, CLEAN);
     super::super::unread::unread(&w, b);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
+    tick(&w, hv, CRITICAL, 0, 0);
     assert_eq!(lifecycle(&w, b), Pending, "an unread agent may be at work");
     assert_eq!(stored(&w, b), None);
 }

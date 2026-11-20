@@ -115,8 +115,9 @@ pub fn critical(last: &Reading) -> bool {
 /// suspends ends the attempt, and one refused falls through to the next.
 ///
 /// Under pressure, or when a Box waits on a short node, the idle ones, longest idle first. Then,
-/// when the host is critical or has less than `reserve_mib` available and at least two Boxes run,
-/// the working ones, newest first, those with a run in flight last. A Box within [`SETTLE_SECS`]
+/// only when the host is critical and at least two Boxes run, the working ones, newest first,
+/// those with a run in flight last. Less than `reserve_mib` available counts as pressure, so it
+/// suspends idle Boxes, never a working one. A Box within [`SETTLE_SECS`]
 /// of resuming is left out unless memory is critical. Nothing within [`COOLDOWN_SECS`] of the
 /// last suspension.
 #[must_use]
@@ -169,14 +170,9 @@ pub fn relieve(
         .iter()
         .filter(|c| c.resident.lifecycle == BoxLifecycle::Ready)
         .count();
-    if running >= LAST_RESORT_RUNNING && (critical || last.available_mib < reserve_mib) {
-        let why = if critical {
-            "memory critical"
-        } else {
-            "memory below the host reserve"
-        };
+    if running >= LAST_RESORT_RUNNING && critical {
         let settled: Vec<&Candidate> = boxes.iter().filter(settled).collect();
-        picks.extend(last_resorts(&settled, why, node));
+        picks.extend(last_resorts(&settled, "memory critical", node));
     }
     picks
 }
