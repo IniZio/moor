@@ -27,7 +27,7 @@ pub(crate) use check::{run_check, CheckJob};
 use facts::history;
 pub(crate) use now::{run as run_now, spawn_start};
 use previous::close_previous;
-pub(crate) use pull_event::{on_pull_request, PullEvent};
+pub(crate) use pull_event::{on_pull_request, PullAction, PullEvent};
 pub(crate) use report::run as step_report;
 use settle::{box_facts, broken_detail, close_open_box, enforce_start_limit, expire_runs};
 
@@ -373,6 +373,7 @@ mod advance;
 mod answer;
 pub(super) mod cancel;
 mod check;
+mod eligible;
 mod facts;
 mod now;
 mod previous;

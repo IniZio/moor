@@ -291,6 +291,8 @@ fn bearer(token: &Secret) -> Result<Zeroizing<String>, String> {
     Ok(auth)
 }
 
+#[cfg(test)]
+pub(crate) mod fake;
 pub(crate) mod pull;
 
 #[cfg(test)]
