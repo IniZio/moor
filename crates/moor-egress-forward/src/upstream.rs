@@ -83,8 +83,9 @@ impl Upstream {
 /// The name every Box gives the host of the machine that holds it, reached over a private route.
 const MOOR_HOST: &str = "moor-host";
 
-/// Whether the host of `rest`, an address after its scheme, is a loopback name or address, or
-/// `moor-host`, which a machine's agent maps to its own host for the Boxes it makes.
+/// Whether the host of `rest`, an address after its scheme, is a loopback name or address, a
+/// private IP literal such as a rootless relay's, or `moor-host`, which a machine's agent maps to
+/// its own host for the Boxes it makes.
 fn private(rest: &str) -> bool {
     let authority = rest.split('/').next().unwrap_or_default();
     let host = authority.strip_prefix('[').map_or_else(
@@ -93,5 +94,8 @@ fn private(rest: &str) -> bool {
     );
     host == "localhost"
         || host == MOOR_HOST
-        || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+        || host.parse::<IpAddr>().is_ok_and(|ip| match ip {
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_private(),
+            IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        })
 }

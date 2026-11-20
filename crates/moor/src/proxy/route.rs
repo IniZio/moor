@@ -88,8 +88,8 @@ impl EgressRoute {
         }
     }
 
-    /// The address each Box's forwarder dials. A Box on the controller's own Proxy dials it as
-    /// `moor-host`.
+    /// The address each Box's forwarder dials. A Box on a bound Proxy dials it as `moor-host`; on
+    /// a relayed one, the relay's own address, which a nested Docker's networks never cover.
     ///
     /// # Errors
     /// The local route and no [`EGRESS_LISTEN`] or [`EGRESS_RELAYED`] address to dial.
@@ -98,10 +98,8 @@ impl EgressRoute {
             Self::Direct { url } => url.clone(),
             Self::Local {
                 host: Some(host), ..
-            }
-            | Self::Relayed { host, .. } => {
-                format!("ws://moor-host:{}{}", host.port(), super::egress::PATH)
-            }
+            } => format!("ws://moor-host:{}{}", host.port(), super::egress::PATH),
+            Self::Relayed { host, .. } => format!("ws://{host}{}", super::egress::PATH),
             Self::Local { host: None, .. } => {
                 return Err(format!(
                     "a Box dials the Proxy as moor-host, so set {EGRESS_LISTEN} to a private address of this host, such as the docker0 address and a free port"

@@ -7,8 +7,8 @@
 )]
 
 use super::{
-    cmdline_words, failures, is_rootless, loopback_closed, notice, report, state_dir, warnings,
-    Facts, Failure,
+    child_ip_from, cmdline_words, failures, is_rootless, loopback_closed, notice, report,
+    state_dir, warnings, Facts, Failure,
 };
 
 /// What rootless Docker 29.10 printed for its security options.
@@ -230,4 +230,47 @@ fn a_proc_command_line_splits_on_nul() {
 fn the_notice_names_the_user_each_time_the_spec_does() {
     let text = notice("ada");
     assert!(text.starts_with("Docker Boxes run on rootless Docker as ada. Each Box's work place runs with --privileged so Docker works inside it, and a Box that breaks out is ada on this host, not root. It can reach ada's files and every other Box here."), "{text}");
+}
+
+/// What rootlesskit 2.3 answers at `api.sock`'s `/v1/info` under slirp4netns.
+const INFO: &str = r#"{"apiVersion":"1.1.1","version":"2.3.5","stateDir":"/run/user/1003/rl/dockerd-rootless","childPID":3623679,"networkDriver":{"driver":"slirp4netns","dns":["10.0.2.3"],"childIP":"10.0.2.100"},"portDriver":{"driver":"builtin"}}"#;
+
+#[test]
+fn the_namespaces_address_is_the_one_rootlesskit_reports() {
+    assert_eq!(child_ip_from(INFO).unwrap().to_string(), "10.0.2.100");
+    let moved = INFO.replace("10.0.2.100", "10.9.8.7");
+    assert_eq!(child_ip_from(&moved).unwrap().to_string(), "10.9.8.7");
+}
+
+#[test]
+fn a_driver_that_names_no_address_is_said_so_not_guessed() {
+    let none = r#"{"networkDriver":{"driver":"pasta","dns":["10.0.2.3"]}}"#;
+    assert!(child_ip_from(none).unwrap_err().contains("childIP"));
+    let bad = r#"{"networkDriver":{"childIP":"nope"}}"#;
+    assert!(child_ip_from(bad).unwrap_err().contains("nope"));
+    assert!(child_ip_from("not json").unwrap_err().contains("JSON"));
+}
+
+#[test]
+fn rootlesskits_api_socket_is_asked_over_plain_http() {
+    use std::io::{Read as _, Write as _};
+    let dir = moor_testkit::short_tempdir("rk").unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(dir.path().join("api.sock")).unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut conn, _) = listener.accept().unwrap();
+        let mut asked = [0_u8; 64];
+        let n = conn.read(&mut asked).unwrap();
+        let reply = format!("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{INFO}");
+        conn.write_all(reply.as_bytes()).unwrap();
+        String::from_utf8_lossy(&asked[..n]).into_owned()
+    });
+    assert_eq!(
+        super::child_ip(dir.path()).unwrap().to_string(),
+        "10.0.2.100"
+    );
+    assert!(server.join().unwrap().starts_with("GET /v1/info HTTP/1."));
+    let none = moor_testkit::short_tempdir("rk").unwrap();
+    assert!(super::child_ip(none.path())
+        .unwrap_err()
+        .contains("api.sock"));
 }

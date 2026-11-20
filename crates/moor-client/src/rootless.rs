@@ -7,7 +7,7 @@ mod probe;
 #[cfg(test)]
 mod tests;
 
-pub use probe::{detect, Facts};
+pub use probe::{child_ip, daemon_state, detect, Facts};
 
 /// Docker's security options as JSON; `name=rootless` is among them under rootless Docker.
 pub const SECURITY_ARGS: [&str; 3] = ["info", "--format", "{{json .SecurityOptions}}"];
@@ -233,6 +233,22 @@ pub fn state_dir(host: &str) -> Result<PathBuf, String> {
         .parent()
         .map(|dir| dir.join("dockerd-rootless"))
         .ok_or_else(|| format!("{socket} has no directory"))
+}
+
+/// The address of the rootlesskit namespace's own network device, from the JSON that
+/// rootlesskit's `api.sock` answers at `/v1/info`.
+///
+/// # Errors
+/// The text is not rootlesskit's info, or its network driver reports no address.
+pub fn child_ip_from(json: &str) -> Result<std::net::Ipv4Addr, String> {
+    let info: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("rootlesskit's info is not JSON: {e}"))?;
+    let ip = info
+        .pointer("/networkDriver/childIP")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("rootlesskit's network driver reports no childIP, so the relay has no address")?;
+    ip.parse()
+        .map_err(|_| format!("rootlesskit reports childIP {ip}, which is not an IPv4 address"))
 }
 
 /// The words of a `/proc/<pid>/cmdline`.
