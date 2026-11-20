@@ -77,7 +77,8 @@ pub struct AgentView {
     pub kind: Option<String>,
     /// What the prompt shows above its menu, such as the command a permission is for.
     pub detail: Option<String>,
-    /// The background work an agent in `waiting` waits on; empty in any other state.
+    /// The background work an agent in `waiting` waits on, or that still runs beside the question
+    /// an agent in `needs_input` asked in its reply; empty otherwise.
     pub waiting_on: Vec<String>,
     /// Why the launch failed, when it did.
     pub reason: Option<LaunchFailure>,

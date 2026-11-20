@@ -17,9 +17,16 @@ pub enum WaitCheck {
 
 /// Whether an agent in `state` has waited on background work, its terminal quiet since `term`'s
 /// last status change, for so long that the Box should be asked whether the work still runs.
+///
+/// An agent that asked the person something waits on them, but the work it left is checked too.
 #[must_use]
 pub fn wait_overdue(state: &AgentState, term: &Term, now: Ts) -> bool {
-    matches!(state, AgentState::Waiting { .. })
+    let waits = match state {
+        AgentState::Waiting { .. } => true,
+        AgentState::Asked { background, .. } => !background.is_empty(),
+        _ => false,
+    };
+    waits
         && term
             .status_at
             .is_some_and(|at| stalled_for(at, now).is_some())

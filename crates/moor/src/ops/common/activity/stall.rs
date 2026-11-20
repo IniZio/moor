@@ -16,8 +16,9 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// `activity` as idle when it waits on background work the Box shows to be gone: no hook fires
-/// when background work ends without waking the agent. Only work the Box can see is checked.
+/// `activity` without the background work the Box shows to be gone: no hook fires when background
+/// work ends without waking the agent. An agent that only waited on it is idle; one that asked
+/// the person still asks. Only work the Box can see is checked.
 pub(super) fn end_stale_wait(
     cx: &Cx,
     sref: &SessionRef,
@@ -33,10 +34,14 @@ pub(super) fn end_stale_wait(
         && wait_overdue(&activity.state, term, now)
         && cx.engine().check_wait(sref, deadline) == WaitCheck::Nothing
     {
-        return Activity {
-            state: AgentState::Idle,
-            ..activity
+        let state = match activity.state {
+            AgentState::Asked { question, .. } => AgentState::Asked {
+                question,
+                background: Vec::new(),
+            },
+            _ => AgentState::Idle,
         };
+        return Activity { state, ..activity };
     }
     activity
 }

@@ -49,6 +49,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         AgentState::NeedsInput {
             question, options, ..
         } => (None, question.clone(), options.clone()),
+        AgentState::Asked { question, .. } => (None, Some(question.clone()), Vec::new()),
         _ => (None, None, Vec::new()),
     };
     let (kind, detail) = match &activity.state {
@@ -62,10 +63,11 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
             }),
             detail.clone(),
         ),
+        AgentState::Asked { .. } => (Some("question".to_owned()), None),
         _ => (None, None),
     };
     let waiting_on = match &activity.state {
-        AgentState::Waiting { on } => on.clone(),
+        AgentState::Waiting { on } | AgentState::Asked { background: on, .. } => on.clone(),
         _ => Vec::new(),
     };
     Some(AgentView {

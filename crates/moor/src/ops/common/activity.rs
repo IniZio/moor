@@ -95,11 +95,15 @@ impl Reading {
         self.run_in_flight || self.activity.as_ref().is_some_and(|a| a.state.busy())
     }
 
-    /// Whether the agent waits on an unanswered prompt or a first-run screen.
+    /// Whether the agent waits on an unanswered prompt, a first-run screen or a question its
+    /// reply asked.
     pub(crate) fn blocked(&self) -> bool {
-        self.activity
-            .as_ref()
-            .is_some_and(|a| matches!(a.state, AgentState::NeedsInput { .. }))
+        self.activity.as_ref().is_some_and(|a| {
+            matches!(
+                a.state,
+                AgentState::NeedsInput { .. } | AgentState::Asked { .. }
+            )
+        })
     }
 
     /// No agent to read; a run in flight still keeps the Box busy.

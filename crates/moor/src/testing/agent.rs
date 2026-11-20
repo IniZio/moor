@@ -94,6 +94,20 @@ pub(crate) fn waiting(on: &[&str], local: bool, at: Ts) -> Probe {
     )
 }
 
+/// An idle agent whose last reply was `said`, with `on` left running in the background, all of it
+/// local.
+pub(crate) fn replied_beside(said: &str, on: &[&str], at: Ts) -> Probe {
+    with_note(
+        idle(at),
+        Note {
+            said: Some(said.to_owned()),
+            background: on.iter().map(|o| (*o).to_owned()).collect(),
+            background_local: true,
+            ..Note::default()
+        },
+    )
+}
+
 /// An agent that ended with `exit`.
 pub(crate) fn exited(exit: Option<i32>) -> Probe {
     Probe::Read {
