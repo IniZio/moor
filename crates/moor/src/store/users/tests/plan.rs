@@ -107,7 +107,7 @@ fn the_pointer_moves_once_from_exactly_the_step_and_try_it_was_read_at() {
     store
         .record_workflow_run(&run(wid, "a/one", 100, RunState::Queued))
         .unwrap();
-    let key = (wid, &repo("a/one"), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&store, (wid, &repo("a/one"), Ts::from_millis(100)));
     let first = Plan::single_id();
     let mut state = running(4);
     let RunState::Running { at, .. } = &mut state else {
@@ -171,7 +171,7 @@ fn a_run_ends_only_from_exactly_the_step_and_try_it_was_read_at_with_its_lines()
     store
         .record_workflow_run(&run(wid, "a/one", 100, RunState::Queued))
         .unwrap();
-    let key = (wid, &repo("a/one"), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&store, (wid, &repo("a/one"), Ts::from_millis(100)));
     let first = Plan::single_id();
     assert!(store
         .resolve_workflow_start(key, &running(4), Ts::from_millis(110))

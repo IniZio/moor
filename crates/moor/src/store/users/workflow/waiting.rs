@@ -3,9 +3,8 @@
 //! Each is [`Store::move_run`] compare-and-set on the run being in the phase, step and try it
 //! was read in, so whichever of a report, an answer and an expiry comes first wins.
 
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{HistoryEntry, RunEnd, RunOutcome, RunState, StepId, WorkflowId};
+use moor_core::workflow::{HistoryEntry, RunEnd, RunId, RunOutcome, RunState, StepId};
 use moor_core::BoxId;
 
 use super::runs::Open;
@@ -17,7 +16,7 @@ impl Store {
     /// answer, an expiry and a lost Box settle once between them.
     pub(crate) fn end_waiting_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         on: (&StepId, u8),
         (box_id, outcome): (BoxId, RunOutcome),
         (lines, at): (&[HistoryEntry], Ts),
@@ -34,7 +33,7 @@ impl Store {
     /// with nothing changed, when the run no longer waits at exactly that step and try.
     pub(crate) fn refuse_waiting_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         on: (&StepId, u8),
         detail: &str,
         at: Ts,
@@ -50,7 +49,7 @@ impl Store {
     /// `on`. `to` may be `on` itself, for a run that began at an approve step.
     pub(crate) fn wait_workflow_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         (on, to): ((&StepId, u8), (&StepId, u8)),
         box_id: BoxId,
         (lines, at): (&[HistoryEntry], Ts),
@@ -70,7 +69,7 @@ impl Store {
     /// answer and an expiry, apply once.
     pub(crate) fn answer_workflow_run(
         &self,
-        key: (WorkflowId, &ForgeRepo, Ts),
+        key: RunId,
         on: (&StepId, u8),
         to: &RunState,
         (lines, at): (&[HistoryEntry], Ts),

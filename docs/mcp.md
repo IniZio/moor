@@ -43,7 +43,7 @@ token's audience.
 | `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs) |
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
-| `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note` |
+| `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note`, `pull` (`OWNER/NAME#NUMBER`, which run when several wait) |
 | `run_workflow` | `name`, with optional `expected_revision` and `pull` (`OWNER/NAME#NUMBER`) |
 | `get_repo_config` | `repo` |
 | `set_repo_config` | `repo`, `text`; optional `expected_revision` |

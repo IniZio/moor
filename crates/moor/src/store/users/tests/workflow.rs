@@ -263,7 +263,7 @@ fn a_timeout_is_stored_and_replaced_with_the_definition() {
 /// Ends the run at `key`, started at its only step, as Box `box_id` with `outcome`, at `at`.
 pub(super) fn ends(
     store: &Store,
-    key: (WorkflowId, &ForgeRepo, Ts),
+    key: moor_core::workflow::RunId,
     (box_id, outcome): (i64, &RunOutcome),
     at: Ts,
 ) -> bool {
@@ -297,8 +297,8 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
         .unwrap();
     assert_eq!(store.open_workflow_runs(id).unwrap().len(), 2);
 
-    let key = |r: &str| (id, repo(r), Ts::from_millis(100));
-    let (one, two) = (key("a/one"), key("a/two"));
+    let key = |r: &str| crate::testing::runs::run_at(&store, (id, &repo(r), Ts::from_millis(100)));
+    let (k1, k2) = (key("a/one"), key("a/two"));
     let at = Ts::from_millis(900);
     let done = RunOutcome::Delivered {
         result: "opened a pull request".to_owned(),
@@ -306,7 +306,6 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let expired = RunOutcome::TimedOut {
         at: Plan::single_id(),
     };
-    let (k1, k2) = ((one.0, &one.1, one.2), (two.0, &two.1, two.2));
     assert!(ends(&store, k1, (1, &done), at));
     assert!(
         !ends(&store, k1, (1, &expired), at),
@@ -329,7 +328,7 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
             timed_out(2, 900),
         ]
     );
-    let missing = (id, &repo("a/one"), Ts::from_millis(5));
+    let missing = moor_core::workflow::RunId::new(9_999);
     let outcome = RunOutcome::Delivered {
         result: String::new(),
     };
@@ -472,7 +471,7 @@ fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
     assert_eq!(store.open_workflow_runs(id).unwrap().len(), 1);
     assert_eq!(store.starting_workflow_runs().unwrap().len(), 1);
 
-    let key = (id, &repo("a/one"), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&store, (id, &repo("a/one"), Ts::from_millis(100)));
     let started = running(4);
     let at = Ts::from_millis(120);
     assert!(store.resolve_workflow_start(key, &started, at).unwrap());

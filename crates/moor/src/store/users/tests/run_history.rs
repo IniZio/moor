@@ -19,13 +19,13 @@ fn every_move_of_a_run_appends_one_line_to_its_history() {
     let id = store
         .put_workflow(alice, &def("daily", &["a/one"], true))
         .unwrap();
-    let key = (id, &repo("a/one"), Ts::from_millis(100));
     assert!(store
         .record_workflow_run(&run(id, "a/one", 100, RunState::Queued))
         .unwrap());
     assert!(!store
         .record_workflow_run(&run(id, "a/one", 100, RunState::Queued))
         .unwrap());
+    let key = crate::testing::runs::run_at(&store, (id, &repo("a/one"), Ts::from_millis(100)));
     assert!(store
         .resolve_workflow_start(key, &running(4), Ts::from_millis(110))
         .unwrap());

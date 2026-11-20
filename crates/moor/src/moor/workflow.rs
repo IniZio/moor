@@ -79,8 +79,8 @@ fn spawn_start(env: &Env, job: StartJob) {
 fn start_job(env: &Env, job: &StartJob) {
     if let Ok(moor) = Moor::from_env(env) {
         let moor = moor
-            .acting_as(job.identity.clone())
-            .viewing_as(Viewer::User(job.owner));
+            .acting_as(job.firing.identity.clone())
+            .viewing_as(Viewer::User(job.firing.owner));
         workflow::run_start(&moor.cx, job);
     }
 }

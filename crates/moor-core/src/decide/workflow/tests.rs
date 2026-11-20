@@ -312,8 +312,7 @@ fn a_started_run_expires_at_its_timeout_counted_from_its_start() {
     let at = |ms| workflow_expired(&w, &open, &agent, &|_, _| 0, ts(ms));
     assert!(at(DAY0 + 30 * 60_000 - 1).is_empty());
     let expiry = WorkflowExpiry {
-        repo: repo("a/b"),
-        due_at: ts(DAY0),
+        run: open[0].id,
         box_id: BoxId::new(7),
         at: step(),
         try_n: 1,
@@ -424,6 +423,42 @@ fn a_failed_or_incomplete_run_counts_and_a_declined_one_does_neither() {
     assert!(!breaker(&runs), "a declined run is not a failure");
     let more = [runs.to_vec(), vec![failed(base + 3 * DAY)]].concat();
     assert!(breaker(&more), "and does not reset the streak either");
+}
+
+#[test]
+fn a_cancelled_pull_request_run_neither_counts_nor_resets_the_streak() {
+    let base = DAY0 - 10 * DAY;
+    let pull = crate::workflow::PullRef {
+        repo: repo("a/b"),
+        number: 65,
+        head_sha: crate::workflow::CommitSha::parse(&"a".repeat(40)).unwrap(),
+    };
+    let of_pull = |mut r: WorkflowRun| {
+        r.cause = RunCause::PullRequest { pull: pull.clone() };
+        r
+    };
+    let cancelled = |due| {
+        let cause = crate::workflow::CancelCause::Closed;
+        of_pull(ended(
+            "a/b",
+            due,
+            RunOutcome::Cancelled { at: step(), cause },
+        ))
+    };
+    let runs = [
+        of_pull(timed_out("a/b", base)),
+        cancelled(base + DAY),
+        cancelled(base + 2 * DAY),
+        of_pull(refused("a/b", base + 3 * DAY)),
+        cancelled(base + 4 * DAY),
+    ];
+    assert!(!breaker(&runs), "pushing often is not a failing workflow");
+    let more = [
+        runs.to_vec(),
+        vec![of_pull(timed_out("a/b", base + 5 * DAY))],
+    ]
+    .concat();
+    assert!(breaker(&more), "a cancel does not reset the streak either");
 }
 
 #[test]

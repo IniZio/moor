@@ -49,7 +49,7 @@ pub(super) fn finish_runs(
                 ..
             } = run.state
             {
-                super::wait::lose_waiting(store, w, &run, (box_id, at, try_n), now)?;
+                super::wait::lose_waiting(store, &run, (box_id, at, try_n), now)?;
             }
             continue;
         };
@@ -58,13 +58,13 @@ pub(super) fn finish_runs(
         let verdict = run_verdict(facts.as_ref(), now);
         if verdict == RunVerdict::Broken {
             if let Some(row) = &row {
-                let key = (w.id, &run.repo, run.due_at);
+                let key = run.id;
                 store.refuse_run(key, (&broken_detail(store, row), false), now)?;
             }
             continue;
         }
         if verdict == RunVerdict::DeathCapped {
-            fail_death_capped(store, w, &run, (box_id, at, try_n), now)?;
+            fail_death_capped(store, &run, (box_id, at, try_n), now)?;
             continue;
         }
         let plan = store.run_plan(run.id, &w.prompt)?;
@@ -221,7 +221,7 @@ impl Quiet<'_> {
     /// Ends the run at the step and try this tick read it at; nothing changes when a report or an
     /// expiry moved it first.
     fn end(&self, box_id: BoxId, outcome: RunOutcome) -> Result<(), StoreError> {
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let key = self.run.id;
         self.store
             .end_workflow_run(key, self.at, (box_id, outcome), (&[], self.now))
             .map(|_| ())
@@ -229,7 +229,7 @@ impl Quiet<'_> {
 
     /// Sets the run, which began at an approve step, waiting for its owner.
     fn ask(&self, box_id: BoxId) -> Result<(), StoreError> {
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let key = self.run.id;
         let at = (self.at.0, self.at.1);
         // The step is entered again as the wait begins, so a wait is counted from here.
         let line = HistoryEntry::Entered {
@@ -265,9 +265,7 @@ impl Quiet<'_> {
         let limit = i64::try_from(CHECK_LIMIT.as_secs()).unwrap_or(i64::MAX);
         let timeout_secs = u32::try_from(left_secs.clamp(1, limit)).unwrap_or(1);
         checks(CheckJob {
-            workflow: self.w.id,
-            repo: self.run.repo.clone(),
-            due_at: self.run.due_at,
+            run: self.run.id,
             box_id,
             at: (self.at.0.clone(), self.at.1),
             command: command.clone(),
@@ -319,7 +317,7 @@ impl Quiet<'_> {
             step: step.clone(),
             try_n,
         });
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let key = self.run.id;
         if matches!(next.kind, StepKind::Approve { .. }) {
             return self
                 .store
@@ -374,7 +372,7 @@ impl Quiet<'_> {
 
     /// Appends `lines` to the run's history without moving its pointer off `at`.
     fn record(&self, at: (&StepId, u8), lines: &[HistoryEntry]) -> Result<(), StoreError> {
-        let key = (self.w.id, &self.run.repo, self.run.due_at);
+        let key = self.run.id;
         self.store
             .step_workflow_run(key, (at, at), (lines, self.now))
             .map(|_| ())

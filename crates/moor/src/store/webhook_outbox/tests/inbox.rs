@@ -124,7 +124,7 @@ fn an_approve_wait_adds_one_row_and_stops_waiting_when_answered_and_a_failed_run
     let alice = w.user("local:2000");
     let (id, boxed) = w.workflow(alice, true);
     w.start(id, boxed, 100, Some(plan()));
-    let key = (id, &repo(), Ts::from_millis(100));
+    let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let (from, ask, ship) = (Plan::single_id(), step("ask"), step("ship"));
     let wait = || {
         let at = Ts::from_millis(500);

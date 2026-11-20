@@ -58,7 +58,6 @@ fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
 /// step's `fail` edge nor another try could run without waking it.
 pub(super) fn fail_death_capped(
     store: &Store,
-    w: &Workflow,
     run: &WorkflowRun,
     (box_id, at, try_n): (BoxId, &StepId, u8),
     now: Ts,
@@ -67,7 +66,7 @@ pub(super) fn fail_death_capped(
         .newest_event_of(box_id, "death_capped")?
         .and_then(|e| Some(deaths::sentence(e.payload.get("reason")?.as_str()?)))
         .unwrap_or_else(|| "its machine stopped, so moor did not resume it".to_owned());
-    let key = (w.id, &run.repo, run.due_at);
+    let key = run.id;
     let outcome = RunOutcome::Failed {
         at: at.clone(),
         reason: said,
@@ -123,7 +122,7 @@ pub(super) fn expire_runs(
             .map_or(0, |l| waited_millis(&l, from))
     };
     for u in workflow_unanswered(&open, now) {
-        let key = (w.id, &u.repo, u.due_at);
+        let key = u.run;
         let lines = [HistoryEntry::Unanswered { step: u.at.clone() }];
         let outcome = RunOutcome::Declined { at: u.at.clone() };
         store.end_waiting_run(key, (&u.at, u.try_n), (u.box_id, outcome), (&lines, now))?;
@@ -142,7 +141,7 @@ pub(super) fn expire_runs(
                 ));
             }
         }
-        let key = (w.id, &e.repo, e.due_at);
+        let key = e.run;
         let outcome = RunOutcome::TimedOut { at: e.at.clone() };
         store.end_workflow_run(key, (&e.at, e.try_n), (e.box_id, outcome), (&[], now))?;
     }
@@ -183,7 +182,7 @@ pub(super) fn enforce_start_limit(
             .map_or(0, |l| waited_millis(&l, from))
     };
     for b in workflow_start_overdue(&open, (&agent, &waited), now) {
-        let key = (w.id, &b.repo, b.due_at);
+        let key = b.run;
         let planned = match b.box_id {
             Some(id) => store.box_row(id)?.map(|r| r.name),
             None => box_name(w.id, w.name.as_str(), b.due_at, &b.cause).ok(),

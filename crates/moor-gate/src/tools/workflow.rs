@@ -88,6 +88,10 @@ enum AnswerArg {
 struct AnswerArgs {
     /// The workflow's name, as `list_workflows` shows it.
     workflow: String,
+    /// The pull request whose run to answer, `OWNER/NAME#NUMBER`, as `list_workflow_runs`
+    /// shows it. Needed when several runs of the workflow wait; left out, it answers the run for
+    /// no pull request, or the only one that waits.
+    pull: Option<String>,
     /// `yes` or `no`.
     answer: AnswerArg,
     /// What to tell the agent along with the answer; none when left out.
@@ -260,7 +264,11 @@ impl Tools {
                        along the step's ok edge, `no` along its fail edge, or ends the run \
                        declined when it has none. The note is passed to the agent with the \
                        next step, which wakes the run's Box. Find waiting runs with \
-                       list_workflows (phase `waiting`). Only the workflow's owner can answer. \
+                       list_workflows (phase `waiting`). Each pull request has its own run, so \
+                       when several runs of the workflow wait, pass `pull`, such as \
+                       `owner/name#12`, to say which; without it the run for no pull request \
+                       is answered, or the only one that waits, and otherwise the call is \
+                       refused with the list of waiting runs. Only the workflow's owner can answer. \
                        Needs the moor:write scope."
     )]
     async fn answer_run(
@@ -268,16 +276,25 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<AnswerArgs>,
     ) -> CallToolResult {
-        let request = ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
-            identity: None,
-            workflow: args.workflow,
-            answer: match args.answer {
-                AnswerArg::Yes => Answer::Yes,
-                AnswerArg::No => Answer::No,
-            },
-            note: args.note,
+        let pull = args
+            .pull
+            .as_deref()
+            .map(PullTarget::parse)
+            .transpose()
+            .map_err(|e| e.to_string());
+        let request = pull.map(|pull| {
+            ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
+                identity: None,
+                workflow: args.workflow,
+                pull,
+                answer: match args.answer {
+                    AnswerArg::Yes => Answer::Yes,
+                    AnswerArg::No => Answer::No,
+                },
+                note: args.note,
+            })
         });
-        self.run(&context, WRITE, Ok(request), Reply::AsIs).await
+        self.run(&context, WRITE, request, Reply::AsIs).await
     }
 
     /// Fires a workflow once, now.
@@ -287,9 +304,12 @@ impl Tools {
                        add one, disable it, run it until the plan is right, and enable it \
                        after. The run is an ordinary run: it freezes the plan, starts a Box as \
                        you, walks the steps and has the workflow's timeout. It shows in \
-                       list_workflow_runs with trigger `manual`. A workflow that has a run open \
-                       (starting, working, waiting for an answer, or timed out with its Box \
-                       still open) is refused with that run's Box, and nothing is recorded. A cron run that comes due while a manual run is open is skipped. A \
+                       list_workflow_runs with trigger `manual`. A workflow holds one open run \
+                       per pull request and one for no pull request. A run whose subject has a \
+                       run open (starting, working, waiting for an answer, or timed out with \
+                       its Box still open) is refused with that run's Box, and nothing is \
+                       recorded; a run for a newer head of a pull request instead cancels the \
+                       open run of the older head and stops its agent. A cron run that comes due while a manual run for no pull request is open is skipped. A \
                        manual run that fails does not count toward the three failed runs that \
                        disable a workflow, and one that delivers resets that count. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \

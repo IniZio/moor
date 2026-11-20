@@ -24,6 +24,7 @@ mod pointer;
 mod put;
 mod row;
 mod runs;
+mod subject;
 mod waiting;
 
 use crate::store::db::{self, DbExt as _, OptionalExtension as _};

@@ -6,12 +6,11 @@
 
 use moor_core::artifact::ArtifactFile;
 use moor_core::decide::workflow::{code_gate, refusal_move, report_move, Move};
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::view::workflow::StepReportValue;
 use moor_core::workflow::{
-    HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, StepReport, StepResult,
-    Workflow, WorkflowId, WorkflowRun,
+    HistoryEntry, Plan, RunId, RunOutcome, RunState, Step, StepId, StepKind, StepReport,
+    StepResult, WorkflowRun,
 };
 use moor_core::BoxId;
 
@@ -61,8 +60,6 @@ fn instructions(step: &Step) -> String {
 
 /// Where a run stands for one report: what the store says, read together.
 struct Standing {
-    /// The workflow.
-    w: Workflow,
     /// The run.
     run: WorkflowRun,
     /// The frozen plan.
@@ -93,7 +90,6 @@ fn standing(store: &Store, id: BoxId) -> Result<Option<Standing>, CommandError> 
     let plan = store.run_plan(run.id, &w.prompt)?;
     let (history, _) = history_of(store, run.id, (&at.0, at.1))?;
     Ok(Some(Standing {
-        w,
         run,
         plan,
         at,
@@ -171,7 +167,7 @@ fn settle(
     }];
     match refusal_move(&s.plan, &s.history) {
         Move::Wait => {
-            let key = (s.w.id, &s.run.repo, s.run.due_at);
+            let key = s.run.id;
             let at = (&s.at.0, s.at.1);
             if !store.step_workflow_run(key, (at, at), (&lines, cx.clock().now()))? {
                 return Ok(None);
@@ -265,8 +261,8 @@ struct Moving<'a> {
 
 impl Moving<'_> {
     /// The run's key.
-    const fn key(&self) -> (WorkflowId, &ForgeRepo, Ts) {
-        (self.s.w.id, &self.s.run.repo, self.s.run.due_at)
+    const fn key(&self) -> RunId {
+        self.s.run.id
     }
 
     /// Ends the run with `outcome`, with `lines` written in the same move; false when the run

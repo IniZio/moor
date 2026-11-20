@@ -1,6 +1,6 @@
 //! Tests for runs that wait for an answer: working time and the week without one.
 
-use super::{daily, finished, repo, started, step, ts, waiting, workflow_expired, DAY, DAY0, HOUR};
+use super::{daily, finished, started, step, ts, waiting, workflow_expired, DAY, DAY0, HOUR};
 use crate::decide::workflow::{waited_millis, workflow_unanswered};
 use crate::seam::clock::Ts;
 use crate::user::UserId;
@@ -112,6 +112,6 @@ fn a_wait_ends_after_seven_days_without_an_answer() {
     let late = workflow_unanswered(&open, ts(DAY0 + 7 * DAY));
     assert_eq!(late.len(), 1);
     let first = late.first().unwrap();
-    assert_eq!(first.repo, repo("a/b"));
+    assert_eq!(first.run, open[0].id);
     assert_eq!(first.at, step());
 }

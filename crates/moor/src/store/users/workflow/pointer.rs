@@ -1,13 +1,12 @@
 //! A run's frozen plan, and the move of its step pointer.
 
-use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{HistoryEntry, Plan, RunId, StepId, WorkflowId};
+use moor_core::workflow::{HistoryEntry, Plan, RunId, StepId};
 use moor_schema::tables::WorkflowRuns;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::corrupt;
-use super::history::{append_history, run_id};
+use super::history::append_history;
 use super::row::STARTED;
 use crate::store::db::{DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
@@ -37,13 +36,13 @@ impl Store {
         )
     }
 
-    /// Moves the pointer of the running run of `workflow` and `repo` due at `due_at` from step
+    /// Moves the pointer of the running run `run` from step
     /// `from` at try `from.1` to `to`, appending `lines` in the same transaction. False, with
     /// nothing changed, when the run is no longer running at exactly that step and try, so a
     /// move repeated or raced by another tick applies once.
     pub(crate) fn step_workflow_run(
         &self,
-        (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
+        run: RunId,
         (from, to): ((&StepId, u8), (&StepId, u8)),
         (lines, at): (&[HistoryEntry], Ts),
     ) -> Result<bool, StoreError> {
@@ -54,17 +53,14 @@ impl Store {
                     .value(WorkflowRuns::Step, to.0.as_str())
                     .value(WorkflowRuns::TryN, i64::from(to.1))
                     .value(WorkflowRuns::Seq, seq)
-                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
-                    .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                    .and_where(Expr::col(WorkflowRuns::Id).eq(run.get()))
                     .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED))
                     .and_where(Expr::col(WorkflowRuns::Step).eq(from.0.as_str()))
                     .and_where(Expr::col(WorkflowRuns::TryN).eq(i64::from(from.1))),
             )?;
             if changed == 1 {
-                let id = run_id(tx, (workflow, repo, due_at))?;
                 for line in lines {
-                    append_history(tx, id, at, line)?;
+                    append_history(tx, run.get(), at, line)?;
                 }
             }
             Ok(changed)

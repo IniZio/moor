@@ -13,7 +13,7 @@ use crate::store::{Store, StoreError};
 /// The next change number, taken in `tx`. One upsert creates the counter row or increments it and
 /// returns the new number. The row stays locked until `tx` ends, so a number committed later is
 /// always larger and a poller never steps past an uncommitted one.
-fn next_seq(tx: &dyn Db) -> Result<i64, StoreError> {
+pub(super) fn next_seq(tx: &dyn Db) -> Result<i64, StoreError> {
     Ok(tx.row(
         Query::insert()
             .into_table(WorkflowSeq::Table)

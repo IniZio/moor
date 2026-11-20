@@ -49,13 +49,15 @@ pub(super) fn run(
         WorkflowCmd::SetEnabled { name, enabled } => set_enabled(store, user, name, *enabled, now),
         WorkflowCmd::Answer {
             workflow,
+            pull,
             answer,
             note,
         } => to_value(&crate::ops::workflow::answer_run(
             cx,
             store,
             user,
-            (workflow, *answer, note.as_deref()),
+            (workflow, pull.as_ref()),
+            (*answer, note.as_deref()),
         )?),
         WorkflowCmd::RunNow {
             name,
