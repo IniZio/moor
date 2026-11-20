@@ -113,7 +113,7 @@ impl World {
             }
         }
         out.into_iter()
-            .filter(|(k, _)| k.starts_with("run_"))
+            .filter(|(k, _)| ["run_waiting", "run_failed"].contains(&k.as_str()))
             .collect()
     }
 }
@@ -241,6 +241,51 @@ fn a_waiting_run_sends_one_delivery_with_its_question() {
     assert_eq!(data["workflow"], "deps");
     let run = data["run"].as_i64().unwrap();
     assert_eq!(data["link"], format!("/workflows/deps/runs/{run}"));
+}
+
+#[test]
+fn every_move_of_a_run_with_a_box_writes_run_moved_once_and_a_boxless_one_writes_none() {
+    let w = world();
+    let alice = w.user("local:2000");
+    w.webhook(alice, &["run_moved"]);
+    let (id, boxed) = w.workflow(alice, true);
+    w.start(id, boxed, 100, Some(plan()));
+    let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
+    let (from, ask) = (Plan::single_id(), step("ask"));
+    let at = Ts::from_millis(500);
+    let wait = || {
+        w.store
+            .wait_workflow_run(key, ((&from, 1), (&ask, 1)), boxed, (&[], at))
+            .unwrap()
+    };
+    assert!(wait());
+    assert!(!wait());
+    let queued = new_run(id, 200, RunState::Queued, None);
+    assert!(w.store.record_workflow_run(&queued).unwrap());
+    let two = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(200)));
+    assert!(w.store.refuse_run(two, ("no node", true), at).unwrap());
+    let lease = Duration::from_millis(1);
+    let moved: Vec<_> = w
+        .store
+        .claim_webhook_deliveries(10, lease)
+        .unwrap()
+        .into_iter()
+        .map(|d| {
+            (
+                d.kind,
+                serde_json::from_str::<serde_json::Value>(&d.payload).unwrap(),
+            )
+        })
+        .collect();
+    let run = key.get();
+    assert_eq!(
+        moved,
+        [(
+            "run_moved".to_owned(),
+            json!({"workflow": "deps", "run": run})
+        )],
+        "the wait moved once; the repeat and the run with no Box wrote nothing"
+    );
 }
 
 #[test]

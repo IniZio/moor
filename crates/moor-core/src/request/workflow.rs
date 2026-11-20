@@ -144,6 +144,9 @@ pub struct WorkflowRunsReq {
     /// Only the changes of the workflow with this name; every workflow's when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow: Option<String>,
+    /// Only the changes of runs for this pull request; runs for any subject when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<PullTarget>,
 }
 
 /// Arguments of `workflow-run-list`.
@@ -229,6 +232,8 @@ pub enum WorkflowCmd {
         limit: Option<u32>,
         /// Only this workflow's changes.
         workflow: Option<String>,
+        /// Only the changes of runs for this pull request.
+        pull: Option<PullTarget>,
     },
 }
 
@@ -292,6 +297,7 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
                 after: r.after,
                 limit: r.limit,
                 workflow: r.workflow,
+                pull: r.pull,
             },
         ),
         Request::WorkflowRunList(r) => (

@@ -172,6 +172,13 @@ pub enum ChangeView {
         seq: i64,
         /// The workflow's name.
         workflow: String,
+        /// The run's id, the same in each of its changes.
+        #[serde(default)]
+        id: i64,
+        /// The title of the step the run is at, from its frozen plan; none when it is at no
+        /// step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step_title: Option<String>,
         /// The front that created the workflow.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         origin: Option<OriginView>,

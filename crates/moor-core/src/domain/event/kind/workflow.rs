@@ -28,6 +28,15 @@ pub enum WorkflowEvent {
         /// The run page, as a path on the portal.
         link: String,
     },
+    /// A run that holds this Box was recorded at a new place in its workflow's change stream:
+    /// it started, entered a step, waits, or ended. It says only that the run moved; the
+    /// change stream holds what it moved to.
+    RunMoved {
+        /// The workflow's name.
+        workflow: String,
+        /// The run's id.
+        run: i64,
+    },
     /// A run ended Failed, Incomplete, `TimedOut` or Refused.
     RunFailed {
         /// The workflow's name.
@@ -55,6 +64,7 @@ impl WorkflowEvent {
         match self {
             Self::PreviousBoxKept { .. } => "previous_box_kept",
             Self::RunWaiting { .. } => "run_waiting",
+            Self::RunMoved { .. } => "run_moved",
             Self::RunFailed { .. } => "run_failed",
         }
     }

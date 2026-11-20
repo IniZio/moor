@@ -27,6 +27,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `node_disk_recovered` | ✓ | That node climbed back above its floor. |
 | `run_waiting` | ✓ | A workflow run entered an approve step. `data` has `workflow`, `repo`, `run`, `step`, `question` and `link`, the run page path `/workflows/NAME/runs/ID`. |
 | `run_failed` | ✓ | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
+| `run_moved` | | A workflow run that holds this Box moved: it started, entered a step, waits, or ended. `data` has `workflow` and `run`. Read what it moved to with `list_workflow_runs`. A run with no Box yet writes none. |
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. It is `run_ended`, `pr_merged`, `pr_closed`, `idle`, `setup_failed_expired` or `close_failed`. |
@@ -88,7 +89,9 @@ Each delivery is one `POST` with a JSON body:
 
 `moor listen` and `moor-listen` print one line per event, flushed at once.
 Events from before the first connect are not printed. After a reconnect, the
-listener prints the events it missed.
+listener prints the events it missed. A workflow never closes, so a listener
+with `--workflow` runs until it is stopped. A run that moved twice between
+reads prints each move it can tell from where the run stood before.
 
 | Line | When |
 | --- | --- |
@@ -100,6 +103,7 @@ listener prints the events it missed.
 | `moor: box NAME resumed after N min` | `agent_resumed`. |
 | `moor: box NAME disk_lost: ...` | `disk_lost`, and `session_restored` and `session_lost` in the same shape. |
 | `moor: box NAME node_disk_low: NODE has N GiB free of M GiB` | `node_disk_low`, and `node_disk_recovered` in the same shape. |
+| `moor: run WORKFLOW ID EVENT: DETAIL (REPO#N@SHA7)` | With `--workflow WORKFLOW`: a run started (`DETAIL` is its trigger), entered a step or waits (`DETAIL` is the step title), or ended (`EVENT` is `ended:OUTCOME`, `DETAIL` its result or reason). The part in brackets is there for a run on a pull request. |
 | `moor-listen: stream lost (REASON); reconnecting` | The stream dropped and the first reconnect failed. |
 | `moor-listen: reconnected` | The stream is back. |
 | `moor-listen: not signed in to ORIGIN; run moor login --server ORIGIN` | No sign-in. It looks again every 60 s. |
