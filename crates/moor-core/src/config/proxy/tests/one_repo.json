@@ -116,14 +116,6 @@
       },
       {
         "method": "GET",
-        "path": "/repos/acme/widgets/issues/*/comments"
-      },
-      {
-        "method": "POST",
-        "path": "/repos/acme/widgets/issues/*/comments"
-      },
-      {
-        "method": "GET",
         "path": "/repos/acme/widgets/commits/*/check-runs"
       },
       {

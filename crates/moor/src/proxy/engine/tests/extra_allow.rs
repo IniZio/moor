@@ -7,6 +7,7 @@ use ureq::Agent;
 use super::graphql_e2e::{rig_spec, Rig, SECRET};
 
 const COMMENT: &str = "/repos/o/app/issues/comments/7";
+const NEW_COMMENT: &str = "/repos/o/app/issues/7/comments";
 const STATUS: &str = "/repos/o/app/statuses/abc123";
 
 fn app() -> ForgeRepo {
@@ -110,4 +111,59 @@ fn box_b_without_them_is_refused_and_an_event_fires() {
     );
     assert!(refused_recorded(&b), "no refusal event");
     b.stop();
+}
+
+fn withheld_recorded(rig: &Rig) -> bool {
+    for _ in 0..100 {
+        rig.run.drain();
+        if rig
+            .run
+            .events()
+            .iter()
+            .any(|(k, _)| k == "credential_withheld")
+        {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    false
+}
+
+#[test]
+fn a_box_without_the_entry_may_not_post_an_issue_or_pr_comment() {
+    let b = rig(&[]);
+    let client = b.client();
+    assert_eq!(send(&client, "POST", NEW_COMMENT), 401);
+    assert_eq!(send(&client, "POST", "/repos/o/app/pulls/7/comments"), 401);
+    // Reading comments stays allowed.
+    assert_eq!(send(&client, "GET", NEW_COMMENT), 200);
+    let with_token: Vec<_> = b
+        .seen()
+        .into_iter()
+        .filter(|s| s.authorization.is_some())
+        .collect();
+    assert_eq!(with_token.len(), 1, "{with_token:?}");
+    assert!(with_token[0].line.starts_with("GET "), "{with_token:?}");
+    assert!(withheld_recorded(&b), "no credential_withheld event");
+    b.stop();
+}
+
+#[test]
+fn a_box_with_the_entry_may_post_a_comment_on_its_own_repo_only() {
+    let a = rig(&["POST /repos/{repo}/issues/*/comments"]);
+    let client = a.client();
+    assert_eq!(send(&client, "POST", NEW_COMMENT), 200);
+    assert_eq!(
+        send(&client, "POST", "/repos/o/other/issues/7/comments"),
+        401
+    );
+    assert_eq!(send(&client, "PATCH", COMMENT), 401);
+    let with_token: Vec<_> = a
+        .seen()
+        .into_iter()
+        .filter(|s| s.authorization.is_some())
+        .collect();
+    assert_eq!(with_token.len(), 1, "{with_token:?}");
+    assert_eq!(with_token[0].authorization, Some(format!("token {SECRET}")));
+    a.stop();
 }

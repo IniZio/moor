@@ -140,7 +140,7 @@ printf '%s\n' \
   && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
 ```
 
-gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for repos outside this Box. `gh pr comment` is withheld too, so comment with `gh api repos/{owner}/{repo}/issues/<number>/comments -f body=<text>`.
+gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for repos outside this Box. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.
 "#;
 
 #[cfg(test)]

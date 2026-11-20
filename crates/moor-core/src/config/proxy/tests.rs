@@ -430,7 +430,6 @@ fn github_api_matches_pr_and_stack_calls() {
         ("GET", format!("{r}/pulls/7/files")),
         ("POST", format!("{r}/pulls/7/requested_reviewers")),
         ("DELETE", format!("{r}/pulls/7/requested_reviewers")),
-        ("POST", format!("{r}/issues/7/comments")),
         ("GET", format!("{r}/commits/abc/check-runs")),
         ("GET", format!("{r}/stacks")),
         ("POST", format!("{r}/stacks")),

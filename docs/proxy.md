@@ -47,9 +47,14 @@ The rules are narrower than the token, so a Box cannot do everything you can.
 - **Anthropic.** The `claude` rule adds your Claude token to
   `api.anthropic.com`.
 
-Some jobs need a write the default rules refuse, such as a workflow that edits
-its own comment (`PATCH /repos/{repo}/issues/comments/*`) or sets a commit
-status (`POST /repos/{repo}/statuses/*`). The default rules stay as they are.
+A Box cannot post a comment on an issue or pull request. The default rules
+allow only reads of them (`GET`). Pull request review comments are read-only
+too, except through a review (`POST /repos/{repo}/pulls/*/reviews`).
+
+Some jobs need a write the default rules refuse. A workflow may post a comment
+(`POST /repos/{repo}/issues/*/comments`), edit its own comment
+(`PATCH /repos/{repo}/issues/comments/*`), or set a commit status
+(`POST /repos/{repo}/statuses/*`). The default rules stay as they are.
 A workflow, a start, or a repo config can ask for such entries for its own Boxes
 only, under `proxy.allow`. See
 [Extra Proxy entries](config.md#extra-proxy-entries). Other Boxes are
