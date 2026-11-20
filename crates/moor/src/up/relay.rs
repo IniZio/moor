@@ -3,7 +3,7 @@
 
 use std::fs;
 use std::net::Ipv4Addr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use moor_client::rootless;
 
@@ -99,4 +99,20 @@ RestartSec=2
 WantedBy=default.target {docker}
 "
     )
+}
+
+/// The plan's `found` checks, plus one when this daemon needs no relay and the relay unit an earlier
+/// rootless `up` left in `dir` was stopped and removed. It runs before the controller unit is installed.
+pub(super) fn settle(
+    mut found: Vec<Check>,
+    relay: Option<&Relay>,
+    dir: &Path,
+) -> Result<Vec<Check>, Check> {
+    if relay.is_none() && service::remove_units(dir, &[service::RELAY])? {
+        found.push(Check::ok(
+            "relay",
+            format!("removed {}, which a rootless up left", service::RELAY),
+        ));
+    }
+    Ok(found)
 }

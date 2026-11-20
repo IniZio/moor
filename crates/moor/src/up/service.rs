@@ -251,8 +251,15 @@ pub(crate) fn install_one(
 /// Stops and disables every unit `up` wrote, the gate and the agent first, and removes their files; whether
 /// any was there.
 pub(crate) fn remove(dir: &Path) -> Result<bool, Check> {
-    let names: Vec<&str> = [RELAY, GATE, AGENT, RUNNER, SERVICE, SOCKET]
-        .into_iter()
+    remove_units(dir, &[RELAY, GATE, AGENT, RUNNER, SERVICE, SOCKET])
+}
+
+/// Stops and disables those of `units` whose files are in `dir`, in order, and removes the files;
+/// whether any was there.
+pub(crate) fn remove_units(dir: &Path, units: &[&str]) -> Result<bool, Check> {
+    let names: Vec<&str> = units
+        .iter()
+        .copied()
         .filter(|n| dir.join(n).exists())
         .collect();
     if names.is_empty() {

@@ -513,3 +513,32 @@ fn up_on_rootless_docker_that_is_not_ready_names_each_fix_and_writes_nothing() {
         "only a read"
     );
 }
+
+#[test]
+fn a_rootful_up_after_a_rootless_one_removes_the_stale_relay_once() {
+    let host = Host::new();
+    fs::create_dir_all(host.units()).unwrap();
+    let relay = host.units().join("moor-relay.service");
+    fs::write(&relay, "[Unit]\nDescription=moor egress relay\n").unwrap();
+    let first = host.moor(&["up"], "sk-claude\ngh-token\n");
+    assert_eq!(first.code, 0, "{first:?}");
+    assert!(!relay.exists(), "the rootless relay outlived a rootful up");
+    assert!(
+        host.systemctl_log()
+            .contains("--user disable --now moor-relay.service\n--user daemon-reload\n"),
+        "{}",
+        host.systemctl_log()
+    );
+    let calls = host.systemctl_log();
+    let again = host.moor(&["up"], "");
+    assert_eq!(again.code, 0, "{again:?}");
+    assert!(
+        !host
+            .systemctl_log()
+            .strip_prefix(&calls)
+            .expect("the systemctl log only grows")
+            .contains("moor-relay"),
+        "a rerun touched the relay again: {}",
+        host.systemctl_log()
+    );
+}

@@ -80,6 +80,7 @@ fn steps(
     let dir = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
     let gate = gate::decide(env, &layout, &dir)?;
+    let found = relay::settle(found, relay.as_ref(), &dir)?;
     found.iter().for_each(&mut say);
     let key_file = match &gate {
         gate::Gate::Run(plan) => {
