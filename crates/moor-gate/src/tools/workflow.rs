@@ -144,8 +144,8 @@ impl Tools {
                        workflow per project. Every run acts as you, with your credentials, and its agent \
                        may push branches and open pull requests in those repos; it cannot merge \
                        them. A run is skipped while the workflow's previous run is unfinished, \
-                       and a run past timeout_minutes is stopped. Three failed runs in a row \
-                       disable the workflow. Pass `enabled: false` to store it disabled in the same \
+                       and a run past timeout_minutes is stopped. A failed run never disables the \
+                       workflow: its next cron still fires. Pass `enabled: false` to store it disabled in the same \
                        write, so no cron fires before you enable it with set_workflow_enabled. \
                        A cron that can fire closer together than the \
                        controller's minimum gap, an hour unless configured, is refused. Adding \
@@ -217,8 +217,7 @@ impl Tools {
         description = "List your workflows: cron, time zone, repos, config (which may hold the extra Proxy \
                        `allow` entries the workflow's Boxes get, and only theirs), prompt, plan (with \
                        plan_stale when the prompt changed after it was made), revision, timeout, whether each \
-                       is enabled, why it was disabled if the controller disabled it, its next \
-                       due time and its latest run with its outcome and Box. Needs \
+                       is enabled, its next due time and its latest run with its outcome and Box. Needs \
                        the moor:read scope."
     )]
     async fn list_workflows(&self, context: RequestContext<RoleServer>) -> CallToolResult {
@@ -247,8 +246,7 @@ impl Tools {
     #[tool(
         description = "Enable or disable one of your workflows. A workflow fires only for due \
                        times after it was last enabled, so enabling never runs missed times. \
-                       Enabling one the controller disabled clears the reason. Needs the \
-                       moor:write scope."
+                       Needs the moor:write scope."
     )]
     async fn set_workflow_enabled(
         &self,
@@ -315,8 +313,7 @@ impl Tools {
                        its Box still open) is refused with that run's Box, and nothing is \
                        recorded; a run for a newer head of a pull request instead cancels the \
                        open run of the older head and stops its agent. A cron run that comes due while a manual run for no pull request is open is skipped. A \
-                       manual run that fails does not count toward the three failed runs that \
-                       disable a workflow, and one that delivers resets that count. Pass the \
+                       manual run that fails is listed as failed like any other. Pass the \
                        revision you read as expected_revision to be sure the run tries the plan \
                        you reviewed. Pass `pull`, such as `owner/name#12`, to run for that pull \
                        request of the workflow's first repo at its current head, which moor \
@@ -355,8 +352,7 @@ impl Tools {
     /// Reads changes to the caller's workflow runs.
     #[tool(
         description = "Read what your workflow runs did, oldest change first: each entry is a \
-                       run (due time, outcome, refusal detail, Box) or a workflow the \
-                       controller disabled (with the reason). A run appears again each time it \
+                       run (due time, outcome, refusal detail, Box). A run appears again each time it \
                        moves on, from started to finished or timed out. Pass the previous \
                        `next` as `after` to get only newer changes, and `workflow` to read one \
                        workflow's changes only. Needs the moor:read scope."

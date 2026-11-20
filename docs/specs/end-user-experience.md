@@ -176,7 +176,6 @@ Steering verbs:
 - The plan is shown as numbered steps, editable in place. JSON stays behind "Edit as JSON".
 - **Run now**, to test before the schedule fires. When the last run failed, Run now sits beside it.
 - A run opens the same Task page, with the plan rail and the step history.
-- A workflow the breaker paused says why, in one line, at the top.
 
 ### Repos of a task
 
@@ -194,7 +193,7 @@ What changes in moor.
 
 - `add_workflow` and `start_box` take `repos`, an ordered list. `also` goes.
 - A run has no repo of its own. Its repo is the first of the set.
-- The breaker, `last_due` and the open-run check apply per workflow, not per repo.
+- `last_due` and the open-run check apply per workflow, not per repo.
 - `run_workflow` loses its `repo` argument.
 - A Box's name comes from the workflow and the trigger, not the repo.
 - A migration folds each stored workflow's `also` into `repos`, after its one repo. A stored workflow with more than one repo is refused. None exists today.

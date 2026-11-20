@@ -169,7 +169,6 @@ const WorkflowRowSchema = v.object({
 	words: v.nullish(v.string()),
 	timezone: v.string(),
 	enabled: v.boolean(),
-	disabled_reason: v.nullish(v.string()),
 	next_due: v.nullish(v.number()),
 	/** The next run in the workflow's own zone, such as "Fri 20 Nov, 08:30 (Asia/Hong_Kong)". */
 	next_text: v.nullish(v.string()),

@@ -2,10 +2,7 @@
 
 use crate::name::BoxId;
 use crate::seam::clock::Ts;
-use crate::workflow::{
-    RunCause, RunEnd, RunId, RunOutcome, RunState, StepId, Workflow, WorkflowRun, WorkflowState,
-    BREAKER_STREAK,
-};
+use crate::workflow::{RunCause, RunId, RunState, StepId, Workflow, WorkflowRun, WorkflowState};
 
 /// What the store and the Boxes say about a workflow's runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -190,56 +187,6 @@ pub fn workflow_expired(
             _ => None,
         })
         .collect()
-}
-
-/// Why the breaker tripped.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkflowDisable {
-    /// What to tell the owner.
-    pub reason: String,
-}
-
-/// Whether the workflow should be disabled: its latest [`BREAKER_STREAK`] concluded runs
-/// were all refused, failed, incomplete or timed out.
-///
-/// Only runs due since the workflow was last enabled count, so re-enabling restarts the count. A
-/// skipped run neither counts nor resets the streak, and a run still in flight is not concluded,
-/// so it does neither either. A delivered run resets it, and a declined one does neither. A run
-/// fired by hand counts only when it delivers: its failure is the author's try at a fix, so it
-/// neither adds to the streak nor resets it. Nothing retries a failed run; the next firing is the
-/// only retry.
-#[must_use]
-pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<WorkflowDisable> {
-    let WorkflowState::Enabled { since } = workflow.state else {
-        return None;
-    };
-    let mut mine: Vec<&WorkflowRun> = runs.iter().filter(|r| r.due_at >= since).collect();
-    mine.sort_by_key(|r| std::cmp::Reverse(r.due_at));
-    let mut streak = 0;
-    for run in mine {
-        let counts = !matches!(run.cause, RunCause::Manual { .. });
-        match &run.state {
-            RunState::Done(RunEnd::Refused { .. }) => streak += usize::from(counts),
-            RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
-                RunOutcome::Failed { .. }
-                | RunOutcome::Incomplete { .. }
-                | RunOutcome::TimedOut { .. } => streak += usize::from(counts),
-                RunOutcome::Delivered { .. } => break,
-                RunOutcome::Declined { .. } | RunOutcome::Cancelled { .. } => {}
-            },
-            RunState::Queued
-            | RunState::Running { .. }
-            | RunState::Waiting { .. }
-            | RunState::Done(
-                RunEnd::SkippedOverlap
-                | RunEnd::SkippedFork { .. }
-                | RunEnd::CancelledUnstarted { .. },
-            ) => {}
-        }
-    }
-    (streak >= BREAKER_STREAK).then(|| WorkflowDisable {
-        reason: format!("the last {BREAKER_STREAK} runs were refused or timed out"),
-    })
 }
 
 /// What a due firing does given the prior run: skip and record the skip while the prior run

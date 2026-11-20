@@ -6,9 +6,7 @@
 //! claim, which [`resolve_interrupted`] settles from the Box's name and never by starting again:
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
-use moor_core::decide::workflow::{
-    run_verdict, workflow_breaker, workflow_due, RunVerdict, WorkflowVerdict,
-};
+use moor_core::decide::workflow::{run_verdict, workflow_due, RunVerdict, WorkflowVerdict};
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
@@ -99,7 +97,7 @@ pub(crate) fn tick(
     out
 }
 
-/// One workflow's pass: finish, expire, check the breaker, then fire what is due. A disabled
+/// One workflow's pass: finish, expire, then fire what is due. A disabled
 /// workflow only settles the runs it has open.
 fn tick_one(
     cx: &Cx,
@@ -114,16 +112,10 @@ fn tick_one(
     finish_runs(cx, store, w, now, (checks, out))?;
     expire_runs(cx, store, w, now, out)?;
     enforce_start_limit(cx, store, w, now, out)?;
-    if matches!(w.state, WorkflowState::Disabled { .. }) {
+    if matches!(w.state, WorkflowState::Disabled) {
         return Ok(());
     }
     let history = history(store, w)?;
-    if let Some(trip) = workflow_breaker(w, &history.unskipped) {
-        if store.disable_workflow(w.id, &trip.reason)? {
-            out.push(format!("workflow {} disabled: {}", w.name, trip.reason));
-        }
-        return Ok(());
-    }
     match workflow_due(w, &history.facts(store)?, now) {
         WorkflowVerdict::NotDue => {}
         WorkflowVerdict::SkipOverlap { due_at } => {

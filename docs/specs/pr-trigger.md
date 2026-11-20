@@ -108,7 +108,7 @@ columns with a check that matches the enum, and parses rows back into it.
 | The controller reads the pull request back from GitHub before it fires. | Deliveries arrive out of order. The current head, state and draft flag decide, not the payload. |
 | The receiver answers `202` before it calls GitHub. | GitHub gives a delivery 10 s. |
 | Run again on a pull request run is a manual run for that pull request at its current head. | The old head may be gone. The person wants the pull request checked, not the commit. |
-| A cancelled run does not count toward the breaker. Three refused or timed-out pull request runs in a row turn off the trigger. | Pushing often is not a failing workflow. |
+| A failed pull request run never turns off the trigger. | Pushing often is not a failing workflow, and a failure shows as failed. |
 | One prompt and plan serve both kinds of run. The author branches on `MOOR_PULL_NUMBER`. | A second definition per workflow would drift from the first. |
 
 ## The GitHub App

@@ -147,7 +147,7 @@ pub struct WorkflowDef {
 ```
 
 Cron, timezone, repos, `also`, config, timeout, origin, enable state, the
-overlap skip and the breaker are unchanged.
+and the overlap skip are unchanged.
 
 ### Run
 
@@ -551,15 +551,17 @@ buttons on the portal's run view. Only the workflow's owner may answer.
 
 ### Phase against the existing rules
 
-| State | Overlap `blocks` | Expiry | Start limit | Breaker |
-| --- | --- | --- | --- | --- |
-| `Queued` | yes | no | yes | ignored |
-| `Running` | yes | yes | yes, until the agent starts | ignored |
-| `Waiting` | yes | the clock stops while waiting | no | ignored |
-| `Delivered` | no | (n/a) | (n/a) | resets the streak |
-| `Failed`, `Incomplete`, `TimedOut`, `Refused` | `TimedOut` only while its Box is open, as today | (n/a) | (n/a) | counts |
-| `Declined` | no | (n/a) | (n/a) | neither counts nor resets |
-| `SkippedOverlap` | no | (n/a) | (n/a) | ignored |
+| State | Overlap `blocks` | Expiry | Start limit |
+| --- | --- | --- | --- |
+| `Queued` | yes | no | yes |
+| `Running` | yes | yes | yes, until the agent starts |
+| `Waiting` | yes | the clock stops while waiting | no |
+| `Delivered` | no | (n/a) | (n/a) |
+| `Failed`, `Incomplete`, `TimedOut`, `Refused` | `TimedOut` only while its Box is open, as today | (n/a) | (n/a) |
+| `Declined` | no | (n/a) | (n/a) |
+| `SkippedOverlap` | no | (n/a) | (n/a) |
+
+No ending disables the workflow. A failed run shows as failed and the next due time fires.
 
 Expiry counts working time. That is the wall clock since the first launch,
 minus each span between a `Waiting` move and its `Answered` line in history.

@@ -87,8 +87,8 @@ tables! {
     MachineBoxMemory { MachineId, BoxId, HostMemoryMib, ResumeMemoryMib, Inc }
     MachineBoxes { BoxId, MachineId, Slot, Reach, Facts, Prepared, SuspendedAt, Evicted,
         UpdatedAt, Inc }
-    Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
-        TimeoutMinutes, CreatedAt, UpdatedAt, OriginFront, OriginKey, ChangeSeq, Also, Config,
+    Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, TimeoutMinutes,
+        CreatedAt, UpdatedAt, OriginFront, OriginKey, Also, Config,
         Plan, Revision, OnPullRequest }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
         RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger, PullNumber, HeadSha }
