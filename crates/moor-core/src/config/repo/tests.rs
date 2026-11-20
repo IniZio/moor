@@ -209,7 +209,11 @@ fn changed_keys_lists_env_and_box_in_file_order() {
 
 #[test]
 fn proxy_takes_only_allow() {
-    rejects("proxy: {direct: [pub.dev]}", "proxy.direct", "unknown field");
+    rejects(
+        "proxy: {direct: [pub.dev]}",
+        "proxy.direct",
+        "unknown field",
+    );
 }
 
 #[test]
