@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use moor_client::rootless;
 
 use super::files::Layout;
-use super::node::{Plan, INSTALL};
+use super::node::{docker, Plan, INSTALL};
 use super::service;
 use crate::doctor::Check;
 use crate::env::Env;
@@ -115,4 +115,24 @@ pub(super) fn settle(
         ));
     }
     Ok(found)
+}
+
+/// The address of Docker's default bridge on this host.
+pub(super) fn bridge_gateway() -> Result<Ipv4Addr, Check> {
+    docker(&[
+        "network",
+        "inspect",
+        "bridge",
+        "--format",
+        "{{(index .IPAM.Config 0).Gateway}}",
+    ])
+    .ok()
+    .and_then(|g| g.parse::<Ipv4Addr>().ok())
+    .ok_or_else(|| {
+        Check::fail(
+            "docker",
+            "cannot read the address of Docker's bridge network",
+            "check `docker network inspect bridge`",
+        )
+    })
 }
