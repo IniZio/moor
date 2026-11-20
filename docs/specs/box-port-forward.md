@@ -1,5 +1,7 @@
 # Box port forward
 
+**Status, 2026-11-20.** The `moor-hc forward` entry point is removed (owner decision). Teammates have no way to forward a Box port from their own computer for now. The teammate path is open and will be redesigned. The rest of this spec is history.
+
 A person opens a web app that runs in their Box. They use their own browser,
 at `http://localhost:<port>` on their own computer. moor carries each TCP
 connection from that local port to the same port on the Box's loopback.
@@ -26,7 +28,7 @@ Today nothing does this.
 ## Flow
 
 ```
-$ moor forward fix-login 5177
+$ moor-hc forward fix-login 5177
 http://localhost:5177  →  port 5177 in fix-login. Ctrl-C ends the forward.
 12:01:03  connection 1 open
 12:01:40  connection 1 closed, 412 KiB in, 9 KiB out
@@ -57,14 +59,14 @@ front calls it.
 
 | Surface | Holds a forward | Why |
 | --- | --- | --- |
-| `moor forward BOX PORT` | Yes, the teammate's entry | `moor` runs on the person's computer and pipes bytes to a Box through `/front`. The `moor-hc` bridge it replaced is removed. |
+| `moor-hc forward BOX PORT` | Removed 2026-11-20 (owner). The teammate path is open, to be redesigned | `moor-hc` already runs on the person's computer, signed in with `moor-hc login`, and pipes bytes to a Box through `/front` for hc ([`moor-hc/src/exec.rs`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/crates/moor-hc/src/exec.rs)). It runs in any terminal pane of the TUI. |
 | `moor forward NAME PORT` | Yes, first and dev only | Proves the path before the bridge ships. Same client code. |
 | Account page, MCP | No | They run on a server. A listener there is not the person's `localhost`. |
 
 ## Data path
 
 ```
-browser ──tcp localhost:5177──▶ moor forward                 person's computer
+browser ──tcp localhost:5177──▶ moor-hc forward              person's computer
         ──wss HOST/front, Bearer, one WebSocket per connection──▶ gate
         ──relay to the controller socket──▶ controller        forward request: authz, placement
         ──links broker at the runner the link row names──▶ machine runner
@@ -148,11 +150,11 @@ real, and adapter v0.2.2 fixes it. See the open questions.
 | Runner roll | Finish on the draining runner, or cut at its 30 s budget | Stays | Routed by the link row to the new runner (machine runner rollout spec) | Nothing |
 | Gate roll | Cut | Stays | Another gate replica | Nothing |
 | Agent restart or update | Cut, tunnels end | Stays | New tunnel after relink | Nothing |
-| Token expires | Run on | Stays | The client refreshes as `moor` does. A refusal says to sign in again | Nothing |
+| Token expires | Run on | Stays | The client refreshes as `moor-hc` does; a refusal says to sign in again | Nothing |
 
 - Opening a forward wakes an asleep Box, as an act of the person. A connection
   never wakes one. A browser tab that retries would keep the Box awake forever,
-  which is why `moor exec` refuses an asleep Box too.
+  which is why `moor-hc exec` refuses an asleep Box too.
 - Bytes through a forward in the last 10 minutes count as Box activity, so
   autosleep waits. An open forward with no traffic does not hold the Box awake.
 - A forward names the Box, not its hands. Each connection resolves the current
@@ -216,7 +218,7 @@ closed.
 | Not `exec` of a pipe command per connection | It works today with no core change, so it suits a one-off check of the sign-in. As the feature it costs an ssh session and an `exec_ran` event per browser connection, wakes the Box, and needs a pipe tool in the image. |
 | One `/front` WebSocket per connection | Reuses the gate hold, redial and identity rewrite, and a failure stays with one connection. The cost is one handshake per browser connection, and browsers reuse connections. |
 | Same port number by default | The redirect URI names the port. Picking another silently would break the sign-in. |
-| Listener in `moor-client`, entry in `moor forward` | One implementation for every local front. `moor` is the CLI a teammate already runs. |
+| Listener in `moor-client`, entry in `moor-hc` | One implementation for every local front. `moor-hc` is the surface a teammate already runs. |
 | Raw TCP, no HTTP rewriting | The app must see `localhost:<port>`, as the provider redirects there. |
 | A new connection never wakes an asleep Box | Only opening the forward wakes it. A browser tab that retries would otherwise keep the Box awake forever. |
 | Traffic in the last 10 minutes holds autosleep off | A person using the app is using the Box. An open forward with no traffic does not. |
@@ -238,7 +240,7 @@ closed.
 4. **Client and dev CLI.** `moor-client` forward listener and `moor forward`.
    The check is a browser on a teammate's computer. It signs in to a Compose
    app in a Box on a node, through `localhost:5177`. About 300 lines.
-5. **`moor forward` docs.** The docs are [`events.md`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/docs/events.md),
+5. **`moor-hc forward` and docs.** The docs are [`events.md`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/docs/events.md),
    [`cli.md`](https://github.com/IniZio/moor/blob/ae08875ff9438b65e66c6623d84eaff66d817ae4/docs/cli.md) and the use guide. About 200 lines.
 
 ## Open questions

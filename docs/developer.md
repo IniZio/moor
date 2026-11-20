@@ -91,6 +91,5 @@ reads the repo with your GitHub token, so link GitHub first.
 
 ## Reach the Box from your own computer
 
-A Box that runs a web app can be reached from your browser with
-[moor forward](boxes.md#open-a-web-app-in-the-box-from-your-browser). Use it when
-you must act in the app yourself, such as signing in with a second factor.
+Teammates have no port forward to a Box from their own computer for now. A design
+comes later. See [the Box web app section](boxes.md#open-a-web-app-in-the-box-from-your-browser).
