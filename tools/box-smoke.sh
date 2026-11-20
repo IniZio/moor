@@ -189,6 +189,14 @@ second=$(shell true 2>&1)
 check "an appended note prints in the next box-shell output" "moor: smoke note one" "$first"
 check "the note does not print again" "" "$second"
 
+fastest=9
+for _ in 1 2 3; do
+  t0=$(date +%s.%N)
+  shell true >/dev/null 2>&1
+  fastest=$(awk -v a="$t0" -v b="$(date +%s.%N)" -v f="$fastest" 'BEGIN { d = b - a; printf "%.2f", (d < f ? d : f) }')
+done
+if awk -v t="$fastest" 'BEGIN { exit !(t < 0.9) }'; then ok "a quick box-shell line returns in ${fastest}s (limit 0.9s)"; else bad "a quick box-shell line returns within 0.9s" "fastest of 3: ${fastest}s"; fi
+
 oom_before=$(in_agent cat /run/moor/oom)
 hog=$(shell 'timeout 120 tail /dev/zero; echo "tail exited $?"' 2>&1)
 sleep 2
