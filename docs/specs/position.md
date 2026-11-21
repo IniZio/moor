@@ -166,7 +166,10 @@ One unit is one file. The dependency check is whole in a single file. Its trigge
 triggers:
   - schedule: "0 9 * * 1-5"
     timezone: Europe/London
-repos: [acme/web, acme/api, acme/ios]
+projects:
+  - [acme/web]
+  - [acme/api]
+  - [acme/ios, acme/ios-fastlane]
 run_as: ana
 skills: [deps-check]
 may:
@@ -193,6 +196,8 @@ Open a draft pull request with the proof.
 ```
 
 Three names in this file point elsewhere. They are the repos, the skill, and the check named `ci`, which each repo file defines.
+
+A project is the ordered set of repos that one task clones into its Box, as the [experience spec](end-user-experience.md) defines it. The automation starts one task per project.
 
 ### Reading and changing it
 
@@ -236,7 +241,7 @@ Proposal 41 by the observer agent, from tasks 812, 815 and 820
 
 ~ skills/deps-check/SKILL.md     prose, 6 lines changed
   used by  automations/deps-check
-  affects  3 repos, next run Monday 09:00
+  affects  3 projects, next run Monday 09:00
 
 Gates and capabilities: no change
 Replay on the fixture repo: passed
@@ -246,7 +251,9 @@ A scheduled task acts as the person named in the automation. It uses that person
 
 An automation is a shared file, so its ask is work done under one person's tokens. Any change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
 
-A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the automation. A repo's own checks live in its repo file.
+A trigger covers every project the automation lists. Shared policy is written once, in the skill and the automation. A repo's own checks live in its repo file.
+
+The experience spec says to make one workflow per project today, with a Duplicate button. The runs work found that this copies the same plan into five workflows. A project list keeps one copy of the gates and capabilities.
 
 The defaults file holds the lead prose, which is the shape of work. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
 
@@ -310,7 +317,7 @@ Secrets never enter the definition. A capability names a permission, not a token
 
 ### The three cases again
 
-- **A.** One automation file replaces four workflows. Each agent writes a plan that fits its repo. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
+- **A.** One automation file replaces four workflows. Each agent writes a plan that fits its project. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
 - **B.** The PM types the ask. The plan appears in plain words. The default gates ask for a screenshot and passing checks. The PM sees needs you only if a gate waits.
 - **C.** The second person's message carries their identity. From then on the Proxy adds their tokens. It refuses when it cannot tell who is steering.
 
@@ -480,4 +487,4 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 
 ## Open questions
 
-None. The owner answered each one, and the Decided list holds the answers.
+1. Does one automation list several projects and start one task for each? The experience spec says one workflow per project today.
