@@ -33,7 +33,8 @@
 .t-gate-cmd summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
 .t-gate-cmd .t-quote { margin: 0.3rem 0 0; }
 .t-rules .plan-bar { margin-bottom: var(--moor-space-2); }
-.t-rules-list { margin: 0; padding-left: var(--moor-space-6); display: grid; gap: var(--moor-space-3); }
+.t-rules-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--moor-space-3); }
+.cards .t-rules-list > li { background: none; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
 .t-rule-name { font-weight: 650; }
 .t-rules-end { margin: var(--moor-space-3) 0 0; color: var(--moor-color-text-muted); }
 .t-step-checks { list-style: none; margin: var(--moor-space-2) 0; padding: 0; display: grid; gap: var(--moor-space-2); }
