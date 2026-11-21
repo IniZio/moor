@@ -15,7 +15,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
 }
 
 #[test]
-fn a_gated_boxs_first_message_shows_the_persons_words_without_the_preamble() {
+fn a_gated_box_first_message_shows_the_persons_words_without_the_preamble() {
     let gates = crate::gate::Gates::parse(&[crate::gate::GateDoc {
         name: "proof".to_owned(),
         evidence: vec!["proof.md".to_owned()],

@@ -99,7 +99,7 @@ fn a_start_of_an_open_box_keeps_its_gates_and_refuses_others() {
 }
 
 #[test]
-fn a_gated_boxs_first_message_carries_its_gates_and_a_plain_one_stays_bare() {
+fn a_gated_box_first_message_carries_its_gates_and_a_plain_one_stays_bare() {
     let (w, engine) = install_world("", None, false, FakeDriver::new());
     let asked = StartReq {
         prompt: Some("Fix the typo.".to_owned()),
@@ -109,7 +109,7 @@ fn a_gated_boxs_first_message_carries_its_gates_and_a_plain_one_stays_bare() {
     let first = engine.launches().remove(0).prompt;
     let text = first.text().unwrap();
     assert!(
-        text.starts_with("Fix the typo.\n\nmoor holds this task open"),
+        text.starts_with("Fix the typo.\n\nmoor keeps this Box open"),
         "{text}"
     );
     assert!(

@@ -49,9 +49,10 @@ pub fn code_gate(
     verdict(problems)
 }
 
-/// Whether `report` of a gate that asks for `evidence` passes, given `index` as for
-/// [`code_gate`]: the same limits, a note on a `fail` report, and each evidence name matching
-/// a file that is not empty and not too large.
+/// Whether `report` of a gate that asks for `evidence` passes.
+///
+/// `index` is as for [`code_gate`], and so are the limits, the note a `fail` report needs, and
+/// the evidence: each name matches a file that is not empty and not too large.
 ///
 /// # Errors
 /// What is missing, too small or too large, one line each.
@@ -64,7 +65,7 @@ pub fn evidence_gate(
     match report.result {
         StepResult::Fail => problems.extend(fail_problem(!report.note.trim().is_empty())),
         StepResult::Ok => {
-            for name in evidence.iter().flat_map(|e| e.names()) {
+            for name in evidence.into_iter().flat_map(Evidence::names) {
                 problems.extend(evidence_problems(name, index));
             }
         }

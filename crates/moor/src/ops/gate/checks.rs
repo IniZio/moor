@@ -18,7 +18,8 @@ use moor_schema::tables::BoxGateLines;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
-use crate::ops::common::quiet::{box_facts, quiet_for_check};
+use crate::ops::common::quiet::settled;
+use crate::ops::gate::remind::remind;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
 
@@ -82,11 +83,9 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
         return Ok(());
     }
     let Some(due) = due_check(&gates, &lines) else {
-        return Ok(());
+        return remind(cx, store, row, (&gates, &lines));
     };
-    let steered = store.last_event_at(row.id, &["steered"])?;
-    let facts = box_facts(store, row)?;
-    if !quiet_for_check(&facts, steered, cx.clock().now()) || !store.unsent(row.id)?.is_empty() {
+    if !settled(cx, store, row)? {
         return Ok(());
     }
     let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
@@ -106,13 +105,31 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     Ok(())
 }
 
-/// What the agent is told about the check whose failure ended the newest try, when a failure did
-/// and tries remain: the check, why it failed, and the end of its output.
-fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<String> {
+/// Whether `line` is one the agent's own doings wrote in try `try_n`, which a failure that ended
+/// the try before it may be followed by.
+const fn of_this_try(line: &GateLine, try_n: u8) -> bool {
+    matches!(
+        line,
+        GateLine::Submitted { try_n: t, .. }
+            | GateLine::Refused { try_n: t, .. }
+            | GateLine::Reminded { try_n: t, .. }
+            | GateLine::Quiet { try_n: t, .. } if *t == try_n
+    )
+}
+
+/// The place of the line that failed a check and ended the try before the one in hand, when tries
+/// remain, and what the agent is told of it. The try in hand may have lines of its own after the
+/// failure, such as a refused report.
+fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
     let GateStatus::Open { gate, try_n, .. } = status(gates, lines) else {
         return None;
     };
-    let (failed_try, check, why, tail) = match lines.last()? {
+    let (at, line) = lines
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, l)| !of_this_try(l, try_n))?;
+    let (failed_try, check, why, tail) = match line {
         GateLine::Checked {
             gate: g,
             try_n,
@@ -130,35 +147,29 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<String> {
     if failed_try + 1 != try_n {
         return None;
     }
-    let command = gates
+    let text = gates
         .iter()
         .find(|g| g.name == gate)?
-        .checks
-        .get(usize::from(check))?;
-    let mut text = format!(
-        "Gate `{gate}` is not passed: check {} (`{command}`) {why}.",
-        check + 1
-    );
-    if !tail.trim().is_empty() {
-        text.push_str("\n\nThe end of its output:\n");
-        text.push_str(tail.trim_end());
-    }
-    text.push_str("\n\nFix it, then stop. moor runs the checks again once you are quiet.");
-    Some(text)
+        .failed_check_steer(check, (&why, tail));
+    Some((at, text))
 }
 
-/// Steers the agent of `row` the failure that ended the newest try, unless it was told already: a
-/// steer came after the line, or one waits in the inbox. True when it sent one.
+/// Steers the agent of `row` the failure that ended the try before the one in hand, unless it was
+/// told already: a steer came after the failure's line, or one waits in the inbox. True when it
+/// sent one.
 fn tell_failure(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     (gates, lines): (&Gates, &[GateLine]),
 ) -> Result<bool, CommandError> {
-    let Some(text) = failure_text(gates, lines) else {
+    let Some((at, text)) = failure_text(gates, lines) else {
         return Ok(false);
     };
-    let wrote = store.newest_gate_line_at(row.id)?;
+    let wrote = store.gate_line_at(
+        row.id,
+        i64::try_from(at).unwrap_or(i64::MAX).saturating_add(1),
+    )?;
     let steered = store.last_event_at(row.id, &["steered"])?;
     let told = steered
         .zip(wrote)
@@ -178,7 +189,7 @@ fn tell_failure(
 }
 
 /// Whether `e` says another line took the number.
-fn taken(e: &StoreError) -> bool {
+pub(super) fn taken(e: &StoreError) -> bool {
     matches!(e, StoreError::Db(db) if db.unique_key().is_some_and(|k| {
         k.is(&BoxGateLines::Table, &[BoxGateLines::Box, BoxGateLines::N])
     }))

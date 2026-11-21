@@ -32,7 +32,7 @@ fn gates() -> Gates {
 fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
     let text = gates().first_message("Fix the typo.\n");
     assert!(
-        text.starts_with("Fix the typo.\n\nmoor holds this task open"),
+        text.starts_with("Fix the typo.\n\nmoor keeps this Box open"),
         "{text}"
     );
     assert!(text.contains("report_step"), "{text}");

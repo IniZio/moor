@@ -380,7 +380,7 @@ pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
         .gates
         .as_deref()
         .and_then(|docs| Gates::parse(docs).ok());
-    LaunchPrompt::Text(gates.map_or(asked.clone(), |g| g.first_message(&asked)))
+    LaunchPrompt::Text(gates.map_or_else(|| asked.clone(), |g| g.first_message(&asked)))
 }
 
 mod failed;
