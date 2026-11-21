@@ -376,6 +376,26 @@ fn a_newer_head_cancels_a_gated_pull_request_run_as_it_does_any_other() {
     ));
 }
 
+#[test]
+fn the_gate_pass_leaves_the_box_of_a_cancelled_run_alone() {
+    let r = hooked();
+    let id = r.put_gated_for(&[proof()], true);
+    r.signed("opened", 65, OLD);
+    let old_box = r.one_at(id, 65, OLD).state.box_id().unwrap();
+    r.pause(1_000);
+    r.signed("synchronize", 65, NEW);
+    assert!(cancelled(&r.one_at(id, 65, OLD)).is_some());
+    r.pause(10 * MIN);
+    let store = r.cx.store().unwrap();
+    let out = crate::ops::gate_pass(&r.cx, store, &|| false, &|_| {}).unwrap();
+    assert!(out.is_empty(), "{out:?}");
+    assert!(
+        store.unsent(old_box).unwrap().is_empty(),
+        "no reminder for a run that was cancelled"
+    );
+    assert!(store.gate_lines(old_box).unwrap().is_empty());
+}
+
 impl Rig {
     /// Whether Box `id` holds gates.
     fn store_gates(&self, id: moor_core::BoxId) -> bool {
