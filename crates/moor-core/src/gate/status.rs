@@ -146,6 +146,23 @@ pub fn due_check<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueCheck<'a
     })
 }
 
+/// Check `check`, from 0, of `gate` as a person reads it: its place and its command, cut short.
+fn named(gate: &Gate, check: u8) -> String {
+    let command: String = gate
+        .checks
+        .get(usize::from(check))
+        .map_or_else(String::new, |c| c.trim().chars().take(60).collect());
+    let more = gate
+        .checks
+        .get(usize::from(check))
+        .is_some_and(|c| c.trim().chars().count() > 60);
+    format!(
+        "check {} (`{command}{}`)",
+        check + 1,
+        if more { "…" } else { "" }
+    )
+}
+
 /// The fold of `lines` over `gates`.
 fn walk<'a>(gates: &'a Gates, lines: &[GateLine]) -> Walk<'a> {
     let mut walk = Walk {
@@ -249,7 +266,12 @@ impl Walk<'_> {
             GateLine::CheckLost { try_n, check, .. } => self.lost(gate, (*try_n, *check)),
             GateLine::Reminded { try_n, .. } => self.reminded(gate, *try_n),
             GateLine::Quiet { try_n, .. } => self.quiet(gate, *try_n),
-            GateLine::Answered { answer, note, .. } => self.answered(gate, *answer, note),
+            GateLine::Answered {
+                try_n,
+                answer,
+                note,
+                ..
+            } => self.answered(gate, *try_n, (*answer, note)),
             GateLine::TryFailed { try_n, why, .. } => {
                 if self.current(*try_n) {
                     self.fail(gate, why);
@@ -293,7 +315,7 @@ impl Walk<'_> {
             self.tries.checks += 1;
             self.tries.lost = 0;
         } else {
-            self.fail(gate, &format!("check {} exited {exit}", check + 1));
+            self.fail(gate, &format!("{} exited {exit}", named(gate, check)));
         }
     }
 
@@ -304,7 +326,10 @@ impl Walk<'_> {
         }
         self.tries.lost += 1;
         if self.tries.lost >= 2 {
-            self.fail(gate, &format!("check {} lost its output twice", check + 1));
+            self.fail(
+                gate,
+                &format!("{} lost its output twice", named(gate, check)),
+            );
         }
     }
 
@@ -322,9 +347,10 @@ impl Walk<'_> {
         }
     }
 
-    /// The owner answered; a no on the last try ends the gate.
-    fn answered(&mut self, gate: &Gate, answer: Answer, note: &str) {
-        if self.tries.next(gate) != Some(GateNext::Ask) {
+    /// The owner answered the try `try_n`; a no on the last try ends the gate. An answer for
+    /// another try than the one that asks is a replay and changes nothing.
+    fn answered(&mut self, gate: &Gate, try_n: u8, (answer, note): (Answer, &str)) {
+        if !self.waits(gate, try_n, GateNext::Ask) {
             return;
         }
         if answer == Answer::Yes {

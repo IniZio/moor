@@ -68,6 +68,8 @@ pub enum GateLine {
     Answered {
         /// The gate.
         gate: StepId,
+        /// The try the owner was asked about.
+        try_n: u8,
         /// Who answered.
         by: String,
         /// Yes or no.

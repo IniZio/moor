@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::gate::Wait;
 use crate::view::{AgentView, ApprovalView};
 use crate::workflow::PLAN_QUESTION;
 
@@ -16,8 +17,10 @@ pub enum NeedKind {
     Permission,
     /// It asks a question.
     Question,
-    /// A workflow run waits at an approve step for its owner's yes or no.
+    /// A workflow run waits at an approve step for its owner's yes or no, or a gate waits for it.
     Approve,
+    /// A gate is stuck, and only a person's steer reopens it.
+    Stuck,
 }
 
 /// What picking an option does.
@@ -78,6 +81,9 @@ pub struct Needs {
     /// Whether a plan-first agent asks to approve the plan it left as evidence.
     #[serde(default)]
     pub plan: bool,
+    /// For a card of a gate that waits for a person: the gate and what the person needs to act.
+    #[serde(default)]
+    pub gate: Option<Wait>,
 }
 
 /// The name of the prompt that asks `question` with `detail` and `options`.
@@ -133,7 +139,7 @@ pub fn needs_of(agent: &AgentView) -> Option<Needs> {
             label: label.clone(),
             role: match kind {
                 NeedKind::Permission => role_of(label),
-                NeedKind::Question | NeedKind::Approve => Role::Choice,
+                NeedKind::Question | NeedKind::Approve | NeedKind::Stuck => Role::Choice,
             },
         })
         .collect();
@@ -155,6 +161,7 @@ pub fn needs_of(agent: &AgentView) -> Option<Needs> {
         plan: kind == NeedKind::Question && agent.question.as_deref() == Some(PLAN_QUESTION),
         picks,
         approve: None,
+        gate: None,
     })
 }
 
@@ -173,6 +180,7 @@ pub fn approve_needs(approval: &ApprovalView) -> Needs {
         picks: Vec::new(),
         other: None,
         plan: false,
+        gate: None,
         approve: Some(Approve {
             workflow: approval.workflow.clone(),
             run: approval.run,

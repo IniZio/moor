@@ -189,6 +189,7 @@ fn a_line_is_tagged_by_its_kind_and_reads_back() {
         },
         GateLine::Answered {
             gate: StepId::parse("proof").unwrap(),
+            try_n: 1,
             by: "owner".to_owned(),
             answer: Answer::Yes,
             note: String::new(),

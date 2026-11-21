@@ -10,6 +10,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
     b.gate = Some(GateView {
         gates: vec!["proof".to_owned()],
         status,
+        wait: None,
     });
     b
 }
@@ -157,4 +158,125 @@ fn a_gate_never_revives_a_box_that_is_closed_or_failed() {
         let b = gated(lifecycle, SessionState::Idle, stuck());
         assert_eq!(derive(&b, &[], ten()).state, want);
     }
+}
+
+fn doc(evidence: &[&str], checks: &[&str], approval: bool) -> crate::gate::GateDoc {
+    crate::gate::GateDoc {
+        name: "proof".to_owned(),
+        evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        approval: approval.then_some(crate::gate::Approval::Owner),
+        max_tries: Some(1),
+    }
+}
+
+fn standing(
+    lifecycle: BoxLifecycle,
+    d: &crate::gate::GateDoc,
+    lines: &[crate::gate::GateLine],
+) -> BoxView {
+    let gates = crate::gate::Gates::parse(std::slice::from_ref(d)).unwrap();
+    let mut b = row(lifecycle, SessionState::Idle);
+    b.gate = Some(GateView::of(&gates, lines));
+    b
+}
+
+fn submitted() -> crate::gate::GateLine {
+    crate::gate::GateLine::Submitted {
+        gate: proof(),
+        try_n: 1,
+        report: crate::workflow::StepReport {
+            step: proof(),
+            result: crate::workflow::StepResult::Ok,
+            evidence: vec!["proof.md".to_owned()],
+            note: "all green".to_owned(),
+        },
+    }
+}
+
+#[test]
+fn a_gate_that_asks_the_owner_shows_an_approve_card_with_what_was_handed_in() {
+    let d = doc(&["proof.md"], &[], true);
+    for lifecycle in [BoxLifecycle::Ready, BoxLifecycle::Asleep] {
+        let b = standing(lifecycle, &d, &[submitted()]);
+        let p = derive(&b, &[], ten());
+        assert_eq!(p.state, Progress::NeedsYou, "{lifecycle:?}");
+        let card = p.needs.unwrap();
+        assert_eq!(card.kind, NeedKind::Approve);
+        assert!(card.question.contains("proof"), "{}", card.question);
+        assert!(card.question.contains("proof.md"), "{}", card.question);
+        assert_eq!(card.detail.as_deref(), Some("all green"));
+        assert!(card.picks.is_empty() && card.approve.is_none());
+        let wait = card.gate.unwrap();
+        assert_eq!((wait.gate.as_str(), wait.try_n), ("proof", Some(1)));
+    }
+}
+
+#[test]
+fn a_card_for_a_later_wait_has_another_id() {
+    let d = crate::gate::GateDoc {
+        max_tries: Some(2),
+        ..doc(&[], &[], true)
+    };
+    let first = derive(&standing(BoxLifecycle::Ready, &d, &[]), &[], ten());
+    let no = crate::gate::GateLine::Answered {
+        gate: proof(),
+        try_n: 1,
+        by: "me".to_owned(),
+        answer: crate::workflow::Answer::No,
+        note: String::new(),
+    };
+    let second = derive(&standing(BoxLifecycle::Ready, &d, &[no]), &[], ten());
+    let (a, b) = (first.needs.unwrap(), second.needs.unwrap());
+    assert_eq!(
+        (a.gate.unwrap().try_n, b.gate.unwrap().try_n),
+        (Some(1), Some(2))
+    );
+    assert_ne!(a.id, b.id);
+}
+
+#[test]
+fn a_stuck_gate_shows_a_card_with_why_and_the_failing_command() {
+    let d = doc(&[], &["cargo test --workspace"], false);
+    let failed = crate::gate::GateLine::Checked {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+        exit: 101,
+        tail: "1 test failed".to_owned(),
+    };
+    for lifecycle in [BoxLifecycle::Ready, BoxLifecycle::Asleep] {
+        let b = standing(lifecycle, &d, std::slice::from_ref(&failed));
+        let p = derive(&b, &[], ten());
+        assert_eq!(p.state, Progress::NeedsYou, "{lifecycle:?}");
+        assert_eq!(
+            p.line,
+            "gate proof is stuck: out of tries: check 1 (`cargo test --workspace`) exited 101"
+        );
+        let card = p.needs.unwrap();
+        assert_eq!(card.kind, NeedKind::Stuck);
+        assert_eq!(card.detail.as_deref(), Some("cargo test --workspace"));
+        let wait = card.gate.unwrap();
+        assert_eq!(wait.gate, "proof");
+        assert!(wait.why.unwrap().contains("exited 101"));
+        assert_eq!(wait.command.as_deref(), Some("cargo test --workspace"));
+        assert_eq!(wait.tail.as_deref(), Some("1 test failed"));
+        assert!(wait.hint.contains("reopen"));
+    }
+}
+
+#[test]
+fn the_cards_json_names_its_kind_and_gate() {
+    let d = doc(&[], &["make"], false);
+    let failed = crate::gate::GateLine::CheckLost {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+    };
+    let lines = [failed.clone(), failed];
+    let p = derive(&standing(BoxLifecycle::Ready, &d, &lines), &[], ten());
+    let json = serde_json::to_value(p.needs.unwrap()).unwrap();
+    assert_eq!(json.get("kind"), Some(&json!("stuck")));
+    assert_eq!(json.pointer("/gate/gate"), Some(&json!("proof")));
+    assert_eq!(json.pointer("/gate/command"), Some(&json!("make")));
 }

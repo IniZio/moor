@@ -1,9 +1,9 @@
 //! What a Box's gates add to its state and its line.
 
-use super::Progress;
+use super::{ask_id, NeedKind, Needs, Progress};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
-use crate::gate::{GateNext, GateStatus};
+use crate::gate::{GateNext, GateStatus, Wait, WaitKind};
 use crate::view::BoxView;
 
 /// The status of the gates of an open Box; none for a Box without gates or a closed one.
@@ -12,6 +12,55 @@ fn open_status(b: &BoxView) -> Option<&GateStatus> {
         .as_ref()
         .map(|g| &g.status)
         .filter(|_| matches!(b.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep))
+}
+
+/// The name of the prompt that asks about `wait`. It carries the number of gate lines written when
+/// the wait began, so an answer to an earlier wait never lands on a later one.
+#[must_use]
+pub fn gate_ask_id(wait: &Wait) -> String {
+    ask_id(Some(&wait.gate), Some(&wait.seq.to_string()), &[])
+}
+
+/// The card of the gate that waits for a person in `b`, an open Box.
+pub(super) fn needs(b: &BoxView) -> Option<Needs> {
+    open_status(b)?;
+    let wait = b.gate.as_ref()?.wait.as_ref()?;
+    let gate = &wait.gate;
+    let (kind, question, detail) = match wait.kind {
+        WaitKind::Approve => {
+            let handed = match wait.handed.as_slice() {
+                [] => String::new(),
+                list => format!(" The agent handed in {}.", list.join(", ")),
+            };
+            (
+                NeedKind::Approve,
+                format!("Gate `{gate}` asks your approval.{handed}"),
+                wait.note.clone(),
+            )
+        }
+        WaitKind::Stuck => {
+            let why = wait.why.as_deref().unwrap_or("it cannot go on");
+            let detail = wait.command.clone().or_else(|| {
+                (!wait.missing.is_empty()).then(|| format!("missing: {}", wait.missing.join(", ")))
+            });
+            (
+                NeedKind::Stuck,
+                format!("Gate `{gate}` is stuck: {why}"),
+                detail,
+            )
+        }
+    };
+    Some(Needs {
+        id: gate_ask_id(wait),
+        kind,
+        question,
+        detail,
+        picks: Vec::new(),
+        other: None,
+        approve: None,
+        plan: false,
+        gate: Some(wait.clone()),
+    })
 }
 
 /// The state the gates force on an open Box, even asleep: one that waits for a person needs them,
