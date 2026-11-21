@@ -38,7 +38,7 @@ token's audience.
 | `list_webhooks` | none |
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
-| `add_workflow` | `name`, `repos`, `prompt`. Optional: `cron` with `timezone` (none means by hand or on pull requests), `config`, `timeout_minutes`, `plan`, `expected_revision`, `enabled` (false stores it disabled), `on_pull_request` (true also fires on the first repo's pull requests) |
+| `add_workflow` | `name`, `repos`, `prompt`. Optional: `cron` with `timezone` (none means by hand or on pull requests), `config`, `timeout_minutes`, `plan`, `gates` (in place of a plan), `expected_revision`, `enabled` (false stores it disabled), `on_pull_request` (true also fires on the first repo's pull requests) |
 | `list_workflows` | none |
 | `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs) |
 | `remove_workflow` | `name` |
@@ -72,7 +72,7 @@ token's audience.
   `stdout` and `stderr`. Each call records an `exec_ran` event.
 - `retry_box` reruns setup on a Box in `setup_failed`. It returns once setup
   has restarted, while setup goes on. Follow it with `box_status`.
-- `add_workflow` on an existing name keeps every optional field you leave out. That covers `cron` and `timezone`, `config`, `timeout_minutes`, `enabled` and `on_pull_request`. To clear the cron, send `cron: null`. To clear the config, send `config: ""`. The `plan` is the exception, so send the whole plan again. A new workflow is enabled, with no pull request trigger, no cron, no config and a 180 minute timeout.
+- `add_workflow` on an existing name keeps every optional field you leave out. That covers `cron` and `timezone`, `config`, `timeout_minutes`, `enabled`, `on_pull_request` and `gates`. To clear the cron, send `cron: null`. To clear the config, send `config: ""`. To clear the gates, send `gates: []`. The `plan` is the exception, so send the whole plan again. A new workflow is enabled, with no pull request trigger, no cron, no config and a 180 minute timeout.
 - `run_workflow` returns once the run is recorded and its Box start
   has begun, while the Box sets up. A start the controller refuses after that
   shows as a refused run in `list_workflow_runs`.

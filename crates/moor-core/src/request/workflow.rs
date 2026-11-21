@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{AsReq, Request};
+use crate::gate::GateDoc;
 use crate::user::Identity;
 use crate::workflow::{Answer, PullTarget};
 
@@ -64,6 +65,11 @@ pub struct WorkflowAddReq {
     /// on the cron and by hand only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_pull_request: Option<bool>,
+    /// The gates each run's Box starts with, in place of a plan: the run is delivered only when
+    /// they all pass. Absent keeps a stored workflow's gates; an empty list clears them. Sent
+    /// with a plan, or kept beside one, the call is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gates: Option<Vec<GateDoc>>,
 }
 
 /// Arguments of `workflow-remove`.

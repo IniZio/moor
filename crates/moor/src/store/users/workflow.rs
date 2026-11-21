@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use moor_core::gate::Gates;
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
@@ -68,10 +69,12 @@ struct WorkflowRow {
     plan: Option<String>,
     /// `on_pull_request`.
     on_pull_request: i64,
+    /// `gates`, as JSON.
+    gates: Option<String>,
 }
 
 /// The columns of a `workflows` row, in the order [`read_workflow`] reads them.
-const WORKFLOW_COLS: [Workflows; 17] = [
+const WORKFLOW_COLS: [Workflows; 18] = [
     Workflows::Id,
     Workflows::User,
     Workflows::Name,
@@ -89,6 +92,7 @@ const WORKFLOW_COLS: [Workflows; 17] = [
     Workflows::Revision,
     Workflows::Plan,
     Workflows::OnPullRequest,
+    Workflows::Gates,
 ];
 
 /// The store error for a stored value that does not parse.
@@ -116,6 +120,7 @@ fn read_workflow(r: &db::Row) -> Result<WorkflowRow, db::Error> {
         revision: r.get(14)?,
         plan: r.get(15)?,
         on_pull_request: r.get(16)?,
+        gates: r.get(17)?,
     })
 }
 
@@ -166,6 +171,12 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
         },
         revision: u64::try_from(row.revision).map_err(|e| corrupt("revision", e))?,
         on_pull_request: row.on_pull_request != 0,
+        gates: row
+            .gates
+            .as_deref()
+            .map(Gates::from_json)
+            .transpose()
+            .map_err(|e| corrupt("gates", e))?,
     })
 }
 
