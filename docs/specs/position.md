@@ -172,13 +172,18 @@ skills: [deps-check]
 grants:
   - github: pulls:write
 gates:
-  plan:
+  - name: plan
     approval: none
-  done:
-    final: true
-    evidence: [audit.md, "before-*", "after-*", report.md]
+  - name: proof
+    evidence: [audit.md, "before-*", "after-*"]
     checks: [ci]
     max_tries: 3
+  - name: done
+    one_of:
+      - result: pull_request
+        evidence: [report.md]
+      - result: nothing_to_do
+        evidence: [audit.md]
 actions:
   open_pull_request: go
 ---
@@ -196,6 +201,22 @@ Names that span files are hard to follow. Three rules keep that small.
 - **Inline first.** A unit holds everything it alone uses. A name is used only for what is truly shared, such as a skill or a repo.
 - **moor resolves every name.** A proposal with a name that points nowhere is refused, with the file and the line.
 - **The portal shows the resolved unit.** Each name is a link. One page shows an automation with its skill text and each repo's checks filled in.
+
+### Seeing it
+
+Files are for agents and for the few who edit them. People read pictures. moor draws three, all from the same definition.
+
+- **The flow of a unit.** Cards in order, top to bottom. They are the trigger, each gate, each action rule that waits, and the result. A card shows a kind, a title and one plain sentence.
+- **A task on that flow.** The same cards with a state each. The states are completed, in progress, waiting for you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
+- **A proposal on that flow.** The same cards with the changed ones marked.
+
+Rules for the pictures.
+
+- **Drawn from data, never by hand.** Nobody edits the picture. It changes when the definition does.
+- **Solid means enforced.** Triggers, gates, action rules and results are solid cards. moor guarantees them.
+- **Dashed means asked.** What the prose asks of the agent is drawn dashed, with the words "asked, not enforced". A model writes those cards from the prose, as formx-clark compiles a flowchart from a prompt.
+- **Plain words.** A gate card reads "moor checks that 3 files exist and that CI passes". It does not show field names.
+- **A form writes the file.** A new automation starts from five questions. They are when, where, what, what proof, and who says yes. The file is the advanced view.
 
 A proposal shows a plan before anyone accepts it, as Terraform does.
 
@@ -229,7 +250,7 @@ flowchart LR
 	G -->|pass or fail| W
 	W -->|risky action| G3{Action rule}
 	G3 --> W
-	G -->|final gate passed| RS[Result]
+	G -->|last gate passed| RS[Result]
 	RS --> RV[Review on GitHub]
 	RV -->|comments, failing CI| W
 ```
@@ -238,11 +259,15 @@ moor has one gate mechanism. The definition declares every gate.
 
 - **A gate** has a name and up to three needs. They are evidence files, checks that moor runs in the Box, and a yes from a named role.
 - **The agent calls a gate by name.** moor answers pass or fail. A failure returns to the agent, up to the gate's limit.
-- **Gates have no order.** The lead's prose says when to call each one. moor never walks from gate to gate, so no step graph returns.
-- **One gate may be final.** A task shows as done only when its final gate passes. A unit with no final gate gives a result marked unchecked.
+- **Gates are a list, in order.** A later gate cannot pass before an earlier one. The last gate is final, and a task shows as done only when it passes.
+- **A branch is nesting.** A gate may hold alternatives, one per kind of result. No gate points at another by name.
+- **A gate holds no instructions.** It says what proof moor needs, not how to do the work. The agent still plans and drives. moor only refuses a gate that comes too early or lacks its proof.
+- **A unit with no gates** gives a result marked unchecked.
 - **An action rule** sits on an action, such as opening a pull request. The Proxy lets it go, waits for a yes, or refuses.
 
-The example above declares two gates. The plan gate shows the plan and needs no yes. The done gate is final.
+The example above declares three gates. The plan gate shows the plan and needs no yes. The proof gate needs the before and after evidence. The last gate accepts a pull request, or a report that nothing needed a bump.
+
+The order and the nesting follow Authgear's authentication flows. There, sequence is list order and a branch is nesting. Step types are a small closed set, and names only point back.
 
 The safety floor is not part of the definition, and no proposal can change it.
 
@@ -310,13 +335,13 @@ flowchart LR
 
 ### What this costs
 
-- "Done" changes meaning. The experience spec says done when the agent goes quiet. Here done means the final gate passed.
+- "Done" changes meaning. The experience spec says done when the agent goes quiet. Here done means the last gate passed.
 
 - Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
-- A step graph shows where a task failed. Here the agent's plan must do that. Each plan item records its state and its evidence as the agent goes.
 - A gate proves that evidence exists and that checks pass. It does not prove the evidence is true. A person still reads it at review.
 - A judge with fresh context, as in HAL, is left for later. It would read files the working agent wrote, on the same model, at the task owner's cost.
 - A person cannot force an order of work. The lead can ask for one. Only gates and action rules are enforced.
+- Ordered gates are declared structure again, at the grain of milestones. They hold proof, not instructions, and moor does not send the next one.
 - Gates in the definition can be set wrong, or dropped. moor shows an unchecked result as unchecked, and keeps the safety floor.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
 - moor must show a diff and an accept button for its own definition. That is a small review surface, in a product that leaves code review to GitHub.
@@ -376,7 +401,7 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 
 | # | Step | Check |
 | --- | --- | --- |
-| 1 | The gate mechanism and one final gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
+| 1 | The gate mechanism, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and a gate that needs a yes. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
 | 3 | The definition. Defaults, skills, automations and repo files are versioned in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation file. A proposal shows its plan. A revert restores the old behaviour. The step plan code is deleted. |
 | 4 | Action rules at the Proxy, and tokens that follow the steerer. | With that rule set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
@@ -398,7 +423,9 @@ The owner decided this on 2026-11-20.
 ## Open questions
 
 1. Is the definition YAML and Markdown, and not TypeScript?
-2. Does repo config become files in the definition, with the same versions and proposals?
-3. Does the requester approve a plan that waits?
-4. Does a task act as the person steering it, as Hopper does?
-5. Does moor design for anyone outside the team, such as a client?
+2. Are gates an ordered list, with nesting for branches?
+3. Are the pictures drawn from the definition, with solid for enforced and dashed for asked?
+4. Does repo config become files in the definition, with the same versions and proposals?
+5. Does the requester approve a plan that waits?
+6. Does a task act as the person steering it, as Hopper does?
+7. Does moor design for anyone outside the team, such as a client?
