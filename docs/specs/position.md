@@ -206,11 +206,11 @@ Names that span files are hard to follow. Three rules keep that small.
 
 Files are for agents and for the few who edit them. People read pictures. moor draws three, all from the same definition.
 
-- **The flow of a unit.** One flowchart, cards top to bottom. They are the trigger, each gate and the result. A card shows a kind, a title and one plain sentence.
+- **The flow of a unit.** A story in sentences, one card each, in reading order. The cards are the trigger, each gate and the result. Key facts are underlined.
 - **A task on that flow.** The same cards with a state each. The states are completed, in progress, waiting for you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
 - **A proposal on that flow.** The same cards with the changed ones marked.
 
-Above the flowchart sits a short summary in sentences, with the key facts underlined. Every card and every underlined fact opens a detail panel.
+Every card and every underlined fact opens a detail panel. A flowchart and an outline of the same unit stay in the prototype for comparison.
 
 | Card | Its detail shows |
 | --- | --- |
@@ -429,7 +429,7 @@ The owner decided this on 2026-11-20.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
-- One flowchart serves the definition, a running task and a proposal. A summary in sentences sits above it, and every card opens its detail. Decided on 2026-11-21.
+- The story is the primary presentation for now, for the definition, a running task and a proposal. Every card opens its detail. Decided on 2026-11-21.
 - The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
