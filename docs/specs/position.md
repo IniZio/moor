@@ -417,15 +417,15 @@ The owner decided this on 2026-11-20.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
+- Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
 - The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
 
-1. Are gates an ordered list, with nesting for branches?
-2. Do the pictures show solid for enforced and dashed for asked?
-3. Does repo config become files in the definition, with the same versions and proposals?
-4. Does the requester approve a plan that waits?
-5. Does a task act as the person steering it, as Hopper does?
-6. Does moor design for anyone outside the team, such as a client?
+1. Do the pictures show solid for enforced and dashed for asked?
+2. Does repo config become files in the definition, with the same versions and proposals?
+3. Does the requester approve a plan that waits?
+4. Does a task act as the person steering it, as Hopper does?
+5. Does moor design for anyone outside the team, such as a client?
