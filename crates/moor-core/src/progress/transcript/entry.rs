@@ -51,6 +51,7 @@ impl Line {
             text,
             artifact: None,
             step: None,
+            quote: None,
             receipt: None,
             key: Some(self.id.clone()),
             tool,

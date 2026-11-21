@@ -14,6 +14,25 @@ pub fn split_gate_preamble(text: &str) -> Option<&str> {
     text.find(GATE_HEAD).map(|at| text.split_at(at).0)
 }
 
+/// How moor's steer after a refusal introduces what the owner wrote.
+const OWNER_WROTE: &str = "\n\nThe owner wrote: ";
+
+/// Where what the agent does next starts in that steer, after the owner's words.
+const TRY_AGAIN: &str = "\n\nFix it, then";
+
+/// The owner's own words in a steer [`Gate::owner_no_steer`] made, and the rest of the steer
+/// without them; none for any other message.
+#[must_use]
+pub fn split_owner_note(text: &str) -> Option<(String, &str)> {
+    if !text.starts_with("The owner did not approve gate ") {
+        return None;
+    }
+    let at = text.find(OWNER_WROTE)?;
+    let rest = &text[at + OWNER_WROTE.len()..];
+    let end = rest.rfind(TRY_AGAIN)?;
+    Some((format!("{}{}", &text[..at], &rest[end..]), &rest[..end]))
+}
+
 /// The evidence names of `gate`, as the agent reads them.
 fn names(gate: &Gate) -> Vec<&str> {
     gate.evidence

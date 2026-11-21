@@ -48,6 +48,101 @@ fn a_receipt_with_no_turn_line_shows_on_its_own_and_a_turn_without_one_keeps_its
     assert!(turn.receipt.is_none());
 }
 
+fn gate_no() -> &'static str {
+    "The owner did not approve gate `review`.\n\nThe owner wrote: use the blue header\n\nand \
+     keep it short\n\nFix it, then call report_step again with step \"review\" and its \
+     evidence. moor goes through the gate again after your report."
+}
+
+#[test]
+fn a_message_moor_sent_is_classed_moor_and_a_persons_stays_you() {
+    let events = [
+        ev(1, "steered", json!({"message": "Fix the typo."})),
+        ev(
+            2,
+            "steered",
+            json!({"message": "Gate `lint` has passed.", "origin": "moor"}),
+        ),
+        ev(
+            3,
+            "steered",
+            json!({"message": "Thanks.", "origin": "person"}),
+        ),
+    ];
+    let t = timeline(&events);
+    let classes: Vec<_> = t.iter().map(|e| e.class).collect();
+    assert_eq!(classes, [Class::You, Class::Moor, Class::You]);
+    assert_eq!(t[1].text, "Gate `lint` has passed.");
+    assert!(t.iter().all(|e| e.kind == "steered"), "{t:?}");
+}
+
+#[test]
+fn the_owners_note_in_a_no_is_a_quote_apart_from_moors_words() {
+    let moor = ev(
+        1,
+        "steered",
+        json!({"message": gate_no(), "origin": "moor"}),
+    );
+    let t = timeline(&[moor]);
+    assert_eq!(t[0].class, Class::Moor);
+    assert_eq!(
+        t[0].quote.as_deref(),
+        Some("use the blue header\n\nand keep it short")
+    );
+    assert!(
+        t[0].text
+            .starts_with("The owner did not approve gate `review`."),
+        "{}",
+        t[0].text
+    );
+    assert!(
+        t[0].text.contains("Fix it, then call report_step again"),
+        "{}",
+        t[0].text
+    );
+    assert!(!t[0].text.contains("blue header"), "{}", t[0].text);
+
+    let typed = ev(2, "steered", json!({"message": gate_no()}));
+    let t = timeline(&[typed]);
+    assert_eq!(
+        (t[0].class, t[0].quote.clone()),
+        (Class::You, None),
+        "a person's own words are theirs"
+    );
+}
+
+#[test]
+fn a_moor_message_typed_into_the_agent_shows_once_not_again_as_the_person() {
+    use crate::progress::transcript::{Line, What};
+
+    let at = 1_000;
+    let events = [(
+        at,
+        ev(
+            1,
+            "steered",
+            json!({"message": "Gate `lint` has passed.", "origin": "moor"}),
+        ),
+    )];
+    let typed = [Line {
+        id: "u1".into(),
+        at: "2026-11-19T10:00:01Z".into(),
+        ms: at + 1,
+        what: What::Typed {
+            text: "Gate `lint` has passed.".into(),
+        },
+    }];
+    let t = timeline_with(
+        &events,
+        Transcript {
+            lines: &typed,
+            ..Transcript::default()
+        },
+    );
+    assert_eq!(t.len(), 1, "{t:?}");
+    assert_eq!(t[0].class, Class::Moor);
+}
+
 #[test]
 fn a_receipt_leaves_out_a_zero_count() {
     let events = [ev(1, "turn_changes", changes(3, 1, 5, 0))];

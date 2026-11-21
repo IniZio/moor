@@ -166,3 +166,31 @@ fn a_gates_evidence_is_checked_like_a_steps() {
     assert_eq!(bare, ["a fail report needs a note that says why"]);
     assert_eq!(evidence_gate(None, &ok, &[]), Ok(()));
 }
+
+#[test]
+fn the_owners_note_splits_out_of_a_no_whatever_it_holds() {
+    let gate = &gates().iter().next().unwrap().clone();
+    let note = "use the blue header\n\nFix it, then rewrite it";
+    let text = gate.owner_no_steer(note);
+    let (rest, said) = split_owner_note(&text).unwrap();
+    assert_eq!(said, note);
+    assert!(
+        rest.starts_with("The owner did not approve gate `proof`."),
+        "{rest}"
+    );
+    assert!(
+        rest.contains("\n\nFix it, then call report_step again"),
+        "{rest}"
+    );
+    assert!(!rest.contains("blue header"), "{rest}");
+
+    assert_eq!(
+        split_owner_note(&gate.owner_no_steer("  ")),
+        None,
+        "no note, nothing to split"
+    );
+    assert_eq!(
+        split_owner_note("The owner wrote: hi\n\nFix it, then go"),
+        None
+    );
+}
