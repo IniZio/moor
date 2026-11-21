@@ -9,7 +9,7 @@ use moor_core::workflow::{StepReport, StepResult};
 use moor_core::{BoxId, ShowReq, SteerReq};
 
 use super::super::hook::{cancelled, hooked, Hooked, NEW, OLD};
-use super::{gone_quiet, proof, step};
+use super::{gone_quiet, proof, ship, step};
 
 /// A gated pull request run whose agent went quiet at its gate, stuck there when `stuck`, and
 /// that a newer head then cancelled; its Box.
@@ -29,7 +29,7 @@ fn cancelled_at_its_gate(stuck: bool) -> (Hooked, BoxId) {
 }
 
 /// Box `id` as `show` lists it.
-fn shown(r: &Hooked, id: BoxId) -> BoxView {
+fn shown(r: &super::super::Rig, id: BoxId) -> BoxView {
     let req = ShowReq {
         target: None,
         events: None,
@@ -92,4 +92,32 @@ fn a_report_from_the_box_of_an_ended_run_is_refused_readably() {
         before,
         "nothing is recorded"
     );
+}
+
+#[test]
+fn the_box_of_a_run_whose_gate_failed_for_good_reads_failed_with_the_reason() {
+    let r = super::super::rig();
+    let once = moor_core::gate::GateDoc {
+        max_tries: Some(1),
+        ..ship()
+    };
+    let id = r.started_gated(&[once]);
+    let box_id = r.latest_box(id);
+    let no = GateLine::Answered {
+        gate: step("ship"),
+        try_n: 1,
+        by: "me".to_owned(),
+        answer: moor_core::workflow::Answer::No,
+        note: "not like this".to_owned(),
+    };
+    r.gate_line(id, &no);
+    r.quiet_after_work(id);
+    r.pass();
+    assert!(
+        r.latest(id).state.phase().as_str() == "done",
+        "the run ended"
+    );
+    let progress = shown(&r, box_id).progress.unwrap();
+    assert_eq!(progress.state, Progress::Failed, "{progress:?}");
+    assert!(progress.line.contains("not like this"), "{progress:?}");
 }

@@ -49,6 +49,15 @@ pub enum GateStatus {
     Passed,
 }
 
+impl GateStatus {
+    /// Whether the gates can still move: one is open or stuck, rather than failed for good or
+    /// passed.
+    #[must_use]
+    pub const fn can_move(&self) -> bool {
+        matches!(self, Self::Open { .. } | Self::Stuck { .. })
+    }
+}
+
 /// How a gate ended short of passing.
 #[derive(Debug)]
 enum End {

@@ -22,11 +22,7 @@ pub(crate) fn holds(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     if matches!(store.run_of_box(id)?, RunOfBox::Ended(_)) {
         return Ok(false);
     }
-    let now = status(&gates, &store.gate_lines(id)?);
-    Ok(matches!(
-        now,
-        GateStatus::Open { .. } | GateStatus::Stuck { .. }
-    ))
+    Ok(status(&gates, &store.gate_lines(id)?).can_move())
 }
 
 /// Writes `Reopened` for the gate of Box `id` that is stuck, after a person's steer reached its
