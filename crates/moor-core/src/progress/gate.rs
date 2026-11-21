@@ -29,9 +29,13 @@ pub(super) fn needs(b: &BoxView) -> Option<Needs> {
         WaitKind::Approve => (NeedKind::Approve, wait.note.clone()),
         WaitKind::Stuck => (
             NeedKind::Stuck,
-            wait.command.clone().or_else(|| {
-                (!wait.missing.is_empty()).then(|| format!("missing: {}", wait.missing.join(", ")))
-            }),
+            wait.says
+                .clone()
+                .or_else(|| wait.command.clone())
+                .or_else(|| {
+                    (!wait.missing.is_empty())
+                        .then(|| format!("missing: {}", wait.missing.join(", ")))
+                }),
         ),
     };
     Some(Needs {

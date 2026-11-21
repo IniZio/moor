@@ -3,7 +3,7 @@
 #![allow(clippy::panic, reason = "a test names the line it did not expect")]
 
 use super::gate_history;
-use crate::gate::{GateDoc, GateLine, Gates};
+use crate::gate::{CheckDoc, GateDoc, GateLine, Gates};
 use crate::workflow::{Answer, HistoryEntry, StepId, StepReport, StepResult};
 
 fn id(s: &str) -> StepId {
@@ -14,7 +14,7 @@ fn gates() -> Gates {
     let evidence = |name: &str, files: &[&str], checks: &[&str]| GateDoc {
         name: name.to_owned(),
         evidence: files.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval: None,
         max_tries: Some(2),
     };

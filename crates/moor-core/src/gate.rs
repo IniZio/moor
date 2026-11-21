@@ -12,6 +12,9 @@ use crate::workflow::{Evidence, EvidenceName, StepId, Tries, EVIDENCE_NAMES_MAX}
 mod brief;
 #[cfg(test)]
 mod brief_tests;
+mod check;
+#[cfg(test)]
+mod check_tests;
 mod line;
 mod shown;
 mod status;
@@ -22,6 +25,7 @@ mod tests;
 mod wait;
 
 pub use brief::{split_gate_preamble, split_owner_note};
+pub use check::{Check, CheckDoc, SaidDoc, SAYS_MAX};
 pub use line::GateLine;
 pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
 pub use wait::{wait, Wait, WaitKind};
@@ -58,8 +62,8 @@ pub struct Gate {
     pub name: StepId,
     /// The files the agent must leave under `.moor/artifacts/`; none asks nothing of the agent.
     pub evidence: Option<Evidence>,
-    /// Shell commands moor runs in the Box, in order; exit 0 passes.
-    pub checks: Vec<String>,
+    /// What moor runs in the Box, in order; exit 0 passes.
+    pub checks: Vec<Check>,
     /// Who must approve after the checks.
     pub approval: Approval,
     /// How often the gate may be tried before it is stuck.
@@ -76,10 +80,11 @@ pub struct GateDoc {
     /// or a prefix ending in `*` such as `before-*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<String>,
-    /// Shell commands moor runs in the Box once the evidence is in, at most 8 of 4 KiB each. Exit 0
+    /// What moor runs in the Box once the evidence is in, at most 8. Each is a shell command of up
+    /// to 4 KiB, or `{run, says}` where `says` is one plain sentence of what must be true. Exit 0
     /// passes; the first failure fails the try.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub checks: Vec<String>,
+    pub checks: Vec<CheckDoc>,
     /// `owner` asks the Box's user to approve after the checks; `none` when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
@@ -145,6 +150,26 @@ pub enum GateError {
     EmptyCheck {
         /// The gate.
         gate: String,
+    },
+    /// A check with a blank sentence.
+    #[error("gate `{gate}` has a check whose `says` is empty")]
+    EmptySays {
+        /// The gate.
+        gate: String,
+    },
+    /// A check's sentence over more than one line.
+    #[error("gate `{gate}`: a check's `says` must be one line")]
+    SaysNotOneLine {
+        /// The gate.
+        gate: String,
+    },
+    /// A check's sentence over [`SAYS_MAX`] characters.
+    #[error("gate `{gate}`: a check says {len} characters; use at most 200")]
+    SaysTooLong {
+        /// The gate.
+        gate: String,
+        /// Its length.
+        len: usize,
     },
     /// A check over [`CHECK_MAX`] bytes.
     #[error("gate `{gate}`: a check is {len} bytes; use at most 4096")]
@@ -233,9 +258,9 @@ fn parse_gate(doc: &GateDoc) -> Result<Gate, GateError> {
     let gate = || doc.name.clone();
     let name = StepId::parse(&doc.name).map_err(|_| GateError::BadName { gate: gate() })?;
     let evidence = parse_evidence(doc)?;
-    parse_checks(doc)?;
+    let checks = parse_checks(doc)?;
     let approval = doc.approval.unwrap_or_default();
-    if evidence.is_none() && doc.checks.is_empty() && approval == Approval::None {
+    if evidence.is_none() && checks.is_empty() && approval == Approval::None {
         return Err(GateError::NothingToPass { gate: gate() });
     }
     let max_tries = match doc.max_tries {
@@ -253,7 +278,7 @@ fn parse_gate(doc: &GateDoc) -> Result<Gate, GateError> {
     Ok(Gate {
         name,
         evidence,
-        checks: doc.checks.clone(),
+        checks,
         approval,
         max_tries,
     })
@@ -280,27 +305,18 @@ fn parse_evidence(doc: &GateDoc) -> Result<Option<Evidence>, GateError> {
     Ok(Evidence::new(names))
 }
 
-/// Refuses checks that are too many, empty or too long.
-fn parse_checks(doc: &GateDoc) -> Result<(), GateError> {
-    let gate = || doc.name.clone();
+/// The checks `doc` lists, refusing too many, empty or too long ones.
+fn parse_checks(doc: &GateDoc) -> Result<Vec<Check>, GateError> {
     if doc.checks.len() > CHECKS_MAX {
         return Err(GateError::TooManyChecks {
-            gate: gate(),
+            gate: doc.name.clone(),
             len: doc.checks.len(),
         });
     }
-    for check in &doc.checks {
-        if check.trim().is_empty() {
-            return Err(GateError::EmptyCheck { gate: gate() });
-        }
-        if check.len() > CHECK_MAX {
-            return Err(GateError::CheckTooLong {
-                gate: gate(),
-                len: check.len(),
-            });
-        }
-    }
-    Ok(())
+    doc.checks
+        .iter()
+        .map(|c| Check::parse(c, &doc.name))
+        .collect()
 }
 
 /// `gate` as written.
@@ -313,7 +329,7 @@ fn doc_of(gate: &Gate) -> GateDoc {
             .flat_map(Evidence::names)
             .map(|n| n.as_str().to_owned())
             .collect(),
-        checks: gate.checks.clone(),
+        checks: gate.checks.iter().map(Check::doc).collect(),
         approval: (gate.approval != Approval::None).then_some(gate.approval),
         max_tries: (gate.max_tries != DEFAULT_TRIES).then(|| u64::from(gate.max_tries.get())),
     }

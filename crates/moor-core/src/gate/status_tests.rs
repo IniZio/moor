@@ -7,7 +7,7 @@ fn doc(name: &str, evidence: &[&str], checks: &[&str], approval: Option<Approval
     GateDoc {
         name: name.to_owned(),
         evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval,
         max_tries: None,
     }

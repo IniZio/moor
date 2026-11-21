@@ -1,7 +1,7 @@
 //! A Box with gates is never done while one is open.
 
 use super::*;
-use crate::gate::{GateNext, GateStatus};
+use crate::gate::{CheckDoc, GateNext, GateStatus};
 use crate::view::gate::GateView;
 use crate::workflow::StepId;
 
@@ -166,7 +166,7 @@ fn doc(evidence: &[&str], checks: &[&str], approval: bool) -> crate::gate::GateD
     crate::gate::GateDoc {
         name: "proof".to_owned(),
         evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval: approval.then_some(crate::gate::Approval::Owner),
         max_tries: Some(1),
     }
@@ -263,6 +263,34 @@ fn a_stuck_gate_shows_a_card_with_why_and_the_failing_command() {
         assert!(wait.why.unwrap().contains("exited 101"));
         assert_eq!(wait.command.as_deref(), Some("cargo test --workspace"));
     }
+}
+
+#[test]
+fn a_stuck_check_with_a_sentence_puts_the_sentence_first_on_the_card_and_the_line() {
+    let said = crate::gate::CheckDoc::Said(crate::gate::SaidDoc {
+        run: "test -f never.txt".to_owned(),
+        says: "The file never.txt exists.".to_owned(),
+    });
+    let d = crate::gate::GateDoc {
+        checks: vec![said],
+        ..doc(&[], &[], false)
+    };
+    let failed = crate::gate::GateLine::Checked {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+        exit: 1,
+        tail: String::new(),
+    };
+    let p = derive(&standing(BoxLifecycle::Ready, &d, &[failed]), &[], ten());
+    assert_eq!(
+        p.line,
+        "gate proof is stuck: out of tries: check 1 (“The file never.txt exists.”) exited 1"
+    );
+    let card = p.needs.unwrap();
+    assert_eq!(card.detail.as_deref(), Some("The file never.txt exists."));
+    let wait = card.gate.unwrap();
+    assert_eq!(wait.command.as_deref(), Some("test -f never.txt"));
 }
 
 #[test]

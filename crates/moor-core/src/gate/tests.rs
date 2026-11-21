@@ -23,7 +23,7 @@ fn one_gate_of_each_kind_parses() {
         gate("proof"),
         GateDoc {
             evidence: Vec::new(),
-            checks: vec!["cargo test".to_owned()],
+            checks: vec!["cargo test".into()],
             ..gate("tests")
         },
         GateDoc {
@@ -108,7 +108,7 @@ fn evidence_gate(names: &[&str]) -> GateDoc {
     }
 }
 
-fn check_gate(commands: Vec<String>) -> GateDoc {
+fn check_gate(commands: Vec<CheckDoc>) -> GateDoc {
     GateDoc {
         checks: commands,
         ..gate("proof")
@@ -134,13 +134,13 @@ fn evidence_must_be_flat_names_or_prefixes_and_few() {
 
 #[test]
 fn checks_must_be_few_filled_and_short() {
-    let blank = refused(&[check_gate(vec!["  ".to_owned()])]);
+    let blank = refused(&[check_gate(vec!["  ".into()])]);
     assert!(matches!(blank, GateError::EmptyCheck { .. }), "{blank:?}");
-    let long = refused(&[check_gate(vec!["x".repeat(4097)])]);
+    let long = refused(&[check_gate(vec!["x".repeat(4097).into()])]);
     assert!(matches!(long, GateError::CheckTooLong { .. }), "{long:?}");
-    let many = refused(&[check_gate(vec!["true".to_owned(); 9])]);
+    let many = refused(&[check_gate(vec!["true".into(); 9])]);
     assert!(matches!(many, GateError::TooManyChecks { .. }), "{many:?}");
-    assert!(Gates::parse(&[check_gate(vec!["true".to_owned(); 8])]).is_ok());
+    assert!(Gates::parse(&[check_gate(vec!["true".into(); 8])]).is_ok());
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn gates_survive_their_json_and_leave_out_what_is_default() {
         gate("proof"),
         GateDoc {
             evidence: Vec::new(),
-            checks: vec!["make lint".to_owned()],
+            checks: vec!["make lint".into()],
             approval: Some(Approval::Owner),
             max_tries: Some(3),
             ..gate("tests")

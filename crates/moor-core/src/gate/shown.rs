@@ -19,6 +19,7 @@ impl Gates {
                     .flat_map(Evidence::names)
                     .map(EvidenceName::as_str)
                     .collect();
+                let runs: Vec<&str> = gate.checks.iter().map(|c| c.run.as_str()).collect();
                 let mut asks = Vec::new();
                 if !files.is_empty() {
                     asks.push(format!("the agent reports {}", files.join(", ")));
@@ -34,7 +35,8 @@ impl Gates {
                     "title": gate.name.as_str(),
                     "kind": "gate",
                     "done_when": asks.join("; "),
-                    "command": Some(gate.checks.join("; ")).filter(|c| !c.is_empty()),
+                    "command": Some(runs.join("; ")).filter(|c| !c.is_empty()),
+                    "checks": gate.checks.iter().map(|c| json!({"run": c.run, "says": c.says})).collect::<Vec<_>>(),
                     "evidence": files,
                     "max_tries": gate.max_tries.get(),
                 })
@@ -66,7 +68,7 @@ mod tests {
             GateDoc {
                 name: "done".to_owned(),
                 evidence: vec!["posted.md".to_owned()],
-                checks: vec!["true".to_owned()],
+                checks: vec!["true".into()],
                 approval: Some(Approval::Owner),
                 max_tries: Some(1),
             },

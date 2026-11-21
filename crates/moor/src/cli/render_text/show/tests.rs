@@ -387,7 +387,10 @@ fn proof_doc(evidence: &[&str], checks: &[&str]) -> moor_core::gate::GateDoc {
     moor_core::gate::GateDoc {
         name: "proof".to_owned(),
         evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks
+            .iter()
+            .map(|s| moor_core::gate::CheckDoc::from(*s))
+            .collect(),
         approval: None,
         max_tries: Some(1),
     }
@@ -414,6 +417,31 @@ fn a_stuck_box_shows_the_failing_command_its_output_and_the_hint_under_the_reaso
     let out = show(json!({"box": t}));
     assert!(
         out.contains("\n            command: make test\n            output:\n              boom\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_stuck_box_with_a_sentence_says_what_is_not_yet_true_before_the_command() {
+    use moor_core::gate::{CheckDoc, GateLine, SaidDoc};
+    use moor_core::workflow::StepId;
+    let lines = [GateLine::Checked {
+        gate: StepId::parse("proof").unwrap(),
+        try_n: 1,
+        check: 0,
+        exit: 1,
+        tail: "no never.txt\n".to_owned(),
+    }];
+    let mut doc = proof_doc(&[], &[]);
+    doc.checks = vec![CheckDoc::Said(SaidDoc {
+        run: "test -f never.txt".to_owned(),
+        says: "The file never.txt exists.".to_owned(),
+    })];
+    let out = show(json!({"boxes": [stuck_box(&lines, doc)]}));
+    assert!(
+        out.contains(
+            "\n    not yet true: The file never.txt exists.\n    command: test -f never.txt\n    output:\n      no never.txt\n"
+        ),
         "{out}"
     );
 }
