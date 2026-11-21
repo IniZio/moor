@@ -152,7 +152,7 @@ pub fn is_resolved(kind: InboxKind, event: i64, facts: &Facts) -> bool {
             facts.box_closed
                 || facts
                     .gate_waits_here
-                    .map_or(facts.newest_marker != Some(event), |waits| !waits)
+                    .map_or_else(|| facts.newest_marker != Some(event), |waits| !waits)
         }
         InboxKind::RunWaiting => !facts.run_waits_here,
         InboxKind::RunFailed => false,

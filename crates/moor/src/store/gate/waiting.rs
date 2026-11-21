@@ -4,7 +4,7 @@
 //! of two writers of one line number only the first gets there, and a line that changes nothing
 //! writes none.
 
-use moor_core::domain::event::{Event, GateEvent};
+use moor_core::domain::event::{Event, WorkflowEvent};
 use moor_core::gate::{status, wait, GateLine, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -53,10 +53,10 @@ pub(super) fn note(tx: &Tx<'_>, id: BoxId, at: Ts) -> Result<(), StoreError> {
     let Some(waits) = wait(&gates, &lines) else {
         return Ok(());
     };
-    let event = Event::Gate(GateEvent::GateWaiting {
+    let event = Event::Workflow(WorkflowEvent::GateWaiting {
         question: waits.question(),
         gate: waits.gate,
-        wait: waits.kind,
+        wait: waits.kind.as_str().to_owned(),
         seq: waits.seq,
     });
     insert_event(tx, id, &event, at)?;

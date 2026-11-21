@@ -229,9 +229,10 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::TurnDone { .. }
             | Event::SteerUnconfirmed { .. }
             | Event::Workflow(
-                WorkflowEvent::RunWaiting { .. } | WorkflowEvent::RunFailed { .. },
+                WorkflowEvent::RunWaiting { .. }
+                | WorkflowEvent::RunFailed { .. }
+                | WorkflowEvent::GateWaiting { .. },
             )
-            | Event::Gate(_)
             | Event::Inbox(_)) => Err(e),
         }
     }

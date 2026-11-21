@@ -6,6 +6,8 @@
 //! gate moved. The line is written before the agent is told, as with a failed check, so a no that
 //! could not be steered is steered by the next pass.
 
+use std::fmt::Write as _;
+
 use moor_core::gate::{status, wait, GateLine, GateNext, GateStatus, WaitKind};
 use moor_core::progress::gate_ask_id;
 use moor_core::view::gate::GateAnswerValue;
@@ -27,13 +29,8 @@ fn refused(why: impl std::fmt::Display) -> CommandError {
     CommandError::new(ErrorKind::Refused, why.to_string())
 }
 
-/// Answers the gate of the Box `req` names that asks its owner.
-///
-/// # Errors
-/// A usage error for a note over [`NOTE_MAX`]; a refusal when the Box is not the caller's, has no
-/// gate that asks, or asks something else than `req.ask`; a store failure.
-pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, CommandError> {
-    let store = cx.store()?;
+/// The note of `req`, trimmed, none when it says nothing.
+fn note_of(req: &GateAnswerReq) -> Result<Option<&str>, CommandError> {
     let note = req.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
     if note.is_some_and(|n| n.len() > NOTE_MAX) {
         return Err(CommandError::new(
@@ -41,12 +38,30 @@ pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, Comma
             format!("the note is at most {NOTE_MAX} bytes"),
         ));
     }
-    let row = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
+    Ok(note)
+}
+
+/// The open Box `req` names, when the caller may act on it.
+fn owned_box(cx: &Cx, req: &GateAnswerReq) -> Result<BoxRow, CommandError> {
+    let row = target::resolve(cx.store()?, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
-    if !cx.viewer().may_act_on(row.user) {
-        return Err(refused(NOT_YOURS));
+    if cx.viewer().may_act_on(row.user) {
+        Ok(row)
+    } else {
+        Err(refused(NOT_YOURS))
     }
+}
+
+/// Answers the gate of the Box `req` names that asks its owner.
+///
+/// # Errors
+/// A usage error for a note over [`NOTE_MAX`]; a refusal when the Box is not the caller's, has no
+/// gate that asks, or asks something else than `req.ask`; a store failure.
+pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, CommandError> {
+    let store = cx.store()?;
+    let note = note_of(req)?;
+    let row = owned_box(cx, req)?;
     let name = row.name.as_str();
     let Some(gates) = store.box_gates(row.id)? else {
         return Err(refused(format!(
@@ -126,13 +141,14 @@ fn answered(
     answer: Answer,
     gate: &str,
 ) -> GateAnswerValue {
-    let Ok(store) = cx.store() else {
+    let Ok((store, lines)) = cx
+        .store()
+        .map_err(|_| ())
+        .and_then(|s| Ok((s, s.gate_lines(row.id).map_err(|_| ())?)))
+    else {
         return value(row, gate, "recorded".to_owned());
     };
-    let now = store
-        .gate_lines(row.id)
-        .map(|lines| status(gates, &lines))
-        .unwrap_or(GateStatus::Passed);
+    let now = status(gates, &lines);
     let mut outcome = match (&now, answer) {
         (GateStatus::Passed, _) => format!("gate {gate} passed, and every gate has passed"),
         (GateStatus::Failed { why, .. }, _) => format!("gate {gate} failed: {why}"),
@@ -145,10 +161,13 @@ fn answered(
     if matches!(now, GateStatus::Open { .. }) && answer == Answer::No {
         match tell(cx, store, row.id) {
             Ok(()) => outcome.push_str(", and the agent was told what you wrote"),
-            Err(e) => outcome.push_str(&format!(
-                ", but the agent could not be told ({}); moor tells it again",
-                e.error
-            )),
+            Err(e) => {
+                let _ = write!(
+                    outcome,
+                    ", but the agent could not be told ({}); moor tells it again",
+                    e.error
+                );
+            }
         }
     }
     value(row, gate, outcome)

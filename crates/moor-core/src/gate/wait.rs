@@ -16,6 +16,17 @@ pub enum WaitKind {
     Stuck,
 }
 
+impl WaitKind {
+    /// The kind as the gate's events name it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::Stuck => "stuck",
+        }
+    }
+}
+
 /// One gate that waits for a person, with what they need to read to act.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wait {
@@ -70,7 +81,10 @@ impl Wait {
 pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
     let now = status(gates, lines);
     let mut began = lines.len();
-    while began > 0 && status(gates, &lines[..began - 1]) == now {
+    while let Some(before) = began.checked_sub(1).and_then(|n| lines.get(..n)) {
+        if status(gates, before) != now {
+            break;
+        }
         began -= 1;
     }
     let seq = u32::try_from(began).unwrap_or(u32::MAX);

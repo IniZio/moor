@@ -31,8 +31,8 @@ struct Answer {
     #[serde(default)]
     text: Option<String>,
     /// For the question of a gate (a card with a `gate`): `yes` or `no`.
-    #[serde(default)]
-    answer: Option<Verdict>,
+    #[serde(default, rename = "answer")]
+    verdict: Option<Verdict>,
     /// For the question of a gate: what to tell the agent.
     #[serde(default)]
     note: Option<String>,
@@ -43,13 +43,13 @@ struct Answer {
 fn request(body: Option<&[u8]>) -> Result<ControllerRequest, &'static str> {
     let said = body
         .and_then(|b| serde_json::from_slice::<Answer>(b).ok())
-        .filter(|a| !a.ask.is_empty() && (a.answer.is_some() || a.n.is_some_and(|n| n > 0)))
+        .filter(|a| !a.ask.is_empty() && (a.verdict.is_some() || a.n.is_some_and(|n| n > 0)))
         .ok_or("pick one of the answers on the card")?;
     let target: BoxTarget = BoxName::parse_allow_bare(&said.boxed)
         .map_err(|_| "name a Box")?
         .into();
     let trimmed = |t: Option<String>| t.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
-    if let Some(answer) = said.answer {
+    if let Some(answer) = said.verdict {
         return Ok(ControllerRequest::GateAnswer(GateAnswerReq {
             target,
             answer,
@@ -89,10 +89,11 @@ pub(super) fn answer(
         Ok(reply) if reply.class == ExitClass::Ok => {
             let value = reply.value.unwrap_or_default();
             let took = value.get("answered_menu").and_then(Value::as_bool);
-            let mut said = json!({"answered": took.unwrap_or(true)});
-            if let Some(outcome) = value.get("outcome").and_then(Value::as_str) {
-                said["outcome"] = json!(outcome);
-            }
+            let answered = took.unwrap_or(true);
+            let said = value.get("outcome").and_then(Value::as_str).map_or_else(
+                || json!({"answered": answered}),
+                |outcome| json!({"answered": answered, "outcome": outcome}),
+            );
             json(stream, "200 OK", &said);
         }
         Ok(reply) => answered(stream, &reply),
@@ -127,12 +128,17 @@ mod tests {
         assert_eq!(blank.text, None);
     }
 
+    fn gate_answer(body: &str) -> Result<GateAnswerReq, &'static str> {
+        let ControllerRequest::GateAnswer(g) = request(Some(body.as_bytes()))? else {
+            return Err("not a gate answer");
+        };
+        Ok(g)
+    }
+
     #[test]
     fn a_yes_or_no_with_its_prompt_is_a_gate_answer_and_not_a_menu_choice() {
         let body = r#"{"box": "acme/web-1", "ask": "ab12", "answer": "no", "note": " use blue "}"#;
-        let ControllerRequest::GateAnswer(g) = request(Some(body.as_bytes())).unwrap() else {
-            panic!("not a gate answer");
-        };
+        let g = gate_answer(body).unwrap();
         assert_eq!(g.answer, Verdict::No);
         assert_eq!(
             (g.note.as_deref(), g.ask.as_deref()),

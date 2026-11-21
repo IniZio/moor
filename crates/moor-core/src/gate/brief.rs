@@ -94,6 +94,19 @@ impl Gate {
         )
     }
 
+    /// What the agent does after a try the owner refused, before moor goes through the gate again.
+    fn try_again(&self) -> String {
+        let name = &self.name;
+        if self.evidence.is_some() {
+            format!(
+                "\n\nFix it, then call report_step again with step \"{name}\" and its evidence. \
+                 moor goes through the gate again after your report."
+            )
+        } else {
+            "\n\nFix it, then stop. moor goes through the gate again once you are quiet.".to_owned()
+        }
+    }
+
     /// The steer after the owner said no to a try that leaves more tries: what they wrote, then
     /// what the agent does next.
     #[must_use]
@@ -104,16 +117,7 @@ impl Gate {
             text.push_str("\n\nThe owner wrote: ");
             text.push_str(note.trim());
         }
-        if self.evidence.is_some() {
-            text.push_str(&format!(
-                "\n\nFix it, then call report_step again with step \"{name}\" and its evidence. \
-                 moor goes through the gate again after your report."
-            ));
-        } else {
-            text.push_str(
-                "\n\nFix it, then stop. moor goes through the gate again once you are quiet.",
-            );
-        }
+        text.push_str(&self.try_again());
         text
     }
 

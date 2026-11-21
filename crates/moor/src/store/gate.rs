@@ -90,6 +90,7 @@ impl Store {
         )?;
         waiting::note(&tx, id, at)?;
         tx.commit()?;
+        drop(writer);
         Ok(())
     }
 

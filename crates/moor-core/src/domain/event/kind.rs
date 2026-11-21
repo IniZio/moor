@@ -4,14 +4,12 @@ use super::Event;
 pub use crate::domain::turn::TurnOutcome;
 
 mod close;
-mod gate;
 mod inbox;
 mod node_disk;
 mod restore;
 mod stall;
 mod workflow;
 pub use close::CloseEvent;
-pub use gate::GateEvent;
 pub use inbox::InboxEvent;
 pub use node_disk::NodeDiskEvent;
 pub use restore::RestoreEvent;
@@ -220,7 +218,6 @@ impl Event {
             Self::Stall(s) => s.kind(),
             Self::NodeDisk(d) => d.kind(),
             Self::Workflow(w) => w.kind(),
-            Self::Gate(g) => g.kind(),
             Self::Restore(r) => r.kind(),
             Self::Close(c) => c.kind(),
             Self::Inbox(i) => i.kind(),

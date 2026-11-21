@@ -407,9 +407,9 @@ fn all_events() -> Vec<Event> {
             why: s("2 unpushed commit(s)"),
         }),
         Event::Access(AccessEvent::TerminalOpened { shell: true }),
-        Event::Gate(GateEvent::GateWaiting {
+        Event::Workflow(WorkflowEvent::GateWaiting {
             gate: s("proof"),
-            wait: crate::gate::WaitKind::Approve,
+            wait: s("approve"),
             seq: 3,
             question: s("Gate `proof` asks your approval."),
         }),

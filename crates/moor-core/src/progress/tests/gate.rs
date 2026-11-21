@@ -260,9 +260,23 @@ fn a_stuck_gate_shows_a_card_with_why_and_the_failing_command() {
         assert_eq!(wait.gate, "proof");
         assert!(wait.why.unwrap().contains("exited 101"));
         assert_eq!(wait.command.as_deref(), Some("cargo test --workspace"));
-        assert_eq!(wait.tail.as_deref(), Some("1 test failed"));
-        assert!(wait.hint.contains("reopen"));
     }
+}
+
+#[test]
+fn a_stuck_card_carries_the_end_of_the_output_and_what_the_person_can_do() {
+    let d = doc(&[], &["make"], false);
+    let failed = crate::gate::GateLine::Checked {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+        exit: 2,
+        tail: "1 test failed".to_owned(),
+    };
+    let b = standing(BoxLifecycle::Ready, &d, &[failed]);
+    let wait = derive(&b, &[], ten()).needs.unwrap().gate.unwrap();
+    assert_eq!(wait.tail.as_deref(), Some("1 test failed"));
+    assert!(wait.hint.contains("reopen"));
 }
 
 #[test]

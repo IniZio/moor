@@ -252,7 +252,7 @@ fn list_and_detail_say_when_a_box_slept_mid_turn() {
     assert!(!show(json!({"box": row("alpha", true)})).contains("unfinished"));
 }
 
-fn with_gate(mut t: Value, progress: Value, status: Value) -> Value {
+fn with_gate(mut t: Value, progress: Value, status: &Value) -> Value {
     let fields = t.as_object_mut().unwrap();
     fields.insert("progress".into(), progress);
     fields.insert(
@@ -266,7 +266,7 @@ fn asks() -> Value {
     with_gate(
         row("alpha", true),
         json!({"state": "needs_you", "line": "gate proof: waiting for your approval"}),
-        json!({"state": "open", "gate": "proof", "try_n": 1, "next": "ask"}),
+        &json!({"state": "open", "gate": "proof", "try_n": 1, "next": "ask"}),
     )
 }
 
@@ -295,7 +295,7 @@ fn a_working_box_with_an_open_gate_shows_the_gate_beside_what_it_does() {
     let working = with_gate(
         row("alpha", true),
         json!({"state": "working", "line": "editing main.rs"}),
-        json!({"state": "open", "gate": "proof", "try_n": 2, "next": "agent"}),
+        &json!({"state": "open", "gate": "proof", "try_n": 2, "next": "agent"}),
     );
     let out = show(json!({"boxes": [working]}));
     assert!(
@@ -322,7 +322,7 @@ fn a_stuck_failed_and_passed_gate_each_say_so() {
         let t = with_gate(
             row("alpha", true),
             json!({"state": "done", "line": "PR #4"}),
-            status,
+            &status,
         );
         let out = show(json!({"boxes": [t]}));
         assert!(out.contains(&format!("  done: PR #4\n  {want}\n")), "{out}");
