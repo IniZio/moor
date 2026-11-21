@@ -105,6 +105,38 @@ fn write_progress(out: &mut String, view: &Value, indent: &str) {
     if let Some(gate) = gate_text(view).filter(|_| !line.starts_with("gate ")) {
         let _ = writeln!(out, "{indent}{gate}");
     }
+    write_stuck(out, progress, indent);
+}
+
+/// What a stuck gate's card carries beyond its reason, indented under the line: the failing
+/// command and the end of its output, or the evidence names that were missing, and the hint.
+fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
+    let Some(card) = progress.pointer("/needs/gate").filter(|c| field(c, "kind") == "stuck") else {
+        return;
+    };
+    let pad = format!("{}  ", " ".repeat(indent.chars().count()));
+    if let Some(command) = card.get("command").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}command: {command}");
+    }
+    if let Some(tail) = card.get("tail").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}output:");
+        for line in tail.trim_end().lines() {
+            let _ = writeln!(out, "{pad}  {line}");
+        }
+    }
+    let missing: Vec<&str> = card
+        .get("missing")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !missing.is_empty() {
+        let _ = writeln!(out, "{pad}missing: {}", missing.join(", "));
+    }
+    if let Some(hint) = card.get("hint").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}hint: {hint}");
+    }
 }
 
 /// An `asleep, turn unfinished` line when the Box slept mid-turn, prefixed by `indent`.

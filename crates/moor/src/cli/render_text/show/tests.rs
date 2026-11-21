@@ -364,3 +364,75 @@ fn a_real_serialised_gate_and_progress_render_as_the_fronts_get_them() {
     );
     assert!(show(json!({"box": t})).contains("progress: needs you: gate proof:"));
 }
+
+/// A stuck gate's card as the fronts get it: the `needs` of a progress whose gate waits for a steer.
+fn stuck_box(lines: &[moor_core::gate::GateLine], doc: moor_core::gate::GateDoc) -> Value {
+    use moor_core::gate::{status, wait, Gates};
+    let gates = Gates::parse(&[doc]).unwrap();
+    let card = serde_json::to_value(wait(&gates, lines).unwrap()).unwrap();
+    let why = match status(&gates, lines) {
+        moor_core::gate::GateStatus::Stuck { why, .. } => why,
+        other => panic!("not stuck: {other:?}"),
+    };
+    with_gate(
+        row("alpha", true),
+        json!({
+            "state": "needs_you",
+            "line": format!("gate proof is stuck: {why}"),
+            "needs": {"kind": "stuck", "gate": card},
+        }),
+        &json!({"state": "stuck", "gate": "proof", "why": why}),
+    )
+}
+
+fn proof_doc(evidence: &[&str], checks: &[&str]) -> moor_core::gate::GateDoc {
+    moor_core::gate::GateDoc {
+        name: "proof".to_owned(),
+        evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        approval: None,
+        max_tries: Some(1),
+    }
+}
+
+#[test]
+fn a_stuck_box_shows_the_failing_command_its_output_and_the_hint_under_the_reason() {
+    use moor_core::gate::GateLine;
+    use moor_core::workflow::StepId;
+    let lines = [GateLine::Checked {
+        gate: StepId::parse("proof").unwrap(),
+        try_n: 1,
+        check: 0,
+        exit: 2,
+        tail: "boom\nline two\n".to_owned(),
+    }];
+    let t = stuck_box(&lines, proof_doc(&[], &["make test"]));
+    let want = "  needs you: gate proof is stuck: out of tries: check 1 (`make test`) exited 2\n    \
+         command: make test\n    output:\n      boom\n      line two\n    \
+         hint: Send the agent a message to reopen the gate with fresh tries.\n";
+    let out = show(json!({"boxes": [t.clone()]}));
+    assert!(out.ends_with(want), "{out}");
+    let out = show(json!({"box": t}));
+    assert!(
+        out.contains("\n            command: make test\n            output:\n              boom\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_stuck_box_with_missing_evidence_names_it_under_the_reason() {
+    use moor_core::gate::GateLine;
+    use moor_core::workflow::StepId;
+    let refused = || GateLine::Refused {
+        gate: StepId::parse("proof").unwrap(),
+        try_n: 1,
+        missing: vec!["proof.md".to_owned(), "notes.md".to_owned()],
+    };
+    let t = stuck_box(&[refused(), refused()], proof_doc(&["proof.md", "notes.md"], &[]));
+    let out = show(json!({"boxes": [t]}));
+    assert!(
+        out.contains("\n    missing: proof.md, notes.md\n    hint: Send the agent a message"),
+        "{out}"
+    );
+    assert!(!out.contains("command:") && !out.contains("output:"), "{out}");
+}
