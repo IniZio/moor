@@ -10,7 +10,7 @@ A moor workflow is shaped like a CI pipeline. Its plan is written once, outside 
 
 The products studied here do it another way. The shape of the work is prose that an agent reads. The agent plans each task after it reads the repo. The prose lives in version control, so people and agents can improve it.
 
-> moor owns the mechanisms. The team's definition owns the shape. The agent writes the plan.
+> moor owns one mechanism, the gate, and a safety floor. The team's definition owns the rest. The agent writes the plan.
 
 ## moor in one line
 
@@ -142,7 +142,8 @@ Each model is tested on the same cases.
 moor takes Warp's shape and keeps its own proof.
 
 - **The definition** is a set of YAML and Markdown files that moor keeps. It says how this team's moor behaves. People and agents change it by proposal.
-- **moor's mechanisms** are few and fixed. They are the task, the Box, the gates, the triggers and the scores. The definition cannot turn them off.
+- **moor's part** is small and fixed. It runs tasks in Boxes, enforces the gates the definition declares, and keeps a safety floor.
+- **The gates themselves** are part of the definition. A team adds, changes or drops one by proposal, and tries it on the fixture repo first.
 
 ### The definition
 
@@ -184,13 +185,16 @@ Its contract.
 
 ```yaml
 result: pull_request
-evidence: [audit.md, "before-*", "after-*", report.md]
-checks:
-  - run: repo.checks.ci
 gates:
-  plan: show
+  plan:
+    approval: none
+  done:
+    final: true
+    evidence: [audit.md, "before-*", "after-*", report.md]
+    checks: [repo.checks.ci]
+    max_tries: 3
+actions:
   open_pull_request: go
-max_tries: 3
 ```
 
 Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
@@ -207,20 +211,33 @@ The lead agent's file holds the shape of work, as prose. It says when to plan, w
 flowchart LR
 	AU[Automation or a person] --> T[Task in a Box]
 	D[Definition] -.->|lead, skill, contract| T
-	T -->|submits plan| G1{Plan gate}
-	G1 --> W[Agent works]
-	W -->|risky action| G3{Action gate}
+	T --> W[Agent works]
+	W -->|calls a gate by name| G{Gate}
+	G -->|pass or fail| W
+	W -->|risky action| G3{Action rule}
 	G3 --> W
-	W -->|claims done| G2{Done gate}
-	G2 -->|fails| W
-	G2 --> RS[Result]
+	G -->|final gate passed| RS[Result]
 	RS --> RV[Review on GitHub]
 	RV -->|comments, failing CI| W
 ```
 
-- **The plan gate.** The agent submits its plan, written for this task. The contract says show or wait.
-- **The done gate.** The agent claims done. moor looks for the evidence and runs the checks in the Box. A failure returns to the agent, up to the limit. A task that fails the gate never shows as done.
-- **Action gates.** The Proxy asks before a risky action, such as opening a pull request. The gate sits on the action, wherever the agent takes it.
+moor has one gate mechanism. The definition declares every gate.
+
+- **A gate** has a name and up to three needs. They are evidence files, checks that moor runs in the Box, and a yes from a named role.
+- **The agent calls a gate by name.** moor answers pass or fail. A failure returns to the agent, up to the gate's limit.
+- **Gates have no order.** The lead's prose says when to call each one. moor never walks from gate to gate, so no step graph returns.
+- **One gate may be final.** A task shows as done only when its final gate passes. A contract with no final gate gives a result marked unchecked.
+- **An action rule** sits on an action, such as opening a pull request. The Proxy lets it go, waits for a yes, or refuses.
+
+The example above declares two gates. The plan gate shows the plan and needs no yes. The done gate is final.
+
+The safety floor is not part of the definition, and no proposal can change it.
+
+- Tokens stay behind the Proxy.
+- Egress follows the allow list.
+- Pushes to protected branches are refused.
+- moor never merges.
+- An observer cannot change a gate, a contract or a grant.
 
 | Word | Meaning | Who sets it |
 | --- | --- | --- |
@@ -231,7 +248,7 @@ flowchart LR
 | Skill | The team's way to do one kind of work. | The team that knows the work |
 | Automation | Triggers and an ask. It starts tasks. | Developers |
 | Contract | What must be true before a result counts. | Repo maintainers |
-| Gate | A point where moor checks or waits for a yes. | The contract |
+| Gate | A named point, declared in a contract, where moor checks or waits for a yes. | Repo maintainers, by proposal |
 | Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
 | Box | The computer a task runs in. | moor |
 | Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by accepting |
@@ -269,25 +286,26 @@ flowchart LR
 | Workflow | An automation file |
 | Plan of typed steps, frozen per run | The agent's plan, per task, not walked by moor |
 | Work step | Gone. The lead and the skill say how. |
-| Check step | A check in the contract, run at the done gate |
-| Approve step | The plan gate or an action gate |
+| Check step | A check that a gate needs |
+| Approve step | A gate that needs a yes, or an action rule |
 | Deliver step | The result |
-| `report_step` | Two calls. The agent submits its plan, then claims done. |
+| `report_step` | One call that names a gate |
 | Run | A task that an automation started |
-| "Plan first" | The plan gate's setting, with a per-task override |
+| "Plan first" | A plan gate that needs a yes, with a per-task override |
 | Compiling a plan from a prompt | Gone |
 | Workflows screen | Automations, with their last tasks |
 | Workflows as database rows | Versioned files in the definition |
 
 ### What this costs
 
-- "Done" changes meaning. The experience spec says done when the agent goes quiet. Here done means the done gate passed.
+- "Done" changes meaning. The experience spec says done when the agent goes quiet. Here done means the final gate passed.
 
 - Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
 - A step graph shows where a task failed. Here the agent's plan must do that. Each plan item records its state and its evidence as the agent goes.
-- The done gate proves that evidence exists and that checks pass. It does not prove the evidence is true. A person still reads it at review.
+- A gate proves that evidence exists and that checks pass. It does not prove the evidence is true. A person still reads it at review.
 - A judge with fresh context, as in HAL, is left for later. It would read files the working agent wrote, on the same model, at the task owner's cost.
-- A person cannot force an order of work. The lead can ask for one. Only contracts and gates are enforced.
+- A person cannot force an order of work. The lead can ask for one. Only gates and action rules are enforced.
+- Gates in the definition can be set wrong, or dropped. moor shows an unchecked result as unchecked, and keeps the safety floor.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
 - moor must show a diff and an accept button for its own definition. That is a small review surface, in a product that leaves code review to GitHub.
 
@@ -317,7 +335,7 @@ mindmap
     Plan
       Written by the agent
       Shown to you
-      Plan gate
+      Gates, declared
     Do
       Task
       Box
@@ -327,7 +345,7 @@ mindmap
       Evidence and checks
     Decide
       Needs you
-      Action gates
+      Action rules
       Review on GitHub
     Learn
       Definition as files
@@ -346,10 +364,10 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 
 | # | Step | Check |
 | --- | --- | --- |
-| 1 | The contract and the done gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
-| 2 | The agent's plan on the Task page, and the plan gate. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
+| 1 | The gate mechanism and one final gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
+| 2 | The agent's plan on the Task page, and a gate that needs a yes. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
 | 3 | The definition. Lead, skills, automations and contracts are versioned files in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation and one contract. A revert restores the old behaviour. The step plan code is deleted. |
-| 4 | Action gates at the Proxy, and tokens that follow the steerer. | With that gate set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
+| 4 | Action rules at the Proxy, and tokens that follow the steerer. | With that rule set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
 | 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal that changes a contract, or an automation's contract field, is refused. |
 
@@ -360,15 +378,15 @@ The owner decided this on 2026-11-20.
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
-- The done gate starts with evidence and checks only. A judge model is deferred. Decided on 2026-11-21.
+- Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
+- A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
 
-1. Does moor fix only the gates, and leave the shape of work to prose in the definition?
-2. Does an observer propose changes, limited to prose, for a person to accept?
-3. Is the definition YAML and Markdown only, with no code?
-4. Does repo config become files in the definition, with the same versions and proposals?
-5. Does the requester approve a plan that waits?
-6. Does a task act as the person steering it, as Hopper does?
-7. Does moor design for anyone outside the team, such as a client?
+1. Does an observer propose changes, limited to prose, for a person to accept?
+2. Is the definition YAML and Markdown only, with no code?
+3. Does repo config become files in the definition, with the same versions and proposals?
+4. Does the requester approve a plan that waits?
+5. Does a task act as the person steering it, as Hopper does?
+6. Does moor design for anyone outside the team, such as a client?
