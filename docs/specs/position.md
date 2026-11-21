@@ -187,9 +187,6 @@ result: pull_request
 evidence: [audit.md, "before-*", "after-*", report.md]
 checks:
   - run: repo.checks.ci
-judge: >
-  The after files show no failure that the before files lack.
-  Every bumped package appears in audit.md.
 gates:
   plan: show
   open_pull_request: go
@@ -222,8 +219,7 @@ flowchart LR
 ```
 
 - **The plan gate.** The agent submits its plan, written for this task. The contract says show or wait.
-- **The done gate.** The agent claims done. moor looks for the evidence and runs the checks in the Box. Then a judge answers the contract's question. A failure returns to the agent, up to the limit. A task that fails the gate never shows as done.
-- **The judge** is a second agent session with fresh context, as in HAL. moor starts it in the Box's agent place. It reads only the ask, the evidence and the diff. Its model calls go through the Proxy on the task owner's token, so the controller still holds no model client.
+- **The done gate.** The agent claims done. moor looks for the evidence and runs the checks in the Box. A failure returns to the agent, up to the limit. A task that fails the gate never shows as done.
 - **Action gates.** The Proxy asks before a risky action, such as opening a pull request. The gate sits on the action, wherever the agent takes it.
 
 | Word | Meaning | Who sets it |
@@ -244,7 +240,7 @@ Secrets never enter the definition. A grant names a permission, not a token.
 
 ### The three cases again
 
-- **A.** One automation and one contract replace four workflows. Each agent writes a plan that fits its repo. The judge handles "no worse than main", which an exit code cannot.
+- **A.** One automation and one contract replace four workflows. Each agent writes a plan that fits its repo. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
 - **B.** The PM types the ask. The plan appears in plain words. The default contract asks for a screenshot and passing checks. The PM sees needs you only if a gate waits.
 - **C.** The second person's message carries their identity. From then on the Proxy adds their tokens. It refuses when it cannot tell who is steering.
 
@@ -289,7 +285,8 @@ flowchart LR
 
 - Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
 - A step graph shows where a task failed. Here the agent's plan must do that. Each plan item records its state and its evidence as the agent goes.
-- The judge is a model. It can be wrong. Evidence and checks stay deterministic, and the judge only reads what is on file.
+- The done gate proves that evidence exists and that checks pass. It does not prove the evidence is true. A person still reads it at review.
+- A judge with fresh context, as in HAL, is left for later. It would read files the working agent wrote, on the same model, at the task owner's cost.
 - A person cannot force an order of work. The lead can ask for one. Only contracts and gates are enforced.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
 - moor must show a diff and an accept button for its own definition. That is a small review surface, in a product that leaves code review to GitHub.
@@ -328,7 +325,6 @@ mindmap
     Prove
       Contract
       Evidence and checks
-      Judge
     Decide
       Needs you
       Action gates
@@ -364,6 +360,7 @@ The owner decided this on 2026-11-20.
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
+- The done gate starts with evidence and checks only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
@@ -372,7 +369,6 @@ The owner decided this on 2026-11-20.
 2. Does an observer propose changes, limited to prose, for a person to accept?
 3. Is the definition YAML and Markdown only, with no code?
 4. Does repo config become files in the definition, with the same versions and proposals?
-5. May the done gate use a judge that runs in the Box on the task owner's token?
-6. Does the requester approve a plan that waits?
-7. Does a task act as the person steering it, as Hopper does?
-8. Does moor design for anyone outside the team, such as a client?
+5. Does the requester approve a plan that waits?
+6. Does a task act as the person steering it, as Hopper does?
+7. Does moor design for anyone outside the team, such as a client?
