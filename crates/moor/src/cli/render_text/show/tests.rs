@@ -251,3 +251,80 @@ fn list_and_detail_say_when_a_box_slept_mid_turn() {
     );
     assert!(!show(json!({"box": row("alpha", true)})).contains("unfinished"));
 }
+
+fn with_gate(mut t: Value, progress: Value, status: Value) -> Value {
+    let fields = t.as_object_mut().unwrap();
+    fields.insert("progress".into(), progress);
+    fields.insert(
+        "gate".into(),
+        json!({"gates": ["proof"], "status": status, "wait": null}),
+    );
+    t
+}
+
+fn asks() -> Value {
+    with_gate(
+        row("alpha", true),
+        json!({"state": "needs_you", "line": "gate proof: waiting for your approval"}),
+        json!({"state": "open", "gate": "proof", "try_n": 1, "next": "ask"}),
+    )
+}
+
+#[test]
+fn list_shows_the_progress_state_and_the_gate_line_under_the_row() {
+    let out = show(json!({"boxes": [asks(), row("b", true)]}));
+    assert_eq!(
+        out,
+        "alpha  ready  idle  working  running  /work\n  needs you: gate proof: waiting for your approval\nb      ready  idle  working  running  /work\n"
+    );
+}
+
+#[test]
+fn detail_shows_the_progress_state_and_the_gate_line() {
+    let out = show(json!({"box": asks()}));
+    assert!(
+        out.contains(
+            "session:   idle\nprogress: needs you: gate proof: waiting for your approval\nrepo:"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_working_box_with_an_open_gate_shows_the_gate_beside_what_it_does() {
+    let working = with_gate(
+        row("alpha", true),
+        json!({"state": "working", "line": "editing main.rs"}),
+        json!({"state": "open", "gate": "proof", "try_n": 2, "next": "agent"}),
+    );
+    let out = show(json!({"boxes": [working]}));
+    assert!(
+        out.ends_with(
+            "  working: editing main.rs\n  gate proof, try 2: waiting for the agent's evidence\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_stuck_failed_and_passed_gate_each_say_so() {
+    for (status, want) in [
+        (
+            json!({"state": "stuck", "gate": "proof", "why": "out of tries: check 1 (`make`) exited 2"}),
+            "gate proof is stuck: out of tries: check 1 (`make`) exited 2",
+        ),
+        (
+            json!({"state": "failed", "gate": "proof", "why": "the owner said no: redo"}),
+            "gate proof failed: the owner said no: redo",
+        ),
+        (json!({"state": "passed"}), "gates: all passed"),
+    ] {
+        let t = with_gate(
+            row("alpha", true),
+            json!({"state": "done", "line": "PR #4"}),
+            status,
+        );
+        let out = show(json!({"boxes": [t]}));
+        assert!(out.contains(&format!("  done: PR #4\n  {want}\n")), "{out}");
+    }
+}
