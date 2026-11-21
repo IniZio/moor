@@ -325,7 +325,7 @@ function Line({ e }: { e: Entry }) {
 				<div class="t-ev">
 					<span class="t-who">Agent</span>
 					<span class="t-when">{clock(e.at)}</span>
-					<div class="t-what t-say">
+					<div class="t-what t-agent-said">
 						<Markdown text={e.text} />
 					</div>
 				</div>
