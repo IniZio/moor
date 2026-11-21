@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { failure, gateAnswer, type Needs, toError } from './api';
-import { GATE_LOOK, type GateView, gateRows, quoted, tailView, type Wait, whyWords } from './gate';
+import { checkRun, GATE_LOOK, type GateDoc, type GateView, gateRows, quoted, ruleSentence, tailView, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
 
@@ -147,8 +147,14 @@ export function StuckView({ wait }: { wait: Wait }) {
 		<div class="t-wait" role="region" aria-label="This gate is stuck">
 			<div class="t-wait-h">Stuck, and needs you</div>
 			<p class="t-wait-q">{quoted(wait.gate)} is stuck.</p>
-			<p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on')}</p>
-			{wait.command && (
+			{wait.says && (
+				<>
+					<p class="t-gate-label">Not yet true</p>
+					<p class="t-gate-says">{wait.says}</p>
+				</>
+			)}
+			<p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on', wait.says)}</p>
+			{wait.command && !wait.says && (
 				<>
 					<p class="t-gate-label">The check that failed</p>
 					<pre class="t-quote">{wait.command}</pre>
@@ -159,6 +165,12 @@ export function StuckView({ wait }: { wait: Wait }) {
 					<p class="t-gate-label">What it printed</p>
 					<Tail text={wait.tail} />
 				</>
+			)}
+			{wait.command && wait.says && (
+				<details class="t-gate-cmd">
+					<summary>Show the check</summary>
+					<pre class="t-quote">{wait.command}</pre>
+				</details>
 			)}
 			{wait.missing.length > 0 && (
 				<>
@@ -199,4 +211,53 @@ export function GateList({ gate }: { gate: GateView | null | undefined }) {
 			</ol>
 		</>
 	);
+}
+
+export type RulesProps = { gates: readonly GateDoc[]; asJson: boolean; onToggle: () => void };
+
+/** What moor holds a gated run to: each gate in order, in sentences, with the commands behind a click. Read-only. */
+export function RulesView({ gates, asJson, onToggle }: RulesProps) {
+	return (
+		<div class="t-rules" role="region" aria-label="What moor holds this run to">
+			<div class="plan-bar">
+				<strong class="grow">What moor holds this run to</strong>
+				<button type="button" class="quiet" aria-pressed={asJson} onClick={onToggle}>
+					Edit as JSON
+				</button>
+			</div>
+			{asJson ? (
+				<>
+					<textarea aria-label="Gates JSON" class="t-mono" rows={14} spellcheck={false} readOnly value={JSON.stringify(gates, null, 2)} />
+					<p class="muted">Read-only here. Change the gates with add_workflow.</p>
+				</>
+			) : (
+				<>
+					<ol class="t-rules-list">
+						{gates.map((gate, i) => (
+							<li key={gate.name}>
+								<span class="t-rule-name">
+									{i + 1}. {gate.name}
+								</span>
+								{' — '}
+								{ruleSentence(gate)}
+								{(gate.checks ?? []).length > 0 && (
+									<details class="t-gate-cmd">
+										<summary>{gate.checks?.length === 1 ? 'Show the check' : 'Show the checks'}</summary>
+										<pre class="t-quote">{(gate.checks ?? []).map(checkRun).join('\n\n')}</pre>
+									</details>
+								)}
+							</li>
+						))}
+					</ol>
+					<p class="t-rules-end">Then the run is delivered.</p>
+				</>
+			)}
+		</div>
+	);
+}
+
+/** The read-only panel of a gated workflow's gates, with its JSON behind a toggle. */
+export function GatesPanel({ gates }: { gates: readonly GateDoc[] }) {
+	const [asJson, setAsJson] = useState(false);
+	return <RulesView gates={gates} asJson={asJson} onToggle={() => setAsJson(!asJson)} />;
 }

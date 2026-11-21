@@ -250,6 +250,7 @@ fn step_view(
         "instructions",
         "done_when",
         "command",
+        "checks",
         "question",
         "ok",
         "fail",
