@@ -198,6 +198,8 @@ max_tries: 3
 
 Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
 
+An automation is a shared file, so its ask is work done under one person's tokens. A change to it needs a yes from that person. A task started by an event can act as the person who caused the event.
+
 A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the contract. A repo's own checks live in its repo file.
 
 The lead agent's file holds the shape of work, as prose. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
