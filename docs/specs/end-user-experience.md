@@ -232,6 +232,23 @@ A research pass on 2026-11-18 read origin/develop. Most screens need data moor a
 - The portal's security policy gains `font-src 'self'` when the fonts ship in the bundle, and `img-src 'self'` when Evidence shows images. Both land in the first portal PR that needs them.
 - Keyboard first. ⌘K opens the switcher, j and k move, enter opens.
 
+## What the position spec changes
+
+The [position spec](position.md) proposes a new model for moor. This table lists what it changes on this page. None of it is built. The steps are the six in that spec's order of work.
+
+| Part of this page | Today | After the position spec | Step |
+| --- | --- | --- | --- |
+| The words | Task, Box, workflow and run | Run folds into task. A workflow becomes an automation. Developers also see capability, gate and definition. | 3 |
+| State, done | The agent finished its turn and is quiet. | The task's last gate passed. A task with no gates shows as unchecked. | 1 |
+| State, needs you | A question, a permission, an approve step or setup | A question, a gate that needs a yes, a capability that needs a yes, or setup | 2 and 4 |
+| New task, "Plan first" | It reuses the workflow plan shape. | A plan gate that needs a yes from the person who asked | 2 |
+| Task, the right rail | The plan's steps | The gates in order, with the agent's own plan items between them | 1 and 2 |
+| Task, the waiting card | "Always" belongs in repo settings. | "Always" is a capability in the definition. | 4 |
+| Workflows | A list, with numbered steps to edit and "Edit as JSON" | Automations. Each reads as a story drawn from its file. An edit is a proposal that shows its plan. | 3 |
+| Repos of a task | One workflow per project, with Duplicate | Open. One automation may list several projects and start a task for each. | 3 |
+| Repos and account | Repo config is edited in place. | Repo config is files in the definition, with versions and proposals. | 3 |
+| Who | Developer, QA, PM, designer and operator | The same people. Clients stay out of scope. Handover between roles is reserved for later. | none |
+
 ## Order
 
 Each step ends in a check someone can rerun. The first step is useful alone.
