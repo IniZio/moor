@@ -5,7 +5,7 @@ import { GATE_LOOK, type GateView, gateRows, quoted, tailView, type Wait, whyWor
 import { useDraft } from './session';
 import './gates.css';
 
-/** Where a task's evidence is shown. */
+/** Where a Box's evidence is shown. */
 const evidenceHref = (box: string) => `#/box/${encodeURIComponent(box)}/evidence`;
 
 /** A check's output in monospace: its last lines, and the rest behind a click. */
@@ -180,7 +180,7 @@ export function GateCard({ box, needs, wait, csrf, onSent }: { box: string; need
 	return wait.kind === 'approve' ? <ApproveCard box={box} needs={needs} wait={wait} csrf={csrf} onSent={onSent} /> : <StuckView wait={wait} />;
 }
 
-/** The gates of a task by name, each with where it stands. */
+/** The gates of a Box by name, each with where it stands. */
 export function GateList({ gate }: { gate: GateView | null | undefined }) {
 	if (!gate || gate.gates.length === 0) return null;
 	return (

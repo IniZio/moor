@@ -1,4 +1,4 @@
-/* The gate cards and list on the Task page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
+/* The gate cards and list on the Box page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
 .t-gate-label { margin: 0.5rem 0 0.2rem; font-size: 0.8125rem; font-weight: 650; color: var(--moor-color-text-muted); }
 .t-gate-handed { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--moor-space-1) var(--moor-space-3); margin: 0.5rem 0 0; }
 .t-gate-handed .t-gate-label { margin: 0; }

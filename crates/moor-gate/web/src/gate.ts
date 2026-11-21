@@ -42,7 +42,7 @@ export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | '
 /** One line of the gate list. */
 export type GateRow = { name: string; state: GateState; words: string };
 
-/** The glyph and the tone class of each gate state, from the same set the task list uses. */
+/** The glyph and the tone class of each gate state, from the same set the Box list uses. */
 export const GATE_LOOK: Record<GateState, { glyph: string; tone: string }> = {
 	passed: { glyph: '✓', tone: 'done' },
 	working: { glyph: '◐', tone: 'working' },
@@ -93,7 +93,7 @@ export function whyWords(why: string): string {
 	return spent ? `${sentence} No tries left.` : sentence;
 }
 
-/** The one line a task row or a card says about its gates when a person has something to do or it failed; none otherwise. */
+/** The one line a list row or a card says about its gates when a person has something to do or it failed; none otherwise. */
 export function gateLine(view: GateView | null | undefined): string | null {
 	const status = view?.status;
 	switch (status?.state) {
