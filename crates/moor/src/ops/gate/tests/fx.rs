@@ -19,6 +19,7 @@ use moor_core::{BoxId, BoxName, BoxPath, ProviderId, ShowReq, SteerReq};
 
 use crate::cx::Cx;
 use crate::ops::gate::checks::{pass, run, Job};
+use crate::store::StoreError;
 use crate::testing::agent;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -147,7 +148,11 @@ impl Fx {
     pub(super) fn quiet(&self) {
         self.pause(1);
         let quiet = Decision::new(self.id).session(SessionInput::AgentQuiet);
-        self.cx.store().unwrap().apply(quiet).ok();
+        let settled = self.cx.store().unwrap().apply(quiet).map(drop);
+        assert!(
+            matches!(settled, Ok(()) | Err(StoreError::Illegal(_))),
+            "{settled:?}"
+        );
     }
 
     /// One pass that runs each due check on the spot; returns what it logged.
