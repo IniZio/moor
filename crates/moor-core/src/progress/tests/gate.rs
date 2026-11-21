@@ -357,6 +357,26 @@ fn ask_id_of(lines: &[crate::gate::GateLine]) -> String {
     let gates = crate::gate::Gates::parse(std::slice::from_ref(&d)).unwrap();
     crate::progress::gate_ask_id(&crate::gate::wait(&gates, lines).unwrap())
 }
+
+#[test]
+fn an_approval_only_gate_shows_working_until_the_agent_is_quiet() {
+    let d = doc(&[], &[], true);
+    for session in [SessionState::Starting, SessionState::Working] {
+        let mut b = standing(BoxLifecycle::Ready, &d, &[]);
+        b.session_state = session;
+        let p = derive(&b, &[], ten());
+        assert_eq!(p.state, Progress::Working, "{session:?}");
+        assert!(p.needs.is_none(), "{session:?}");
+    }
+    for session in [SessionState::Idle, SessionState::Ended] {
+        let mut b = standing(BoxLifecycle::Ready, &d, &[]);
+        b.session_state = session;
+        let p = derive(&b, &[], ten());
+        assert_eq!(p.state, Progress::NeedsYou, "{session:?}");
+        assert!(p.needs.is_some(), "{session:?}");
+    }
+}
+
 fn said(text: &str) -> EventView {
     ev(1, "agent_said", "t", json!({ "text": text }))
 }

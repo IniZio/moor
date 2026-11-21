@@ -94,6 +94,18 @@ impl Store {
         Ok(())
     }
 
+    /// Writes the `gate_waiting` event of Box `id` when its gates wait for a person and the wait has
+    /// none yet. It is the way a gate that waits before any line exists, such as one that only
+    /// asks the owner, tells the person; calling it again for the same wait writes nothing.
+    pub(crate) fn note_gate_wait(&self, id: BoxId, at: Ts) -> Result<(), StoreError> {
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        waiting::ensure(&tx, id, at)?;
+        tx.commit()?;
+        drop(writer);
+        Ok(())
+    }
+
     /// Box `id`'s gate lines, oldest first.
     pub(crate) fn gate_lines(&self, id: BoxId) -> Result<Vec<GateLine>, StoreError> {
         self.reader()?

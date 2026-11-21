@@ -20,6 +20,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::settled;
+use crate::ops::gate::ask::ask;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
@@ -84,6 +85,7 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
         return Ok(());
     }
     let Some(due) = due_check(&gates, &lines) else {
+        ask(cx, store, row, (&gates, &lines))?;
         return remind(cx, store, row, (&gates, &lines));
     };
     if !settled(cx, store, row)? {

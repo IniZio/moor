@@ -47,15 +47,20 @@ pub(super) fn needs(b: &BoxView) -> Option<Needs> {
     })
 }
 
+/// Whether the agent of `b` has gone quiet: a person asked to approve before that cannot judge.
+const fn quiet(b: &BoxView) -> bool {
+    matches!(b.session_state, SessionState::Idle | SessionState::Ended)
+}
+
 /// The state the gates force on an open Box, even asleep: one that waits for a person needs them,
-/// one that failed fails the Box.
+/// one that failed fails the Box. A gate that asks the owner waits until the agent is quiet.
 pub(super) fn forced(b: &BoxView) -> Option<Progress> {
     match open_status(b)? {
-        GateStatus::Stuck { .. }
-        | GateStatus::Open {
+        GateStatus::Stuck { .. } => Some(Progress::NeedsYou),
+        GateStatus::Open {
             next: GateNext::Ask,
             ..
-        } => Some(Progress::NeedsYou),
+        } if quiet(b) => Some(Progress::NeedsYou),
         GateStatus::Failed { .. } => Some(Progress::Failed),
         GateStatus::Open { .. } | GateStatus::Passed => None,
     }
@@ -72,16 +77,15 @@ pub(super) fn holds(b: &BoxView) -> bool {
 /// was done, where the agent's last sentence may be stale.
 pub(super) fn done_note(b: &BoxView) -> Option<&str> {
     let gate = b.gate.as_ref()?;
-    (gate.status == GateStatus::Passed).then(|| gate.note.as_deref())?
+    (gate.status == GateStatus::Passed).then_some(gate.note.as_deref())?
 }
 
 /// The line a gate gives a Box in `state`, when it has something to say that the agent's own
 /// words do not.
 pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
     let status = open_status(b)?;
-    let idle = matches!(b.session_state, SessionState::Idle | SessionState::Ended);
     match (state, status) {
-        (Progress::Working, GateStatus::Open { gate, next, .. }) if idle => Some(match next {
+        (Progress::Working, GateStatus::Open { gate, next, .. }) if quiet(b) => Some(match next {
             GateNext::Agent => format!("gate {gate}: waiting for the agent's evidence"),
             GateNext::RunChecks => format!("gate {gate}: running its checks"),
             GateNext::Ask => format!("gate {gate}: waiting for your approval"),
