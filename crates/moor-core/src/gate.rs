@@ -17,7 +17,7 @@ mod status_tests;
 mod tests;
 
 pub use line::GateLine;
-pub use status::{status, GateNext, GateStatus};
+pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
 
 /// The most gates a Box may have.
 pub const GATES_MAX: usize = 8;

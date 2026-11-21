@@ -157,6 +157,25 @@ impl Moor {
         }
     }
 
+    /// The pass that runs the checks of Boxes with gates, for the controller to run each tick. Each
+    /// check runs on a thread of its own, so a slow one never holds up the pass.
+    pub(crate) fn gate_pass(
+        env: &Env,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        let env = env.clone();
+        move |draining| match Self::from_env(&env) {
+            Ok(moor) => crate::cx::owners::checked(|| {
+                let spawn = |job: ops::GateJob| spawn_gate_check(&env, job);
+                let done = (moor.cx.store())
+                    .and_then(|store| ops::gate_pass(&moor.cx, store, draining, &spawn));
+                let mut out = done.unwrap_or_else(|e| vec![e.error.to_string()]);
+                out.extend(moor.cx.take_warnings().into_iter().map(|w| w.message));
+                out
+            }),
+            Err(e) => vec![e.error.to_string()],
+        }
+    }
+
     /// The pass that starts the Boxes waiting on a node once it has room, for the controller to
     /// run each tick.
     pub(crate) fn promote_pass(
@@ -315,6 +334,19 @@ impl Moor {
         let warnings = self.cx.take_warnings().into_iter().map(|w| w.message);
         failed.into_iter().chain(warnings).collect()
     }
+}
+
+/// Runs the gate check `job` on a new thread, as its Box's owner. Its result is a gate line in the
+/// store, which the next pass reads.
+fn spawn_gate_check(env: &Env, job: ops::GateJob) {
+    let env = env.clone();
+    std::thread::spawn(move || {
+        crate::cx::owners::checked(|| {
+            if let Ok(moor) = Moor::from_env(&env) {
+                ops::run_gate_check(&moor.cx, &job);
+            }
+        });
+    });
 }
 
 /// A controller pass over the store that stops once its `draining` says so.

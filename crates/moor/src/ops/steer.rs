@@ -43,12 +43,20 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let found = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
+    let sent = send_to(cx, req, &found)?;
+    crate::ops::gate::hold::after_steer(cx, store, found.id);
+    Ok(sent)
+}
+
+/// Sends `req` to the agent of `found`.
+fn send_to(cx: &Cx, req: &SteerReq, found: &BoxRow) -> Result<SteerValue, CommandError> {
+    let store = cx.store()?;
     if req.menu.is_none() && !req.interrupt && req.text.is_some() && !is_exit_req(req) {
-        return queue::steer(cx, store, req, &found);
+        return queue::steer(cx, store, req, found);
     }
     let target = (found.id, found.name.as_str());
-    if lost(&found) {
-        bring_back(cx, &found)?;
+    if lost(found) {
+        bring_back(cx, found)?;
     }
     let _turn = cx.turn(target.0, Cmd::Steer)?;
     let mut slot = Slot::new(InboxKind::Steer);

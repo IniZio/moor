@@ -379,3 +379,5 @@ fn a_check_out_of_order_changes_nothing() {
     let lines = [checked("tests", 1, 1, 0)];
     assert_eq!(status(&g, &lines), open("tests", 1, GateNext::RunChecks));
 }
+
+mod due;

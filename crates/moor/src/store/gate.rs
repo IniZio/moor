@@ -1,5 +1,7 @@
 //! A Box's gates and the lines that say how far they have got.
 
+use std::collections::HashSet;
+
 use moor_core::gate::{GateLine, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -27,13 +29,35 @@ impl Store {
             .transpose()
     }
 
+    /// The ids of the Boxes that have gates, open or not.
+    pub(crate) fn gated_box_ids(&self) -> Result<HashSet<BoxId>, StoreError> {
+        self.reader()?
+            .rows(
+                Query::select()
+                    .column(Boxes::Id)
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Gates).is_not_null()),
+                |r| r.get::<_, i64>(0),
+            )?
+            .map(|id| Ok(BoxId::new(id?)))
+            .collect()
+    }
+
+    /// When the newest gate line of Box `id` was written; none when it has none.
+    pub(crate) fn newest_gate_line_at(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
+        let at: Option<i64> = self.reader()?.row(
+            Query::select()
+                .expr(Expr::col(BoxGateLines::At).max())
+                .from(BoxGateLines::Table)
+                .and_where(Expr::col(BoxGateLines::Box).eq(id.get())),
+            |r| r.get(0),
+        )?;
+        Ok(at.map(Ts::from_millis))
+    }
+
     /// Appends `line` at `at` as line `n` of Box `id`'s gate lines. The key on the line number
     /// is the compare-and-set: of two appends of one number, the second fails with a unique
     /// violation and the caller reads the lines again.
-    #[allow(
-        dead_code,
-        reason = "the checks and approvals that write lines come in a later change"
-    )]
     pub(crate) fn append_gate_line(
         &self,
         id: BoxId,

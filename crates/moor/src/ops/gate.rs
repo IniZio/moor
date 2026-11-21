@@ -78,5 +78,7 @@ fn gate_run(row: &RunRow) -> Option<GateRun> {
     })
 }
 
+pub(crate) mod checks;
+pub(crate) mod hold;
 #[cfg(test)]
 mod tests;
