@@ -98,18 +98,30 @@ impl Check {
     }
 }
 
-/// Check `check`, from 0, of `gate` as a person reads it: its place, then what it says, or its
-/// command cut short when it says nothing.
+impl Gate {
+    /// Check `check`, from 0, as a person reads it: what it says, or its command cut short and
+    /// in backticks when it says nothing.
+    #[must_use]
+    pub fn check_label(&self, check: u8) -> String {
+        let Some(c) = self.checks.get(usize::from(check)) else {
+            return "``".to_owned();
+        };
+        if let Some(says) = &c.says {
+            return says.clone();
+        }
+        let run = c.run.trim();
+        let cut: String = run.chars().take(60).collect();
+        let more = if run.chars().count() > 60 { "…" } else { "" };
+        format!("`{cut}{more}`")
+    }
+}
+
+/// Check `check`, from 0, of `gate` as a person reads it: its place, then its label.
 pub(super) fn named(gate: &Gate, check: u8) -> String {
     let place = check + 1;
-    let Some(c) = gate.checks.get(usize::from(check)) else {
-        return format!("check {place} (``)");
-    };
-    if let Some(says) = &c.says {
-        return format!("check {place} (“{says}”)");
+    let label = gate.check_label(check);
+    match gate.checks.get(usize::from(check)).and_then(|c| c.says.as_ref()) {
+        Some(_) => format!("check {place} (“{label}”)"),
+        None => format!("check {place} ({label})"),
     }
-    let run = c.run.trim();
-    let cut: String = run.chars().take(60).collect();
-    let more = if run.chars().count() > 60 { "…" } else { "" };
-    format!("check {place} (`{cut}{more}`)")
 }

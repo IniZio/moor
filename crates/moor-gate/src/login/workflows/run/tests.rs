@@ -14,6 +14,26 @@ fn said(entry: &serde_json::Value) -> String {
 }
 
 #[test]
+fn a_check_line_leads_with_what_the_check_says_else_its_command() {
+    assert_eq!(
+        said(
+            &json!({"kind": "checked", "step": "posted", "try_n": 1, "exit": 1, "check": "The pull request has one evidence comment."})
+        ),
+        "The pull request has one evidence comment: exited 1 (try 1)"
+    );
+    assert_eq!(
+        said(
+            &json!({"kind": "checked", "step": "posted", "try_n": 2, "exit": 0, "check": "`make test`"})
+        ),
+        "`make test`: exited 0 (try 2)"
+    );
+    assert_eq!(
+        said(&json!({"kind": "checked", "step": "build", "try_n": 1, "exit": 1})),
+        "Check exited 1 (try 1)"
+    );
+}
+
+#[test]
 fn a_gated_runs_lines_read_as_what_happened() {
     assert_eq!(
         said(&json!({"kind": "gate_passed", "step": "proof"})),

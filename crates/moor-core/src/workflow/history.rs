@@ -60,6 +60,10 @@ pub enum HistoryEntry {
         exit: i32,
         /// The last 4 KiB of the check's output.
         tail: String,
+        /// Which check of a gate ran, as a person reads it: what it says, else its command cut
+        /// short; none for a step's check.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check: Option<String>,
     },
     /// A check's exec stream was cut before it ended. That is no result, so the check runs again
     /// on the next tick.

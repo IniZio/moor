@@ -65,6 +65,43 @@ fn kinds(entries: &[HistoryEntry]) -> Vec<(&'static str, String)> {
 }
 
 #[test]
+fn a_check_line_names_the_check_by_what_it_says_else_by_its_command() {
+    let says = "The pull request has one evidence comment.";
+    let said = crate::gate::SaidDoc {
+        run: "gh pr view --json comments".to_owned(),
+        says: says.to_owned(),
+    };
+    let gates = Gates::parse(&[GateDoc {
+        name: "done".to_owned(),
+        evidence: Vec::new(),
+        checks: vec![CheckDoc::Said(said), CheckDoc::from("make test")],
+        approval: None,
+        max_tries: Some(2),
+    }])
+    .unwrap();
+    let ran = |check: u8, exit: i32| GateLine::Checked {
+        gate: id("done"),
+        try_n: 1,
+        check,
+        exit,
+        tail: String::new(),
+    };
+    let named = |entries: Vec<HistoryEntry>| match entries.first() {
+        Some(HistoryEntry::Checked { check, .. }) => check.clone(),
+        other => panic!("{other:?}"),
+    };
+    let first = ran(0, 0);
+    assert_eq!(
+        named(gate_history(&gates, &[], &first, false)),
+        Some(says.to_owned())
+    );
+    assert_eq!(
+        named(gate_history(&gates, &[first], &ran(1, 1), false)),
+        Some("`make test`".to_owned())
+    );
+}
+
+#[test]
 fn an_accepted_report_that_passes_a_gate_puts_the_next_in_hand() {
     let got = gate_history(&gates(), &[], &submitted("proof", 1), false);
     let want = [

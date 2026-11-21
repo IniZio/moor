@@ -14,7 +14,7 @@ pub fn gate_history(
     line: &GateLine,
     run_waits: bool,
 ) -> Vec<HistoryEntry> {
-    let mut out: Vec<HistoryEntry> = of_line(line).into_iter().collect();
+    let mut out: Vec<HistoryEntry> = of_line(gates, line).into_iter().collect();
     let after: Vec<GateLine> = before.iter().chain([line]).cloned().collect();
     let (was, now) = (status(gates, before), status(gates, &after));
     let passed = |s: &GateStatus| match s {
@@ -54,7 +54,7 @@ const fn in_hand(s: &GateStatus) -> Option<(&StepId, u8)> {
 }
 
 /// The line as the run's history tells it; none for a line that is no event of its own.
-fn of_line(line: &GateLine) -> Option<HistoryEntry> {
+fn of_line(gates: &Gates, line: &GateLine) -> Option<HistoryEntry> {
     Some(match line.clone() {
         GateLine::Submitted {
             gate,
@@ -77,10 +77,14 @@ fn of_line(line: &GateLine) -> Option<HistoryEntry> {
         GateLine::Checked {
             gate,
             try_n,
+            check,
             exit,
             tail,
-            ..
         } => HistoryEntry::Checked {
+            check: gates
+                .iter()
+                .find(|g| g.name == gate)
+                .map(|g| g.check_label(check)),
             step: gate,
             try_n,
             exit,
