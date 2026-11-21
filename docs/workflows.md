@@ -152,6 +152,12 @@ The gates, not the agent going quiet, decide how the run ends.
   run goes on. Waiting does not count toward `timeout_minutes`. A wait with
   no answer ends the run `declined` after 7 days.
 
+A gated run starts at its first gate, and its history never names a plan step.
+The history lists these in order. Each gate in hand. Each report, accepted or
+refused. Each check. Each gate passed. The wait for a person, the answer and the
+resume. The end. A check sees the run's environment as the agent's shell does. That
+includes the `MOOR_PULL_*` variables and the Proxy.
+
 A newer head of a pull request cancels the older head's run, and a cancelled
 run's Box gets no more reminders or checks.
 

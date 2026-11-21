@@ -1,5 +1,6 @@
 //! The reads of workflow runs: the change stream and one workflow's run list.
 
+use moor_core::gate::Gates;
 use moor_core::user::UserId;
 use moor_core::view::workflow::{
     ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowRunListValue,
@@ -127,6 +128,25 @@ pub(super) fn runs(
     to_value(&WorkflowRunsValue { changes, next })
 }
 
+/// The plan document of `run` as a page lists its steps: the gates when its Box has them, or
+/// when it has no Box yet and the workflow has them, else the frozen plan.
+fn shown_plan(
+    store: &Store,
+    run: &WorkflowRun,
+    current: Option<&Gates>,
+    prompt: &str,
+) -> Result<serde_json::Value, CommandError> {
+    let held = match run.state.box_id() {
+        Some(id) => store.box_gates(id)?,
+        None => current.cloned(),
+    };
+    if let Some(gates) = held {
+        return Ok(gates.steps_doc());
+    }
+    serde_json::to_value(store.run_plan(run.id, prompt)?.to_doc())
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))
+}
+
 /// `workflow-run-list`: the latest runs of one workflow, or one run with its frozen plan.
 pub(super) fn run_list(
     store: &Store,
@@ -146,10 +166,7 @@ pub(super) fn run_list(
     let mut runs = Vec::new();
     for run in store.workflow_run_list(w.id, only, u64::from(limit))? {
         let plan = match only {
-            Some(_) => Some(
-                serde_json::to_value(store.run_plan(run.id, &w.prompt)?.to_doc())
-                    .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?,
-            ),
+            Some(_) => Some(shown_plan(store, &run, w.gates.as_ref(), &w.prompt)?),
             None => None,
         };
         let view = run_view(store, name.as_str(), &run)?;

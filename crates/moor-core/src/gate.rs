@@ -13,6 +13,7 @@ mod brief;
 #[cfg(test)]
 mod brief_tests;
 mod line;
+mod shown;
 mod status;
 #[cfg(test)]
 mod status_tests;
