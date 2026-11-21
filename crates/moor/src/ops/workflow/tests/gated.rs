@@ -415,6 +415,39 @@ fn the_gate_pass_leaves_the_box_of_a_cancelled_run_alone() {
 }
 
 #[test]
+fn a_gate_check_of_a_run_a_pull_request_event_started_sees_the_pull_request() {
+    let r = hooked();
+    let check = format!(
+        "test \"$MOOR_PULL_NUMBER\" = 65 && test \"$MOOR_PULL_REPO\" = o/n && test \"$MOOR_PULL_HEAD_SHA\" = {OLD}"
+    );
+    let posted = GateDoc {
+        name: "posted".to_owned(),
+        evidence: Vec::new(),
+        checks: vec![moor_core::gate::CheckDoc::from(check)],
+        approval: None,
+        max_tries: Some(1),
+    };
+    let id = r.put_gated_for(&[posted], true);
+    r.signed("opened", 65, OLD);
+    let box_id = r.latest_box(id);
+    r.quiet_after_work(id);
+    r.pause(MIN);
+    let store = r.cx.store().unwrap();
+    let logged = std::cell::RefCell::new(Vec::new());
+    crate::ops::gate_pass(&r.cx, store, &|| false, &|job| {
+        logged
+            .borrow_mut()
+            .extend(crate::ops::gate::checks::run(&r.cx, &job));
+    })
+    .unwrap();
+    let lines = store.gate_lines(box_id).unwrap();
+    assert!(
+        matches!(lines.first(), Some(GateLine::Checked { exit: 0, .. })),
+        "{lines:?} {logged:?}"
+    );
+}
+
+#[test]
 fn the_box_of_a_cancelled_gated_run_is_not_held_open_by_its_gates() {
     let r = hooked();
     let id = r.put_gated_for(&[proof()], true);
