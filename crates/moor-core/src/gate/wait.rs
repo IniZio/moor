@@ -23,8 +23,8 @@ pub struct Wait {
     pub gate: String,
     /// What is asked.
     pub kind: WaitKind,
-    /// How many gate lines were written when the wait began; it names this wait, so an answer
-    /// never lands on a later one.
+    /// How many gate lines were written when the wait began, which later lines that change
+    /// nothing leave as it was; it names this wait, so an answer never lands on a later one.
     pub seq: u32,
     /// The try the owner is asked about; none for a stuck gate.
     pub try_n: Option<u32>,
@@ -44,10 +44,36 @@ pub struct Wait {
     pub hint: String,
 }
 
+impl Wait {
+    /// What the person is told, in a sentence: what the gate asks of them, or why it is stuck.
+    #[must_use]
+    pub fn question(&self) -> String {
+        let gate = &self.gate;
+        match self.kind {
+            WaitKind::Approve => {
+                let handed = match self.handed.as_slice() {
+                    [] => String::new(),
+                    list => format!(" The agent handed in {}.", list.join(", ")),
+                };
+                format!("Gate `{gate}` asks your approval.{handed}")
+            }
+            WaitKind::Stuck => format!(
+                "Gate `{gate}` is stuck: {}",
+                self.why.as_deref().unwrap_or("it cannot go on")
+            ),
+        }
+    }
+}
+
 /// The wait the gates are at after `lines`; none unless a gate waits for a person.
 #[must_use]
 pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
-    let seq = u32::try_from(lines.len()).unwrap_or(u32::MAX);
+    let now = status(gates, lines);
+    let mut began = lines.len();
+    while began > 0 && status(gates, &lines[..began - 1]) == now {
+        began -= 1;
+    }
+    let seq = u32::try_from(began).unwrap_or(u32::MAX);
     let blank = |gate: &StepId, kind, hint: &str| Wait {
         gate: gate.to_string(),
         kind,
@@ -61,7 +87,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         missing: Vec::new(),
         hint: hint.to_owned(),
     };
-    match status(gates, lines) {
+    match now {
         GateStatus::Open {
             gate,
             try_n,

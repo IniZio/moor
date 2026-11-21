@@ -61,7 +61,8 @@ impl Store {
 
     /// Appends `line` at `at` as line `n` of Box `id`'s gate lines. The key on the line number
     /// is the compare-and-set: of two appends of one number, the second fails with a unique
-    /// violation and the caller reads the lines again.
+    /// violation and the caller reads the lines again. A line that makes a gate wait for a person
+    /// writes the Box's `gate_waiting` event with it.
     pub(crate) fn append_gate_line(
         &self,
         id: BoxId,
@@ -69,7 +70,9 @@ impl Store {
         at: Ts,
         line: &GateLine,
     ) -> Result<(), StoreError> {
-        self.writer().run(
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        tx.run(
             Query::insert()
                 .into_table(BoxGateLines::Table)
                 .columns([
@@ -85,6 +88,8 @@ impl Store {
                     serde_json::to_string(line)?.into(),
                 ]),
         )?;
+        waiting::note(&tx, id, at)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -109,3 +114,4 @@ impl Store {
 
 #[cfg(test)]
 mod tests;
+mod waiting;

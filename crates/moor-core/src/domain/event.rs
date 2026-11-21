@@ -366,6 +366,9 @@ pub enum Event {
     /// A workflow's earlier Box stayed open when its next run started.
     #[serde(untagged)]
     Workflow(WorkflowEvent),
+    /// A gate began to wait for a person.
+    #[serde(untagged)]
+    Gate(GateEvent),
     /// What new hands got back of the agent's conversation.
     #[serde(untagged)]
     Restore(RestoreEvent),

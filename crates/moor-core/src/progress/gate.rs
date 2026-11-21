@@ -25,35 +25,19 @@ pub fn gate_ask_id(wait: &Wait) -> String {
 pub(super) fn needs(b: &BoxView) -> Option<Needs> {
     open_status(b)?;
     let wait = b.gate.as_ref()?.wait.as_ref()?;
-    let gate = &wait.gate;
-    let (kind, question, detail) = match wait.kind {
-        WaitKind::Approve => {
-            let handed = match wait.handed.as_slice() {
-                [] => String::new(),
-                list => format!(" The agent handed in {}.", list.join(", ")),
-            };
-            (
-                NeedKind::Approve,
-                format!("Gate `{gate}` asks your approval.{handed}"),
-                wait.note.clone(),
-            )
-        }
-        WaitKind::Stuck => {
-            let why = wait.why.as_deref().unwrap_or("it cannot go on");
-            let detail = wait.command.clone().or_else(|| {
+    let (kind, detail) = match wait.kind {
+        WaitKind::Approve => (NeedKind::Approve, wait.note.clone()),
+        WaitKind::Stuck => (
+            NeedKind::Stuck,
+            wait.command.clone().or_else(|| {
                 (!wait.missing.is_empty()).then(|| format!("missing: {}", wait.missing.join(", ")))
-            });
-            (
-                NeedKind::Stuck,
-                format!("Gate `{gate}` is stuck: {why}"),
-                detail,
-            )
-        }
+            }),
+        ),
     };
     Some(Needs {
         id: gate_ask_id(wait),
         kind,
-        question,
+        question: wait.question(),
         detail,
         picks: Vec::new(),
         other: None,

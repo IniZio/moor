@@ -6,6 +6,7 @@ const ASKING: Facts = Facts {
     box_closed: false,
     newest_marker: Some(7),
     run_waits_here: true,
+    gate_waits_here: None,
 };
 
 #[test]
@@ -79,6 +80,44 @@ fn a_question_is_over_once_the_box_moved_on_or_closed() {
 }
 
 #[test]
+fn a_gate_wait_reads_as_a_question_and_is_over_once_the_gate_moved_on() {
+    let waiting = json!({
+        "gate": "proof", "wait": "approve", "seq": 2,
+        "question": "Gate `proof` asks your approval."
+    });
+    let e = entry_of("gate_waiting", &waiting, "Fix the typo").unwrap();
+    assert_eq!(
+        (e.kind, e.title.as_str(), e.text.as_str()),
+        (
+            InboxKind::NeedsInput,
+            "Fix the typo",
+            "Gate `proof` asks your approval."
+        )
+    );
+    assert_eq!(gate_wait_seq(&waiting), Some(2));
+    assert_eq!(gate_wait_seq(&json!({"question": "q"})), None);
+    let q = InboxKind::NeedsInput;
+    let still = Facts {
+        gate_waits_here: Some(true),
+        newest_marker: None,
+        ..ASKING
+    };
+    assert!(!is_resolved(q, 7, &still));
+    let moved = Facts {
+        gate_waits_here: Some(false),
+        newest_marker: Some(7),
+        ..ASKING
+    };
+    assert!(is_resolved(q, 7, &moved));
+    let closed = Facts {
+        box_closed: true,
+        gate_waits_here: Some(true),
+        ..ASKING
+    };
+    assert!(is_resolved(q, 7, &closed));
+}
+
+#[test]
 fn an_approve_wait_is_over_once_its_run_left_it() {
     let w = InboxKind::RunWaiting;
     assert!(!is_resolved(w, 7, &ASKING));
@@ -95,6 +134,7 @@ fn a_failed_run_has_no_wait_to_end() {
         box_closed: true,
         newest_marker: None,
         run_waits_here: false,
+        gate_waits_here: None,
     };
     assert!(!is_resolved(InboxKind::RunFailed, 7, &gone));
 }

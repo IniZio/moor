@@ -113,5 +113,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Access(AccessEvent::DiffKept { .. }) => 100,
         Event::Close(CloseEvent::AutoCloseHeld { .. }) => 101,
         Event::Access(AccessEvent::TerminalOpened { .. }) => 102,
+        Event::Gate(GateEvent::GateWaiting { .. }) => 103,
     }
 }
