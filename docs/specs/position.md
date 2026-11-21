@@ -467,6 +467,8 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
 - The person who asked approves the plan when its gate needs a yes. Decided on 2026-11-21.
+- A task acts as the person steering it, from that steer on. Decided on 2026-11-21.
+- moor is designed for the team. People outside it, such as clients, are out of scope. Decided on 2026-11-21.
 - The pictures draw what moor enforces as solid and what the prose asks as dashed. Decided on 2026-11-21.
 - Repo config becomes files in the definition, with the same versions and proposals. Decided on 2026-11-21.
 - Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
@@ -478,7 +480,4 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 
 ## Open questions
 
-The body above shows the recommended answer to each. None is decided.
-
-1. Does a task act as the person steering it, as Hopper does?
-2. Does moor design for anyone outside the team, such as a client?
+None. The owner answered each one, and the Decided list holds the answers.
