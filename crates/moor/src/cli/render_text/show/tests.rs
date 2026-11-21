@@ -328,3 +328,39 @@ fn a_stuck_failed_and_passed_gate_each_say_so() {
         assert!(out.contains(&format!("  done: PR #4\n  {want}\n")), "{out}");
     }
 }
+
+#[test]
+fn a_real_serialised_gate_and_progress_render_as_the_fronts_get_them() {
+    use moor_core::gate::{GateDoc, Gates};
+    use moor_core::progress::{Progress, ProgressView};
+    use moor_core::view::gate::GateView;
+
+    let doc = GateDoc {
+        name: "proof".to_owned(),
+        evidence: Vec::new(),
+        checks: Vec::new(),
+        approval: Some(moor_core::gate::Approval::Owner),
+        max_tries: None,
+    };
+    let gate = GateView::of(&Gates::parse(&[doc]).unwrap(), &[]);
+    let progress = ProgressView {
+        title: "t".to_owned(),
+        state: Progress::NeedsYou,
+        failed: false,
+        stale: false,
+        line: "gate proof: waiting for your approval".to_owned(),
+        last_event_at: None,
+        pr: None,
+        needs: None,
+    };
+    let mut t = row("alpha", true);
+    let fields = t.as_object_mut().unwrap();
+    fields.insert("progress".into(), serde_json::to_value(progress).unwrap());
+    fields.insert("gate".into(), serde_json::to_value(gate).unwrap());
+    let list = show(json!({"boxes": [t.clone()]}));
+    assert!(
+        list.contains("  needs you: gate proof: waiting for your approval\n"),
+        "{list}"
+    );
+    assert!(show(json!({"box": t})).contains("progress: needs you: gate proof:"));
+}

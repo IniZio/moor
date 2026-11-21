@@ -9,6 +9,7 @@ use moor_core::gate::{GateDoc, GateLine, GateNext, GateStatus};
 use moor_core::inbox::{InboxItemView, InboxState, InboxValue};
 use moor_core::progress::{NeedKind, Progress};
 use moor_core::request::{BoxTarget, InboxOp};
+use moor_core::seam::clock::Ts;
 use moor_core::user::{UserId, Viewer};
 use moor_core::view::gate::GateAnswerValue;
 use moor_core::workflow::{Answer, StepId, StepResult};
@@ -287,4 +288,55 @@ fn a_gate_that_gets_stuck_writes_one_entry_too() {
     let items = inbox(&f);
     assert_eq!(items.len(), 1, "{items:?}");
     assert!(items[0].text.contains("stuck"), "{}", items[0].text);
+}
+
+/// The owner's Box and its machine go to sleep while the gate waits for the answer.
+fn sleep(f: &Fx) {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::decision::Decision;
+    use moor_core::domain::hands::{HandsInc, HandsInput};
+    let store = f.cx.store().unwrap();
+    let d = Decision::new(f.id)
+        .lifecycle(BoxLifecycleInput::sleep(false))
+        .hands_input(HandsInc::FIRST, HandsInput::Sleep);
+    store.apply(d).unwrap();
+}
+
+#[test]
+fn a_no_to_an_asleep_box_is_queued_for_the_agent_and_the_inbox_pass_wakes_it() {
+    let f = owned(2);
+    ask(&f);
+    sleep(&f);
+    assert_eq!(f.standing(), (open(1, GateNext::Ask), Progress::NeedsYou));
+    let said = answer(&f, Answer::No, Some("use the blue header")).unwrap();
+    assert!(said.outcome.contains("queued"), "{}", said.outcome);
+    assert_eq!(f.standing().0, open(2, GateNext::Agent));
+    assert!(
+        f.told().is_empty(),
+        "the Box sleeps, so nothing is sent yet"
+    );
+
+    let idle = crate::testing::agent::idle(Ts::from_millis(i64::MAX / 2));
+    f.engine.set_probes("agent-1", idle);
+    let backoff = crate::ops::InboxBackoff::default();
+    crate::ops::inbox_pass(&f.cx, f.cx.store().unwrap(), &|| false, &backoff).unwrap();
+    assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
+    let told = f.told();
+    assert!(
+        told.iter().any(|t| t.contains("use the blue header")),
+        "{told:?}"
+    );
+    f.pass();
+    assert_eq!(f.told().len(), 1, "a gate pass does not tell it twice");
+}
+
+#[test]
+fn a_yes_to_an_asleep_box_passes_the_gate_and_wakes_nothing() {
+    let f = owned(1);
+    ask(&f);
+    sleep(&f);
+    answer(&f, Answer::Yes, None).unwrap();
+    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert!(f.told().is_empty());
+    assert!(f.driver.calls().iter().all(|c| !c.starts_with("wake ")));
 }

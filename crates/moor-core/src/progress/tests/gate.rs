@@ -294,3 +294,65 @@ fn the_cards_json_names_its_kind_and_gate() {
     assert_eq!(json.pointer("/gate/gate"), Some(&json!("proof")));
     assert_eq!(json.pointer("/gate/command"), Some(&json!("make")));
 }
+
+#[test]
+fn the_needs_cards_json_is_pinned_for_both_kinds() {
+    let ask = derive(
+        &standing(
+            BoxLifecycle::Ready,
+            &doc(&["proof.md"], &[], true),
+            &[submitted()],
+        ),
+        &[],
+        ten(),
+    );
+    assert_eq!(
+        serde_json::to_value(ask.needs.unwrap()).unwrap(),
+        json!({
+            "id": ask_id_of(&[submitted()]),
+            "kind": "approve",
+            "question": "Gate `proof` asks your approval. The agent handed in proof.md.",
+            "detail": "all green",
+            "picks": [],
+            "other": null,
+            "approve": null,
+            "plan": false,
+            "gate": {
+                "gate": "proof", "kind": "approve", "seq": 1, "try_n": 1, "why": null,
+                "handed": ["proof.md"], "note": "all green", "command": null, "tail": null,
+                "missing": [],
+                "hint": "Answer yes to pass the gate, or no to fail this try; a note goes to the agent."
+            }
+        })
+    );
+    let failed = crate::gate::GateLine::Checked {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+        exit: 2,
+        tail: "boom".to_owned(),
+    };
+    let stuck = derive(
+        &standing(BoxLifecycle::Ready, &doc(&[], &["make"], false), &[failed]),
+        &[],
+        ten(),
+    );
+    let card = serde_json::to_value(stuck.needs.unwrap()).unwrap();
+    assert_eq!(card.get("kind"), Some(&json!("stuck")));
+    assert_eq!(
+        card.get("question"),
+        Some(&json!(
+            "Gate `proof` is stuck: out of tries: check 1 (`make`) exited 2"
+        ))
+    );
+    assert_eq!(card.get("detail"), Some(&json!("make")));
+    assert_eq!(card.get("picks"), Some(&json!([])));
+    assert_eq!(card.pointer("/gate/kind"), Some(&json!("stuck")));
+    assert_eq!(card.pointer("/gate/tail"), Some(&json!("boom")));
+}
+
+fn ask_id_of(lines: &[crate::gate::GateLine]) -> String {
+    let d = doc(&["proof.md"], &[], true);
+    let gates = crate::gate::Gates::parse(std::slice::from_ref(&d)).unwrap();
+    crate::progress::gate_ask_id(&crate::gate::wait(&gates, lines).unwrap())
+}
