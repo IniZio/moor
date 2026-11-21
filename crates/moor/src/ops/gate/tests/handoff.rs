@@ -2,7 +2,8 @@
 //! reminder is still its own.
 #![allow(
     clippy::indexing_slicing,
-    reason = "test assertions index what they just counted"
+    clippy::cognitive_complexity,
+    reason = "test assertions index what they just counted, and one test walks a whole story"
 )]
 
 use moor_core::gate::{GateLine, GateNext, GateStatus};
