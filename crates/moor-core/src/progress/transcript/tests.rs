@@ -135,6 +135,30 @@ fn an_edit_shows_its_diff_and_a_command_its_input_and_output() {
 }
 
 #[test]
+fn a_report_moor_refuses_is_not_a_failed_call_and_other_errors_still_are() {
+    let said = "Gate `review` is not the gate in hand. The gate in hand is `lint`.";
+    let report = json!({"step": "review", "result": "ok", "evidence": ["proof.md"]});
+    let records = [
+        use_(1, "r", "mcp__moor__report_step", &report),
+        result(2, "r", said, true, &json!({})),
+        use_(3, "o", "mcp__moor__report_step", &report),
+        result(4, "o", "Recorded.", false, &json!({})),
+        use_(5, "e", "mcp__moor__start_box", &json!({})),
+        result(6, "e", "the controller is down", true, &json!({})),
+    ];
+    let lines = read(&records);
+    let [refused, ok, other]: [&Tool; 3] = tools(&lines).try_into().unwrap();
+    assert_eq!(refused.title, "moor did not accept the report");
+    assert!(refused.refused && !refused.failed);
+    assert_eq!(refused.output.as_ref().map(|b| b.text.as_str()), Some(said));
+    assert!(refused.input.is_some(), "what the agent sent is kept");
+    assert!(!ok.refused && !ok.failed);
+    assert!(!other.refused && other.failed);
+    let classes: Vec<Class> = lines.iter().map(|l| l.entry().class).collect();
+    assert_eq!(classes, [Class::Step, Class::Step, Class::Error]);
+}
+
+#[test]
 fn a_record_repeated_in_a_second_session_file_is_kept_once() {
     let records = session();
     let twice: Vec<String> = records.iter().chain(records.iter()).cloned().collect();
