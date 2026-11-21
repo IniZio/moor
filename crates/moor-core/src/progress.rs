@@ -224,7 +224,10 @@ fn line_of(
         }
         Progress::Done => match pr_of(b, events) {
             Some(pr) => format!("PR #{}", pr.number),
-            None => said().unwrap_or_else(|| "done".to_owned()),
+            None => gate::done_note(b)
+                .map(first_line)
+                .or_else(said)
+                .unwrap_or_else(|| "done".to_owned()),
         },
         Progress::Asleep => "asleep".to_owned(),
         Progress::Closed => closed_failure(events)

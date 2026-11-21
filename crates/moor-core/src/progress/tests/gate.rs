@@ -11,6 +11,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
         gates: vec!["proof".to_owned()],
         status,
         wait: None,
+        note: None,
     });
     b
 }
@@ -355,4 +356,35 @@ fn ask_id_of(lines: &[crate::gate::GateLine]) -> String {
     let d = doc(&["proof.md"], &[], true);
     let gates = crate::gate::Gates::parse(std::slice::from_ref(&d)).unwrap();
     crate::progress::gate_ask_id(&crate::gate::wait(&gates, lines).unwrap())
+}
+fn said(text: &str) -> EventView {
+    ev(1, "agent_said", "t", json!({ "text": text }))
+}
+
+#[test]
+fn a_done_box_whose_gates_passed_says_the_note_of_the_last_accepted_report() {
+    let d = doc(&["proof.md"], &[], false);
+    let b = standing(BoxLifecycle::Ready, &d, &[submitted()]);
+    let events = [said("I'm now waiting for the owner's answer.")];
+    let p = derive(&b, &events, ten());
+    assert_eq!((p.state, p.line.as_str()), (Progress::Done, "all green"));
+}
+
+#[test]
+fn a_done_gated_box_without_a_report_note_keeps_the_agents_line() {
+    let d = doc(&[], &["make"], false);
+    let ran = crate::gate::GateLine::Checked {
+        gate: proof(),
+        try_n: 1,
+        check: 0,
+        exit: 0,
+        tail: String::new(),
+    };
+    let b = standing(BoxLifecycle::Ready, &d, &[ran]);
+    let events = [said("Finished the change.")];
+    let p = derive(&b, &events, ten());
+    assert_eq!(
+        (p.state, p.line.as_str()),
+        (Progress::Done, "Finished the change.")
+    );
 }
