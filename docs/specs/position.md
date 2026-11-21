@@ -159,7 +159,7 @@ definition/
   repos/acme-web.yaml              setup, egress and checks for one repo
 ```
 
-One unit is one file. The dependency check is whole in a single file. Its triggers, its gates, its grants and its ask sit together.
+One unit is one file. The dependency check is whole in a single file. Its triggers, its capabilities, its gates and its ask sit together.
 
 ```markdown
 ---
@@ -169,8 +169,10 @@ triggers:
 repos: [acme/web, acme/api, acme/ios]
 run_as: ana
 skills: [deps-check]
-grants:
-  - github: pulls:write
+may:
+  - code: read
+  - branch: push
+  - pull_request: open
 gates:
   - name: plan
     approval: none
@@ -184,8 +186,6 @@ gates:
         evidence: [report.md]
       - result: nothing_to_do
         evidence: [audit.md]
-actions:
-  open_pull_request: go
 ---
 Check this repo's dependencies. Bump what has a fix in range.
 Run the repo's live test on the base and on your branch.
@@ -224,7 +224,7 @@ Every card and every underlined fact opens a detail panel. A flowchart and an ou
 Rules for the pictures.
 
 - **Drawn from data, never by hand.** Nobody edits the picture. It changes when the definition does.
-- **Solid means enforced.** Triggers, gates, action rules and results are solid cards. moor guarantees them.
+- **Solid means enforced.** Triggers, gates, capabilities and results are solid. moor guarantees them.
 - **Dashed means asked.** What the prose asks of the agent is drawn dashed, with the words "asked, not enforced". A model writes those cards from the prose, as formx-clark compiles a flowchart from a prompt.
 - **Plain words.** A gate card reads "moor checks that 3 files exist and that CI passes". It does not show field names.
 - **A form writes the file.** A new automation starts from five questions. They are when, where, what, what proof, and who says yes. The file is the advanced view.
@@ -238,7 +238,7 @@ Proposal 41 by observer, from tasks 812, 815 and 820
   used by  automations/deps-check
   affects  3 repos, next run Monday 09:00
 
-Gates, grants and actions: no change
+Gates and capabilities: no change
 Replay on the fixture repo: passed
 ```
 
@@ -259,8 +259,8 @@ flowchart LR
 	T --> W[Agent works]
 	W -->|calls a gate by name| G{Gate}
 	G -->|pass or fail| W
-	W -->|risky action| G3{Action rule}
-	G3 --> W
+	W -->|tries an action| G3{Capability list}
+	G3 -->|allowed, or waits for a yes| W
 	G -->|last gate passed| RS[Result]
 	RS --> RV[Review on GitHub]
 	RV -->|comments, failing CI| W
@@ -274,7 +274,11 @@ moor has one gate mechanism. The definition declares every gate.
 - **A branch is nesting.** A gate may hold alternatives, one per kind of result. No gate points at another by name.
 - **A gate holds no instructions.** It says what proof moor needs, not how to do the work. The agent still plans and drives. moor only refuses a gate that comes too early or lacks its proof.
 - **A unit with no gates** gives a result marked unchecked.
-- **An action rule** sits on an action, such as opening a pull request. The Proxy lets it go, waits for a yes, or refuses.
+- **Capabilities** say what the agent may do in this automation. The list is in plain words and ends with "nothing else". Each entry is allowed, or needs a yes from a named person.
+- **A capability is scoped, never global.** It belongs to one automation, or to the defaults for a one-off task. Each job gets the least it needs.
+- **A capability is only what moor can enforce from outside the agent.** Today that is what crosses the Proxy or a paired machine. It covers GitHub reads and writes, pushes, secrets and a paired Mac. Network hosts join once egress blocking ships.
+- **The rest is asked.** moor cannot limit which files the agent edits in its Box or which commands it runs there. Such rules are prose, and the pictures draw them dashed.
+- **This is not new machinery.** A workflow can already add Proxy allowances for its own Boxes only. Capabilities give that a plain-word form and make deny the default.
 
 The example above declares three gates. The plan gate shows the plan and needs no yes. The proof gate needs the before and after evidence. The last gate accepts a pull request, or a report that nothing needed a bump.
 
@@ -286,7 +290,7 @@ The safety floor is not part of the definition, and no proposal can change it.
 - Egress follows the allow list.
 - Pushes to protected branches are refused.
 - moor never merges.
-- An observer cannot change a gate, an action rule or a grant.
+- An observer cannot change a gate or a capability.
 
 | Word | Meaning | Who sets it |
 | --- | --- | --- |
@@ -299,9 +303,9 @@ The safety floor is not part of the definition, and no proposal can change it.
 | Gate | A named point where moor checks or waits for a yes. Declared in an automation or in the defaults. | Repo maintainers, by proposal |
 | Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
 | Box | The computer a task runs in. | moor |
-| Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by accepting |
+| Capability | One thing an automation's tasks may do. Everything not listed is refused. | Maintainers, by accepting |
 
-Secrets never enter the definition. A grant names a permission, not a token.
+Secrets never enter the definition. A capability names a permission, not a token.
 
 ### The three cases again
 
@@ -325,7 +329,7 @@ flowchart LR
 - **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers gates, repo files, and every frontmatter field of an automation.
 - **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
-- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a gate or a grant needs a repo maintainer.
+- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a gate or a capability needs a repo maintainer.
 
 ### Roles and handover, reserved
 
@@ -365,7 +369,7 @@ A throwaway prototype drew this flow and its rival on three jobs, one of them th
 | Plan of typed steps, frozen per run | The agent's plan, per task, not walked by moor |
 | Work step | Gone. The lead and the skill say how. |
 | Check step | A check that a gate needs |
-| Approve step | A gate that needs a yes, or an action rule |
+| Approve step | A gate that needs a yes, or a capability that needs a yes |
 | Deliver step | The result |
 | `report_step` | One call that names a gate |
 | Run | A task that an automation started |
@@ -381,7 +385,7 @@ A throwaway prototype drew this flow and its rival on three jobs, one of them th
 - Proof moves from each step to the end. A long task can fail late. The agent may ask moor to run the checks at any time.
 - A gate proves that evidence exists and that checks pass. It does not prove the evidence is true. A person still reads it at review.
 - A judge with fresh context, as in HAL, is left for later. It would read files the working agent wrote, on the same model, at the task owner's cost.
-- A person cannot force an order of work. The lead can ask for one. Only gates and action rules are enforced.
+- A person cannot force an order of work. The lead can ask for one. Only gates and capabilities are enforced.
 - Ordered gates are declared structure again, at the grain of milestones. They hold proof, not instructions, and moor does not send the next one.
 - Gates in the definition can be set wrong, or dropped. moor shows an unchecked result as unchecked, and keeps the safety floor.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
@@ -393,7 +397,7 @@ A throwaway prototype drew this flow and its rival on three jobs, one of them th
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Requester (QA, PM, designer) | ● | ● | ● | | proof | | |
 | Developer | ● | ● | ● | ● | proof and diff | prose, by proposal | |
-| Repo maintainer | ● | ● | ● | ● | on GitHub | gates and grants too | |
+| Repo maintainer | ● | ● | ● | ● | on GitHub | gates and capabilities too | |
 | Reviewer who never opens moor | | | | | in the PR | | |
 | A person's own agent, over MCP | ● | ● | ● | ● | ● | | |
 | Observer | | | | | | prose bodies only, by proposal | |
@@ -423,7 +427,7 @@ mindmap
       Evidence and checks
     Decide
       Needs you
-      Action rules
+      Capabilities, scoped
       Review on GitHub
     Learn
       Definition as files
@@ -433,7 +437,7 @@ mindmap
     Keep safe
       Proxy holds tokens
       Egress allow list
-      Grants
+      Nothing else by default
 ```
 
 ## Order of work
@@ -445,7 +449,7 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 | 1 | The gate mechanism, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and a gate that needs a yes. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
 | 3 | The definition. Defaults, skills, automations and repo files are versioned in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation file. A proposal shows its plan. A revert restores the old behaviour. The step plan code is deleted. |
-| 4 | Action rules at the Proxy, and tokens that follow the steerer. | With that rule set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
+| 4 | Capabilities per automation, and tokens that follow the steerer. | A task without the comment capability is refused when it comments. A capability set to need a yes waits for one. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
 | 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal from the observer that changes a gate is refused. |
 
@@ -461,6 +465,7 @@ The owner decided this on 2026-11-20.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
+- Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
 - Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
 - The story is the primary presentation for now, for the definition, a running task and a proposal. Every card opens its detail. Decided on 2026-11-21.
 - The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
