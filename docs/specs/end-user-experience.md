@@ -244,7 +244,7 @@ The [position spec](position.md) proposes a new model for moor. This table lists
 | New task, "Plan first" | It reuses the workflow plan shape. | A plan gate that needs a yes from the person who asked | 2 |
 | Task, the right rail | The plan's steps | The gates in order, with the agent's own plan items between them | 1 and 2 |
 | Task, the waiting card | "Always" belongs in repo settings. | "Always" is a capability in the definition. | 4 |
-| Workflows | A list, with numbered steps to edit and "Edit as JSON" | Automations. Each reads as a story drawn from its file. An edit is a proposal that shows its plan. | 3 |
+| Workflows | A list, with numbered steps to edit and "Edit as JSON" | Automations. Each shows its prompt with moor's reading marked on it. An edit to the prompt is a proposal that shows the plan it changes. | 3 |
 | Repos of a task | One workflow per project, with Duplicate | One automation lists several projects and starts a task for each. A project is still one repo set in one Box. | 3 |
 | Repos and account | Repo config is edited in place. | Repo config is files in the definition, with versions and proposals. | 3 |
 | Who | Developer, QA, PM, designer and operator | The same people. Clients stay out of scope. Handover between roles is reserved for later. | none |
