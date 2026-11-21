@@ -1,6 +1,6 @@
 //! The lines a Box's gates are read from: appended in order, never changed.
 
-use crate::workflow::{Answer, StepId, StepReport};
+use crate::workflow::{Answer, StepId, StepReport, StepResult};
 
 /// One thing that happened at a gate.
 ///
@@ -96,6 +96,20 @@ pub enum GateLine {
 }
 
 impl GateLine {
+    /// What the agent wrote with its report, when this line is an accepted report that says
+    /// something.
+    #[must_use]
+    pub fn accepted_note(&self) -> Option<&str> {
+        match self {
+            Self::Submitted { report, .. }
+                if report.result == StepResult::Ok && !report.note.trim().is_empty() =>
+            {
+                Some(&report.note)
+            }
+            _ => None,
+        }
+    }
+
     /// The gate the line is about.
     #[must_use]
     pub const fn gate(&self) -> &StepId {

@@ -1,7 +1,6 @@
 //! A Box's gates as `show` reports them.
 
 use crate::gate::{status, wait, GateLine, GateStatus, Gates, Wait};
-use crate::workflow::StepResult;
 
 /// The gates of a Box and where it stands against them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -36,14 +35,11 @@ impl GateView {
             gates: gates.iter().map(|g| g.name.to_string()).collect(),
             status: status(gates, lines),
             wait: wait(gates, lines),
-            note: lines.iter().rev().find_map(|l| match l {
-                GateLine::Submitted { report, .. }
-                    if report.result == StepResult::Ok && !report.note.trim().is_empty() =>
-                {
-                    Some(report.note.clone())
-                }
-                _ => None,
-            }),
+            note: lines
+                .iter()
+                .rev()
+                .find_map(GateLine::accepted_note)
+                .map(str::to_owned),
         }
     }
 }
