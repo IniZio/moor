@@ -12,6 +12,7 @@ use crate::view::{ApprovalView, BoxView, EventView};
 use failed::closed_failure;
 
 mod failed;
+mod gate;
 mod markdown;
 mod needs;
 mod timeline;
@@ -118,6 +119,9 @@ fn state_of(b: &BoxView) -> Progress {
     if approval_of(b).is_some() {
         return Progress::NeedsYou;
     }
+    if let Some(forced) = gate::forced(b) {
+        return forced;
+    }
     match b.lifecycle {
         BoxLifecycle::Closed => Progress::Closed,
         BoxLifecycle::Rejected | BoxLifecycle::SetupFailed => Progress::Failed,
@@ -154,6 +158,7 @@ fn ready_state(b: &BoxView) -> Progress {
     }
     match b.session_state {
         SessionState::Starting | SessionState::Working => Progress::Working,
+        SessionState::Idle | SessionState::Ended if gate::holds(b) => Progress::Working,
         SessionState::Idle | SessionState::Ended => Progress::Done,
     }
 }
@@ -194,6 +199,9 @@ fn line_of(
     happened: &[Happened],
     silent: Option<i64>,
 ) -> String {
+    if let Some(line) = gate::line(state, b) {
+        return line;
+    }
     let said = || newest(events, "agent_said", "text").map(first_line);
     match state {
         Progress::Queued => "waiting for a machine slot".to_owned(),

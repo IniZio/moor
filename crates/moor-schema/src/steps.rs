@@ -10,6 +10,7 @@ mod baseline;
 mod box_base_ref;
 mod box_config;
 mod box_deaths;
+mod box_gates;
 mod box_hands;
 mod box_inbox;
 mod box_state;
@@ -112,4 +113,5 @@ pub const STEPS: &[Step] = &[
     step("V94__workflow_on_pull", workflow_on_pull::write),
     step("V95__drop_workflow_breaker", drop_workflow_breaker::write),
     step("V96__workflow_optional_cron", workflow_optional_cron::write),
+    step("V97__box_gates", box_gates::write),
 ];

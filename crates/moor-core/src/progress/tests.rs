@@ -4,6 +4,7 @@ use super::*;
 use crate::domain::event::EVENT_KINDS;
 
 mod failed;
+mod gate;
 use crate::domain::hands::HandsState;
 use crate::view::attention::AttentionView;
 use crate::view::{AgentView, BoxSleepView, DriverView, LaunchFailure};
@@ -45,6 +46,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         approval: None,
         said: None,
         progress: None,
+        gate: None,
     }
 }
 

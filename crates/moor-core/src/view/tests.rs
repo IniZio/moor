@@ -38,6 +38,7 @@ fn sample_box() -> BoxView {
         attention: Vec::new(),
         held_machine: None,
         approval: None,
+        gate: None,
         said: None,
         progress: None,
     }

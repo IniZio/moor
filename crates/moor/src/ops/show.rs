@@ -5,6 +5,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::progress::transcript::Transcript;
 use moor_core::progress::TimelineEntry;
 use moor_core::seam::clock::Ts;
+use moor_core::view::gate::GateView;
 use moor_core::view::{
     ApprovalView, ArtifactView, AttentionView, BoxView, EventView, HeldMachineView,
     MachineHoldState, PaneView, ReportView, SaidView, ShowView,
@@ -44,6 +45,14 @@ fn attention(store: &Store, box_id: BoxId) -> Result<Vec<AttentionView>, Command
         .iter()
         .map(AttentionView::from)
         .collect())
+}
+
+/// The Box's gates and where it stands against them; none for a Box without gates.
+fn gate_of(store: &Store, box_id: BoxId) -> Result<Option<GateView>, CommandError> {
+    let Some(gates) = store.box_gates(box_id)? else {
+        return Ok(None);
+    };
+    Ok(Some(GateView::of(&gates, &store.gate_lines(box_id)?)))
 }
 
 /// The approve step of the workflow run that waits in the Box, when one does.
@@ -182,6 +191,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id, asleep)?);
     detail.attention = attention(store, row.id)?;
     detail.approval = approval_of(store, row.id)?;
+    detail.gate = gate_of(store, row.id)?;
     detail.said = if req.agent {
         said_of(store, row.id)?
     } else {
@@ -257,6 +267,7 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         view.agent = agent_view(&reading);
         view.attention = attention(store, row.id)?;
         view.approval = approval_of(store, row.id)?;
+        view.gate = gate_of(store, row.id)?;
         let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
         view.progress = Some(progress::derive(&view, &events, now.as_millis()));

@@ -34,6 +34,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
     })?;
     Ok(ControllerRequest::Start(StartReq {
+        gates: args.gates.map(Box::new),
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: override_text(args.config),
@@ -143,6 +144,7 @@ pub(crate) fn start_from_portal(
     origin: std::sync::Arc<str>,
 ) -> Result<Value, String> {
     let request = start_request(StartArgs {
+        gates: None,
         repos: new.repos,
         name: None,
         prompt: Some(new.prompt),

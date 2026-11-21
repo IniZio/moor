@@ -13,6 +13,7 @@ fn n(s: &str) -> BoxName {
 #[test]
 fn config_is_left_out_when_absent_and_kept_when_given() {
     let start = |config: Option<&str>| StartReq {
+        gates: None,
         placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: config.map(str::to_owned),
@@ -50,4 +51,45 @@ fn config_is_left_out_when_absent_and_kept_when_given() {
         1,
         "it names the Box, so authz checks its owner"
     );
+}
+
+/// Gates are left out of a start with none, so an older controller still takes it, and round-trip
+/// when given.
+#[test]
+fn gates_are_left_out_when_absent_and_kept_when_given() {
+    let gate = crate::gate::GateDoc {
+        name: "proof".to_owned(),
+        evidence: vec!["proof.md".to_owned()],
+        checks: Vec::new(),
+        approval: None,
+        max_tries: None,
+    };
+    let start = |gates: Option<Box<Vec<crate::gate::GateDoc>>>| StartReq {
+        gates,
+        placement: crate::decide::schedule::Placement::FirstOnly,
+        cold: false,
+        config: None,
+        name: n("x"),
+        prompt: None,
+        issue: None,
+        base: None,
+        model: None,
+        node: None,
+        no_agent: false,
+        resume: false,
+        repo: None,
+        parent: None,
+        also: None,
+        identity: None,
+    };
+    let bare = serde_json::to_value(Request::Start(start(None))).expect("ser");
+    assert!(bare.get("gates").is_none(), "{bare}");
+    let given =
+        serde_json::to_value(Request::Start(start(Some(Box::new(vec![gate]))))).expect("ser");
+    assert_eq!(
+        given.get("gates"),
+        Some(&json!([{"name": "proof", "evidence": ["proof.md"]}]))
+    );
+    let back: Request = serde_json::from_value(given.clone()).expect("de");
+    assert_eq!(serde_json::to_value(back).expect("ser"), given);
 }

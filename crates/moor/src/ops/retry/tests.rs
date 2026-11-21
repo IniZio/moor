@@ -72,6 +72,7 @@ fn started(w: &World) -> BoxId {
 /// The request `started_with` sends, with no prompt.
 fn start_req() -> StartReq {
     StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
@@ -93,6 +94,7 @@ fn start_req() -> StartReq {
 /// Starts `demo` with no agent but `prompt` stored, and returns its id.
 fn started_with(w: &World, prompt: Option<&str>) -> BoxId {
     let req = StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,

@@ -135,6 +135,7 @@ fn revive(
         .as_deref()
         .is_some_and(|s| !s.is_empty());
     let req = StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
@@ -204,6 +205,7 @@ fn relaunch_after_retry(
     reopen::ended_session(store, id, None)?;
     let row = reread(store, id)?;
     let req = StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
