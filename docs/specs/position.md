@@ -242,7 +242,9 @@ A second run asked two of the models again, as one call each with no tools. Both
 
 This is a first look, not a measure of reliability.
 
-A reading needs no files, no shell and no browser. So it can run with no Box, as one model call on the author's token. Hopper works this way. Its agent loop runs outside the sandbox, and a sandbox starts only when a task needs one. One such call took 20 seconds on one model and 50 on another. The pilot's Boxes took 6 to 17 minutes to reach their first step.
+A reading needs no files, no shell and no browser. So it runs in a Box with no project, no setup and no capabilities. A bare Box container started in about half a second on a host that already held the image. The reading itself took 20 seconds on one model and 50 on another. The pilot's Boxes took 6 to 17 minutes to reach their first step. The full path for a Box with no project is not built or timed yet.
+
+Hopper goes further. Its agent loop runs outside the sandbox, and a sandbox starts only when a task needs one. This proposal keeps one kind of agent, in a Box, and makes the project optional. An orchestrator would be the same Box with a capability to start other Boxes. That is reserved, not scheduled.
 
 moor compiles a prompt into a plan today, in the runs spec. There the author's own agent does it, and the target is steps. Here the target is gates and capabilities.
 
@@ -501,7 +503,7 @@ mindmap
 
 ## Order of work
 
-Each step ends in a check someone can rerun. The workflow model stays until step 3 replaces it in one cut.
+Each step ends in a check someone can rerun. The pull request evidence flow comes first. It must work end to end before a later step starts. The workflow model stays until step 3 replaces it in one cut.
 
 | # | Step | Check |
 | --- | --- | --- |
@@ -537,8 +539,8 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - The definition is Markdown prompts and YAML plans, not TypeScript. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
+- A reading runs in a Box with no project, no setup and no capabilities. An orchestrator is reserved as the same Box with a capability to start Boxes. Decided on 2026-11-21.
 
 ## Open questions
 
-1. Does a reading run with no Box, as one model call on the author's token? The controller holds no model client, so a small separate process would make the call.
-2. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
+1. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
