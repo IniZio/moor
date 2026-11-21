@@ -362,7 +362,7 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 The owner decided this on 2026-11-20.
 
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
-- The definition lives in moor itself, not in a repo of its own. Decided on 2026-11-21.
+- The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 
 ## Open questions
 
