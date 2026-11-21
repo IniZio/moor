@@ -10,7 +10,7 @@ A moor workflow is shaped like a CI pipeline. Its plan is written once, outside 
 
 The products studied here do it another way. The shape of the work is prose that an agent reads. The agent plans each task after it reads the repo. The prose lives in version control, so people and agents can improve it.
 
-> moor owns one mechanism, the gate, and a safety floor. The team's definition owns the rest. The agent writes the plan.
+> moor owns one mechanism, the gate, and a safety floor that no team can switch off. The team's definition owns the rest. The agent writes the plan.
 
 ## moor in one line
 
@@ -19,7 +19,7 @@ The products studied here do it another way. The shape of the work is prose that
 ## What moor is not
 
 - **Not an agent.** Claude Code runs in the Box today. Another harness can replace it.
-- **Not a sandbox.** Docker makes Boxes today. A VM can replace it behind the Box protocol.
+- **Not a sandbox.** Docker makes Boxes today. A VM can replace it without a change to the rest.
 - **Not a tracker or a board.** Issues stay in the team's tracker.
 - **Not a review tool or CI.** Review and merge stay on GitHub. moor never merges.
 - **Not a pipeline engine.** moor holds no step graph.
@@ -132,7 +132,7 @@ Each model is tested on the same cases.
 
 | | Skills only (Hopper) | Board of phases (Factory) | Roles and prose (Warp) | Definition plus enforced gates (proposed) |
 | --- | --- | --- | --- | --- |
-| A | A skill and a schedule. Nothing outside the agent checks the proof. | A board for the chore. No schedule in the pages read. | One automation file. A scorer grades runs afterwards. | One automation file and one contract. A failed gate blocks done. |
+| A | A skill and a schedule. Nothing outside the agent checks the proof. | A board for the chore. No schedule in the pages read. | One automation file. A scorer grades runs afterwards. | One automation file. A failed gate blocks done. |
 | B | Natural | Heavy. The ask becomes a card and passes through phases. | The foreman routes it. Slack and trackers are the way in. | Natural. The default gates apply. |
 | C | The gateway uses the steerer's account | Not covered | Not covered in the pages read | The Proxy uses the steerer's tokens |
 | Cost | A run that gave up looks delivered again | moor becomes a board and a tracker | A grade arrives after the result is out | Two things to keep. Prose and gates. |
@@ -143,7 +143,7 @@ moor takes Warp's shape and keeps its own proof.
 
 - **The definition** is a set of YAML and Markdown files that moor keeps. It says how this team's moor behaves. People and agents change it by proposal.
 - **moor's part** is small and fixed. It runs tasks in Boxes, enforces the gates the definition declares, and keeps a safety floor.
-- **The gates themselves** are part of the definition. A team adds, changes or drops one by proposal, and tries it on the fixture repo first.
+- **The gates themselves** are part of the definition. A team adds, changes or drops one by proposal. It tries the change first on the fixture repo, a small repo kept for trying moor.
 
 ### The definition
 
@@ -206,8 +206,8 @@ Names that span files are hard to follow. Three rules keep that small.
 
 Files are for agents and for the few who edit them. People read pictures. moor draws three, all from the same definition.
 
-- **The flow of a unit.** A story in sentences, one card each, in reading order. The cards are the trigger, each gate and the result. Key facts are underlined.
-- **A task on that flow.** The same cards with a state each. The states are completed, in progress, waiting for you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
+- **The flow of a unit.** A story in sentences, one card each, in reading order. The cards are the trigger, each gate, what the prose asks of the agent, and the result. Key facts are underlined.
+- **A task on that flow.** The same cards with a state each. The states are completed, in progress, needs you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
 - **A proposal on that flow.** The same cards with the changed ones marked.
 
 Every card and every underlined fact opens a detail panel. A flowchart and an outline of the same unit stay in the prototype for comparison.
@@ -225,14 +225,14 @@ Rules for the pictures.
 
 - **Drawn from data, never by hand.** Nobody edits the picture. It changes when the definition does.
 - **Solid means enforced.** Triggers, gates, capabilities and results are solid. moor guarantees them.
-- **Dashed means asked.** What the prose asks of the agent is drawn dashed, with the words "asked, not enforced". A model writes those cards from the prose, as formx-clark compiles a flowchart from a prompt.
+- **Dashed means asked.** What the prose asks of the agent is drawn dashed, with the words "asked, not enforced". A model writes those cards from the prose. An in-house product, formx-clark, compiles its flowcharts from prompts the same way.
 - **Plain words.** A gate card reads "moor checks that 3 files exist and that CI passes". It does not show field names.
 - **A form writes the file.** A new automation starts from five questions. They are when, where, what, what proof, and who says yes. The file is the advanced view.
 
 A proposal shows a plan before anyone accepts it, as Terraform does.
 
 ```
-Proposal 41 by observer, from tasks 812, 815 and 820
+Proposal 41 by the observer agent, from tasks 812, 815 and 820
 
 ~ skills/deps-check/SKILL.md     prose, 6 lines changed
   used by  automations/deps-check
@@ -242,9 +242,9 @@ Gates and capabilities: no change
 Replay on the fixture repo: passed
 ```
 
-Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
+A scheduled task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
 
-An automation is a shared file, so its ask is work done under one person's tokens. A change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
+An automation is a shared file, so its ask is work done under one person's tokens. Any change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
 
 A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the automation. A repo's own checks live in its repo file.
 
@@ -268,15 +268,16 @@ flowchart LR
 
 moor has one gate mechanism. The definition declares every gate.
 
-- **A gate** has a name and up to three needs. They are evidence files, checks that moor runs in the Box, and a yes from a named role.
+- **A gate** has a name and up to three needs. They are evidence files, checks that moor runs in the Box, and a yes from a named person. A yes from a role comes later, with roles.
+- **A gate with no needs** still counts. It records what the agent submitted, such as its plan, and shows it to people.
 - **The agent calls a gate by name.** moor answers pass or fail. A failure returns to the agent, up to the gate's limit.
 - **Gates are a list, in order.** A later gate cannot pass before an earlier one. The last gate is final, and a task shows as done only when it passes.
 - **A branch is nesting.** A gate may hold alternatives, one per kind of result. No gate points at another by name.
 - **A gate holds no instructions.** It says what proof moor needs, not how to do the work. The agent still plans and drives. moor only refuses a gate that comes too early or lacks its proof.
 - **A unit with no gates** gives a result marked unchecked.
-- **Capabilities** say what the agent may do in this automation. The list is in plain words and ends with "nothing else". Each entry is allowed, or needs a yes from a named person.
+- **Capabilities** say what the agent may do in this automation. In the file they sit under the key `may`. The portal shows them in plain words and ends the list with "nothing else". Each entry is allowed, or needs a yes from a named person.
 - **A capability is scoped, never global.** It belongs to one automation, or to the defaults for a one-off task. Each job gets the least it needs.
-- **A capability is only what moor can enforce from outside the agent.** Today that is what crosses the Proxy or a paired machine. It covers GitHub reads and writes, pushes, secrets and a paired Mac. Network hosts join once egress blocking ships.
+- **A capability is only what moor can enforce from outside the agent.** Today that is what crosses the Proxy, or a machine its owner paired with moor. It covers GitHub reads and writes, pushes, secrets and work on such a machine. Network hosts join once egress blocking ships.
 - **The rest is asked.** moor cannot limit which files the agent edits in its Box or which commands it runs there. Such rules are prose, and the pictures draw them dashed.
 - **This is not new machinery.** A workflow can already add Proxy allowances for its own Boxes only. Capabilities give that a plain-word form and make deny the default.
 
@@ -299,11 +300,11 @@ The safety floor is not part of the definition, and no proposal can change it.
 | Definition | The files, kept in moor, that say how this team's moor behaves. | The team, by proposal |
 | Lead | The prose that tells the agent how this team runs a task. | The team |
 | Skill | The team's way to do one kind of work. | The team that knows the work |
-| Automation | Triggers and an ask. It starts tasks. | Developers |
-| Gate | A named point where moor checks or waits for a yes. Declared in an automation or in the defaults. | Repo maintainers, by proposal |
-| Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
+| Automation | One file that starts tasks. It holds triggers, repos, capabilities, gates and an ask. | Developers |
+| Gate | A named point where moor checks or waits for a yes. Declared in an automation or in the defaults. | People with push access to every repo it covers, by proposal |
+| Result | What the task hands back. A pull request, an answer, a preview link, or a report that nothing was needed. | The agent |
 | Box | The computer a task runs in. | moor |
-| Capability | One thing an automation's tasks may do. Everything not listed is refused. | Maintainers, by accepting |
+| Capability | One thing an automation's tasks may do. Everything not listed is refused. | People with push access to every repo it covers, by accepting |
 
 Secrets never enter the definition. A capability names a permission, not a token.
 
@@ -328,8 +329,8 @@ flowchart LR
 - **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a proposal on the definition.
 - **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers gates, repo files, and every frontmatter field of an automation.
 - **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
-- **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
-- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a gate or a capability needs a repo maintainer.
+- **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to accept it.
+- **Every edit is a version.** A person's edit in the portal is a proposal too. The author of a change to a skill or to the lead prose may accept it. A change to a gate or a capability needs a person with push access to every repo it covers. Any change to an automation also needs the person it acts as.
 
 ### Roles and handover, reserved
 
@@ -373,7 +374,7 @@ A throwaway prototype drew this flow and its rival on three jobs, one of them th
 | Deliver step | The result |
 | `report_step` | One call that names a gate |
 | Run | A task that an automation started |
-| "Plan first" | A plan gate that needs a yes, with a per-task override |
+| "Plan first" | A plan gate that needs a yes. A person can turn it on for one task. |
 | Compiling a plan from a prompt | Gone |
 | Workflows screen | Automations, with their last tasks |
 | Workflows as database rows | Versioned files in the definition |
@@ -457,7 +458,7 @@ Handover between automations and roles come after these six steps. They are rese
 
 ## Decided
 
-The owner decided this on 2026-11-20.
+The owner decided these on 2026-11-20 and 2026-11-21.
 
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
@@ -473,6 +474,8 @@ The owner decided this on 2026-11-20.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
+
+The body above shows the recommended answer to each. None is decided.
 
 1. Do the pictures show solid for enforced and dashed for asked?
 2. Does repo config become files in the definition, with the same versions and proposals?
