@@ -198,7 +198,7 @@ max_tries: 3
 
 Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
 
-An automation is a shared file, so its ask is work done under one person's tokens. A change to it needs a yes from that person. A task started by an event can act as the person who caused the event.
+An automation is a shared file, so its ask is work done under one person's tokens. A change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
 
 A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the contract. A repo's own checks live in its repo file.
 
@@ -364,6 +364,7 @@ The owner decided this on 2026-11-20.
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
+- A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
 
@@ -371,8 +372,7 @@ The owner decided this on 2026-11-20.
 2. Does an observer propose changes, limited to prose, for a person to accept?
 3. Is the definition YAML and Markdown only, with no code?
 4. Does repo config become files in the definition, with the same versions and proposals?
-5. Does an automation name the person its tasks act as?
-6. May the done gate use a judge that runs in the Box on the task owner's token?
-7. Does the requester approve a plan that waits?
-8. Does a task act as the person steering it, as Hopper does?
-9. Does moor design for anyone outside the team, such as a client?
+5. May the done gate use a judge that runs in the Box on the task owner's token?
+6. Does the requester approve a plan that waits?
+7. Does a task act as the person steering it, as Hopper does?
+8. Does moor design for anyone outside the team, such as a client?
