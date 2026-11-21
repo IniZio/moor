@@ -133,9 +133,9 @@ Each model is tested on the same cases.
 | | Skills only (Hopper) | Board of phases (Factory) | Roles and prose (Warp) | Definition plus enforced gates (proposed) |
 | --- | --- | --- | --- | --- |
 | A | A skill and a schedule. Nothing outside the agent checks the proof. | A board for the chore. No schedule in the pages read. | One automation file. A scorer grades runs afterwards. | One automation file and one contract. A failed gate blocks done. |
-| B | Natural | Heavy. The ask becomes a card and passes through phases. | The foreman routes it. Slack and trackers are the way in. | Natural. The repo's default contract applies. |
+| B | Natural | Heavy. The ask becomes a card and passes through phases. | The foreman routes it. Slack and trackers are the way in. | Natural. The default gates apply. |
 | C | The gateway uses the steerer's account | Not covered | Not covered in the pages read | The Proxy uses the steerer's tokens |
-| Cost | A run that gave up looks delivered again | moor becomes a board and a tracker | A grade arrives after the result is out | Two things to keep. Prose and contracts. |
+| Cost | A run that gave up looks delivered again | moor becomes a board and a tracker | A grade arrives after the result is out | Two things to keep. Prose and gates. |
 
 ## The proposed model
 
@@ -153,16 +153,13 @@ Each file is rows in moor's store, one per revision, as repo config is today. A 
 
 ```
 definition/
-  moor.yaml                        repos, defaults
-  agents/lead/agent.md             how this team runs a task
+  defaults.md                      the lead prose, and gates for a one-off task
+  automations/deps-check.md        one recurring job, whole
   skills/deps-check/SKILL.md       how to check dependencies
-  automations/deps-check.md        what starts the task, and the ask
-  contracts/deps-check.yaml        what done means
-  contracts/default.yaml
   repos/acme-web.yaml              setup, egress and checks for one repo
 ```
 
-The dependency check, as one automation.
+One unit is one file. The dependency check is whole in a single file. Its triggers, its gates, its grants and its ask sit together.
 
 ```markdown
 ---
@@ -171,46 +168,62 @@ triggers:
     timezone: Europe/London
 repos: [acme/web, acme/api, acme/ios]
 run_as: ana
-skill: deps-check
-contract: deps-check
+skills: [deps-check]
 grants:
   - github: pulls:write
----
-Check this repo's dependencies. Bump what has a fix in range.
-Run the repo's live test on the base and on your branch.
-Open a draft pull request with the proof.
-```
-
-Its contract.
-
-```yaml
-result: pull_request
 gates:
   plan:
     approval: none
   done:
     final: true
     evidence: [audit.md, "before-*", "after-*", report.md]
-    checks: [repo.checks.ci]
+    checks: [ci]
     max_tries: 3
 actions:
   open_pull_request: go
+---
+Check this repo's dependencies. Bump what has a fix in range.
+Run the repo's live test on the base and on your branch.
+Open a draft pull request with the proof.
+```
+
+Three names in this file point elsewhere. They are the repos, the skill, and the check named `ci`, which each repo file defines.
+
+### Reading and changing it
+
+Names that span files are hard to follow. Three rules keep that small.
+
+- **Inline first.** A unit holds everything it alone uses. A name is used only for what is truly shared, such as a skill or a repo.
+- **moor resolves every name.** A proposal with a name that points nowhere is refused, with the file and the line.
+- **The portal shows the resolved unit.** Each name is a link. One page shows an automation with its skill text and each repo's checks filled in.
+
+A proposal shows a plan before anyone accepts it, as Terraform does.
+
+```
+Proposal 41 by observer, from tasks 812, 815 and 820
+
+~ skills/deps-check/SKILL.md     prose, 6 lines changed
+  used by  automations/deps-check
+  affects  3 repos, next run Monday 09:00
+
+Gates, grants and actions: no change
+Replay on the fixture repo: passed
 ```
 
 Each task acts as the person named in the automation. It uses that person's linked tokens. A task for someone with no linked tokens is refused. Today a workflow runs as the person who added it.
 
 An automation is a shared file, so its ask is work done under one person's tokens. A change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
 
-A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the contract. A repo's own checks live in its repo file.
+A trigger covers every repo the automation lists. Shared policy is written once, in the skill and the automation. A repo's own checks live in its repo file.
 
-The lead agent's file holds the shape of work, as prose. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
+The defaults file holds the lead prose, which is the shape of work. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
 
 ### The mechanisms
 
 ```mermaid
 flowchart LR
 	AU[Automation or a person] --> T[Task in a Box]
-	D[Definition] -.->|lead, skill, contract| T
+	D[Definition] -.->|lead, skill, gates| T
 	T --> W[Agent works]
 	W -->|calls a gate by name| G{Gate}
 	G -->|pass or fail| W
@@ -226,7 +239,7 @@ moor has one gate mechanism. The definition declares every gate.
 - **A gate** has a name and up to three needs. They are evidence files, checks that moor runs in the Box, and a yes from a named role.
 - **The agent calls a gate by name.** moor answers pass or fail. A failure returns to the agent, up to the gate's limit.
 - **Gates have no order.** The lead's prose says when to call each one. moor never walks from gate to gate, so no step graph returns.
-- **One gate may be final.** A task shows as done only when its final gate passes. A contract with no final gate gives a result marked unchecked.
+- **One gate may be final.** A task shows as done only when its final gate passes. A unit with no final gate gives a result marked unchecked.
 - **An action rule** sits on an action, such as opening a pull request. The Proxy lets it go, waits for a yes, or refuses.
 
 The example above declares two gates. The plan gate shows the plan and needs no yes. The done gate is final.
@@ -237,7 +250,7 @@ The safety floor is not part of the definition, and no proposal can change it.
 - Egress follows the allow list.
 - Pushes to protected branches are refused.
 - moor never merges.
-- An observer cannot change a gate, a contract or a grant.
+- An observer cannot change a gate, an action rule or a grant.
 
 | Word | Meaning | Who sets it |
 | --- | --- | --- |
@@ -247,8 +260,7 @@ The safety floor is not part of the definition, and no proposal can change it.
 | Lead | The prose that tells the agent how this team runs a task. | The team |
 | Skill | The team's way to do one kind of work. | The team that knows the work |
 | Automation | Triggers and an ask. It starts tasks. | Developers |
-| Contract | What must be true before a result counts. | Repo maintainers |
-| Gate | A named point, declared in a contract, where moor checks or waits for a yes. | Repo maintainers, by proposal |
+| Gate | A named point where moor checks or waits for a yes. Declared in an automation or in the defaults. | Repo maintainers, by proposal |
 | Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
 | Box | The computer a task runs in. | moor |
 | Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by accepting |
@@ -257,8 +269,8 @@ Secrets never enter the definition. A grant names a permission, not a token.
 
 ### The three cases again
 
-- **A.** One automation and one contract replace four workflows. Each agent writes a plan that fits its repo. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
-- **B.** The PM types the ask. The plan appears in plain words. The default contract asks for a screenshot and passing checks. The PM sees needs you only if a gate waits.
+- **A.** One automation file replaces four workflows. Each agent writes a plan that fits its repo. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
+- **B.** The PM types the ask. The plan appears in plain words. The default gates ask for a screenshot and passing checks. The PM sees needs you only if a gate waits.
 - **C.** The second person's message carries their identity. From then on the Proxy adds their tokens. It refuses when it cannot tell who is steering.
 
 ### A definition that improves
@@ -274,10 +286,10 @@ flowchart LR
 
 - **Scores come free.** A task records done-gate failures, steers that corrected the agent, review comments, and whether the pull request merged.
 - **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a proposal on the definition.
-- **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers contracts, repo files, and every frontmatter field of an automation.
+- **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers gates, repo files, and every frontmatter field of an automation.
 - **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
-- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a contract or a grant needs a repo maintainer.
+- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a gate or a grant needs a repo maintainer.
 
 ### What retires
 
@@ -315,7 +327,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Requester (QA, PM, designer) | ● | ● | ● | | proof | | |
 | Developer | ● | ● | ● | ● | proof and diff | prose, by proposal | |
-| Repo maintainer | ● | ● | ● | ● | on GitHub | contracts and grants too | |
+| Repo maintainer | ● | ● | ● | ● | on GitHub | gates and grants too | |
 | Reviewer who never opens moor | | | | | in the PR | | |
 | A person's own agent, over MCP | ● | ● | ● | ● | ● | | |
 | Observer | | | | | | prose bodies only, by proposal | |
@@ -341,7 +353,7 @@ mindmap
       Box
       Lead and skills
     Prove
-      Contract
+      Gates
       Evidence and checks
     Decide
       Needs you
@@ -366,10 +378,10 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 | --- | --- | --- |
 | 1 | The gate mechanism and one final gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and a gate that needs a yes. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
-| 3 | The definition. Lead, skills, automations and contracts are versioned files in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation and one contract. A revert restores the old behaviour. The step plan code is deleted. |
+| 3 | The definition. Defaults, skills, automations and repo files are versioned in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation file. A proposal shows its plan. A revert restores the old behaviour. The step plan code is deleted. |
 | 4 | Action rules at the Proxy, and tokens that follow the steerer. | With that rule set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
-| 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal that changes a contract, or an automation's contract field, is refused. |
+| 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal from the observer that changes a gate is refused. |
 
 ## Decided
 
@@ -379,14 +391,14 @@ The owner decided this on 2026-11-20.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
+- An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
 
-1. Does an observer propose changes, limited to prose, for a person to accept?
-2. Is the definition YAML and Markdown only, with no code?
-3. Does repo config become files in the definition, with the same versions and proposals?
-4. Does the requester approve a plan that waits?
-5. Does a task act as the person steering it, as Hopper does?
-6. Does moor design for anyone outside the team, such as a client?
+1. Is the definition YAML and Markdown, and not TypeScript?
+2. Does repo config become files in the definition, with the same versions and proposals?
+3. Does the requester approve a plan that waits?
+4. Does a task act as the person steering it, as Hopper does?
+5. Does moor design for anyone outside the team, such as a client?
