@@ -10,7 +10,9 @@ A moor workflow is shaped like a CI pipeline. Its plan is written once, outside 
 
 The products studied here do it another way. The shape of the work is prose that an agent reads. The agent plans each task after it reads the repo. The prose lives in version control, so people and agents can improve it.
 
-> moor owns one mechanism, the gate, and a safety floor that no team can switch off. The team's definition owns the rest. The agent writes the plan.
+> The team writes a prompt. moor reads it into a plan it can enforce, and shows the prompt back with that reading marked on it. A person accepts the plan. The agent plans the work.
+
+moor owns one mechanism, the gate, and a safety floor that no team can switch off. The team's definition owns the rest.
 
 ## moor in one line
 
@@ -141,7 +143,7 @@ Each model is tested on the same cases.
 
 moor takes Warp's shape and keeps its own proof.
 
-- **The definition** is a set of YAML and Markdown files that moor keeps. It says how this team's moor behaves. People and agents change it by proposal.
+- **The definition** is the team's own prompts, each with the plan moor read from it. moor keeps both as YAML and Markdown files. People and agents change them by proposal.
 - **moor's part** is small and fixed. It runs tasks in Boxes, enforces the gates the definition declares, and keeps a safety floor.
 - **The gates themselves** are part of the definition. A team adds, changes or drops one by proposal. It tries the change first on the fixture repo, a small repo kept for trying moor.
 
@@ -159,7 +161,7 @@ definition/
   repos/acme-web.yaml              setup, egress and checks for one repo
 ```
 
-One unit is one file. The dependency check is whole in a single file. Its triggers, its capabilities, its gates and its ask sit together.
+One unit is one file, and the file has two parts. The lower part is the prompt, in the words a person or an orchestrating agent wrote. It is the source. The upper part is the plan moor read from that prompt. Nobody writes the upper part by hand.
 
 ```markdown
 ---
@@ -199,6 +201,47 @@ Three names in this file point elsewhere. They are the repos, the skill, and the
 
 A project is the ordered set of repos that one task clones into its Box, as the [experience spec](end-user-experience.md) defines it. The automation starts one task per project.
 
+### From prompt to plan
+
+```mermaid
+flowchart LR
+	W[A person or an agent writes the prompt] --> R[moor reads it]
+	R --> P[A plan moor can enforce]
+	R --> M[The same prompt, with marks]
+	M -->|unclear or conflicting| W
+	P -->|a person accepts| F[Frozen plan]
+	F --> T[Tasks]
+```
+
+The reading marks five kinds of thing on the prompt.
+
+| Mark | Meaning | Example from a real prompt |
+| --- | --- | --- |
+| Enforced | moor understood it and can hold it from outside the agent. | "must never push to the default branch" |
+| Asked | moor understood it and cannot check it. The agent is asked. | "compare PR against main test by test" |
+| Assumed | The prompt did not say, and moor would have to assume. | It says daily and gives no time. |
+| Unclear | moor needs an answer before anyone can accept. | Must the smoke test pass before a pull request opens? |
+| Conflict | Two parts clash, or a part clashes with a skill or the Box. | It allows a pull request and must follow a skill that says never push. |
+
+Four rules keep this safe.
+
+- **moor enforces the accepted plan, never a fresh reading.** A reading is a proposal. It changes nothing until a person accepts it.
+- **A prompt cannot widen what the agent may do.** Words that ask for more only become a capability when a person with push access accepts.
+- **A plan line with no words behind it is shown.** A hand edit to the plan reads as "enforced, but not said in the prompt".
+- **The agent receives the prompt word for word.** The marks are for people.
+
+A first test ran on 2026-11-21. Three parsers on three models read two real prompts, with names changed. Each claim had to quote the prompt.
+
+- All 162 quotes were exact words from the prompts.
+- All three gave the same list of what the agent may do, the same trigger and the same result.
+- All three found both clashes that the live runs had hit, and one more.
+- They disagreed on finish lines. The prompts rarely state one, so moor must ask and not guess.
+- One of six readings mistook a fact about the Box for the person the task acts as.
+
+This was one run per parser. It is a first look, not a measure of reliability.
+
+moor compiles a prompt into a plan today, in the runs spec. There the author's own agent does it, and the target is steps. Here the target is gates and capabilities.
+
 ### Reading and changing it
 
 Names that span files are hard to follow. Three rules keep that small.
@@ -209,11 +252,12 @@ Names that span files are hard to follow. Three rules keep that small.
 
 ### Seeing it
 
-Files are for agents and for the few who edit them. People read a story. moor writes three, all from the same definition.
+People read their own prompt, with moor's reading marked on it. They do not read the plan file.
 
-- **The story of a unit.** A short page of plain paragraphs, one per part of the job. It says what starts the work, what the agent may do, what the team asks of it, and what must be true before it counts. Key facts are underlined.
-- **A task on that story.** The same paragraphs, each with one word for its state. The states are completed, in progress, needs you, upcoming, skipped and failed. The current paragraph says what is there so far and quotes any question that waits.
-- **A proposal on that story.** The same paragraphs with the changed sentences marked.
+- **The prompt, annotated.** The words the team wrote, unchanged. Thin marks show what is enforced, asked, unclear or in conflict. Beside the prompt sit the things it did not say.
+- **moor's reading.** The plan as a short page of plain paragraphs. It says what starts the work, what the agent may do, what is refused, and what must be true before it counts.
+- **A task on that page.** The same paragraphs, each with one word for its state. The states are completed, in progress, needs you, upcoming, skipped and failed. The current paragraph quotes any question that waits.
+- **A proposal.** The prompt with the changed words marked, and the plan lines that change with them.
 
 The story reads like an article, not like an interface. It has no cards, no chips and no field names. Every underlined fact opens a detail panel. Cards, a flowchart, an outline and role lanes of the same unit stay in the prototype for comparison.
 
@@ -225,14 +269,17 @@ The story reads like an article, not like an interface. It has no cards, no chip
 | Something asked of the agent | The source sentence, and that moor does not check it |
 | Result | What is handed back, and that review happens on GitHub |
 | A changed sentence, on a proposal | The before and after text, and the tasks that led to it |
+| Something unclear | The question, and a way to answer it or to edit the prompt |
+| A conflict | The two parts that clash |
+| Something assumed | What the prompt did not say, and what moor would assume |
 
 Rules for the story.
 
-- **Written from data, never by hand.** Nobody edits the story. It changes when the definition does.
+- **The prompt is the source.** People edit the prompt. moor's reading changes only when a person accepts a new one.
 - **A solid underline means enforced.** Triggers, gates, capabilities and results are underlined solid. moor guarantees them.
-- **A dashed underline means asked.** What the prose asks of the agent is underlined dashed. A model writes those sentences from the prose. An in-house product, formx-clark, compiles its flowcharts from prompts the same way.
+- **A dashed underline means asked.** What moor can only ask of the agent is underlined dashed. An in-house product, formx-clark, compiles flowcharts from prompts. It does not show which words are honoured. These marks do.
 - **Plain words.** A gate's sentence reads "It is finished when 3 files exist and CI passes". It does not show field names.
-- **A form writes the file.** A new automation starts from five questions. They are when, where, what, what proof, and who says yes. The file is the advanced view.
+- **A form can start the prompt.** It asks five questions. They are when, where, what, what proof, and who says yes. The answers become a first draft in plain words.
 
 A proposal shows a plan before anyone accepts it, as Terraform does.
 
@@ -334,7 +381,7 @@ flowchart LR
 
 - **Scores come free.** A task records done-gate failures, steers that corrected the agent, review comments, and whether the pull request merged.
 - **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a proposal on the definition.
-- **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers gates, repo files, and every frontmatter field of an automation.
+- **The observer cannot edit its grader.** Its proposal may change the words of a prompt or a skill. moor reads the new words again. The proposal is refused when the plan that comes out differs in any gate or capability. That covers gates, repo files, and every frontmatter field of an automation.
 - **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to accept it.
 - **Every edit is a version.** A person's edit in the portal is a proposal too. The author of a change to a skill or to the lead prose may accept it. A change to a gate or a capability needs a person with push access to every repo it covers. Any change to an automation also needs the person it acts as.
@@ -382,7 +429,7 @@ A throwaway prototype drew this flow and its rival on three jobs, one of them th
 | `report_step` | One call that names a gate |
 | Run | A task that an automation started |
 | "Plan first" | A plan gate that needs a yes. A person can turn it on for one task. |
-| Compiling a plan from a prompt | Gone |
+| Compiling a plan from a prompt | Kept, with a new target. moor reads gates and capabilities from the prompt, not steps. |
 | Workflows screen | Automations, with their last tasks |
 | Workflows as database rows | Versioned files in the definition |
 
@@ -471,6 +518,7 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
 - The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
+- The prompt is the source. moor compiles a plan from it, and the plan is frozen when a person accepts it. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
 - The person who asked approves the plan when its gate needs a yes. Decided on 2026-11-21.
@@ -481,11 +529,12 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - Repo config becomes files in the definition, with the same versions and proposals. Decided on 2026-11-21.
 - Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
 - Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
-- The story is the primary presentation for now, for the definition, a running task and a proposal. It is plain paragraphs, not cards. Every underlined fact opens its detail. Decided on 2026-11-21.
-- The definition is YAML and Markdown, not TypeScript. People read a story that moor writes from it. Decided on 2026-11-21.
+- moor's reading is told as a story for now, for the definition, a running task and a proposal. It is plain paragraphs, not cards. Every underlined fact opens its detail. Decided on 2026-11-21.
+- The definition is Markdown prompts and YAML plans, not TypeScript. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
 ## Open questions
 
-None. The owner answered each one, and the Decided list holds the answers.
+1. Who runs the reading of a prompt, and on whose token? The controller holds no model client.
+2. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
