@@ -378,6 +378,7 @@ pub(super) mod cancel;
 mod check;
 mod eligible;
 mod facts;
+mod gated;
 mod now;
 mod previous;
 mod pull;

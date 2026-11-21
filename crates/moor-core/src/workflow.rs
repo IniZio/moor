@@ -257,6 +257,7 @@ pub struct Workflow {
 
 mod box_name;
 mod cause;
+mod gated;
 mod history;
 mod plan;
 #[cfg(test)]
@@ -271,6 +272,7 @@ mod tests;
 
 pub use box_name::box_name;
 pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
+pub use gated::{gated_move, GatedMove, Standing};
 pub use history::HistoryEntry;
 pub use plan::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt,

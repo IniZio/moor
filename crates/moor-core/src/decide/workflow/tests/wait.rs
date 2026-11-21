@@ -115,3 +115,15 @@ fn a_wait_ends_after_seven_days_without_an_answer() {
     assert_eq!(first.run, open[0].id);
     assert_eq!(first.at, step());
 }
+
+#[test]
+fn a_wait_at_a_gate_that_resumed_counts_like_an_answered_one() {
+    let resumed = (
+        ts(3 * HOUR),
+        HistoryEntry::Resumed {
+            step: StepId::parse("proof").unwrap(),
+        },
+    );
+    let lines = [entered("proof", 0), entered("proof", HOUR), resumed];
+    assert_eq!(waited_millis(&lines, ts(0)), 2 * HOUR);
+}

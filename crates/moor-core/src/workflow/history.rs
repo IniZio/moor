@@ -80,6 +80,12 @@ pub enum HistoryEntry {
         /// What the owner said with it, passed on to the agent.
         note: Option<String>,
     },
+    /// A run that waited at a gate went on, because the gate opened for the agent again. The wait
+    /// ends here, as an answer ends the wait at an approve step.
+    Resumed {
+        /// The gate the run waited at.
+        step: StepId,
+    },
     /// An approve step got no answer in time, so the run ends declined.
     Unanswered {
         /// The approve step.

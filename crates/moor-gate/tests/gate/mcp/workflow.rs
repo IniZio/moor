@@ -138,6 +138,25 @@ fn the_write_tools_say_a_run_acts_as_the_caller_and_may_open_pull_requests() {
 }
 
 #[test]
+fn add_workflow_sends_its_gates_and_an_empty_list_to_clear_them() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let gates = json!([{"name": "proof", "evidence": ["pr-*"], "max_tries": 2}]);
+    for sent in [gates.clone(), json!([])] {
+        let result = m.call(
+            &token,
+            "add_workflow",
+            json!({"name": "evidence", "repos": ["acme/web"], "prompt": "collect it",
+                "gates": sent}),
+        );
+        assert_ne!(result["isError"], true, "{result}");
+    }
+    let requests = m.requests();
+    assert_eq!(requests[0]["request"]["request"]["gates"], gates);
+    assert_eq!(requests[1]["request"]["request"]["gates"], json!([]));
+}
+
+#[test]
 fn add_workflow_sends_the_plan_as_json_text_with_the_revision() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read moor:write");

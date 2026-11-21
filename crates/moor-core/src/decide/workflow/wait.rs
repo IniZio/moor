@@ -46,7 +46,7 @@ pub fn workflow_unanswered(open: &[WorkflowRun], now: Ts) -> Vec<Unanswered> {
 
 /// The milliseconds a run spent in waits that were answered.
 ///
-/// For each `Answered` line this counts the time since the same step was last entered, which is
+/// For each `Answered` or `Resumed` line this counts the time since the same step was last entered, which is
 /// when the run began to wait, and no earlier than `from`: a wait before the clock being read
 /// started is not part of it. A wait that is still going is not counted here, and the clock of a
 /// waiting run is not read at all.
@@ -56,7 +56,7 @@ pub fn workflow_unanswered(open: &[WorkflowRun], now: Ts) -> Vec<Unanswered> {
 pub fn waited_millis(lines: &[(Ts, HistoryEntry)], from: Ts) -> i64 {
     let mut total: i64 = 0;
     for (i, (at, line)) in lines.iter().enumerate() {
-        let HistoryEntry::Answered { step, .. } = line else {
+        let (HistoryEntry::Answered { step, .. } | HistoryEntry::Resumed { step }) = line else {
             continue;
         };
         let entered =
