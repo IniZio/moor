@@ -209,29 +209,29 @@ Names that span files are hard to follow. Three rules keep that small.
 
 ### Seeing it
 
-Files are for agents and for the few who edit them. People read pictures. moor draws three, all from the same definition.
+Files are for agents and for the few who edit them. People read a story. moor writes three, all from the same definition.
 
-- **The flow of a unit.** A story in sentences, one card each, in reading order. The cards are the trigger, each gate, what the prose asks of the agent, and the result. Key facts are underlined.
-- **A task on that flow.** The same cards with a state each. The states are completed, in progress, needs you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
-- **A proposal on that flow.** The same cards with the changed ones marked.
+- **The story of a unit.** A short page of plain paragraphs, one per part of the job. It says what starts the work, what the agent may do, what the team asks of it, and what must be true before it counts. Key facts are underlined.
+- **A task on that story.** The same paragraphs, each with one word for its state. The states are completed, in progress, needs you, upcoming, skipped and failed. The current paragraph says what is there so far and quotes any question that waits.
+- **A proposal on that story.** The same paragraphs with the changed sentences marked.
 
-Every card and every underlined fact opens a detail panel. A flowchart and an outline of the same unit stay in the prototype for comparison.
+The story reads like an article, not like an interface. It has no cards, no chips and no field names. Every underlined fact opens a detail panel. Cards, a flowchart, an outline and role lanes of the same unit stay in the prototype for comparison.
 
-| Card | Its detail shows |
+| Fact | Its detail shows |
 | --- | --- |
 | Trigger | The schedule in words, the next runs, the repos, and who the tasks act as |
 | Gate | What moor checks, each repo's command for a check, who must say yes, and the tries |
 | Gate, on a task | The same list with a state per item, the evidence files, and each attempt |
-| Asked card | The source sentence, and that moor does not check it |
+| Something asked of the agent | The source sentence, and that moor does not check it |
 | Result | What is handed back, and that review happens on GitHub |
-| Changed card, on a proposal | The before and after text, and the tasks that led to it |
+| A changed sentence, on a proposal | The before and after text, and the tasks that led to it |
 
-Rules for the pictures.
+Rules for the story.
 
-- **Drawn from data, never by hand.** Nobody edits the picture. It changes when the definition does.
-- **Solid means enforced.** Triggers, gates, capabilities and results are solid. moor guarantees them.
-- **Dashed means asked.** What the prose asks of the agent is drawn dashed, with the words "asked, not enforced". A model writes those cards from the prose. An in-house product, formx-clark, compiles its flowcharts from prompts the same way.
-- **Plain words.** A gate card reads "moor checks that 3 files exist and that CI passes". It does not show field names.
+- **Written from data, never by hand.** Nobody edits the story. It changes when the definition does.
+- **A solid underline means enforced.** Triggers, gates, capabilities and results are underlined solid. moor guarantees them.
+- **A dashed underline means asked.** What the prose asks of the agent is underlined dashed. A model writes those sentences from the prose. An in-house product, formx-clark, compiles its flowcharts from prompts the same way.
+- **Plain words.** A gate's sentence reads "It is finished when 3 files exist and CI passes". It does not show field names.
 - **A form writes the file.** A new automation starts from five questions. They are when, where, what, what proof, and who says yes. The file is the advanced view.
 
 A proposal shows a plan before anyone accepts it, as Terraform does.
@@ -285,7 +285,7 @@ moor has one gate mechanism. The definition declares every gate.
 - **Capabilities** say what the agent may do in this automation. In the file they sit under the key `may`. The portal shows them in plain words and ends the list with "nothing else". Each entry is allowed, or needs a yes from a named person.
 - **A capability is scoped, never global.** It belongs to one automation, or to the defaults for a one-off task. Each job gets the least it needs.
 - **A capability is only what moor can enforce from outside the agent.** Today that is what crosses the Proxy, or a machine its owner paired with moor. It covers GitHub reads and writes, pushes, secrets and work on such a machine. Network hosts join once egress blocking ships.
-- **The rest is asked.** moor cannot limit which files the agent edits in its Box or which commands it runs there. Such rules are prose, and the pictures draw them dashed.
+- **The rest is asked.** moor cannot limit which files the agent edits in its Box or which commands it runs there. Such rules are prose, and the story underlines them dashed.
 - **This is not new machinery.** A workflow can already add Proxy allowances for its own Boxes only. Capabilities give that a plain-word form and make deny the default.
 
 The example above declares three gates. The plan gate shows the plan and needs no yes. The proof gate needs the before and after evidence. The last gate accepts a pull request, or a report that nothing needed a bump.
@@ -477,12 +477,12 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - A task acts as the person steering it, from that steer on. Decided on 2026-11-21.
 - One automation lists several projects and starts one task for each. A project is the repo set of one task. Decided on 2026-11-21.
 - moor is designed for the team. People outside it, such as clients, are out of scope. Decided on 2026-11-21.
-- The pictures draw what moor enforces as solid and what the prose asks as dashed. Decided on 2026-11-21.
+- The story underlines what moor enforces as solid and what the prose asks as dashed. Decided on 2026-11-21.
 - Repo config becomes files in the definition, with the same versions and proposals. Decided on 2026-11-21.
 - Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
 - Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
-- The story is the primary presentation for now, for the definition, a running task and a proposal. Every card opens its detail. Decided on 2026-11-21.
-- The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
+- The story is the primary presentation for now, for the definition, a running task and a proposal. It is plain paragraphs, not cards. Every underlined fact opens its detail. Decided on 2026-11-21.
+- The definition is YAML and Markdown, not TypeScript. People read a story that moor writes from it. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 
