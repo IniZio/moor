@@ -48,6 +48,32 @@ fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
 }
 
 #[test]
+fn the_first_message_says_the_gates_go_in_order_and_that_moor_says_when_one_is_in_hand() {
+    let text = gates().first_message("Fix the typo.\n");
+    assert!(text.contains("in this order, one at a time"), "{text}");
+    assert!(
+        text.contains("moor tells you when each gate is in hand"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Report only the gate that is in hand"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_hand_over_names_the_gate_that_passed_and_the_one_in_hand_with_its_brief() {
+    let g = gates();
+    let text = g
+        .get(1)
+        .unwrap()
+        .handoff_steer(&StepId::parse("proof").unwrap());
+    assert!(text.contains("Gate `proof` has passed"), "{text}");
+    assert!(text.contains("Gate `tests` is now in hand"), "{text}");
+    assert!(text.contains(&g.get(1).unwrap().brief()), "{text}");
+}
+
+#[test]
 fn the_persons_words_come_back_out_of_the_first_message() {
     let text = gates().first_message("Fix the typo.\n");
     assert_eq!(split_gate_preamble(&text), Some("Fix the typo."));
