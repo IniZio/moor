@@ -4,8 +4,9 @@ import { boxGet, boxList, gateAnswer } from './api';
 
 type Call = { url: string; init?: RequestInit };
 let calls: Call[] = [];
-type Reply = { status: number; body: unknown };
-const ok = (body: unknown): Reply => ({ status: 200, body });
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+type Reply = { status: number; body: Json };
+const ok = (body: Json): Reply => ({ status: 200, body });
 let reply = ok({});
 
 beforeEach(() => {
@@ -36,7 +37,7 @@ const wait = {
 	hint: 'Answer yes to pass the gate, or no to fail this try; a note goes to the agent.',
 };
 
-const box = (extra: Record<string, unknown>) => ({
+const box = (extra: { [key: string]: Json }) => ({
 	box: 'web/gated',
 	title: 'Gated task',
 	state: 'needs_you',
