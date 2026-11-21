@@ -128,3 +128,15 @@ test('a refused answer says why', async () => {
 	reply = { status: 400, body: { error: 'nothing asks you' } };
 	await expect(gateAnswer('c', 'web/gated', 'review-4', true)).rejects.toThrow('nothing asks you');
 });
+
+test("a timeline entry of class moor parses, with the owner's quote when moor carries one", async () => {
+	const at = '2026-11-21T10:00:00Z';
+	const timeline = [
+		{ id: 1, at, kind: 'steered', class: 'you', text: 'Fix it' },
+		{ id: 2, at, kind: 'steered', class: 'moor', text: 'The owner did not approve gate review.', quote: 'blue header' },
+	];
+	reply = ok(box({ timeline }));
+	const got = await boxGet('web/gated');
+	expect(got.timeline.map((e) => e.class)).toEqual(['you', 'moor']);
+	expect(got.timeline[1]?.quote).toBe('blue header');
+});

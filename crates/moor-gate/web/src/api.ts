@@ -440,7 +440,7 @@ const TallySchema = v.object({ files: v.number(), added: v.number(), removed: v.
 /** What a turn changed in git, read by moor once the turn ended. */
 const ReceiptSchema = v.object({ turn: v.number(), changed: TallySchema, total: TallySchema });
 
-const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
+const EntryClassSchema = v.picklist(['message', 'step', 'you', 'moor', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
 
 /** A text moor kept of a tool call, cut to size; `cut` when part of it was left out. */
 const BodySchema = v.object({ text: v.string(), cut: v.optional(v.boolean(), false) });
@@ -471,6 +471,8 @@ const EntrySchema = v.object({
 	text: v.string(),
 	/** For a workflow run's first message: the title of the step it starts at. */
 	step: v.nullish(v.string()),
+	/** For moor's message that carries a person's words, such as the owner's note in a no: those words, which the text leaves out. */
+	quote: v.nullish(v.string()),
 	/** For a turn: what it changed in git. */
 	receipt: v.nullish(ReceiptSchema),
 });

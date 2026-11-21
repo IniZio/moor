@@ -32,7 +32,7 @@ import { useDraft } from './session';
 import { Composer } from './Steer';
 import { MakeRecurring } from './MakeRecurring';
 import { TerminalTab } from './Terminal';
-import { routine, ToolFold, ToolLine } from './Transcript';
+import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
 
 /** The words and the glyph for each state; the controller derives the state, the page only names it. */
 export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
@@ -283,8 +283,10 @@ function Fold({ entries }: { entries: Entry[] }) {
 	);
 }
 
-function Line({ e }: { e: Entry }) {
+export function Line({ e, gates }: { e: Entry; gates: readonly string[] }) {
 	switch (e.class) {
+		case 'moor':
+			return <MoorLine e={e} when={clock(e.at)} gates={gates} />;
 		case 'error':
 			return (
 				<div class="t-err" role="alert">
@@ -347,7 +349,7 @@ function Timeline({ detail }: { detail: BoxDetail }) {
 				) : b.entry.class === 'turn' ? (
 					<TurnLine e={b.entry} entries={detail.timeline} href={`#/box/${encodeURIComponent(detail.box)}/changes`} key={b.entry.id} />
 				) : (
-					<Line e={b.entry} key={b.entry.key ?? b.entry.id} />
+					<Line e={b.entry} gates={detail.gate?.gates ?? []} key={b.entry.key ?? b.entry.id} />
 				),
 			)}
 		</div>

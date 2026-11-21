@@ -75,6 +75,34 @@ function inputLabel(t: Tool): string {
 	}
 }
 
+/** A paragraph of moor's message in plain words: the Markdown list dash of a gate line is dropped, and a gate it names is quoted as the page quotes gates. */
+function moorSays(text: string, gates: readonly string[]): string {
+	return plain(text.replace(/^- (?=Gate )/gm, ''), gates);
+}
+
+/** What moor itself told the agent, such as its steer about a gate: a system note under the speaker moor, never the person's message. The owner's note in a no is shown as theirs. */
+export function MoorLine({ e, when, gates }: { e: Entry; when: string; gates: readonly string[] }) {
+	const [first = '', ...rest] = e.text.split('\n\n');
+	return (
+		<div class="t-ev t-moor">
+			<span class="t-who">moor</span>
+			<span class="t-when">{when}</span>
+			<div class="t-what">
+				<p>{moorSays(first, gates)}</p>
+				{e.quote && (
+					<figure class="t-moor-quote">
+						<figcaption>The owner wrote</figcaption>
+						<blockquote>{e.quote}</blockquote>
+					</figure>
+				)}
+				{rest.map((para) => (
+					<p key={para}>{moorSays(para, gates)}</p>
+				))}
+			</div>
+		</div>
+	);
+}
+
 /** A report moor did not accept: a plain item with moor's reason, and what the agent sent folded away. */
 function RefusedLine({ t, when }: { t: Tool; when: string }) {
 	return (
