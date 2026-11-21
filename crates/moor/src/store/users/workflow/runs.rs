@@ -90,7 +90,10 @@ impl Store {
     }
 
     /// The outcome and end time of the latest workflow run of Box `box_id`.
-    fn latest_run_of_box(&self, box_id: BoxId) -> Result<Option<(String, Option<i64>)>, StoreError> {
+    fn latest_run_of_box(
+        &self,
+        box_id: BoxId,
+    ) -> Result<Option<(String, Option<i64>)>, StoreError> {
         let latest = self
             .reader()?
             .rows(

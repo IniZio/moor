@@ -87,5 +87,9 @@ fn a_report_from_the_box_of_an_ended_run_is_refused_readably() {
     let reply = crate::ops::workflow::step_report(&r.cx, &req).unwrap();
     assert!(reply.error, "{reply:?}");
     assert!(reply.reply.contains("this run has ended"), "{reply:?}");
-    assert_eq!(store.gate_lines(old).unwrap(), before, "nothing is recorded");
+    assert_eq!(
+        store.gate_lines(old).unwrap(),
+        before,
+        "nothing is recorded"
+    );
 }

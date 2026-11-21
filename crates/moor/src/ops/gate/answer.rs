@@ -10,10 +10,10 @@ use std::fmt::Write as _;
 
 use moor_core::gate::{status, wait, GateLine, GateNext, GateStatus, WaitKind};
 use moor_core::progress::gate_ask_id;
+use moor_core::user::Viewer;
 use moor_core::view::gate::GateAnswerValue;
 use moor_core::view::steer::Delivery;
 use moor_core::workflow::{Answer, NOTE_MAX};
-use moor_core::user::Viewer;
 use moor_core::{ErrorKind, GateAnswerReq};
 
 use super::checks::{taken, tell};

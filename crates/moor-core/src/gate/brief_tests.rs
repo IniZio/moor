@@ -38,7 +38,10 @@ fn the_first_message_says_how_to_reach_report_step_in_words_any_agent_follows() 
         ),
         "{text}"
     );
-    assert!(!text.contains("ToolSearch"), "no one harness's tool: {text}");
+    assert!(
+        !text.contains("ToolSearch"),
+        "no one harness's tool: {text}"
+    );
 }
 
 #[test]

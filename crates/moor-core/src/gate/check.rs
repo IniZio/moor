@@ -120,7 +120,11 @@ impl Gate {
 pub(super) fn named(gate: &Gate, check: u8) -> String {
     let place = check + 1;
     let label = gate.check_label(check);
-    match gate.checks.get(usize::from(check)).and_then(|c| c.says.as_ref()) {
+    match gate
+        .checks
+        .get(usize::from(check))
+        .and_then(|c| c.says.as_ref())
+    {
         Some(_) => format!("check {place} (“{label}”)"),
         None => format!("check {place} ({label})"),
     }
