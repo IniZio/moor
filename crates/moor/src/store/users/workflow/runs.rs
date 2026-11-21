@@ -16,8 +16,8 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 use super::history::append_history;
 use super::notice;
 use super::row::{
-    read_run, run_of, state_cols, RunRow, REFUSED, RUN_COLS, SKIPPED_FORK, SKIPPED_OVERLAP,
-    STARTED, STARTING, WAITING,
+    read_run, run_of, state_cols, RunRow, FINISHED, REFUSED, RUN_COLS, SKIPPED_FORK,
+    SKIPPED_OVERLAP, STARTED, STARTING, WAITING,
 };
 use super::subject::{about, Subject};
 use crate::store::db::{self, Db, DbExt as _, Tx};
@@ -68,6 +68,29 @@ pub(crate) enum RunOfBox {
 impl Store {
     /// How Box `box_id` relates to its latest workflow run.
     pub(crate) fn run_of_box(&self, box_id: BoxId) -> Result<RunOfBox, StoreError> {
+        Ok(match self.latest_run_of_box(box_id)? {
+            None => RunOfBox::NoRun,
+            Some((outcome, _)) if [STARTING, STARTED, WAITING].contains(&outcome.as_str()) => {
+                RunOfBox::Open
+            }
+            Some((_, Some(ended))) => RunOfBox::Ended(Ts::from_millis(ended)),
+            Some((_, None)) => RunOfBox::Open,
+        })
+    }
+
+    /// How the latest workflow run of Box `box_id` ended short of delivering, as its stored
+    /// outcome such as `cancelled` or `timed_out`; none while it is open, once it delivered, or
+    /// for a Box no run used.
+    pub(crate) fn run_end_of_box(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
+        let not_ended = [STARTING, STARTED, WAITING, FINISHED];
+        Ok(match self.latest_run_of_box(box_id)? {
+            Some((outcome, Some(_))) if !not_ended.contains(&outcome.as_str()) => Some(outcome),
+            _ => None,
+        })
+    }
+
+    /// The outcome and end time of the latest workflow run of Box `box_id`.
+    fn latest_run_of_box(&self, box_id: BoxId) -> Result<Option<(String, Option<i64>)>, StoreError> {
         let latest = self
             .reader()?
             .rows(
@@ -85,14 +108,7 @@ impl Store {
             )?
             .next()
             .transpose()?;
-        Ok(match latest {
-            None => RunOfBox::NoRun,
-            Some((outcome, _)) if [STARTING, STARTED, WAITING].contains(&outcome.as_str()) => {
-                RunOfBox::Open
-            }
-            Some((_, Some(ended))) => RunOfBox::Ended(Ts::from_millis(ended)),
-            Some((_, None)) => RunOfBox::Open,
-        })
+        Ok(latest)
     }
 
     /// Moves run `run` from the phase `from` to `to` at `at`, and appends the line for the

@@ -455,4 +455,5 @@ impl Rig {
     }
 }
 
+mod ended;
 mod history;

@@ -12,6 +12,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
         status,
         wait: None,
         note: None,
+        run_ended: None,
     });
     b
 }

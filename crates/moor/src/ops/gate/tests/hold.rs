@@ -79,6 +79,27 @@ fn a_steer_of_a_gate_that_is_not_stuck_writes_nothing() {
         .any(|l| matches!(l, GateLine::Reopened { .. })));
 }
 
+#[test]
+fn a_steer_moor_sends_does_not_reopen_a_stuck_gate() {
+    let f = fx(|_| vec![gate("tests", &["true"], 1)]);
+    write_line(&f, 1, &checked(1));
+    assert!(matches!(f.standing().0, GateStatus::Stuck { .. }));
+    let req = moor_core::SteerReq {
+        target: moor_core::request::BoxTarget::Id(f.id),
+        text: Some("Gate `tests` has no report yet.".to_owned()),
+        menu: None,
+        interrupt: false,
+        ask: None,
+    };
+    crate::ops::steer::run_as(&f.cx, &req, moor_core::domain::event::Origin::Moor).unwrap();
+    assert!(
+        !f.lines()
+            .iter()
+            .any(|l| matches!(l, GateLine::Reopened { .. })),
+        "only a person takes a stuck gate up"
+    );
+}
+
 const fn idle_close() -> AutoClose {
     AutoClose {
         every: Duration::from_secs(60),

@@ -54,7 +54,7 @@ pub(crate) fn run_as(cx: &Cx, req: &SteerReq, origin: Origin) -> Result<SteerVal
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
     let sent = send_to(cx, req, &found, origin)?;
-    crate::ops::gate::hold::after_steer(cx, store, found.id);
+    crate::ops::gate::hold::after_steer(cx, store, found.id, origin);
     Ok(sent)
 }
 

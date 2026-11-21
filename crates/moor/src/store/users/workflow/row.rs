@@ -20,7 +20,7 @@ pub(super) const STARTED: &str = "started";
 /// The `outcome` of a run that waits for its owner.
 pub(super) const WAITING: &str = "waiting";
 /// The `outcome` of a run whose agent delivered, or went quiet at the last step.
-const FINISHED: &str = "finished";
+pub(super) const FINISHED: &str = "finished";
 /// The `outcome` of a run that failed at a step.
 const FAILED: &str = "failed";
 /// The `outcome` of a run whose agent stopped without reporting a step.

@@ -6,10 +6,12 @@ use crate::domain::session_state::SessionState;
 use crate::gate::{GateNext, GateStatus, Wait, WaitKind};
 use crate::view::BoxView;
 
-/// The status of the gates of an open Box; none for a Box without gates or a closed one.
+/// The status of the gates of an open Box while they decide its state; none for a Box without
+/// gates, a closed one, or one whose run ended, which nothing moves the gates of.
 fn open_status(b: &BoxView) -> Option<&GateStatus> {
     b.gate
         .as_ref()
+        .filter(|g| g.run_ended.is_none())
         .map(|g| &g.status)
         .filter(|_| matches!(b.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep))
 }
@@ -72,9 +74,7 @@ pub(super) fn forced(b: &BoxView) -> Option<Progress> {
 
 /// Whether a gate is still open, so an agent that ended its turn has not finished the Box.
 pub(super) fn holds(b: &BoxView) -> bool {
-    b.gate
-        .as_ref()
-        .is_some_and(|g| g.status != GateStatus::Passed)
+    open_status(b).is_some_and(|s| *s != GateStatus::Passed)
 }
 
 /// What the agent wrote with its last accepted report, once every gate has passed: it says what
@@ -87,6 +87,9 @@ pub(super) fn done_note(b: &BoxView) -> Option<&str> {
 /// The line a gate gives a Box in `state`, when it has something to say that the agent's own
 /// words do not.
 pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
+    if let Some(ended) = b.gate.as_ref().and_then(|g| g.run_ended.as_deref()) {
+        return (state == Progress::Done).then(|| format!("run {}", ended.replace('_', " ")));
+    }
     let status = open_status(b)?;
     match (state, status) {
         (Progress::Working, GateStatus::Open { gate, next, .. }) if quiet(b) => Some(match next {

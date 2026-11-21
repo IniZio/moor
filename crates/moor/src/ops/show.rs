@@ -52,7 +52,9 @@ fn gate_of(store: &Store, box_id: BoxId) -> Result<Option<GateView>, CommandErro
     let Some(gates) = store.box_gates(box_id)? else {
         return Ok(None);
     };
-    Ok(Some(GateView::of(&gates, &store.gate_lines(box_id)?)))
+    let mut view = GateView::of(&gates, &store.gate_lines(box_id)?);
+    view.run_ended = store.run_end_of_box(box_id)?;
+    Ok(Some(view))
 }
 
 /// The approve step of the workflow run that waits in the Box, when one does.

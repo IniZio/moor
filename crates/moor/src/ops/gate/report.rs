@@ -53,6 +53,13 @@ pub(crate) fn run(
     let Some(gates) = store.box_gates(req.box_id)? else {
         return Ok(None);
     };
+    if let Some(ended) = store.run_end_of_box(req.box_id)? {
+        return Ok(Some(refused(format!(
+            "Nothing is recorded: this run has ended ({}), so its gates no longer move. There is \
+             nothing more to report.",
+            ended.replace('_', " ")
+        ))));
+    }
     for _ in 0..TRIES {
         let lines = store.gate_lines(req.box_id)?;
         if let Some(reply) = settle(cx, store, (&gates, &lines), req)? {
