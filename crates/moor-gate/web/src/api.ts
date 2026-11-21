@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 
+import { GateViewSchema, WaitSchema } from './gate';
 import { announceSignedOut } from './session';
 
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
@@ -374,7 +375,7 @@ const PickSchema = v.object({
 /** What the agent asks, as the controller derives it: the card a person answers. */
 const NeedsSchema = v.object({
 	id: v.string(),
-	kind: v.picklist(['permission', 'question', 'approve']),
+	kind: v.picklist(['permission', 'question', 'approve', 'stuck']),
 	question: v.string(),
 	detail: v.nullish(v.string()),
 	picks: v.array(PickSchema),
@@ -383,6 +384,8 @@ const NeedsSchema = v.object({
 	approve: v.nullish(v.object({ workflow: v.string(), run: v.number(), step: v.string() })),
 	/** Whether a plan-first agent asks to approve the plan it left as evidence. */
 	plan: v.optional(v.boolean(), false),
+	/** For the card of a gate that waits for a person: the gate and what the person needs to read to act. */
+	gate: v.nullish(WaitSchema),
 });
 
 const BoxRowSchema = v.object({
@@ -401,6 +404,8 @@ const BoxRowSchema = v.object({
 	updated_at: v.string(),
 	pr: v.nullable(PrSchema),
 	needs: v.nullish(NeedsSchema),
+	/** The gates the task must pass before it counts as done, and where it stands. */
+	gate: v.nullish(GateViewSchema),
 	/** Whether the Box failed, as moor-core decides: the one answer every view reads. */
 	failed: v.optional(v.boolean(), false),
 	/** Whether setup failed, so it can be run again. */
@@ -545,6 +550,16 @@ export async function boxAnswer(csrf: string, box: string, ask: string, n: numbe
 		body: JSON.stringify({ box, ask, n, text }),
 	});
 	await answer(res, v.object({ answered: v.boolean() }));
+}
+
+/** Answers the yes or no a gate asks its owner, for the prompt `ask` names; a note goes to the agent. Says what the answer did. */
+export async function gateAnswer(csrf: string, box: string, ask: string, yes: boolean, note?: string): Promise<string | undefined> {
+	const res = await fetch('/account/api/box/answer', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ box, ask, answer: yes ? 'yes' : 'no', note: note?.trim() || undefined }),
+	});
+	return (await answer(res, v.object({ answered: v.boolean(), outcome: v.nullish(v.string()) }))).outcome ?? undefined;
 }
 
 const FileChangeSchema = v.object({

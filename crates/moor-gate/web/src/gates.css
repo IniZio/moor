@@ -1,0 +1,17 @@
+/* The gate cards and list on the Task page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
+.t-gate-label { margin: 0.5rem 0 0.2rem; font-size: 0.8125rem; font-weight: 650; color: var(--moor-color-text-muted); }
+.t-gate-handed { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--moor-space-1) var(--moor-space-3); margin: 0.5rem 0 0; }
+.t-gate-handed .t-gate-label { margin: 0; }
+.t-gate-handed a { color: var(--moor-color-accent); }
+.t-gate-note { margin: 0 0 0.6rem; padding-left: 0.75rem; border-left: 2px solid var(--moor-color-border-strong); white-space: pre-wrap; overflow-wrap: anywhere; }
+.t-gate-why { margin: 0 0 0.4rem; overflow-wrap: anywhere; }
+.t-gate-tail summary { cursor: pointer; margin-bottom: 0.3rem; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-gate-tail .t-quote { margin-bottom: 0.3rem; }
+.t-gate-missing { margin: 0 0 0.6rem; padding-left: 1.2rem; }
+.t-wait-note { margin: 0.6rem 0 0.4rem; font-size: 0.8125rem; }
+.t-gates { list-style: none; margin: 0 0 var(--moor-space-3); padding: 0; display: grid; gap: var(--moor-space-2); }
+.t-gate { display: grid; grid-template-columns: 1rem minmax(0, 1fr); column-gap: var(--moor-space-2); align-items: baseline; }
+.t-gate-glyph { color: var(--t-tone); text-align: center; }
+.t-gate-name { overflow-wrap: anywhere; }
+.t-gate-words { grid-column: 2; font-size: 0.8125rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
+.t-gate.t-needs .t-gate-words, .t-gate.t-failed .t-gate-words { color: var(--t-tone); font-weight: 600; }

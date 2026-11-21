@@ -21,6 +21,8 @@ import {
 } from './api';
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
+import { GateCard, GateList } from './Gates';
+import { gateLine } from './gate';
 import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
@@ -144,6 +146,7 @@ function OtherRepos({ repos }: { repos: string[] }) {
 
 function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 	const s = STATES[t.state];
+	const gated = t.state === 'needs_you' || t.failed ? gateLine(t.gate) : null;
 	return (
 		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
 			<Glyph state={t.state} stale={t.stale} />
@@ -158,8 +161,8 @@ function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
 			<span class="t-title">{t.title}</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
-				{t.failed && <span class="t-failword">failed </span>}
-				{t.line}
+				{t.failed && !gated && <span class="t-failword">failed </span>}
+				{gated ?? t.line}
 			</span>
 			<span class="t-age">{age(t.last_event_at ?? t.updated_at, now)}</span>
 		</a>
@@ -403,7 +406,9 @@ export function buttonsOf(needs: Needs): { pick: Pick; word: string; tone: strin
 
 /** The card for an agent that asks; the controller wrote what it says, the page only sends the pick. */
 function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
-	return needs.kind === 'approve' && needs.approve ? (
+	return needs.gate ? (
+		<GateCard box={box} needs={needs} wait={needs.gate} csrf={csrf} onSent={onSent} />
+	) : needs.kind === 'approve' && needs.approve ? (
 		<ApproveCard needs={needs} run={needs.approve} csrf={csrf} onSent={onSent} />
 	) : (
 		<AskCard box={box} needs={needs} csrf={csrf} onSent={onSent} />
@@ -602,8 +607,9 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 				</section>
 				<aside class="t-rail">
 					<h3>Now</h3>
-					<p class="t-railline">{value.line}</p>
+					<p class="t-railline">{(value.state === 'needs_you' || value.failed ? gateLine(value.gate) : null) ?? value.line}</p>
 					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
+					<GateList gate={value.gate} />
 					<PlanRail detail={value} />
 					<MakeRecurring detail={value} />
 				</aside>
