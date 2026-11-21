@@ -327,6 +327,36 @@ flowchart LR
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
 - **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a gate or a grant needs a repo maintainer.
 
+### Roles and handover, reserved
+
+Not in the first version. This section reserves the shape so the first version does not block it.
+
+A job that crosses roles is several small automations, not one with stages. Each has its own Box, acts as one named person, and has its own gates. When one finishes, its result starts the next.
+
+```mermaid
+flowchart LR
+	S[PM assigns a story] --> B[Build, as the developer]
+	B --> M[A person merges]
+	M --> A[Acceptance evidence, as the PM]
+	A -->|PM says yes| Q[QA pass, as QA]
+	A -.->|PM says no| B
+	Q -.->|bugs QA approves| I[PM's inbox]
+```
+
+- **Why handover, not stages.** A new Box starts with nothing but what was handed over. So "the tester cannot change the code" is enforced, not asked. Stages share one Box, and files already in it stay.
+- **Each part acts as the right person.** Stages would run every part with one person's access.
+- **A person's step is an event.** A merge by a person belongs to no automation. It is the event that starts the next one.
+- **A no goes where the team sends it.** A PM's no returns the story to the build. Bugs that QA approves go to the PM's inbox, not to the build.
+- **A yes from a role needs roles.** moor knows a person's email and their push access today. It has no roles or groups.
+
+What the first version must keep open.
+
+- A trigger list that can take "the result of another automation" as one more kind.
+- A result that carries what it hands over, such as a branch and evidence files.
+- A gate's yes that can name a role, not only "the person who asked".
+
+A throwaway prototype drew this flow and its rival on three jobs, one of them the team's real sprint flow. The comparison above comes from it.
+
 ### What retires
 
 | Today | Becomes |
@@ -419,6 +449,8 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
 | 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal from the observer that changes a gate is refused. |
 
+Handover between automations and roles come after these six steps. They are reserved, not scheduled.
+
 ## Decided
 
 The owner decided this on 2026-11-20.
@@ -429,6 +461,7 @@ The owner decided this on 2026-11-20.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
+- Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
 - The story is the primary presentation for now, for the definition, a running task and a proposal. Every card opens its detail. Decided on 2026-11-21.
 - The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
