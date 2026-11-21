@@ -62,6 +62,7 @@ fn steered(r: &Rig, id: BoxId) {
         turn_before: None,
         status_before: None,
         inbox: None,
+        origin: moor_core::domain::event::Origin::Person,
     };
     let d = Decision::new(id).event(ExtraEvent::Steered(sent));
     r.cx.store().unwrap().apply(d).unwrap();

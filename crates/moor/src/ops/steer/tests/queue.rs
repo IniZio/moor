@@ -65,6 +65,34 @@ fn a_steer_to_an_asleep_box_is_queued_and_the_pass_wakes_it_and_delivers_once() 
 }
 
 #[test]
+fn a_steer_from_moor_keeps_its_origin_through_the_queue_and_a_persons_does_not_get_one() {
+    use moor_core::domain::event::Origin;
+
+    let f = fx();
+    put_to_sleep(&f);
+    crate::ops::steer::run_as(&f.cx, &text("from moor"), Origin::Moor).unwrap();
+    run(&f.cx, &text("from a person")).unwrap();
+    reports_idle(&f, "agent-1");
+    pass(&f);
+    assert_eq!(texts(&f), ["from moor", "from a person"]);
+    let origins: Vec<_> = steered(&f)
+        .iter()
+        .map(|p| p.get("origin").cloned())
+        .collect();
+    assert_eq!(origins, [Some(serde_json::json!("moor")), None]);
+}
+
+#[test]
+fn a_steer_from_moor_to_an_awake_agent_is_recorded_as_moors_when_sent() {
+    use moor_core::domain::event::Origin;
+
+    let f = fx();
+    let v = crate::ops::steer::run_as(&f.cx, &text("now"), Origin::Moor).unwrap();
+    assert_eq!(v.delivery, Delivery::Delivered);
+    assert_eq!(steered(&f)[0]["origin"], serde_json::json!("moor"));
+}
+
+#[test]
 fn a_steer_to_a_box_another_op_holds_is_queued_and_delivered_after() {
     let f = fx();
     let held = hold_lock(&f);

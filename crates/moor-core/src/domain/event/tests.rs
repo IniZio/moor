@@ -138,6 +138,7 @@ fn all_events() -> Vec<Event> {
             turn_before: Some(4),
             status_before: None,
             inbox: Some(9),
+            origin: crate::domain::event::Origin::Person,
         }),
         Event::ProxyStarted {
             box_port: 1,
@@ -513,6 +514,28 @@ fn box_events_table() {
             handle: None
         }]
     );
+}
+
+#[test]
+fn a_steer_says_who_wrote_it_only_when_it_was_moor() {
+    let sent = |origin| SteerSent {
+        session: s("x"),
+        message: s("m"),
+        submit_retried: false,
+        turn_before: None,
+        status_before: None,
+        inbox: None,
+        origin,
+    };
+    let moor = serde_json::to_value(sent(Origin::Moor)).unwrap();
+    assert_eq!(moor["origin"], "moor");
+    let person = serde_json::to_value(sent(Origin::Person)).unwrap();
+    assert!(person.get("origin").is_none(), "{person}");
+    let old = serde_json::json!({"session": "x", "message": "m", "submit_retried": false});
+    let read: SteerSent = serde_json::from_value(old).unwrap();
+    assert_eq!(read.origin, Origin::Person);
+    assert_eq!(Origin::of_sender(MOOR_SENDER), Origin::Moor);
+    assert_eq!(Origin::of_sender("steer"), Origin::Person);
 }
 
 mod index;

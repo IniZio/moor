@@ -3,6 +3,7 @@
 //! The line that passed the gate is the last line written, since every line of the gate in hand
 //! names that gate. A steer after it, from here or from a person, has told the agent already.
 
+use moor_core::domain::event::Origin;
 use moor_core::gate::{status, GateLine, GateNext, GateStatus, Gates};
 use moor_core::request::BoxTarget;
 use moor_core::SteerReq;
@@ -58,5 +59,6 @@ pub(super) fn hand_over(
         interrupt: false,
         ask: None,
     };
-    cx.for_box(row.user, || steer::run(cx, &req)).map(|_| true)
+    cx.for_box(row.user, || steer::run_as(cx, &req, Origin::Moor))
+        .map(|_| true)
 }

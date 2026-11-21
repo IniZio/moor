@@ -111,6 +111,16 @@ fn a_no_with_a_note_steers_the_agent_and_opens_the_next_try() {
 }
 
 #[test]
+fn the_steer_after_a_no_is_moors_and_a_persons_steer_after_it_is_not() {
+    let f = owned(2);
+    ask(&f);
+    answer(&f, Answer::No, Some("use the blue header")).unwrap();
+    f.steer("And keep it short.");
+    let moor = Some("moor".to_owned());
+    assert_eq!(super::origin::origins(&f), [moor, None]);
+}
+
+#[test]
 fn a_no_on_the_last_try_fails_the_gate_and_the_box_with_the_note() {
     let f = owned(2);
     ask(&f);

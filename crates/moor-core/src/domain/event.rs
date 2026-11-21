@@ -383,7 +383,13 @@ pub enum Event {
     Egress(EgressEvent),
 }
 pub use self::{access::AccessEvent, boxes::box_events, checked::CheckedCred, egress::*, kind::*};
-pub use self::{machine::MachineEvent, post_clone::*, profile::*, steered::SteerSent, steps::*};
+pub use self::{
+    machine::MachineEvent,
+    post_clone::*,
+    profile::*,
+    steered::{Origin, SteerSent, MOOR_SENDER},
+    steps::*,
+};
 mod access;
 mod boxes;
 mod checked;

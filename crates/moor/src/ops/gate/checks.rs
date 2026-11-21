@@ -9,6 +9,7 @@
 //! A failed check ends the try, as `status()` reads it. When tries remain, the end of its output is
 //! steered to the agent, which then fixes the work and goes quiet again.
 
+use moor_core::domain::event::Origin;
 use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
 use moor_core::request::BoxTarget;
 use moor_core::view::steer::SteerValue;
@@ -201,7 +202,8 @@ fn tell_failure(
         interrupt: false,
         ask: None,
     };
-    cx.for_box(row.user, || steer::run(cx, &req)).map(Some)
+    cx.for_box(row.user, || steer::run_as(cx, &req, Origin::Moor))
+        .map(Some)
 }
 
 /// Whether `e` says another line took the number.
