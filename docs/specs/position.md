@@ -238,7 +238,11 @@ A first test ran on 2026-11-21. Three parsers on three models read two real prom
 - They disagreed on finish lines. The prompts rarely state one, so moor must ask and not guess.
 - One of six readings mistook a fact about the Box for the person the task acts as.
 
-This was one run per parser. It is a first look, not a measure of reliability.
+A second run asked two of the models again, as one call each with no tools. Both listed a capability that the first run had not. One gave two quotes that were not exact words. So a reading can change between runs. That is why moor freezes the accepted plan and checks every quote.
+
+This is a first look, not a measure of reliability.
+
+A reading needs no files, no shell and no browser. So it can run with no Box, as one model call on the author's token. Hopper works this way. Its agent loop runs outside the sandbox, and a sandbox starts only when a task needs one. One such call took 20 seconds on one model and 50 on another. The pilot's Boxes took 6 to 17 minutes to reach their first step.
 
 moor compiles a prompt into a plan today, in the runs spec. There the author's own agent does it, and the target is steps. Here the target is gates and capabilities.
 
@@ -536,5 +540,5 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 
 ## Open questions
 
-1. Who runs the reading of a prompt, and on whose token? The controller holds no model client.
+1. Does a reading run with no Box, as one model call on the author's token? The controller holds no model client, so a small separate process would make the call.
 2. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
