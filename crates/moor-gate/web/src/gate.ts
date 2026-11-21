@@ -12,7 +12,12 @@ const GateStatusSchema = v.variant('state', [
 ]);
 
 /** The gates of a Box, in the order they pass, and where it stands. */
-export const GateViewSchema = v.object({ gates: v.array(v.string()), status: GateStatusSchema });
+export const GateViewSchema = v.object({
+	gates: v.array(v.string()),
+	status: GateStatusSchema,
+	/** What the agent wrote with the last report moor accepted; none when it wrote nothing. */
+	note: v.nullish(v.string()),
+});
 
 /** A gate that waits for a person, with what they need to read to act on it. */
 export const WaitSchema = v.object({
@@ -81,6 +86,11 @@ export function gateRows(view: GateView): GateRow[] {
 /** A gate's name as a sentence quotes it. */
 export function quoted(name: string): string {
 	return `“${name}”`;
+}
+
+/** A sentence moor wrote, without Markdown code marks: a gate it names between them is quoted as the page quotes gates, any other word is left bare. */
+export function plain(text: string, gates: readonly string[] = []): string {
+	return text.replace(/`([^`]*)`/g, (_, word: string) => (gates.includes(word) ? quoted(word) : word)).replace(/`/g, '');
 }
 
 /** A reason moor wrote for a gate that ended short of passing, in plain words: no code marks, the command left to the card's own line for it, the exit code said out. */

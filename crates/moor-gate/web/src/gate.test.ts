@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { type GateView, gateLine, gateRows, tailView, whyWords } from './gate';
+import { type GateView, gateLine, gateRows, plain, tailView, whyWords } from './gate';
 
 const gates = ['plan', 'tests', 'review'];
 const view = (status: GateView['status']): GateView => ({ gates, status });
@@ -42,6 +42,12 @@ test('the one-line gate story names a gate that waits for a person or failed, an
 	expect(gateLine(view({ state: 'open', gate: 'plan', try_n: 1, next: 'agent' }))).toBeNull();
 	expect(gateLine(view({ state: 'passed' }))).toBeNull();
 	expect(gateLine(null)).toBeNull();
+});
+
+test('plain words have no code marks and quote the gates they name', () => {
+	expect(plain('Gate `review` has passed; see `proof.md`.', ['review'])).toBe('Gate “review” has passed; see proof.md.');
+	expect(plain('stray ` mark')).toBe('stray  mark');
+	expect(plain('nothing to do')).toBe('nothing to do');
 });
 
 test('an output of a few lines shows whole and a longer one shows its last lines with the rest kept', () => {

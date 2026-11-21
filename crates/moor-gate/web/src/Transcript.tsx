@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import type { Clipped, Entry, Tool } from './api';
+import { plain } from './gate';
 
 /** Lines an input, diff or output shows before Show all. */
 const SHOW_LINES = 12;
@@ -74,10 +75,31 @@ function inputLabel(t: Tool): string {
 	}
 }
 
+/** A report moor did not accept: a plain item with moor's reason, and what the agent sent folded away. */
+function RefusedLine({ t, when }: { t: Tool; when: string }) {
+	return (
+		<div class="t-ev t-refused">
+			<span class="t-who">Agent</span>
+			<span class="t-when">{when}</span>
+			<div class="t-what">
+				<p class="t-refused-title">{t.title}</p>
+				{t.output && <p class="t-refused-why">{plain(t.output.text)}</p>}
+				{t.input && (
+					<details class="t-refused-sent">
+						<summary>What the agent sent</summary>
+						<pre class="t-quote">{t.input.text}</pre>
+					</details>
+				)}
+			</div>
+		</div>
+	);
+}
+
 /** One tool call: a line that opens to its input, diff and output. A failed call stays open. */
 export function ToolLine({ e, when }: { e: Entry; when: string }) {
 	const t = e.tool;
 	if (!t) return null;
+	if (t.refused) return <RefusedLine t={t} when={when} />;
 	return (
 		<details class={`t-tool${t.failed ? ' t-tool-err' : ''}`} open={t.failed}>
 			<summary>

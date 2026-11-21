@@ -72,6 +72,28 @@ test('the card of a stuck gate parses, with its command, output and missing evid
 	expect(got.gate?.status.state).toBe('stuck');
 });
 
+test('the gate view carries the note of the last accepted report, or none', async () => {
+	const status = { state: 'passed' };
+	reply = ok({ boxes: [box({ gate: { gates: ['a'], status, note: 'Typo fixed.' } }), box({ gate: { gates: ['a'], status, note: null } }), box({ gate: { gates: ['a'], status } })] });
+	const rows = await boxList();
+	expect(rows.map((r) => r.gate?.note)).toEqual(['Typo fixed.', null, undefined]);
+});
+
+test('the words a person reads carry no code marks, and a gate is named as the page names it', async () => {
+	const wait = { gate: 'review', kind: 'approve', seq: 4, try_n: 1, why: null, handed: [], note: 'Wrote `proof.md`.', command: null, tail: null, missing: [], hint: 'Answer for `review`.' };
+	const needs = { id: 'review-4', kind: 'approve', question: 'Gate `review` asks your approval.', detail: 'Handed in `proof.md`', picks: [], other: null, approve: null, plan: false, gate: wait };
+	const gate = { gates: ['lint', 'review'], status: { state: 'open', gate: 'review', try_n: 1, next: 'ask' } };
+	reply = ok({ boxes: [box({ needs, gate, line: 'Waiting for `review` and `proof.md`' })] });
+	const [row] = await boxList();
+	expect(row?.line).toBe('Waiting for “review” and proof.md');
+	expect(row?.needs?.question).toBe('Gate “review” asks your approval.');
+	expect(row?.needs?.detail).toBe('Handed in proof.md');
+	expect(row?.needs?.gate?.hint).toBe('Answer for “review”.');
+	expect(row?.needs?.gate?.note).toBe('Wrote proof.md.');
+	reply = ok(box({ needs, gate, line: 'Gate `review` asks' }));
+	expect((await boxGet('web/gated')).line).toBe('Gate “review” asks');
+});
+
 test('a Box row carries the gate view when it has gates and none when it has not, and every status parses', async () => {
 	const statuses = [
 		{ state: 'open', gate: 'a', try_n: 2, next: 'agent' },

@@ -14,4 +14,9 @@
 .t-gate-glyph { color: var(--t-tone); text-align: center; }
 .t-gate-name { overflow-wrap: anywhere; }
 .t-gate-words { grid-column: 2; font-size: 0.8125rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
+.t-refused .t-what { white-space: normal; }
+.t-refused-title { margin: 0; color: var(--moor-color-text-muted); }
+.t-refused-why { margin: 0.15rem 0 0.3rem; }
+.t-refused-sent summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-refused-sent .t-quote { margin: 0.3rem 0 0; }
 .t-gate.t-needs .t-gate-words, .t-gate.t-failed .t-gate-words { color: var(--t-tone); font-weight: 600; }
