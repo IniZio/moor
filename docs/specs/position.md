@@ -141,15 +141,17 @@ Each model is tested on the same cases.
 
 moor takes Warp's shape and keeps its own proof.
 
-- **The definition** is a repo of YAML and Markdown. It says how this team's moor behaves. People and agents change it by pull request.
+- **The definition** is a set of YAML and Markdown files that moor keeps. It says how this team's moor behaves. People and agents change it by proposal.
 - **moor's mechanisms** are few and fixed. They are the task, the Box, the gates, the triggers and the scores. The definition cannot turn them off.
 
 ### The definition
 
-It lives in its own repo, so no project repo is touched. moor applies it when a pull request merges. The diff of that pull request is the plan. A revert rolls it back.
+It lives in moor itself. No project repo is touched and no extra repo is created. moor keeps every version. A change is a proposal with a diff. It applies when a person accepts it in the portal. A revert rolls it back.
+
+moor can hold the files as a git repository inside its own store. That gives versions, diffs and reverts with a stock tool.
 
 ```
-team-moor/
+definition/
   moor.yaml                        repos, defaults
   agents/lead/agent.md             how this team runs a task
   skills/deps-check/SKILL.md       how to check dependencies
@@ -226,7 +228,7 @@ flowchart LR
 | --- | --- | --- |
 | Task | What someone asked for. Shared, long-lived, open to colleagues. | Anyone |
 | Plan | The agent's own checklist for this task. Written after it reads the repo. Revised as it learns. | The agent |
-| Definition | The repo that says how this team's moor behaves. | The team, by pull request |
+| Definition | The files, kept in moor, that say how this team's moor behaves. | The team, by proposal |
 | Lead | The prose that tells the agent how this team runs a task. | The team |
 | Skill | The team's way to do one kind of work. | The team that knows the work |
 | Automation | Triggers and an ask. It starts tasks. | Developers |
@@ -234,7 +236,7 @@ flowchart LR
 | Gate | A point where moor checks or waits for a yes. | The contract |
 | Result | What the task hands back. A pull request, an answer, or a preview link. | The agent |
 | Box | The computer a task runs in. | moor |
-| Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by merging |
+| Grant | What an automation's tasks may do beyond the defaults. It is asked for in the automation's file. | Maintainers, by accepting |
 
 Secrets never enter the definition. A grant names a permission, not a token.
 
@@ -248,19 +250,19 @@ Secrets never enter the definition. A grant names a permission, not a token.
 
 ```mermaid
 flowchart LR
-	D[Definition repo] -->|moor applies on merge| T[Tasks]
+	D[Definition in moor] -->|applies when accepted| T[Tasks]
 	T --> S[Scores]
 	S --> O[Observer task]
-	O -->|pull request, prose only| D
-	H[A person] -->|merges or declines| D
+	O -->|proposal, prose only| D
+	H[A person] -->|accepts or declines| D
 ```
 
 - **Scores come free.** A task records done-gate failures, steers that corrected the agent, review comments, and whether the pull request merged.
-- **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a pull request on the definition.
-- **The observer cannot edit its grader.** Its pull request may change the Markdown body of a lead, a skill or an automation. moor refuses its push when anything else changes. That covers contracts, repo files, and every frontmatter field of an automation.
-- **A person merges.** Review happens on GitHub, where review already lives.
+- **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a proposal on the definition.
+- **The observer cannot edit its grader.** Its proposal may change the Markdown body of a lead, a skill or an automation. moor refuses it when anything else changes. That covers contracts, repo files, and every frontmatter field of an automation.
+- **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to merge it.
-- **The portal still edits.** A change made in the portal becomes a pull request on the definition.
+- **Every edit is a version.** A person's edit in the portal is a proposal too. Its author may accept their own change to prose. A change to a contract or a grant needs a repo maintainer.
 
 ### What retires
 
@@ -277,7 +279,7 @@ flowchart LR
 | "Plan first" | The plan gate's setting, with a per-task override |
 | Compiling a plan from a prompt | Gone |
 | Workflows screen | Automations, with their last tasks |
-| Workflows and repo config in moor's database | Files in the definition repo |
+| Workflows as database rows | Versioned files in the definition |
 
 ### What this costs
 
@@ -288,18 +290,18 @@ flowchart LR
 - The judge is a model. It can be wrong. Evidence and checks stay deterministic, and the judge only reads what is on file.
 - A person cannot force an order of work. The lead can ask for one. Only contracts and gates are enforced.
 - One agent works a task. Warp's foreman dispatches role agents. moor leaves helpers to the harness until a case needs child tasks.
-- Repo config moved into moor's database on 2026-11-17. This proposal moves it out again, into the definition repo.
+- moor must show a diff and an accept button for its own definition. That is a small review surface, in a product that leaves code review to GitHub.
 
 ## Who does what
 
 | | Ask | Approve a plan | Answer | Steer, step in | Review the result | Change the definition | Run moor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Requester (QA, PM, designer) | ● | ● | ● | | proof | | |
-| Developer | ● | ● | ● | ● | proof and diff | prose, by pull request | |
+| Developer | ● | ● | ● | ● | proof and diff | prose, by proposal | |
 | Repo maintainer | ● | ● | ● | ● | on GitHub | contracts and grants too | |
 | Reviewer who never opens moor | | | | | in the PR | | |
 | A person's own agent, over MCP | ● | ● | ● | ● | ● | | |
-| Observer | | | | | | prose bodies only, by pull request | |
+| Observer | | | | | | prose bodies only, by proposal | |
 | Operator | | | | | | | ● |
 
 The plan is written for its reader. A requester reads what will change and what proof will come back. A developer opens the same plan and sees files and commands.
@@ -332,8 +334,8 @@ mindmap
     Learn
       Definition as files
       Scores from tasks
-      Observer opens a pull request
-      A person merges
+      Observer opens a proposal
+      A person accepts
     Keep safe
       Proxy holds tokens
       Egress allow list
@@ -348,27 +350,27 @@ Each step ends in a check someone can rerun. The workflow model stays until step
 | --- | --- | --- |
 | 1 | The contract and the done gate, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and the plan gate. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
-| 3 | The definition repo. Lead, skills, automations and contracts are files that moor applies on merge. | The dependency check runs on the fixture repo from one automation and one contract. A revert restores the old behaviour. The step plan code is deleted. |
+| 3 | The definition. Lead, skills, automations and contracts are versioned files in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation and one contract. A revert restores the old behaviour. The step plan code is deleted. |
 | 4 | Action gates at the Proxy, and tokens that follow the steerer. | With that gate set to wait, opening a pull request waits for a yes. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
-| 6 | The observer. | A steer that corrects the agent leads to a pull request on the definition. A push that changes a contract, or an automation's contract field, is refused. |
+| 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal that changes a contract, or an automation's contract field, is refused. |
 
 ## Decided
 
 The owner decided this on 2026-11-20.
 
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
+- The definition lives in moor itself, not in a repo of its own. Decided on 2026-11-21.
 
 ## Open questions
 
 1. Does moor fix only the gates, and leave the shape of work to prose in the definition?
-2. Does an observer propose changes by pull request, limited to prose?
-3. Does the definition live in its own repo?
+2. Does an observer propose changes, limited to prose, for a person to accept?
+3. Does moor keep the definition as a git repository inside its store?
 4. Is the definition YAML and Markdown only, with no code?
-5. Does moor apply it on merge, with no separate apply step?
-6. Does repo config move into that repo?
-7. Does an automation name the person its tasks act as?
-8. May the done gate use a judge that runs in the Box on the task owner's token?
-9. Does the requester approve a plan that waits?
-10. Does a task act as the person steering it, as Hopper does?
-11. Does moor design for anyone outside the team, such as a client?
+5. Does repo config become files in the definition, with the same versions and proposals?
+6. Does an automation name the person its tasks act as?
+7. May the done gate use a judge that runs in the Box on the task owner's token?
+8. Does the requester approve a plan that waits?
+9. Does a task act as the person steering it, as Hopper does?
+10. Does moor design for anyone outside the team, such as a client?
