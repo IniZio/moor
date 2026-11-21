@@ -13,6 +13,7 @@ use moor_core::progress::gate_ask_id;
 use moor_core::view::gate::GateAnswerValue;
 use moor_core::view::steer::Delivery;
 use moor_core::workflow::{Answer, NOTE_MAX};
+use moor_core::user::Viewer;
 use moor_core::{ErrorKind, GateAnswerReq};
 
 use super::checks::{taken, tell};
@@ -42,12 +43,19 @@ fn note_of(req: &GateAnswerReq) -> Result<Option<&str>, CommandError> {
     Ok(note)
 }
 
-/// The open Box `req` names, when the caller may act on it.
+/// The open Box `req` names, when the caller owns it. As with a workflow's approve step, only
+/// the owner answers: the operator answers only a Box with no user, or one of its own requester's.
 fn owned_box(cx: &Cx, req: &GateAnswerReq) -> Result<BoxRow, CommandError> {
     let row = target::resolve(cx.store()?, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
-    if cx.viewer().may_act_on(row.user) {
+    let owns = match cx.viewer() {
+        Viewer::Operator => {
+            row.user.is_none() || row.user == cx.requester().ok().and_then(|(_, user)| user)
+        }
+        viewer => viewer.may_act_on(row.user),
+    };
+    if owns {
         Ok(row)
     } else {
         Err(refused(NOT_YOURS))

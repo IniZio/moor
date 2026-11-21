@@ -168,6 +168,23 @@ fn only_the_owner_answers_and_only_a_gate_that_asks() {
 }
 
 #[test]
+fn the_operator_cannot_answer_the_gate_of_another_users_box() {
+    let mut f = fx(|_| vec![ship(1)]);
+    let other = moor_core::user::Identity::local(2000);
+    f.cx.store().unwrap().enroll(&other, None).unwrap();
+    f.cx = f.cx.with_requester(other);
+    assert_eq!(f.cx.viewer(), Viewer::Operator);
+    ask(&f);
+    let err = answer(&f, Answer::Yes, None).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused, "{err:?}");
+    assert!(err.error.to_string().contains("not your Box"), "{err:?}");
+    assert!(
+        matches!(f.lines().last(), Some(GateLine::Submitted { .. })),
+        "the refused answer wrote nothing"
+    );
+}
+
+#[test]
 fn a_gate_that_waits_for_the_agent_is_refused_readably_and_so_is_a_box_without_gates() {
     let f = owned(1);
     let err = answer(&f, Answer::Yes, None).unwrap_err();
