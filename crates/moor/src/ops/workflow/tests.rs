@@ -580,13 +580,13 @@ fn a_box_whose_setup_fails_refuses_its_run_and_the_next_due_time_still_starts_a_
     }
     assert_eq!(r.runs(id).len(), 5, "each due time started its own Box");
 }
-
 mod also;
 mod approve;
 mod auto_close;
 mod check;
 mod death_cap;
 mod eligible;
+mod gated;
 mod hook;
 mod hook_log;
 mod manual;

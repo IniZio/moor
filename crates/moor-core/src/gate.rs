@@ -203,6 +203,14 @@ impl Gates {
         self.0.iter().map(doc_of).collect()
     }
 
+    /// Whether a gate needs the agent to call `report_step` or the owner to answer, which only a
+    /// controller that offers `report_step` can honour.
+    #[must_use]
+    pub fn needs_reports(&self) -> bool {
+        self.iter()
+            .any(|g| g.evidence.is_some() || g.approval != Approval::None)
+    }
+
     /// Every gate, the first one first.
     pub fn iter(&self) -> impl Iterator<Item = &Gate> {
         self.0.iter()
