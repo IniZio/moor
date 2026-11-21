@@ -15,7 +15,7 @@ fn proof() -> GateDoc {
         evidence: vec!["pr-*".to_owned()],
         checks: Vec::new(),
         approval: None,
-        max_tries: Some(2),
+        max_tries: Some(3),
     }
 }
 

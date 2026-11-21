@@ -241,7 +241,11 @@ fn passed_gates_deliver_the_run_with_the_note_of_the_last_accepted_report() {
 #[test]
 fn a_gate_that_failed_for_good_fails_the_run_with_its_reason() {
     let r = rig();
-    let id = r.started_gated(&[ship()]);
+    let once = GateDoc {
+        max_tries: Some(1),
+        ..ship()
+    };
+    let id = r.started_gated(&[once]);
     let no = GateLine::Answered {
         gate: step("ship"),
         try_n: 1,

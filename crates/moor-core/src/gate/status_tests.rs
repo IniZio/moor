@@ -277,7 +277,7 @@ fn an_owner_no_fails_the_try_and_a_yes_passes() {
 
 #[test]
 fn an_owner_no_on_the_last_try_fails_the_gate() {
-    let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
+    let g = gates(&[tries(1, doc("ok", &[], &[], Some(Approval::Owner)))]);
     let got = status(&g, &[answered("ok", 1, Answer::No)]);
     assert!(
         matches!(&got, GateStatus::Failed { gate, .. } if *gate == id("ok")),
@@ -287,7 +287,7 @@ fn an_owner_no_on_the_last_try_fails_the_gate() {
 
 #[test]
 fn a_failed_gate_stays_failed() {
-    let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
+    let g = gates(&[tries(1, doc("ok", &[], &[], Some(Approval::Owner)))]);
     let lines = [
         answered("ok", 1, Answer::No),
         reopened("ok"),

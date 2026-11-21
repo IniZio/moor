@@ -41,7 +41,24 @@ fn one_gate_of_each_kind_parses() {
         (last.approval, last.max_tries.get(), last.evidence.is_none()),
         (Approval::Owner, 3, true)
     );
-    assert_eq!(gates.get(0).unwrap().max_tries, Tries::ONE);
+    assert_eq!(gates.get(0).unwrap().max_tries, Tries::TWO);
+}
+
+#[test]
+fn a_gate_with_no_max_tries_gets_two_and_an_explicit_one_stays_one() {
+    let one = GateDoc {
+        max_tries: Some(1),
+        ..gate("once")
+    };
+    let gates = Gates::parse(&[gate("twice"), one]).unwrap();
+    let tries: Vec<_> = gates.iter().map(|g| g.max_tries.get()).collect();
+    assert_eq!(tries, [2, 1]);
+    let docs = gates.docs();
+    assert_eq!(
+        docs.iter().map(|d| d.max_tries).collect::<Vec<_>>(),
+        [None, Some(1)]
+    );
+    assert_eq!(Gates::parse(&docs).unwrap(), gates);
 }
 
 #[test]
@@ -152,14 +169,14 @@ fn gates_survive_their_json_and_leave_out_what_is_default() {
             evidence: Vec::new(),
             checks: vec!["make lint".to_owned()],
             approval: Some(Approval::Owner),
-            max_tries: Some(2),
+            max_tries: Some(3),
             ..gate("tests")
         },
     ];
     let json = serde_json::to_string(&Gates::parse(&docs).unwrap().docs()).unwrap();
     assert_eq!(
         json,
-        r#"[{"name":"proof","evidence":["proof.md"]},{"name":"tests","checks":["make lint"],"approval":"owner","max_tries":2}]"#
+        r#"[{"name":"proof","evidence":["proof.md"]},{"name":"tests","checks":["make lint"],"approval":"owner","max_tries":3}]"#
     );
     assert_eq!(
         Gates::from_json(&json).unwrap(),

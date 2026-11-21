@@ -133,7 +133,7 @@ A gate has a `name` and any of these.
 | `evidence` | Files the agent leaves in `.moor/artifacts/` and names in `report_step`: flat names or a prefix such as `pr-*`. |
 | `checks` | Commands moor runs in the Box once the agent is quiet. Exit 0 passes, and the first failure fails the try. |
 | `approval` | `owner` asks the workflow's owner to say yes or no after the checks. |
-| `max_tries` | How often the gate may be tried, 1 to 5. |
+| `max_tries` | How often the gate may be tried, 1 to 5; 2 when left out, so a failed check or an owner's no leaves the agent a chance to fix it. Write 1 for a gate with one try. |
 
 The gates open in order. A run freezes them into its Box when it fires, so an
 edit never changes a run in flight. The agent gets the prompt and the gates, and

@@ -53,8 +53,8 @@ impl Tools {
                        and any of `evidence` (files the agent leaves in .moor/artifacts/ and \
                        reports with report_step, flat names or a prefix such as `pr-*`), `checks` \
                        (commands moor runs in the Box, exit 0 passes), `approval: owner` and \
-                       `max_tries`; the gates open in order. A run with gates is never done \
-                       because the agent went quiet: it is delivered when every gate has passed, \
+                       `max_tries` (1 to 5, 2 when left out); the gates open in order. A run with gates is \
+                       never done because the agent went quiet: it is delivered when every gate has passed, \
                        and its result is the note of the agent's last accepted report. It fails \
                        when a gate fails for good. When a gate asks the owner or is stuck the run \
                        waits, as at an approve step, for at most 7 days: the owner calls \
