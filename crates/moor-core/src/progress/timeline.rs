@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::changes::{RepoReceipt, Tally};
 use crate::gate::{split_gate_preamble, split_owner_note};
-use crate::progress::transcript::{Sent, Tool, Transcript};
+use crate::progress::transcript::{Refused, Sent, Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
 use crate::workflow::{split_plan_first, split_start_prompt};
@@ -146,7 +146,8 @@ impl Class {
             | "machine_detached"
             | "machine_waiting"
             | "profile_resolved"
-            | "cache_emptied" => Self::Hidden,
+            | "cache_emptied"
+            | "report_refused" => Self::Hidden,
             _ => return None,
         })
     }
@@ -305,6 +306,7 @@ fn build<'e>(
     let events: Vec<(i64, &EventView)> = events.collect();
     let first = events.first().map(|(ms, _)| *ms);
     let sent = Sent::of(events.iter().map(|(_, e)| *e));
+    let refused = Refused::of(events.iter().map(|(_, e)| *e), transcript.lines);
     let mut lines = transcript
         .lines
         .iter()
@@ -315,7 +317,11 @@ fn build<'e>(
             continue;
         }
         while let Some(line) = lines.next_if(|l| l.ms < ms) {
-            out.push(line.entry());
+            out.push(refused.entry(line));
+        }
+        if e.kind == "report_refused" {
+            out.extend(refused.unshown(e));
+            continue;
         }
         if e.kind == "turn_changes" {
             let Some(receipt) = Receipt::of(&e.payload) else {
@@ -339,7 +345,7 @@ fn build<'e>(
         }
         out.extend(entry(e));
     }
-    out.extend(lines.map(crate::progress::transcript::Line::entry));
+    out.extend(lines.map(|l| refused.entry(l)));
     out
 }
 

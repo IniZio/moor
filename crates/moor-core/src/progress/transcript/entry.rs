@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::{scrub, Line, What};
+use super::{scrub, Body, Line, Tool, What};
 use crate::progress::timeline::{Class, TimelineEntry};
 use crate::view::EventView;
 
@@ -83,6 +83,91 @@ impl Sent {
     /// Whether `line` is typed words moor sent itself, so a steer already shows them.
     pub(crate) fn has_sent(&self, line: &Line) -> bool {
         matches!(&line.what, What::Typed { text } if self.0.contains(&norm(text)))
+    }
+}
+
+/// What a report moor did not accept reads as.
+const REFUSED: &str = "moor did not accept the report";
+
+/// The replies of the reports moor recorded it refused, from the Box's `report_refused` events,
+/// and those of them a transcript line shows. A failed call reads as a refusal only through
+/// such a record, so a report that never reached moor stays an error, whatever the agent's tool
+/// is called.
+pub(crate) struct Refused {
+    /// Every recorded reply.
+    reasons: HashSet<String>,
+    /// The replies a transcript line shows.
+    shown: HashSet<String>,
+}
+
+impl Refused {
+    /// The refusals recorded among `events`, matched against `lines`.
+    pub(crate) fn of<'e>(events: impl Iterator<Item = &'e EventView>, lines: &[Line]) -> Self {
+        let reasons: HashSet<String> = events
+            .filter(|e| e.kind == "report_refused")
+            .filter_map(|e| e.payload.get("reason").and_then(Value::as_str).map(norm))
+            .collect();
+        let shown = lines
+            .iter()
+            .filter_map(answered)
+            .filter(|r| reasons.contains(r))
+            .collect();
+        Self { reasons, shown }
+    }
+
+    /// The timeline entry of `line`; a call whose reply moor recorded as a refusal is the plain
+    /// item, not an error.
+    pub(crate) fn entry(&self, line: &Line) -> TimelineEntry {
+        let mut entry = line.entry();
+        if !answered(line).is_some_and(|r| self.reasons.contains(&r)) {
+            return entry;
+        }
+        if let Some(t) = entry.tool.as_mut() {
+            (t.failed, t.refused) = (false, true);
+            REFUSED.clone_into(&mut t.title);
+        }
+        (entry.class, entry.text) = (Class::Step, REFUSED.to_owned());
+        entry
+    }
+
+    /// The entry of the `report_refused` event `e` when no transcript line shows it, as for an
+    /// agent whose transcript moor does not read; none when a line does.
+    pub(crate) fn unshown(&self, e: &EventView) -> Option<TimelineEntry> {
+        let reason = e.payload.get("reason").and_then(Value::as_str)?;
+        if self.shown.contains(&norm(reason)) {
+            return None;
+        }
+        let tool = Tool {
+            name: "report_step".to_owned(),
+            title: REFUSED.to_owned(),
+            group: None,
+            failed: false,
+            refused: true,
+            input: None,
+            diff: None,
+            output: Some(Body::ends(reason)),
+        };
+        Some(TimelineEntry {
+            id: e.id,
+            at: e.ts.clone(),
+            kind: "tool".to_owned(),
+            class: Class::Step,
+            text: REFUSED.to_owned(),
+            artifact: None,
+            step: None,
+            quote: None,
+            receipt: None,
+            key: None,
+            tool: Some(tool),
+        })
+    }
+}
+
+/// The reply of a call that failed, or was read as refused before refusals were recorded.
+fn answered(line: &Line) -> Option<String> {
+    match &line.what {
+        What::Tool(t) if t.failed || t.refused => t.output.as_ref().map(|b| norm(&b.text)),
+        _ => None,
     }
 }
 

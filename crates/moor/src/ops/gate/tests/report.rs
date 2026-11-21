@@ -39,6 +39,31 @@ fn kinds(lines: &[GateLine]) -> Vec<&'static str> {
         .collect()
 }
 
+/// The reasons of the Box's `report_refused` events, oldest first.
+fn refusals(f: &super::fx::Fx) -> Vec<String> {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    rows.into_iter()
+        .filter(|e| e.kind == "report_refused")
+        .filter_map(|e| Some(e.payload.get("reason")?.as_str()?.to_owned()))
+        .collect()
+}
+
+#[test]
+fn every_refused_report_is_recorded_with_its_reason_and_an_accepted_one_is_not() {
+    let f = fx(|_| vec![evidence_gate("proof", &["proof.md"], &[], 2)]);
+    let elsewhere = f.report("shots", StepResult::Ok, &[]);
+    f.leave(&[]);
+    let missing = f.report("proof", StepResult::Ok, &["proof.md"]);
+    assert!(
+        elsewhere.error && missing.error,
+        "{elsewhere:?} {missing:?}"
+    );
+    f.leave(&[("proof.md", 5)]);
+    let ok = f.report("proof", StepResult::Ok, &["proof.md"]);
+    assert!(!ok.error, "{ok:?}");
+    assert_eq!(refusals(&f), [elsewhere.reply, missing.reply]);
+}
+
 #[test]
 fn a_report_with_every_named_file_passes_a_gate_that_needs_nothing_more() {
     let f = fx(|_| vec![evidence_gate("proof", &["proof.md", "shots-*"], &[], 1)]);

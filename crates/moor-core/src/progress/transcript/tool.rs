@@ -131,25 +131,13 @@ pub(super) fn finished(t: &mut Tool, block: &Value, detail: Option<&Value>) {
         t.diff = Some(Body::head(&patch));
     }
     t.failed = block.get("is_error").and_then(Value::as_bool) == Some(true);
-    if t.failed && is_report(&t.name) {
-        t.failed = false;
-        t.refused = true;
-        "moor did not accept the report".clone_into(&mut t.title);
-    } else if t.failed {
+    if t.failed {
         let _ = write!(t.title, " ({})", why(&text));
     }
     let edit = t.diff.is_some() && !t.failed;
     if !edit && !text.trim().is_empty() {
         t.output = Some(Body::ends(&text));
     }
-}
-
-/// Whether `name` is moor's `report_step`, whose error replies are moor refusing a report.
-fn is_report(name: &str) -> bool {
-    matches!(
-        name.splitn(3, "__").collect::<Vec<_>>()[..],
-        ["mcp", _, "report_step"]
-    )
 }
 
 /// Why a call failed, in a word or two: its exit code, a refusal, or that it failed.

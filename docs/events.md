@@ -27,6 +27,7 @@ A webhook that names no events gets the kinds marked with a check.
 | `node_disk_recovered` | ✓ | That node climbed back above its floor. |
 | `run_waiting` | ✓ | A workflow run entered an approve step. `data` has `workflow`, `repo`, `run`, `step`, `question` and `link`, the run page path `/workflows/NAME/runs/ID`. |
 | `run_failed` | ✓ | A workflow run ended Failed, Incomplete, TimedOut or Refused. `data` has `workflow`, `repo`, `run`, `outcome`, `step` (absent when the run never reached one), `reason` and `link`. Delivered and Declined runs and skipped firings write no event, so success is silent. |
+| `report_refused` | | moor did not accept the agent's `report_step`. `data.step` is the step or gate it reported, and `data.reason` is the reply it got. The timeline shows it as a plain item, not an error. |
 | `relaunched` | | moor restarted the agent after it ended. A start on new hands keeps the Session and emits neither this nor `transcript_skipped`. |
 | `asleep`, `woke` | | The Box slept or woke. |
 | `closed` | | The Box closed. `data.reason` is set when moor closed it on its own. It is `run_ended`, `pr_merged`, `pr_closed`, `idle`, `setup_failed_expired` or `close_failed`. |

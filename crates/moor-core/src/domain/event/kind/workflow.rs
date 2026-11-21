@@ -41,6 +41,13 @@ pub enum WorkflowEvent {
         /// What the owner is told, in a sentence.
         question: String,
     },
+    /// moor did not accept the agent's `report_step`: the report changed nothing.
+    ReportRefused {
+        /// The step or gate the agent reported.
+        step: String,
+        /// The reply the agent got, which says why.
+        reason: String,
+    },
     /// A run ended Failed, Incomplete, `TimedOut` or Refused.
     RunFailed {
         /// The workflow's name.
@@ -70,6 +77,7 @@ impl WorkflowEvent {
             Self::RunWaiting { .. } => "run_waiting",
             Self::RunFailed { .. } => "run_failed",
             Self::GateWaiting { .. } => "gate_waiting",
+            Self::ReportRefused { .. } => "report_refused",
         }
     }
 }
