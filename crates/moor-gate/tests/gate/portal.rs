@@ -12,8 +12,15 @@ pub(super) const PREFIX: &str = "portal-";
 const OWNER: &str = "portal-alice";
 const HOSTILE: &str = "<script>alert(1)</script>";
 
+/// The gates of the Box that asks: one gate, open and waiting for its owner.
+fn gates() -> Value {
+    json!({"gates": ["review"], "wait": null,
+        "status": {"state": "open", "gate": "review", "try_n": 1, "next": "ask"}})
+}
+
 fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value {
-    json!({"id": 1, "name": name, "repo": "acme/web", "issue": null, "prompt": "Fix the typo",
+    let gate = if name == "web/ask" { gates() } else { Value::Null };
+    json!({"gate": gate, "id": 1, "name": name, "repo": "acme/web", "issue": null, "prompt": "Fix the typo",
         "lifecycle": lifecycle, "session_state": "working", "state_reason": null,
         "base": "main", "branch": "moor/1-fix", "driver": null, "agent": null, "run": null,
         "updated_at": "2026-11-18T10:00:00Z",
@@ -290,6 +297,17 @@ fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_reada
     assert_eq!(start["request"]["prompt"], "Fix the typo");
     assert_eq!(start["request"]["base"], "main");
     assert_eq!(start["request"]["node"], "engine-03");
+}
+
+#[test]
+fn a_box_with_gates_carries_them_to_the_list_and_its_page_as_show_sent_them() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-11");
+    let rows = json_of(&get(&w.addr, "/account/api/boxes", Some(&cookie)))["boxes"].clone();
+    assert_eq!(rows[0]["gate"], gates());
+    assert_eq!(rows[1]["gate"], Value::Null, "a Box without gates has none");
+    let page = json_of(&get(&w.addr, "/account/api/box?box=web%2Fask", Some(&cookie)));
+    assert_eq!(page["gate"]["status"]["next"], "ask");
 }
 
 #[test]
