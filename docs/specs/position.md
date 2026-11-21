@@ -516,6 +516,28 @@ Each step ends in a check someone can rerun. The pull request evidence flow come
 
 Handover between automations and roles come after these six steps. They are reserved, not scheduled.
 
+## What is built
+
+Draft pull requests build the gate mechanism ahead of this spec's merge. The owner asked for that on 2026-11-21. None is merged.
+
+| Pull request | What it does | Proof |
+| --- | --- | --- |
+| #1596 | A Box can start with gates. A task never reads done while one is open. | Live on a private controller. |
+| #1597 | moor runs a gate's checks when the agent goes quiet. A failed check goes back to the agent. | Live. |
+| #1598 | The agent hands in evidence with `report_step`. A report that lacks a file is refused by name. | Live, with a real agent. |
+| #1599 | A gate can need its owner's yes. A no sends the owner's note to the agent. | Live. Three later fixes have tests only. |
+| #1600 | The Task page shows a gate list, an approval card and a stuck card. | Live, with screenshots read. |
+| #1601 | A workflow carries gates in place of a plan. Its run stays open until they pass. | Live, on draft pull requests in the fixture repo. |
+
+The build differs from the order of work in four ways.
+
+- A gate attaches to the Box, so one-off tasks and runs share one mechanism from the first step.
+- A workflow holds its gates in a column of its own until the definition exists. The step walker stays for workflows that have a plan.
+- A gate tries twice when no count is given. With one try, a failed check left the agent no chance to fix it.
+- moor tells the agent when each gate is in hand. Without that, the agent reported too early and was refused.
+
+The evidence flow was measured before and after. Before, four scenarios on one fixture pull request behaved correctly, in 3 to 4 minutes each. A run whose pull request failed its check still listed as finished. After, an agent told to write a false report and post nothing failed a check that reads GitHub. Its run waited on a person and never delivered.
+
 ## Decided
 
 The owner decided these on 2026-11-20 and 2026-11-21.
@@ -544,3 +566,4 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 ## Open questions
 
 1. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
+2. How does a run say what it found? A run that proves a pull request's check fails is a finished run with a bad finding. The run list shows both as finished.
