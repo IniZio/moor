@@ -119,7 +119,7 @@ fn nothing_asks(name: &str, status: &GateStatus) -> String {
         GateStatus::Failed { gate, why } => {
             format!("gate {gate} of Box {name} failed: {why}. Nothing asks you")
         }
-        GateStatus::Stuck { gate, why } => format!(
+        GateStatus::Stuck { gate, why, .. } => format!(
             "gate {gate} of Box {name} is stuck: {why}. Nothing asks for an answer; steer its \
              agent to reopen the gate"
         ),

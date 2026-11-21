@@ -135,6 +135,10 @@ A gate has a `name` and any of these.
 | `approval` | `owner` asks the workflow's owner to say yes or no after the checks. |
 | `max_tries` | How often the gate may be tried, 1 to 5; 2 when left out, so a failed check or an owner's no leaves the agent a chance to fix it. Write 1 for a gate with one try. |
 
+A check that reads GitHub with `gh api` goes through the Proxy as the agent does.
+The default rule has no entry for some reads, such as
+`GET /repos/{repo}/commits/*/statuses`. Add it to the workflow's `proxy.allow`.
+
 The gates open in order. A run freezes them into its Box when it fires, so an
 edit never changes a run in flight. The agent gets the prompt and the gates, and
 no steps. `list_workflows` shows the gates. Adding the workflow again

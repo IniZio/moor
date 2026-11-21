@@ -93,7 +93,7 @@ pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
         (Progress::NeedsYou, GateStatus::Open { gate, .. }) => {
             Some(format!("gate {gate}: waiting for your approval"))
         }
-        (Progress::NeedsYou, GateStatus::Stuck { gate, why }) => {
+        (Progress::NeedsYou, GateStatus::Stuck { gate, why, .. }) => {
             Some(format!("gate {gate} is stuck: {why}"))
         }
         (Progress::Failed, GateStatus::Failed { gate, why }) => {

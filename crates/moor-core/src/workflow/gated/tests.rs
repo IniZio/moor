@@ -27,8 +27,13 @@ fn open(gate: &str, try_n: u8, next: GateNext) -> GateStatus {
 }
 
 fn stuck(gate: &str) -> GateStatus {
+    stuck_at(gate, 1)
+}
+
+fn stuck_at(gate: &str, try_n: u8) -> GateStatus {
     GateStatus::Stuck {
         gate: id(gate),
+        try_n,
         why: "the agent went quiet".to_owned(),
     }
 }
@@ -160,14 +165,10 @@ fn a_box_that_is_gone_ends_a_run_with_gates_not_passed() {
 }
 
 #[test]
-fn a_run_stuck_at_its_gate_waits_at_the_try_it_was_at() {
+fn a_run_stuck_at_its_gate_waits_at_the_try_the_gate_ended_in() {
     let at = id("proof");
-    let standing = Standing {
-        at: (&at, 2),
-        ..stands(&at, false)
-    };
     assert_eq!(
-        gated_move(standing, &stuck("proof")),
+        gated_move(stands(&at, false), &stuck_at("proof", 2)),
         GatedMove::Wait {
             gate: id("proof"),
             try_n: 2

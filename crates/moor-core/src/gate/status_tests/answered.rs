@@ -32,6 +32,7 @@ fn a_failed_check_is_named_by_its_command() {
         got,
         stuck(
             "tests",
+            1,
             "out of tries: check 1 (`cargo test --workspace`) exited 101"
         )
     );
@@ -40,5 +41,5 @@ fn a_failed_check_is_named_by_its_command() {
         "out of tries: check 1 (`{}…`) lost its output twice",
         "x".repeat(60)
     );
-    assert_eq!(got, stuck("tests", &want));
+    assert_eq!(got, stuck("tests", 1, &want));
 }

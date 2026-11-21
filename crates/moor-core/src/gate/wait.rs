@@ -126,7 +126,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             }
             Some(w)
         }
-        GateStatus::Stuck { gate, why } => {
+        GateStatus::Stuck { gate, why, .. } => {
             let hint = "Send the agent a message to reopen the gate with fresh tries.";
             let mut w = blank(&gate, WaitKind::Stuck, hint);
             w.why = Some(why);

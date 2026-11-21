@@ -32,6 +32,8 @@ pub enum GateStatus {
     Stuck {
         /// The gate.
         gate: StepId,
+        /// The try it was at when it got stuck.
+        try_n: u8,
         /// Why.
         why: String,
     },
@@ -49,8 +51,8 @@ pub enum GateStatus {
 /// How a gate ended short of passing.
 #[derive(Debug)]
 enum End {
-    /// Waits for a person's steer.
-    Stuck(String),
+    /// Waits for a person's steer, at the try given.
+    Stuck(String, u8),
     /// Over.
     Failed(String),
 }
@@ -185,8 +187,9 @@ impl Walk<'_> {
         };
         let name = gate.name.clone();
         match &self.end {
-            Some(End::Stuck(why)) => GateStatus::Stuck {
+            Some(End::Stuck(why, try_n)) => GateStatus::Stuck {
                 gate: name,
+                try_n: *try_n,
                 why: why.clone(),
             },
             Some(End::Failed(why)) => GateStatus::Failed {
@@ -214,7 +217,7 @@ impl Walk<'_> {
             return;
         }
         match &self.end {
-            Some(End::Stuck(_)) => self.reopen(line),
+            Some(End::Stuck(..)) => self.reopen(line),
             Some(End::Failed(_)) => {}
             None => self.take(gate, line),
         }
@@ -343,7 +346,7 @@ impl Walk<'_> {
     /// The agent was quiet again after a reminder.
     fn quiet(&mut self, gate: &Gate, try_n: u8) {
         if self.waits(gate, try_n, GateNext::Agent) && self.tries.reminded {
-            self.end = Some(End::Stuck("the agent went quiet".to_owned()));
+            self.end = Some(End::Stuck("the agent went quiet".to_owned(), try_n));
         }
     }
 
@@ -373,7 +376,7 @@ impl Walk<'_> {
     fn fail(&mut self, gate: &Gate, why: &str) {
         self.tries.used += 1;
         if self.tries.used >= gate.max_tries.get() {
-            self.end = Some(End::Stuck(format!("out of tries: {why}")));
+            self.end = Some(End::Stuck(format!("out of tries: {why}"), self.tries.used));
         } else {
             self.tries.restart();
         }

@@ -147,7 +147,7 @@ fn closed(status: &GateStatus, report: &StepReport) -> StepReportValue {
             "Every gate has passed, so there is nothing to report for `{}`.",
             report.step
         )),
-        GateStatus::Stuck { gate, why } | GateStatus::Failed { gate, why } => refused(format!(
+        GateStatus::Stuck { gate, why, .. } | GateStatus::Failed { gate, why } => refused(format!(
             "Gate `{gate}` is not open: {why}. A person has to take it up. Nothing is recorded."
         )),
         GateStatus::Open { .. } => refused("A gate is open."),
