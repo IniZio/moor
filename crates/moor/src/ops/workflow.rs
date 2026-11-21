@@ -209,7 +209,14 @@ fn prepare(
             cause: cause.clone(),
             name,
             prompt,
-            first_step: w.plan.first().id.clone(),
+            first_step: w.gates.as_ref().map_or_else(
+                || w.plan.first().id.clone(),
+                |g| {
+                    g.iter()
+                        .next()
+                        .map_or_else(|| w.plan.first().id.clone(), |g| g.name.clone())
+                },
+            ),
             gates: w.gates.as_ref().map(Gates::docs),
         },
     })

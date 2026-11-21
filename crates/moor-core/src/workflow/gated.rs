@@ -56,7 +56,8 @@ pub enum GatedMove {
     Incomplete,
 }
 
-/// The try a wait at a stuck gate is recorded at: the gate has no try in hand then.
+/// The try a wait at a stuck gate is recorded at when the run is not at that gate: the gate has
+/// no try in hand then. A run at the gate keeps its try.
 const STUCK_TRY: u8 = 1;
 
 /// The move for a run that stands as `now` says, when its gates stand at `status`.
@@ -71,7 +72,11 @@ pub fn gated_move(now: Standing<'_>, status: &GateStatus) -> GatedMove {
         _ if !now.box_open => GatedMove::Incomplete,
         GateStatus::Stuck { gate, .. } if !now.waiting => GatedMove::Wait {
             gate: gate.clone(),
-            try_n: STUCK_TRY,
+            try_n: if now.at.0 == gate {
+                now.at.1
+            } else {
+                STUCK_TRY
+            },
         },
         GateStatus::Open {
             gate,

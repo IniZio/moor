@@ -14,6 +14,7 @@ use moor_schema::tables::{WorkflowRuns, Workflows};
 use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 
 pub(crate) use claim::OpenClaim;
+pub(in crate::store) use history::append_to_open_run;
 pub(crate) use put::Put;
 pub(crate) use runs::RunOfBox;
 

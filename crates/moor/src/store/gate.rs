@@ -89,6 +89,7 @@ impl Store {
                 ]),
         )?;
         waiting::note(&tx, id, at)?;
+        history::note(&tx, id, at)?;
         tx.commit()?;
         drop(writer);
         Ok(())
@@ -125,6 +126,7 @@ impl Store {
     }
 }
 
+mod history;
 #[cfg(test)]
 mod tests;
 mod waiting;

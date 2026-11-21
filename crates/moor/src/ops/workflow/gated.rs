@@ -102,11 +102,15 @@ impl Held<'_> {
             box_open: open,
             quiet,
         };
-        self.apply(gated_move(standing, &status), &lines)
+        self.apply(gated_move(standing, &status), (&status, &lines))
     }
 
-    /// Makes `m`, which the gates whose `lines` are given called for.
-    fn apply(&self, m: GatedMove, lines: &[GateLine]) -> Result<(), StoreError> {
+    /// Makes `m`, which the gates standing at `status` over `lines` called for.
+    fn apply(
+        &self,
+        m: GatedMove,
+        (status, lines): (&GateStatus, &[GateLine]),
+    ) -> Result<(), StoreError> {
         match m {
             GatedMove::Stay => Ok(()),
             GatedMove::Deliver => self.end(RunOutcome::Delivered {
@@ -121,23 +125,30 @@ impl Held<'_> {
             GatedMove::Incomplete => self.end(RunOutcome::Incomplete {
                 at: self.at.0.clone(),
             }),
+            // The line that put the gate in hand wrote its history, so the move writes none.
             GatedMove::Enter { gate, try_n } => self
                 .store
-                .step_workflow_run(
-                    self.run.id,
-                    (self.at, (&gate, try_n)),
-                    (&[entered(&gate, try_n)], self.now),
-                )
+                .step_workflow_run(self.run.id, (self.at, (&gate, try_n)), (&[], self.now))
                 .map(drop),
-            GatedMove::Wait { gate, try_n } => self
-                .store
-                .wait_workflow_run(
-                    self.run.id,
-                    (self.at, (&gate, try_n)),
-                    self.box_id,
-                    (&[entered(&gate, try_n)], self.now),
-                )
-                .map(drop),
+            GatedMove::Wait { gate, try_n } => {
+                let why = match status {
+                    GateStatus::Stuck { why, .. } => Some(why.clone()),
+                    _ => None,
+                };
+                let line = HistoryEntry::GateWaiting {
+                    step: gate.clone(),
+                    try_n,
+                    why,
+                };
+                self.store
+                    .wait_workflow_run(
+                        self.run.id,
+                        (self.at, (&gate, try_n)),
+                        self.box_id,
+                        (&[line], self.now),
+                    )
+                    .map(drop)
+            }
             GatedMove::Resume { gate, try_n } => {
                 let lines = [
                     HistoryEntry::Resumed {

@@ -158,3 +158,19 @@ fn a_box_that_is_gone_ends_a_run_with_gates_not_passed() {
         }
     }
 }
+
+#[test]
+fn a_run_stuck_at_its_gate_waits_at_the_try_it_was_at() {
+    let at = id("proof");
+    let standing = Standing {
+        at: (&at, 2),
+        ..stands(&at, false)
+    };
+    assert_eq!(
+        gated_move(standing, &stuck("proof")),
+        GatedMove::Wait {
+            gate: id("proof"),
+            try_n: 2
+        }
+    );
+}
