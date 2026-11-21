@@ -5,6 +5,7 @@ use moor_core::view::ShowView;
 use moor_core::workflow::StepId;
 use moor_core::{BoxName, ErrorKind, ShowReq, StartReq};
 
+use super::agent_install::install_world;
 use super::{repo_req, run, script_repo, world, World};
 use crate::testing::driver::FakeDriver;
 
@@ -95,4 +96,35 @@ fn a_start_of_an_open_box_keeps_its_gates_and_refuses_others() {
     assert_eq!(err.kind, ErrorKind::Refused);
     let kept = show(&w, Some("demo")).boxed.unwrap().gate.unwrap();
     assert_eq!(kept.gates, ["proof"]);
+}
+
+#[test]
+fn a_gated_boxs_first_message_carries_its_gates_and_a_plain_one_stays_bare() {
+    let (w, engine) = install_world("", None, false, FakeDriver::new());
+    let asked = StartReq {
+        prompt: Some("Fix the typo.".to_owned()),
+        ..with_gates("demo", vec![proof()])
+    };
+    run(&w.cx, &asked).unwrap();
+    let first = engine.launches().remove(0).prompt;
+    let text = first.text().unwrap();
+    assert!(
+        text.starts_with("Fix the typo.\n\nmoor holds this task open"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Gate `proof`: leave proof.md in .moor/artifacts/"),
+        "{text}"
+    );
+
+    let (w, engine) = install_world("", None, false, FakeDriver::new());
+    let plain = StartReq {
+        prompt: Some("Fix the typo.".to_owned()),
+        ..repo_req("demo")
+    };
+    run(&w.cx, &plain).unwrap();
+    assert_eq!(
+        engine.launches().remove(0).prompt.text(),
+        Some("Fix the typo.")
+    );
 }
