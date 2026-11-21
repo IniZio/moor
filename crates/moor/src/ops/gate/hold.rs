@@ -1,4 +1,4 @@
-//! What a Box with gates that are not passed holds back: its close, and what a person's steer
+//! What a Box with gates that can still move holds back: its close, and what a person's steer
 //! does to a stuck one.
 
 use moor_core::gate::{status, GateLine, GateStatus};
@@ -6,9 +6,11 @@ use moor_core::{BoxId, Warning};
 use moor_schema::tables::BoxGateLines;
 
 use crate::cx::Cx;
-use crate::store::{Store, StoreError};
+use crate::store::{RunOfBox, Store, StoreError};
 
-/// Whether Box `id` has gates and they are not all passed, so nobody may close it as unneeded.
+/// Whether the gates of Box `id` can still move, so nobody may close it as unneeded: one is open
+/// or stuck, and the Box's run, if it has one, has not ended. A Box whose gates failed for good or
+/// whose run ended falls back to the ordinary close rules.
 ///
 /// # Errors
 /// A store failure.
@@ -16,7 +18,11 @@ pub(crate) fn holds(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     let Some(gates) = store.box_gates(id)? else {
         return Ok(false);
     };
-    Ok(status(&gates, &store.gate_lines(id)?) != GateStatus::Passed)
+    if matches!(store.run_of_box(id)?, RunOfBox::Ended(_)) {
+        return Ok(false);
+    }
+    let now = status(&gates, &store.gate_lines(id)?);
+    Ok(matches!(now, GateStatus::Open { .. } | GateStatus::Stuck { .. }))
 }
 
 /// Writes `Reopened` for the gate of Box `id` that is stuck, after a steer reached its agent: a

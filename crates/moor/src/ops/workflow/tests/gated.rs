@@ -414,6 +414,23 @@ fn the_gate_pass_leaves_the_box_of_a_cancelled_run_alone() {
     assert!(store.gate_lines(old_box).unwrap().is_empty());
 }
 
+#[test]
+fn the_box_of_a_cancelled_gated_run_is_not_held_open_by_its_gates() {
+    let r = hooked();
+    let id = r.put_gated_for(&[proof()], true);
+    r.signed("opened", 65, OLD);
+    let old_box = r.one_at(id, 65, OLD).state.box_id().unwrap();
+    let store = r.cx.store().unwrap();
+    assert!(crate::ops::gate::hold::holds(store, old_box).unwrap());
+    r.pause(1_000);
+    r.signed("synchronize", 65, NEW);
+    assert!(cancelled(&r.one_at(id, 65, OLD)).is_some());
+    assert!(
+        !crate::ops::gate::hold::holds(store, old_box).unwrap(),
+        "the ordinary close rules decide"
+    );
+}
+
 impl Rig {
     /// Whether Box `id` holds gates.
     fn store_gates(&self, id: moor_core::BoxId) -> bool {

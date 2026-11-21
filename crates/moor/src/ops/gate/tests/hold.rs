@@ -130,6 +130,25 @@ fn auto_close_leaves_an_idle_box_whose_gate_is_stuck() {
 }
 
 #[test]
+fn auto_close_closes_an_idle_box_whose_gate_failed_for_good() {
+    let asks = moor_core::gate::GateDoc {
+        approval: Some(moor_core::gate::Approval::Owner),
+        ..gate("tests", &[], 1)
+    };
+    let f = fx(|_| vec![asks]);
+    let no = GateLine::Answered {
+        gate: StepId::parse("tests").unwrap(),
+        try_n: 1,
+        by: "me".to_owned(),
+        answer: moor_core::workflow::Answer::No,
+        note: String::new(),
+    };
+    write_line(&f, 1, &no);
+    assert!(matches!(f.standing().0, GateStatus::Failed { .. }));
+    assert!(closes_after_a_week(&f));
+}
+
+#[test]
 fn auto_close_closes_an_idle_box_whose_gates_passed() {
     let f = fx(|_| vec![gate("tests", &["true"], 1)]);
     write_line(&f, 1, &checked(0));
