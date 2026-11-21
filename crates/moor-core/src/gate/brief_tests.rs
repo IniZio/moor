@@ -29,6 +29,19 @@ fn gates() -> Gates {
 }
 
 #[test]
+fn the_first_message_says_how_to_reach_report_step_in_words_any_agent_follows() {
+    let text = gates().first_message("Fix the typo.");
+    assert!(
+        text.contains(
+            "report_step is a tool of the moor MCP server; load it first if your tools are \
+             loaded on demand."
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("ToolSearch"), "no one harness's tool: {text}");
+}
+
+#[test]
 fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
     let text = gates().first_message("Fix the typo.\n");
     assert!(

@@ -50,9 +50,8 @@ impl Gates {
             "{}{GATE_HEAD} The gates open in this order, one at a time, and the Box is done \
              only when all have passed. Report only the gate that is in hand: a report for any \
              other is refused. The first gate is in hand now. moor tells you when each gate is in \
-             hand. report_step is a tool of the `moor` MCP server; if it is \
-             a deferred tool, load it with ToolSearch first. Leave each evidence file in \
-             .moor/artifacts/.\n\n{}",
+             hand. report_step is a tool of the moor MCP server; load it first if your tools \
+             are loaded on demand. Leave each evidence file in .moor/artifacts/.\n\n{}",
             prompt.trim_end(),
             lines.join("\n")
         )
