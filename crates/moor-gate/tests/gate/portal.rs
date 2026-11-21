@@ -19,7 +19,11 @@ fn gates() -> Value {
 }
 
 fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value {
-    let gate = if name == "web/ask" { gates() } else { Value::Null };
+    let gate = if name == "web/ask" {
+        gates()
+    } else {
+        Value::Null
+    };
     json!({"gate": gate, "id": 1, "name": name, "repo": "acme/web", "issue": null, "prompt": "Fix the typo",
         "lifecycle": lifecycle, "session_state": "working", "state_reason": null,
         "base": "main", "branch": "moor/1-fix", "driver": null, "agent": null, "run": null,
@@ -306,7 +310,11 @@ fn a_box_with_gates_carries_them_to_the_list_and_its_page_as_show_sent_them() {
     let rows = json_of(&get(&w.addr, "/account/api/boxes", Some(&cookie)))["boxes"].clone();
     assert_eq!(rows[0]["gate"], gates());
     assert_eq!(rows[1]["gate"], Value::Null, "a Box without gates has none");
-    let page = json_of(&get(&w.addr, "/account/api/box?box=web%2Fask", Some(&cookie)));
+    let page = json_of(&get(
+        &w.addr,
+        "/account/api/box?box=web%2Fask",
+        Some(&cookie),
+    ));
     assert_eq!(page["gate"]["status"]["next"], "ask");
 }
 
