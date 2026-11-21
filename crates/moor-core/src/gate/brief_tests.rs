@@ -62,6 +62,18 @@ fn the_first_message_says_the_gates_go_in_order_and_that_moor_says_when_one_is_i
 }
 
 #[test]
+fn a_report_is_asked_for_a_one_line_note_of_what_was_done() {
+    let g = gates();
+    let brief = g.get(0).unwrap().brief();
+    assert!(brief.contains("a one-line note of what you did"), "{brief}");
+    let remind = g.get(0).unwrap().remind_steer();
+    assert!(
+        remind.contains("a one-line note of what you did"),
+        "{remind}"
+    );
+}
+
+#[test]
 fn the_hand_over_names_the_gate_that_passed_and_the_one_in_hand_with_its_brief() {
     let g = gates();
     let text = g

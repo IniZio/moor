@@ -49,7 +49,7 @@ impl Gate {
         let mut line = if self.evidence.is_some() {
             format!(
                 "- Gate `{name}`: leave {} in .moor/artifacts/, then call report_step with step \
-                 \"{name}\", result ok and those names.",
+                 \"{name}\", result ok, those names and a one-line note of what you did.",
                 names(self).join(", ")
             )
         } else {
@@ -90,8 +90,9 @@ impl Gate {
         let name = &self.name;
         format!(
             "Gate `{name}` has no report yet. Leave {} in .moor/artifacts/, then call \
-             report_step with step \"{name}\", result ok and those names. Or call it with \
-             result fail and a note that says why the gate cannot be passed.",
+             report_step with step \"{name}\", result ok, those names and a one-line note of what \
+             you did. Or call it with result fail and a note that says why the gate cannot be \
+             passed.",
             names(self).join(", ")
         )
     }
