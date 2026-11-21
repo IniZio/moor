@@ -89,6 +89,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if req.resume {
         return Err(relaunch::nothing_to_resume());
     }
+    gates::check_fresh(cx, req)?;
     let mut facts = gather(cx, req, user)?;
     let flags = Flags {
         model: req.model.clone(),
