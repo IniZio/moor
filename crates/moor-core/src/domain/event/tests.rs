@@ -528,7 +528,7 @@ fn a_steer_says_who_wrote_it_only_when_it_was_moor() {
         origin,
     };
     let moor = serde_json::to_value(sent(Origin::Moor)).unwrap();
-    assert_eq!(moor["origin"], "moor");
+    assert_eq!(moor.get("origin"), Some(&serde_json::json!("moor")));
     let person = serde_json::to_value(sent(Origin::Person)).unwrap();
     assert!(person.get("origin").is_none(), "{person}");
     let old = serde_json::json!({"session": "x", "message": "m", "submit_retried": false});

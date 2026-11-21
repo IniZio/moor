@@ -121,24 +121,6 @@ fn steer_awake(
     }
 }
 
-/// Sends `text` to the live agent of awake Box `row`, the way a steer does.
-pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result<(), CommandError> {
-    let req = SteerReq {
-        target: moor_core::request::BoxTarget::Id(row.id),
-        text: Some(text),
-        menu: None,
-        interrupt: false,
-        ask: None,
-    };
-    let mut slot = Slot::new(InboxKind::Note).by(Origin::Moor);
-    let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
-    slot.withdraw(store, row.id)?;
-    match sent? {
-        Attempt::Sent(_) => Ok(()),
-        Attempt::Gone(gone) => Err(gone.error),
-    }
-}
-
 /// The refusal for a Box with no agent to steer.
 fn no_agent(name: &str) -> CommandError {
     CommandError::new(
@@ -403,6 +385,7 @@ mod typed;
 pub(crate) use queue::{deliver, pass, Backoff};
 
 use choose::choose;
+pub(crate) use inbox::tell;
 use inbox::Slot;
 use lost::{bring_back, first_run_refusal, lost};
 use record::{delivered, idle, record, status_before, turn_before, Mark};

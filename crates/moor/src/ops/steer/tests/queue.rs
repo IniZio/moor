@@ -89,7 +89,9 @@ fn a_steer_from_moor_to_an_awake_agent_is_recorded_as_moors_when_sent() {
     let f = fx();
     let v = crate::ops::steer::run_as(&f.cx, &text("now"), Origin::Moor).unwrap();
     assert_eq!(v.delivery, Delivery::Delivered);
-    assert_eq!(steered(&f)[0]["origin"], serde_json::json!("moor"));
+    let sent = steered(&f);
+    let origin = sent.first().and_then(|p| p.get("origin"));
+    assert_eq!(origin, Some(&serde_json::json!("moor")));
 }
 
 #[test]

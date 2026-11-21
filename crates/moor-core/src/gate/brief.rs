@@ -27,10 +27,9 @@ pub fn split_owner_note(text: &str) -> Option<(String, &str)> {
     if !text.starts_with("The owner did not approve gate ") {
         return None;
     }
-    let at = text.find(OWNER_WROTE)?;
-    let rest = &text[at + OWNER_WROTE.len()..];
-    let end = rest.rfind(TRY_AGAIN)?;
-    Some((format!("{}{}", &text[..at], &rest[end..]), &rest[..end]))
+    let (head, rest) = text.split_once(OWNER_WROTE)?;
+    let (note, tail) = rest.rsplit_once(TRY_AGAIN)?;
+    Some((format!("{head}{TRY_AGAIN}{tail}"), note))
 }
 
 /// The evidence names of `gate`, as the agent reads them.

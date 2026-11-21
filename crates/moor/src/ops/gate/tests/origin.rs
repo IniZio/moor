@@ -1,4 +1,8 @@
 //! Who wrote what the agent was sent: moor's gate steers say so, a person's do not.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index what they just counted"
+)]
 
 use super::fx::{evidence_gate, fx, gate, Fx};
 

@@ -3,13 +3,13 @@
 use moor_core::domain::event::{Origin, MOOR_SENDER};
 use moor_core::domain::inbox::{Delivery, InboxId, InboxKind};
 use moor_core::seam::engine::{SessionRef, Steer, SteerOutcome};
-use moor_core::BoxId;
+use moor_core::{BoxId, SteerReq};
 
-use super::{is_exit, send};
+use super::{attempt, is_exit, send, Attempt};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::failpoint;
-use crate::store::{Launch, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// The inbox row a steer is sent from, made at its first send.
 pub(super) struct Slot {
@@ -149,5 +149,23 @@ impl Slot {
             store.withdraw(id, *row)?;
         }
         Ok(())
+    }
+}
+
+/// Sends `text` to the live agent of awake Box `row`, the way a steer does.
+pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result<(), CommandError> {
+    let req = SteerReq {
+        target: moor_core::request::BoxTarget::Id(row.id),
+        text: Some(text),
+        menu: None,
+        interrupt: false,
+        ask: None,
+    };
+    let mut slot = Slot::new(InboxKind::Note).by(Origin::Moor);
+    let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
+    slot.withdraw(store, row.id)?;
+    match sent? {
+        Attempt::Sent(_) => Ok(()),
+        Attempt::Gone(gone) => Err(gone.error),
     }
 }

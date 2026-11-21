@@ -1,3 +1,8 @@
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index what they just built"
+)]
+
 use serde_json::{json, Value};
 
 use super::*;
