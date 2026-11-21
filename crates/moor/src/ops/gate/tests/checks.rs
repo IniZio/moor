@@ -269,3 +269,24 @@ fn a_check_failure_not_yet_told_is_told_although_a_refusal_came_after_it() {
     f.pass();
     assert_eq!(f.told().len(), 1, "told once");
 }
+
+#[test]
+fn a_check_sees_the_env_of_the_run_the_agent_shell_sees() {
+    let f = fx(|_| {
+        vec![gate(
+            "posted",
+            &["test \"$MOOR_PULL_NUMBER\" = 65 && test \"$MOOR_PULL_REPO\" = o/n"],
+            1,
+        )]
+    });
+    let pull = ("MOOR_PULL_NUMBER", "65".to_owned());
+    let repo = ("MOOR_PULL_REPO", "o/n".to_owned());
+    let over = moor_core::config::with_env(None, &[pull, repo]).unwrap();
+    f.cx.store()
+        .unwrap()
+        .set_box_config_override(f.id, Some(&over))
+        .unwrap();
+    f.quiet();
+    f.pass();
+    assert_eq!(f.exits(), [("posted".to_owned(), Some(0))]);
+}
