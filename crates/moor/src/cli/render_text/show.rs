@@ -111,7 +111,10 @@ fn write_progress(out: &mut String, view: &Value, indent: &str) {
 /// What a stuck gate's card carries beyond its reason, indented under the line: the failing
 /// command and the end of its output, or the evidence names that were missing, and the hint.
 fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
-    let Some(card) = progress.pointer("/needs/gate").filter(|c| field(c, "kind") == "stuck") else {
+    let Some(card) = progress
+        .pointer("/needs/gate")
+        .filter(|c| field(c, "kind") == "stuck")
+    else {
         return;
     };
     let pad = format!("{}  ", " ".repeat(indent.chars().count()));
