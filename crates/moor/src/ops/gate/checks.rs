@@ -11,7 +11,7 @@
 
 use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
 use moor_core::request::BoxTarget;
-use moor_core::workflow::StepId;
+use moor_core::workflow::{Answer, StepId};
 use moor_core::{BoxId, SteerReq};
 use moor_schema::tables::BoxGateLines;
 
@@ -117,8 +117,8 @@ const fn of_this_try(line: &GateLine, try_n: u8) -> bool {
     )
 }
 
-/// The place of the line that failed a check and ended the try before the one in hand, when tries
-/// remain, and what the agent is told of it. The try in hand may have lines of its own after the
+/// The place of the line that failed a check, or the owner's no, which ended the try before the one
+/// in hand, when tries remain, and what the agent is told of it. The try in hand may have lines of its own after the
 /// failure, such as a refused report.
 fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
     let GateStatus::Open { gate, try_n, .. } = status(gates, lines) else {
@@ -129,28 +129,38 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
         .enumerate()
         .rev()
         .find(|(_, l)| !of_this_try(l, try_n))?;
-    let (failed_try, check, why, tail) = match line {
+    let waiting = gates.iter().find(|g| g.name == gate)?;
+    let (failed_try, text) = match line {
         GateLine::Checked {
             gate: g,
             try_n,
             check,
             exit,
             tail,
-        } if g == &gate && *exit != 0 => (*try_n, *check, format!("exited {exit}"), tail.as_str()),
+        } if g == &gate && *exit != 0 => (
+            *try_n,
+            waiting.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
+        ),
         GateLine::CheckLost {
             gate: g,
             try_n,
             check,
-        } if g == &gate => (*try_n, *check, "lost its output twice".to_owned(), ""),
+        } if g == &gate => (
+            *try_n,
+            waiting.failed_check_steer(*check, ("lost its output twice", "")),
+        ),
+        GateLine::Answered {
+            gate: g,
+            try_n,
+            answer: Answer::No,
+            note,
+            ..
+        } if g == &gate => (*try_n, waiting.owner_no_steer(note)),
         _ => return None,
     };
     if failed_try + 1 != try_n {
         return None;
     }
-    let text = gates
-        .iter()
-        .find(|g| g.name == gate)?
-        .failed_check_steer(check, (&why, tail));
     Some((at, text))
 }
 
@@ -240,7 +250,7 @@ pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
 }
 
 /// Tells the agent of Box `id` what failed, when its newest line ended a try.
-fn tell(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+pub(super) fn tell(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let (Some(row), Some(gates)) = (store.box_row(id)?, store.box_gates(id)?) else {
         return Ok(());
     };

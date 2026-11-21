@@ -13,6 +13,18 @@ pub struct GateView {
     pub wait: Option<Wait>,
 }
 
+/// Result of `gate-answer`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct GateAnswerValue {
+    /// Box name.
+    #[serde(rename = "box")]
+    pub box_name: String,
+    /// The gate answered.
+    pub gate: String,
+    /// What the answer did, in a sentence.
+    pub outcome: String,
+}
+
 impl GateView {
     /// The view of `gates` after `lines`, oldest first.
     #[must_use]

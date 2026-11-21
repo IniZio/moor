@@ -79,6 +79,7 @@ impl Request {
             }
             Self::WaitEvents(r) => r.boxes.iter().map(named).collect(),
             Self::Steer(r) => target(&r.target),
+            Self::GateAnswer(r) => target(&r.target),
             Self::Attach(r) => target(&r.target),
             Self::Exec(r) => target(&r.target),
             Self::ForwardOpen(r) => target(&r.target),

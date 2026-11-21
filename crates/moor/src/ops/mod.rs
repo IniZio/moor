@@ -170,6 +170,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Pulls(r) => to_value(&pulls::run(cx, &r)?),
         Request::CloseFailed(r) => to_value(&close_failed::run(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
+        Request::GateAnswer(r) => to_value(&gate::answer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
         Request::OpenSession(r) => to_value(&open_session::run(cx, &r)?),
         Request::OpenHostSession(r) => to_value(&host_session::open(cx, &r)?),

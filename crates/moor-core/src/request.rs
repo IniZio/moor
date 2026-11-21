@@ -21,6 +21,8 @@ mod files;
 pub use files::{BoxRsyncReq, CpReq};
 mod forward;
 pub use forward::{ForwardCloseReq, ForwardOpenReq, ForwardReq};
+mod gate_answer;
+pub use gate_answer::GateAnswerReq;
 mod inspect;
 pub use inspect::{ChangesReq, InspectReq};
 mod placement;
@@ -84,6 +86,8 @@ pub enum Request {
     WaitEvents(WaitEventsReq),
     /// Send input to a box's agent.
     Steer(SteerReq),
+    /// Answer yes or no to the gate of a Box that asks its owner.
+    GateAnswer(GateAnswerReq),
     /// End a Box's live agent session and keep the Box.
     EndSession(EndSessionReq),
     /// Open a fresh agent session on a ready box, seeded with a first prompt.

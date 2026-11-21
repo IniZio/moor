@@ -21,6 +21,7 @@ fn the_tools_are_listed() {
         [
             "add_webhook",
             "add_workflow",
+            "answer_gate",
             "answer_run",
             "box_status",
             "close_box",
