@@ -8,6 +8,11 @@ holds no job-specific logic. A dependency update is one prompt like any other.
 The proof is four dependency-check workflows on the team cluster, one of them
 on `IniZio/moor-pilot-example`.
 
+> **Status.** This page describes the step plan as built. The
+> [position spec](position.md) proposes to replace it with a definition,
+> capabilities and ordered gates. Its "What retires" table maps each part of
+> this page to what replaces it. Nothing here changes until that work ships.
+
 ## Why
 
 Today a workflow is one prompt, and a run is finished once the agent has been
