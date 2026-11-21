@@ -209,14 +209,7 @@ fn prepare(
             cause: cause.clone(),
             name,
             prompt,
-            first_step: w.gates.as_ref().map_or_else(
-                || w.plan.first().id.clone(),
-                |g| {
-                    g.iter()
-                        .next()
-                        .map_or_else(|| w.plan.first().id.clone(), |g| g.name.clone())
-                },
-            ),
+            first_step: gated::first_step(w.gates.as_ref(), w.plan.first().id.clone()),
             gates: w.gates.as_ref().map(Gates::docs),
         },
     })
@@ -358,9 +351,13 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
                     }),
                     _ => RunState::Running {
                         box_id: row.id,
-                        at: store
-                            .run_plan(run.id, &w.prompt)
-                            .map_or_else(|_| w.plan.first().id.clone(), |p| p.first().id.clone()),
+                        at: gated::first_step(
+                            store.box_gates(row.id).ok().flatten().as_ref(),
+                            store.run_plan(run.id, &w.prompt).map_or_else(
+                                |_| w.plan.first().id.clone(),
+                                |p| p.first().id.clone(),
+                            ),
+                        ),
                         try_n: 1,
                     },
                 }

@@ -8,7 +8,7 @@
 
 use moor_core::decide::workflow::{run_verdict, RunVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::gate::{status, GateLine, GateNext, GateStatus};
+use moor_core::gate::{status, GateLine, GateNext, GateStatus, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
     gated_move, GatedMove, HistoryEntry, RunOutcome, RunState, Standing, StepId, WorkflowRun,
@@ -204,6 +204,13 @@ impl Held<'_> {
             RunVerdict::Running | RunVerdict::Finished => Ok(false),
         }
     }
+}
+
+/// The step a run starts at: the first gate of its Box when it has gates, else `plan_first`.
+pub(super) fn first_step(gates: Option<&Gates>, plan_first: StepId) -> StepId {
+    gates
+        .and_then(|g| g.iter().next())
+        .map_or(plan_first, |g| g.name.clone())
 }
 
 /// The line for a run that reaches `gate`, try `try_n`.

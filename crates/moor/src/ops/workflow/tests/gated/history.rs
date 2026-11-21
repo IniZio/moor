@@ -4,10 +4,14 @@
     reason = "a test indexes the JSON it just read"
 )]
 
+use std::cell::RefCell;
+
 use moor_core::gate::{GateDoc, GateLine};
 use moor_core::workflow::{StepReport, StepResult, WorkflowId};
 
+use super::super::FIRST_DUE;
 use super::{proof, reported, rig, step, Rig};
+use crate::ops::workflow::{resolve_interrupted, tick};
 
 /// The gate `done`: the agent leaves `posted.md`, and a check passes.
 fn done() -> GateDoc {
@@ -190,4 +194,39 @@ fn gone_quiet_at(id: WorkflowId, r: &Rig, gate: &str, try_n: u8) {
             try_n,
         },
     );
+}
+
+#[test]
+fn a_recovered_run_of_a_gated_workflow_starts_at_its_first_gate() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put_gated(&[proof(), done()]);
+    r.advance_to(FIRST_DUE + 1_000);
+    let job = RefCell::new(None);
+    tick(&r.cx, (&|j| *job.borrow_mut() = Some(j), &|_| {}), &|| {
+        false
+    });
+    let job = job.into_inner().unwrap();
+    let req = moor_core::StartReq {
+        gates: job.firing.gates.clone().map(Box::new),
+        placement: moor_core::decide::schedule::Placement::FirstOnly,
+        cold: false,
+        config: None,
+        name: job.firing.name.clone(),
+        prompt: Some(job.firing.prompt.clone()),
+        issue: None,
+        base: None,
+        model: None,
+        node: None,
+        no_agent: false,
+        resume: false,
+        repo: Some(job.firing.repo),
+        also: None,
+        parent: None,
+        identity: None,
+    };
+    crate::ops::start::run(&r.cx, &req).unwrap();
+    resolve_interrupted(&r.cx);
+    assert_eq!(r.at(id), ("running", ("proof".to_owned(), 1)));
+    assert_eq!(r.told(id), ["queued", "entered proof 1"]);
 }
