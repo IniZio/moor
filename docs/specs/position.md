@@ -206,9 +206,20 @@ Names that span files are hard to follow. Three rules keep that small.
 
 Files are for agents and for the few who edit them. People read pictures. moor draws three, all from the same definition.
 
-- **The flow of a unit.** Cards in order, top to bottom. They are the trigger, each gate, each action rule that waits, and the result. A card shows a kind, a title and one plain sentence.
+- **The flow of a unit.** One flowchart, cards top to bottom. They are the trigger, each gate and the result. A card shows a kind, a title and one plain sentence.
 - **A task on that flow.** The same cards with a state each. The states are completed, in progress, waiting for you, upcoming, skipped and failed. The agent's own plan items sit between the gates.
 - **A proposal on that flow.** The same cards with the changed ones marked.
+
+Above the flowchart sits a short summary in sentences, with the key facts underlined. Every card and every underlined fact opens a detail panel.
+
+| Card | Its detail shows |
+| --- | --- |
+| Trigger | The schedule in words, the next runs, the repos, and who the tasks act as |
+| Gate | What moor checks, each repo's command for a check, who must say yes, and the tries |
+| Gate, on a task | The same list with a state per item, the evidence files, and each attempt |
+| Asked card | The source sentence, and that moor does not check it |
+| Result | What is handed back, and that review happens on GitHub |
+| Changed card, on a proposal | The before and after text, and the tasks that led to it |
 
 Rules for the pictures.
 
@@ -418,6 +429,7 @@ The owner decided this on 2026-11-20.
 - Gates are part of the definition. moor fixes one gate mechanism and the safety floor. Decided on 2026-11-21.
 - An observer proposes changes to prose only, and a person accepts them. A proposal shows a plan of what it changes, as Terraform does. Decided on 2026-11-21.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
+- One flowchart serves the definition, a running task and a proposal. A summary in sentences sits above it, and every card opens its detail. Decided on 2026-11-21.
 - The definition is YAML and Markdown, not TypeScript. People read pictures that moor draws from it. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
