@@ -2,8 +2,8 @@
 
 use crate::artifact::ArtifactFile;
 use crate::workflow::{
-    EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX,
-    EVIDENCE_NAME_MAX, NOTE_MAX,
+    Evidence, EvidenceName, Step, StepKind, StepReport, StepResult, EVIDENCE_MAX,
+    EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,
 };
 
 /// Whether `report` of `step` passes, given `index`, the top-level regular files of the Box's
@@ -24,6 +24,70 @@ pub fn code_gate(
     report: &StepReport,
     index: &[ArtifactFile],
 ) -> Result<(), Vec<String>> {
+    let mut problems = limit_problems(report);
+    let said_why = !report.note.trim().is_empty();
+    match (&step.kind, report.result) {
+        (StepKind::Check { .. } | StepKind::Approve { .. }, _) => {
+            problems.push(format!(
+                "step {} is not reported by the agent; moor runs it",
+                step.id
+            ));
+        }
+        (_, StepResult::Fail) => problems.extend(fail_problem(said_why)),
+        (StepKind::Deliver { .. }, StepResult::Ok) => {
+            if !said_why {
+                problems
+                    .push("a deliver report needs a note: it becomes the run's result".to_owned());
+            }
+        }
+        (StepKind::Work { evidence, .. }, StepResult::Ok) => {
+            for name in evidence.names() {
+                problems.extend(evidence_problems(name, index));
+            }
+        }
+    }
+    verdict(problems)
+}
+
+/// Whether `report` of a gate that asks for `evidence` passes, given `index` as for
+/// [`code_gate`]: the same limits, a note on a `fail` report, and each evidence name matching
+/// a file that is not empty and not too large.
+///
+/// # Errors
+/// What is missing, too small or too large, one line each.
+pub fn evidence_gate(
+    evidence: Option<&Evidence>,
+    report: &StepReport,
+    index: &[ArtifactFile],
+) -> Result<(), Vec<String>> {
+    let mut problems = limit_problems(report);
+    match report.result {
+        StepResult::Fail => problems.extend(fail_problem(!report.note.trim().is_empty())),
+        StepResult::Ok => {
+            for name in evidence.iter().flat_map(|e| e.names()) {
+                problems.extend(evidence_problems(name, index));
+            }
+        }
+    }
+    verdict(problems)
+}
+
+/// Where `problems` is empty the report passes.
+fn verdict(problems: Vec<String>) -> Result<(), Vec<String>> {
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems)
+    }
+}
+
+/// The line a `fail` report earns when it says nothing of why.
+fn fail_problem(said_why: bool) -> Option<String> {
+    (!said_why).then(|| "a fail report needs a note that says why".to_owned())
+}
+
+/// What is over a limit in `report`, whatever it reports.
+fn limit_problems(report: &StepReport) -> Vec<String> {
     let mut problems = Vec::new();
     if report.note.len() > NOTE_MAX {
         problems.push(format!(
@@ -42,36 +106,7 @@ pub fn code_gate(
             "an evidence name is longer than {EVIDENCE_NAME_MAX} bytes"
         ));
     }
-    let said_why = !report.note.trim().is_empty();
-    match (&step.kind, report.result) {
-        (StepKind::Check { .. } | StepKind::Approve { .. }, _) => {
-            problems.push(format!(
-                "step {} is not reported by the agent; moor runs it",
-                step.id
-            ));
-        }
-        (_, StepResult::Fail) => {
-            if !said_why {
-                problems.push("a fail report needs a note that says why".to_owned());
-            }
-        }
-        (StepKind::Deliver { .. }, StepResult::Ok) => {
-            if !said_why {
-                problems
-                    .push("a deliver report needs a note: it becomes the run's result".to_owned());
-            }
-        }
-        (StepKind::Work { evidence, .. }, StepResult::Ok) => {
-            for name in evidence.names() {
-                problems.extend(evidence_problems(name, index));
-            }
-        }
-    }
-    if problems.is_empty() {
-        Ok(())
-    } else {
-        Err(problems)
-    }
+    problems
 }
 
 /// What is wrong with the files `name` asks for.

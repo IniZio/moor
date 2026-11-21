@@ -56,6 +56,19 @@ fn what_claude_or_another_agent_added_is_not_a_prompt() {
 }
 
 #[test]
+fn a_first_message_with_gates_is_not_the_persons() {
+    let doc = crate::gate::GateDoc {
+        name: "proof".to_owned(),
+        evidence: vec!["proof.md".to_owned()],
+        checks: Vec::new(),
+        approval: None,
+        max_tries: None,
+    };
+    let gates = crate::gate::Gates::parse(&[doc]).unwrap();
+    assert_eq!(prompt(&user(&json!(gates.first_message("Fix it.")))), None);
+}
+
+#[test]
 fn a_prompt_moor_built_is_not_the_persons() {
     assert_eq!(prompt(&user(&json!(draft_prompt("Bump the deps.")))), None);
     assert_eq!(

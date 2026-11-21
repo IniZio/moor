@@ -211,5 +211,5 @@ pub use advance::{
     CHECK_LOSSES,
 };
 pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
-pub use gate::code_gate;
+pub use gate::{code_gate, evidence_gate};
 pub use wait::{waited_millis, workflow_unanswered, Unanswered, WAIT_LIMIT};

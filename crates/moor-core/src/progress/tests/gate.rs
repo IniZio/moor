@@ -14,6 +14,27 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
     b
 }
 
+#[test]
+fn a_gated_boxs_first_message_shows_the_persons_words_without_the_preamble() {
+    let gates = crate::gate::Gates::parse(&[crate::gate::GateDoc {
+        name: "proof".to_owned(),
+        evidence: vec!["proof.md".to_owned()],
+        checks: Vec::new(),
+        approval: None,
+        max_tries: None,
+    }])
+    .unwrap();
+    let start = gates.first_message("Fix the typo.");
+    let events = [
+        ev(1, "steered", "t", json!({"message": start})),
+        ev(2, "steered", "t", json!({"message": "keep going"})),
+    ];
+    let [first, second] = timeline(&events).try_into().unwrap();
+    assert_eq!(first.text, "Fix the typo.");
+    assert!(!first.text.contains("report_step"));
+    assert_eq!(second.text, "keep going");
+}
+
 fn proof() -> StepId {
     StepId::parse("proof").unwrap()
 }

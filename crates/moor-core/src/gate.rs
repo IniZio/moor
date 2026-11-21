@@ -9,6 +9,9 @@ use schemars::JsonSchema;
 
 use crate::workflow::{Evidence, EvidenceName, StepId, Tries, EVIDENCE_NAMES_MAX};
 
+mod brief;
+#[cfg(test)]
+mod brief_tests;
 mod line;
 mod status;
 #[cfg(test)]
@@ -16,6 +19,7 @@ mod status_tests;
 #[cfg(test)]
 mod tests;
 
+pub use brief::split_gate_preamble;
 pub use line::GateLine;
 pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
 

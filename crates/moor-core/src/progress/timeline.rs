@@ -5,6 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::changes::{RepoReceipt, Tally};
+use crate::gate::split_gate_preamble;
 use crate::progress::transcript::{Sent, Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
@@ -247,7 +248,10 @@ fn words(e: &EventView) -> String {
     let p = &e.payload;
     let own = match e.kind.as_str() {
         "agent_said" | "agent_doing" => field(p, &["text"]).map(str::to_owned),
-        "steered" => field(p, &["message"]).map(|m| split_plan_first(m).unwrap_or(m).to_owned()),
+        "steered" => field(p, &["message"]).map(|m| {
+            let asked = split_plan_first(m).unwrap_or(m);
+            split_gate_preamble(asked).unwrap_or(asked).to_owned()
+        }),
         "needs_input" => Some(
             field(p, &["question"]).map_or_else(|| "Needs your input".to_owned(), str::to_owned),
         ),
