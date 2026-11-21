@@ -148,7 +148,7 @@ moor takes Warp's shape and keeps its own proof.
 
 It lives in moor itself. No project repo is touched and no extra repo is created. moor keeps every version. A change is a proposal with a diff. It applies when a person accepts it in the portal. A revert rolls it back.
 
-moor can hold the files as a git repository inside its own store. That gives versions, diffs and reverts with a stock tool.
+Each file is rows in moor's store, one per revision, as repo config is today. A proposal is a revision that waits for a yes. A revert writes an old revision as the new one. No git repository is involved, so the store needs no volume.
 
 ```
 definition/
@@ -363,16 +363,16 @@ The owner decided this on 2026-11-20.
 
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
+- The definition is revision rows in the store, not a git repository. Decided on 2026-11-21.
 
 ## Open questions
 
 1. Does moor fix only the gates, and leave the shape of work to prose in the definition?
 2. Does an observer propose changes, limited to prose, for a person to accept?
-3. Does moor keep the definition as a git repository inside its store?
-4. Is the definition YAML and Markdown only, with no code?
-5. Does repo config become files in the definition, with the same versions and proposals?
-6. Does an automation name the person its tasks act as?
-7. May the done gate use a judge that runs in the Box on the task owner's token?
-8. Does the requester approve a plan that waits?
-9. Does a task act as the person steering it, as Hopper does?
-10. Does moor design for anyone outside the team, such as a client?
+3. Is the definition YAML and Markdown only, with no code?
+4. Does repo config become files in the definition, with the same versions and proposals?
+5. Does an automation name the person its tasks act as?
+6. May the done gate use a judge that runs in the Box on the task owner's token?
+7. Does the requester approve a plan that waits?
+8. Does a task act as the person steering it, as Hopper does?
+9. Does moor design for anyone outside the team, such as a client?
