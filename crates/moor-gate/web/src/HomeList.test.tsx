@@ -87,3 +87,32 @@ test('the filter line offers the repos that have tasks and keeps the grouping wh
 	expect(links).toContainEqual(['All repos', '#/?grp=repo']);
 	expect(links).toContainEqual(['state', '#/']);
 });
+
+const theirs = [
+	row('mine', 'acme/web', { state: 'needs_you' }),
+	row('ana', 'acme/web', { state: 'needs_you', owner: 'ana@example.com' }),
+	row('bo', 'acme/api', { state: 'done', owner: 'bo@example.com' }),
+];
+
+test('the filter offers my tasks and everyone\'s, and keeps the choice in the address', () => {
+	const links = (hash: string) => all(HomeListView({ rows: theirs, now: NOW, hash }), 'a').filter((a) => !('data-row' in a.props));
+	const mine = links('#/').find((a) => textOf(a) === 'Mine');
+	const everyone = links('#/').find((a) => textOf(a) === 'Everyone');
+	expect(mine?.props.href).toBe('#/');
+	expect(everyone?.props.href).toBe('#/?who=everyone');
+	expect(mine?.props['aria-current']).toBe('true');
+	const on = links('#/?who=everyone').find((a) => textOf(a) === 'Everyone');
+	expect(on?.props['aria-current']).toBe('true');
+});
+
+test('under Everyone another person\'s task names its owner, waits under Working, and offers no peek', () => {
+	const view = HomeListView({ rows: theirs, now: NOW, hash: '#/?who=everyone' });
+	const heads = all(view, 'h2').map((h) => textOf(h).trim());
+	expect(heads).toContain('Needs you · 1');
+	expect(heads).toContain('Working · 1');
+	const ana = rowsOf(view).find((a) => textOf(a).includes('Task ana'));
+	expect(textOf(ana)).toContain('ana@example.com');
+	expect(ana?.props['data-peek']).toBeUndefined();
+	const own = rowsOf(view).find((a) => textOf(a).includes('Task mine'));
+	expect(textOf(own)).not.toContain('@');
+});

@@ -4,7 +4,7 @@ import { useEffect } from 'preact/hooks';
 import type { BoxRow } from './api';
 import { gateLine, peekable } from './gate';
 import { Glyph, STATES } from './Glyph';
-import { type Grouping, homeFilter, peekOf, withQuery } from './hashQuery';
+import { type Grouping, homeFilter, peekOf, type Whose, whoseHome, withQuery } from './hashQuery';
 
 /** A done Box idle this long moves to the Settled shelf. */
 const SETTLE_MS = 7 * 24 * 3600 * 1000;
@@ -12,10 +12,11 @@ const SETTLE_MS = 7 * 24 * 3600 * 1000;
 /** Which list a Box sits in. */
 type Group = 'needs' | 'working' | 'done' | 'settled';
 
+/** Another person's task that waits on them is still working, as far as the reader goes. */
 function groupOf(t: BoxRow, now: number): Group {
 	switch (t.state) {
 		case 'needs_you':
-			return 'needs';
+			return t.owner ? 'working' : 'needs';
 		case 'working':
 		case 'setting_up':
 		case 'queued':
@@ -92,7 +93,7 @@ export function RepoCell({ repos, only }: { repos: string[]; only: string }) {
 function Row({ t, now, only, quiet, peeking }: { t: BoxRow; now: number; only: string; quiet?: boolean; peeking?: boolean }) {
 	const s = STATES[t.state];
 	const gated = t.state === 'needs_you' || t.failed ? gateLine(t.gate) : null;
-	const askable = peekable(t);
+	const askable = !t.owner && peekable(t);
 	return (
 		<a
 			class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}${peeking ? ' t-peeking' : ''}`}
@@ -106,7 +107,10 @@ function Row({ t, now, only, quiet, peeking }: { t: BoxRow; now: number; only: s
 			<span class="t-pr" title={t.pr ? `${t.pr.repo}#${t.pr.number}` : undefined}>
 				{t.pr ? `PR #${t.pr.number}` : ''}
 			</span>
-			<span class="t-title">{t.title}</span>
+			<span class="t-title">
+				{t.title}
+				{t.owner && <span class="t-owner"> · {t.owner}</span>}
+			</span>
 			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
 				{t.failed && !gated && <span class="t-failword">failed </span>}
@@ -143,9 +147,18 @@ function Choice({ href, on, children }: { href: string; on: boolean; children: C
 	);
 }
 
-function Filters({ hash, repos, repo, grp }: { hash: string; repos: string[]; repo: string; grp: Grouping }) {
+function Filters({ hash, repos, repo, grp, who }: { hash: string; repos: string[]; repo: string; grp: Grouping; who: Whose }) {
 	return (
 		<div class="t-filters">
+			<span>
+				<Choice href={withQuery(hash, { who: '' })} on={who === 'mine'}>
+					Mine
+				</Choice>{' '}
+				·{' '}
+				<Choice href={withQuery(hash, { who: 'everyone' })} on={who === 'everyone'}>
+					Everyone
+				</Choice>
+			</span>
 			<details class="t-rmenu" key={repo}>
 				<summary>{repo || 'All repos'} ▾</summary>
 				<div class="t-rmenu-pop">
@@ -196,7 +209,7 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 			<p class="t-hint muted">
 				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open · <kbd>space</kbd> peek
 			</p>
-			<Filters hash={bare} repos={known} repo={repo} grp={filter.grp} />
+			<Filters hash={bare} repos={known} repo={repo} grp={filter.grp} who={whoseHome(hash)} />
 			{filter.grp === 'repo' ? (
 				stacks.map((s) =>
 					s.rows.length ? <Section key={s.name} tone="repo" heading={s.name ? <RepoName repo={s.name} /> : 'No repo'} rows={s.rows} now={now} only={repo} peeking={peeking} /> : null,

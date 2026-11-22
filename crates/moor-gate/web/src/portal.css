@@ -150,6 +150,9 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-filters a { color: var(--moor-color-text-muted); text-decoration: none; }
 .t-filters a:hover { color: var(--moor-color-text); }
 .t-filters a[aria-current] { color: var(--moor-color-text); font-weight: 650; }
+.t-owner { color: var(--moor-color-text-muted); font-weight: 400; }
+.t-readonly { font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-readonly-note { margin: var(--moor-space-2) 0 0; font-size: 0.8125rem; }
 .t-rmenu { position: relative; }
 .t-rmenu summary { list-style: none; cursor: pointer; }
 .t-rmenu summary::-webkit-details-marker { display: none; }

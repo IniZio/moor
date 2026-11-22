@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, boxList, type Entry, failure, toError } from './api';
 import { TurnLine } from './Changes';
+import { whoseHome } from './hashQuery';
 import { HomeListView, useMenuDismiss } from './HomeList';
 import { Markdown } from './Markdown';
 import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
@@ -51,7 +52,16 @@ export function useBoxes() {
 	return usePoll(boxList, 'home');
 }
 
+/** The Tasks home: the person's own tasks from the page's shared poll, or everyone's from a poll of its own, so others' tasks never reach the switcher or the Inbox. */
 export function Home({ boxes, hash }: { boxes: Boxes; hash: string }) {
+	return whoseHome(hash) === 'everyone' ? <EveryonesHome hash={hash} /> : <HomeRows boxes={boxes} hash={hash} />;
+}
+
+function EveryonesHome({ hash }: { hash: string }) {
+	return <HomeRows boxes={usePoll(() => boxList(true), 'everyone')} hash={hash} />;
+}
+
+function HomeRows({ boxes, hash }: { boxes: Boxes; hash: string }) {
 	const { value, error, now } = boxes;
 	useMenuDismiss();
 	if (!value) {

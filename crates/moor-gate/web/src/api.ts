@@ -452,6 +452,8 @@ const BoxRowFields = v.object({
 	failed: v.optional(v.boolean(), false),
 	/** Whether setup failed, so it can be run again. */
 	retryable: v.optional(v.boolean(), false),
+	/** Who the task is for, when it is another person's: read-only here. */
+	owner: v.nullish(v.string()),
 });
 
 const BoxRowSchema = v.pipe(BoxRowFields, v.transform(spoken));
@@ -534,8 +536,10 @@ export type Clipped = v.InferOutput<typeof BodySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
 export type Tally = v.InferOutput<typeof TallySchema>;
 
-export async function boxList(): Promise<BoxRow[]> {
-	return (await answer(await fetch('/account/api/boxes'), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
+/** The person's open tasks, or every person's with `everyone`. */
+export async function boxList(everyone = false): Promise<BoxRow[]> {
+	const path = everyone ? '/account/api/boxes?who=everyone' : '/account/api/boxes';
+	return (await answer(await fetch(path), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
 }
 
 /** Starts a Box as the signed-in person; answers the Box's name once it exists. */
