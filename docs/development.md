@@ -91,7 +91,7 @@ In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
 | `make test` | The same as `make unit`. |
-| `make ci` | `audit`, `lint`, then `test`. |
+| `make ci` | Every Linux gate CI runs, in the order `audit`, `chart`, `web`, `lint`, `unit`, then the Postgres, S3, and egress tests. It needs helm, herdr-core, bun, tinyproxy, and Docker, and checks for them first. Pass `BASE=<ref>` on a stacked branch. GitHub alone still covers the macOS fronts, the image build with the Box smoke, and the release build. |
 | `make overlap BASE=<ref> [HEAD=<ref>] [FILES="glob ..."]` | Lists open pull requests that touch the same files and are not yet in `BASE`. |
 
 Run `make overlap` before you branch new work and before you rebase a stack.

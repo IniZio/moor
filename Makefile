@@ -12,7 +12,7 @@ PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
 MOOR_TEST_S3_PORT ?= 9000
 export MOOR_TEST_S3_PORT
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
 
 help:
 	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
@@ -155,10 +155,27 @@ overlap:
 coverage:
 	cargo llvm-cov --workspace --locked
 
-ci:
+ci: ci-tools
 	$(MAKE) audit
+	$(MAKE) chart
+	$(MAKE) web
 	$(MAKE) lint
-	$(MAKE) test
+	$(MAKE) unit
+	$(MAKE) dev-db
+	$(MAKE) unit-pg
+	$(MAKE) dev-s3
+	$(MAKE) unit-s3
+	$(MAKE) unit-egress
+
+# Fails before any gate runs when a tool the gates need is missing, so a long run never dies late.
+ci-tools:
+	@command -v helm >/dev/null || { echo "ci: helm $(HELM_VERSION) is not on PATH; run tools/install-tools.sh helm and put ~/.cargo/bin on PATH"; exit 1; }
+	@command -v herdr-core >/dev/null || { echo "ci: herdr-core is not on PATH; run tools/install-tools.sh herdr-core and put ~/.cargo/bin on PATH"; exit 1; }
+	@command -v bun >/dev/null || { echo "ci: bun $(BUN_VERSION) is not on PATH; run curl -fsSL https://bun.sh/install | bash -s bun-v$(BUN_VERSION)"; exit 1; }
+	@command -v tinyproxy >/dev/null || { echo "ci: tinyproxy is not on PATH; run sudo apt-get install -y tinyproxy-bin"; exit 1; }
+	@docker compose version >/dev/null 2>&1 || { echo "ci: docker with the compose plugin is not installed; see https://docs.docker.com/engine/install/"; exit 1; }
+	@docker info >/dev/null 2>&1 || { echo "ci: the docker daemon is not reachable for this user"; exit 1; }
+	@test "$$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" != 1 || { echo "ci: the front tests need unprivileged user namespaces; run sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"; exit 1; }
 
 build:
 	cargo build --workspace --release --locked
