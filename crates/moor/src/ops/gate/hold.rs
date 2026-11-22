@@ -1,14 +1,17 @@
-//! What a Box with gates that are not passed holds back: its close, and what a person's steer
+//! What a Box with gates that can still move holds back: its close, and what a person's steer
 //! does to a stuck one.
 
+use moor_core::domain::event::Origin;
 use moor_core::gate::{status, GateLine, GateStatus};
 use moor_core::{BoxId, Warning};
 use moor_schema::tables::BoxGateLines;
 
 use crate::cx::Cx;
-use crate::store::{Store, StoreError};
+use crate::store::{RunOfBox, Store, StoreError};
 
-/// Whether Box `id` has gates and they are not all passed, so nobody may close it as unneeded.
+/// Whether the gates of Box `id` can still move, so nobody may close it as unneeded: one is open
+/// or stuck, and the Box's run, if it has one, has not ended. A Box whose gates failed for good or
+/// whose run ended falls back to the ordinary close rules.
 ///
 /// # Errors
 /// A store failure.
@@ -16,14 +19,20 @@ pub(crate) fn holds(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     let Some(gates) = store.box_gates(id)? else {
         return Ok(false);
     };
-    Ok(status(&gates, &store.gate_lines(id)?) != GateStatus::Passed)
+    if matches!(store.run_of_box(id)?, RunOfBox::Ended(_)) {
+        return Ok(false);
+    }
+    Ok(status(&gates, &store.gate_lines(id)?).can_move())
 }
 
-/// Writes `Reopened` for the gate of Box `id` that is stuck, after a steer reached its agent: a
-/// person has taken it up, so the gate gets fresh tries. A gate that is not stuck is left alone,
-/// which is also why moor's own steers, sent only while tries remain, reopen nothing. A failure
+/// Writes `Reopened` for the gate of Box `id` that is stuck, after a person's steer reached its
+/// agent: they have taken it up, so the gate gets fresh tries. moor's own steers, a gate that is
+/// not stuck, and the Box of a run that ended, whose gates nothing runs, are left alone. A failure
 /// is a warning on the steer, which was sent.
-pub(crate) fn after_steer(cx: &Cx, store: &Store, id: BoxId) {
+pub(crate) fn after_steer(cx: &Cx, store: &Store, id: BoxId, origin: Origin) {
+    if origin != Origin::Person {
+        return;
+    }
     if let Err(e) = reopen(cx, store, id) {
         cx.warn(Warning {
             code: "gate_not_reopened".to_owned(),
@@ -38,6 +47,9 @@ fn reopen(cx: &Cx, store: &Store, id: BoxId) -> Result<(), StoreError> {
     let Some(gates) = store.box_gates(id)? else {
         return Ok(());
     };
+    if matches!(store.run_of_box(id)?, RunOfBox::Ended(_)) {
+        return Ok(());
+    }
     let by = cx.requester().map_or_else(
         |_| "a person".to_owned(),
         |(who, _)| who.as_str().to_owned(),

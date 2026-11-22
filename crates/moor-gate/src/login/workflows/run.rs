@@ -133,10 +133,7 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
             format!("Report refused{tries}: {}", missing.join("; "))
         }
         "reminded" => format!("Agent reminded to report{tries}"),
-        "checked" => {
-            let exit = entry.get("exit").and_then(Value::as_i64).unwrap_or(-1);
-            format!("Check exited {exit}{tries}")
-        }
+        "checked" => gate_line::checked(entry, &tries),
         "check_lost" => format!("Check lost its stream; it runs again{tries}"),
         "answered" => {
             let answer = text(entry, "answer").unwrap_or("?");
@@ -250,6 +247,7 @@ fn step_view(
         "instructions",
         "done_when",
         "command",
+        "checks",
         "question",
         "ok",
         "fail",

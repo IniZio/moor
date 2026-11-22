@@ -1,14 +1,14 @@
 //! What a waiting gate shows a person.
 
 use super::*;
-use crate::gate::{Approval, GateDoc};
+use crate::gate::{Approval, CheckDoc, GateDoc};
 use crate::workflow::{Answer, StepReport};
 
 fn doc(name: &str, evidence: &[&str], checks: &[&str], tries: u64) -> GateDoc {
     GateDoc {
         name: name.to_owned(),
         evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval: Some(Approval::Owner),
         max_tries: Some(tries),
     }

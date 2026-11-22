@@ -184,7 +184,7 @@ fn evidence_or_approval_on_a_controller_that_cannot_offer_report_step_is_refused
 
     let checks = GateDoc {
         evidence: Vec::new(),
-        checks: vec!["true".to_owned()],
+        checks: vec!["true".into()],
         ..proof()
     };
     run(&w.cx, &with_gates("demo", vec![checks])).unwrap();

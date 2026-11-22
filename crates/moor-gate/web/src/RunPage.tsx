@@ -31,17 +31,46 @@ const STATE_WORD: Record<Step['state'], string> = {
 	ended: 'ended',
 };
 
-function StepItem({ step, number }: { step: Step; number: number }) {
+/** A gate's state once, in the words a person uses for it. */
+const GATE_STATE_WORD: Record<Step['state'], string> = {
+	pending: 'not reached',
+	running: 'in hand',
+	waiting: 'waiting for you',
+	passed: 'passed',
+	failed: 'failed',
+	ended: 'ended',
+};
+
+/** What moor checks at a gate: each check's sentence first, its command one click behind. */
+function GateChecks({ checks }: { checks: NonNullable<Step['checks']> }) {
+	return (
+		<ul class="t-step-checks">
+			{checks.map((c) => (
+				<li key={c.run}>
+					<span>{c.says ?? 'A command that must exit with code 0'}</span>
+					<details class="t-gate-cmd">
+						<summary>Show the check</summary>
+						<pre class="t-quote">{c.run}</pre>
+					</details>
+				</li>
+			))}
+		</ul>
+	);
+}
+
+/** One step of a run: a gate shows its name once with its state, and its entries beneath. */
+export function StepItem({ step, number }: { step: Step; number: number }) {
+	const gate = step.kind === 'gate';
 	return (
 		<li>
 			<details open={step.state === 'waiting' || step.state === 'failed'}>
 				<summary>
 					<span class={`kind ${step.kind}`}>{step.kind}</span>
 					<span class="grow">{number}. {step.title}</span>
-					<span class={`state ${step.state}`}>{STATE_WORD[step.state]}</span>
+					<span class={`state ${step.state}`}>{(gate ? GATE_STATE_WORD : STATE_WORD)[step.state]}</span>
 				</summary>
 				{step.instructions && <p class="muted">{step.instructions}</p>}
-				{step.command && <p class="muted">Runs <code>{step.command}</code></p>}
+				{gate && step.checks?.some((c) => c.says) ? <GateChecks checks={step.checks ?? []} /> : step.command && <p class="muted">Runs <code>{step.command}</code></p>}
 				{step.question && <p class="muted">Asks: {step.question}</p>}
 				{step.done_when && <p class="muted">Done when: {step.done_when}</p>}
 				{step.history.length > 0 ? (

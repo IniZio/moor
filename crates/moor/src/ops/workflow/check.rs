@@ -37,6 +37,7 @@ fn outcome_line(job: &CheckJob, ended: Ended) -> HistoryEntry {
             try_n,
             exit,
             tail,
+            check: None,
         },
     }
 }

@@ -3,7 +3,7 @@
 #![allow(clippy::panic, reason = "a test names the line it did not expect")]
 
 use super::gate_history;
-use crate::gate::{GateDoc, GateLine, Gates};
+use crate::gate::{CheckDoc, GateDoc, GateLine, Gates};
 use crate::workflow::{Answer, HistoryEntry, StepId, StepReport, StepResult};
 
 fn id(s: &str) -> StepId {
@@ -14,7 +14,7 @@ fn gates() -> Gates {
     let evidence = |name: &str, files: &[&str], checks: &[&str]| GateDoc {
         name: name.to_owned(),
         evidence: files.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval: None,
         max_tries: Some(2),
     };
@@ -62,6 +62,43 @@ fn kinds(entries: &[HistoryEntry]) -> Vec<(&'static str, String)> {
             other => panic!("{other:?}"),
         })
         .collect()
+}
+
+#[test]
+fn a_check_line_names_the_check_by_what_it_says_else_by_its_command() {
+    let says = "The pull request has one evidence comment.";
+    let said = crate::gate::SaidDoc {
+        run: "gh pr view --json comments".to_owned(),
+        says: says.to_owned(),
+    };
+    let gates = Gates::parse(&[GateDoc {
+        name: "done".to_owned(),
+        evidence: Vec::new(),
+        checks: vec![CheckDoc::Said(said), CheckDoc::from("make test")],
+        approval: None,
+        max_tries: Some(2),
+    }])
+    .unwrap();
+    let ran = |check: u8, exit: i32| GateLine::Checked {
+        gate: id("done"),
+        try_n: 1,
+        check,
+        exit,
+        tail: String::new(),
+    };
+    let named = |entries: Vec<HistoryEntry>| match entries.first() {
+        Some(HistoryEntry::Checked { check, .. }) => check.clone(),
+        other => panic!("{other:?}"),
+    };
+    let first = ran(0, 0);
+    assert_eq!(
+        named(gate_history(&gates, &[], &first, false)),
+        Some(says.to_owned())
+    );
+    assert_eq!(
+        named(gate_history(&gates, &[first], &ran(1, 1), false)),
+        Some("`make test`".to_owned())
+    );
 }
 
 #[test]

@@ -18,7 +18,7 @@ fn done() -> GateDoc {
     GateDoc {
         name: "done".to_owned(),
         evidence: vec!["posted.md".to_owned()],
-        checks: vec!["true".to_owned()],
+        checks: vec!["true".into()],
         approval: None,
         max_tries: None,
     }

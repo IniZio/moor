@@ -13,6 +13,10 @@ pub struct GateView {
     pub wait: Option<Wait>,
     /// What the agent wrote with its newest accepted report that had a note.
     pub note: Option<String>,
+    /// How the Box's workflow run ended, such as `cancelled` or `timed_out`, when it ended
+    /// short of delivering: the gates no longer decide the Box's state, and nothing moves them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_ended: Option<String>,
 }
 
 /// Result of `gate-answer`.
@@ -40,6 +44,7 @@ impl GateView {
                 .rev()
                 .find_map(GateLine::accepted_note)
                 .map(str::to_owned),
+            run_ended: None,
         }
     }
 }

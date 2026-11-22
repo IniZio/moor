@@ -27,6 +27,7 @@ fn checked(step: &str, try_n: u8, exit: i32) -> HistoryEntry {
         try_n,
         exit,
         tail: String::new(),
+        check: None,
     }
 }
 

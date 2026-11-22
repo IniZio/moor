@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { type GateView, gateLine, gateRows, plain, tailView, whyWords } from './gate';
+import { type GateView, gateLine, gateRows, plain, ruleSentence, tailView, whyWords } from './gate';
 
 const gates = ['plan', 'tests', 'review'];
 const view = (status: GateView['status']): GateView => ({ gates, status });
@@ -54,4 +54,25 @@ test('an output of a few lines shows whole and a longer one shows its last lines
 	expect(tailView('boom\n')).toEqual({ shown: 'boom', all: null });
 	const long = ['1', '2', '3', '4', '5', '6'].join('\n');
 	expect(tailView(long)).toEqual({ shown: '3\n4\n5\n6', all: long });
+});
+
+test('a reason that names a check by its sentence keeps it in a list line and drops it where the card already says it', () => {
+	const why = 'out of tries: check 1 (“The file never.txt exists.”) exited 1';
+	expect(whyWords(why)).toBe('Check 1 (“The file never.txt exists.”) exited with code 1. No tries left.');
+	expect(whyWords(why, 'The file never.txt exists.')).toBe('Check 1 exited with code 1. No tries left.');
+});
+
+test('a gate reads as a sentence: what the agent hands in, what moor checks, who says yes, how many tries', () => {
+	expect(ruleSentence({ name: 'proof', evidence: ['pr-*'] })).toBe('the agent must hand in files named pr-*.');
+	const says = 'The pull request has exactly one evidence comment for this commit, and a moor/evidence status on it.';
+	expect(ruleSentence({ name: 'done', evidence: ['posted.md'], checks: [{ run: 'true', says }] })).toBe(
+		`the agent must hand in posted.md, and moor checks: ${says} Two tries.`,
+	);
+	expect(ruleSentence({ name: 'done', evidence: ['a.md', 'b.md', 'c-*'], checks: ['true', { run: 'x', says: 'It holds.' }], max_tries: 1 })).toBe(
+		'the agent must hand in a.md, b.md and files named c-*, and moor checks: a command exits with code 0; It holds. One try.',
+	);
+	expect(ruleSentence({ name: 'ship', approval: 'owner', max_tries: 3 })).toBe("the workflow's owner must say yes. Three tries.");
+	expect(ruleSentence({ name: 'ship', evidence: ['x.md'], approval: 'owner' })).toBe(
+		"the agent must hand in x.md. Then the workflow's owner must say yes. Two tries.",
+	);
 });

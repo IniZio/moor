@@ -135,27 +135,74 @@ fn an_edit_shows_its_diff_and_a_command_its_input_and_output() {
 }
 
 #[test]
-fn a_report_moor_refuses_is_not_a_failed_call_and_other_errors_still_are() {
+fn a_report_moor_recorded_as_refused_is_not_a_failed_call_and_other_errors_still_are() {
     let said = "Gate `review` is not the gate in hand. The gate in hand is `lint`.";
+    let down = "moor could not be reached (connection refused). Nothing is recorded; call \
+                report_step again.";
     let report = json!({"step": "review", "result": "ok", "evidence": ["proof.md"]});
-    let records = [
+    let lines = read(&[
         use_(1, "r", "mcp__moor__report_step", &report),
         result(2, "r", said, true, &json!({})),
         use_(3, "o", "mcp__moor__report_step", &report),
         result(4, "o", "Recorded.", false, &json!({})),
-        use_(5, "e", "mcp__moor__start_box", &json!({})),
-        result(6, "e", "the controller is down", true, &json!({})),
+        use_(5, "e", "mcp__moor__report_step", &report),
+        result(6, "e", down, true, &json!({})),
+    ]);
+    let recorded = json!({"step": "review", "reason": said});
+    let events = [
+        (ms(0), ev(1, "steered", json!({"message": "go"}))),
+        (ms(2), ev(2, "report_refused", recorded)),
     ];
-    let lines = read(&records);
-    let [refused, ok, other]: [&Tool; 3] = tools(&lines).try_into().unwrap();
+    let t = timeline_with(
+        &events,
+        Transcript {
+            lines: &lines,
+            saved_ms: ms(20),
+        },
+    );
+    let calls: Vec<_> = t
+        .iter()
+        .filter_map(|e| Some((e.class, e.tool.as_ref()?)))
+        .collect();
+    let [(refused_class, refused), (ok_class, ok), (down_class, other)]: [(Class, &Tool); 3] =
+        calls.try_into().unwrap();
     assert_eq!(refused.title, "moor did not accept the report");
     assert!(refused.refused && !refused.failed);
     assert_eq!(refused.output.as_ref().map(|b| b.text.as_str()), Some(said));
     assert!(refused.input.is_some(), "what the agent sent is kept");
     assert!(!ok.refused && !ok.failed);
-    assert!(!other.refused && other.failed);
-    let classes: Vec<Class> = lines.iter().map(|l| l.entry().class).collect();
-    assert_eq!(classes, [Class::Step, Class::Step, Class::Error]);
+    assert!(
+        !other.refused && other.failed,
+        "no record, so a real error: {other:?}"
+    );
+    assert_eq!(
+        [refused_class, ok_class, down_class],
+        [Class::Step, Class::Step, Class::Error]
+    );
+    assert!(
+        t.iter().all(|e| e.kind != "report_refused"),
+        "shown once: {t:?}"
+    );
+}
+
+#[test]
+fn a_refusal_moor_recorded_shows_as_the_plain_item_without_a_transcript() {
+    let said = "Nothing is recorded: this run has ended (cancelled).";
+    let events = [(
+        ms(2),
+        ev(
+            1,
+            "report_refused",
+            json!({"step": "proof", "reason": said}),
+        ),
+    )];
+    let t = timeline_with(&events, Transcript::default());
+    let [only]: [crate::progress::TimelineEntry; 1] = t.try_into().unwrap();
+    assert_eq!((only.kind.as_str(), only.class), ("tool", Class::Step));
+    assert_eq!(only.text, "moor did not accept the report");
+    let tool = only.tool.as_ref().unwrap();
+    assert!(tool.refused && !tool.failed);
+    assert_eq!(tool.output.as_ref().map(|b| b.text.as_str()), Some(said));
 }
 
 #[test]

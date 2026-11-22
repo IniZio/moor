@@ -186,6 +186,8 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-wait-h { font-weight: 650; color: var(--moor-color-accent); font-size: 0.8125rem; }
 .t-wait-q { font: var(--moor-weight-heading) 1.05rem/1.3 var(--moor-font-heading); margin: 0.35rem 0 0.5rem; overflow-wrap: anywhere; }
 .t-quote { margin: 0 0 0.6rem; padding: 0.5rem 0.7rem; background: var(--moor-color-bg-sunken); border-radius: var(--moor-radius-sm); font: var(--moor-text-sm)/1.4 var(--moor-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow: auto; }
+/* The code font joins "<!--" and "->" into arrows; a command must read as typed. Last, so no `font` shorthand above resets it. */
+code, pre, kbd, .t-mono, .t-quote { font-variant-ligatures: none; font-feature-settings: 'calt' 0, 'liga' 0; }
 .t-wait-btns { display: flex; flex-wrap: wrap; gap: var(--moor-space-2); }
 .t-wait-own { display: flex; gap: var(--moor-space-2); margin-top: 0.6rem; }
 .t-wait-own input { flex: 1; min-width: 0; }

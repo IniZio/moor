@@ -113,7 +113,7 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
         gate: due.gate.name.clone(),
         try_n: due.try_n,
         check: due.check,
-        command: command.clone(),
+        command: command.run.clone(),
         n: i64::try_from(lines.len())
             .unwrap_or(i64::MAX)
             .saturating_add(1),

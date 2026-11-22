@@ -118,6 +118,9 @@ fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
         return;
     };
     let pad = format!("{}  ", " ".repeat(indent.chars().count()));
+    if let Some(says) = card.get("says").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}not yet true: {says}");
+    }
     if let Some(command) = card.get("command").and_then(Value::as_str) {
         let _ = writeln!(out, "{pad}command: {command}");
     }

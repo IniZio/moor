@@ -9,7 +9,7 @@ fn doc(name: &str, evidence: &[&str], checks: &[&str], approval: Option<Approval
     GateDoc {
         name: name.to_owned(),
         evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks: checks.iter().map(|s| (*s).to_owned()).collect(),
+        checks: checks.iter().map(|s| CheckDoc::from(*s)).collect(),
         approval,
         max_tries: None,
     }
@@ -26,6 +26,22 @@ fn gates() -> Gates {
         doc("tests", &[], &["make test"], Some(Approval::Owner)),
     ])
     .unwrap()
+}
+
+#[test]
+fn the_first_message_says_how_to_reach_report_step_in_words_any_agent_follows() {
+    let text = gates().first_message("Fix the typo.");
+    assert!(
+        text.contains(
+            "report_step is a tool of the moor MCP server; load it first if your tools are \
+             loaded on demand."
+        ),
+        "{text}"
+    );
+    assert!(
+        !text.contains("ToolSearch"),
+        "no one harness's tool: {text}"
+    );
 }
 
 #[test]

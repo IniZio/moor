@@ -47,6 +47,9 @@ pub struct Wait {
     pub note: Option<String>,
     /// The check that failed, as written in the gate.
     pub command: Option<String>,
+    /// What the failed check says must be true, when its author wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
     /// The end of the failed check's output.
     pub tail: Option<String>,
     /// The evidence names that were not found.
@@ -97,6 +100,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         handed: Vec::new(),
         note: None,
         command: None,
+        says: None,
         tail: None,
         missing: Vec::new(),
         hint: hint.to_owned(),
@@ -141,7 +145,12 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
 
 /// Fills `w` from the newest line of `gate`, since it was last reopened, that failed a try.
 fn stuck_by(w: &mut Wait, gate: &super::Gate, lines: &[GateLine]) {
-    let command = |check: u8| gate.checks.get(usize::from(check)).cloned();
+    let put = |w: &mut Wait, check: u8| {
+        if let Some(c) = gate.checks.get(usize::from(check)) {
+            w.command = Some(c.run.clone());
+            w.says.clone_from(&c.says);
+        }
+    };
     for line in lines.iter().rev() {
         match line {
             GateLine::Reopened { gate: g, .. } if *g == gate.name => return,
@@ -152,12 +161,12 @@ fn stuck_by(w: &mut Wait, gate: &super::Gate, lines: &[GateLine]) {
                 tail,
                 ..
             } if *g == gate.name && *exit != 0 => {
-                w.command = command(*check);
+                put(w, *check);
                 w.tail = Some(tail.clone()).filter(|t| !t.trim().is_empty());
                 return;
             }
             GateLine::CheckLost { gate: g, check, .. } if *g == gate.name => {
-                w.command = command(*check);
+                put(w, *check);
                 return;
             }
             GateLine::Refused {

@@ -1,5 +1,6 @@
 //! Where a Box stands against its gates: a pure fold over the lines written for them.
 
+use super::check::named;
 use super::{Approval, Gate, GateLine, Gates};
 use crate::workflow::{Answer, StepId, StepResult};
 
@@ -46,6 +47,15 @@ pub enum GateStatus {
     },
     /// Every gate passed.
     Passed,
+}
+
+impl GateStatus {
+    /// Whether the gates can still move: one is open or stuck, rather than failed for good or
+    /// passed.
+    #[must_use]
+    pub const fn can_move(&self) -> bool {
+        matches!(self, Self::Open { .. } | Self::Stuck { .. })
+    }
 }
 
 /// How a gate ended short of passing.
@@ -146,23 +156,6 @@ pub fn due_check<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueCheck<'a
         try_n,
         check: walk.tries.checks,
     })
-}
-
-/// Check `check`, from 0, of `gate` as a person reads it: its place and its command, cut short.
-fn named(gate: &Gate, check: u8) -> String {
-    let command: String = gate
-        .checks
-        .get(usize::from(check))
-        .map_or_else(String::new, |c| c.trim().chars().take(60).collect());
-    let more = gate
-        .checks
-        .get(usize::from(check))
-        .is_some_and(|c| c.trim().chars().count() > 60);
-    format!(
-        "check {} (`{command}{}`)",
-        check + 1,
-        if more { "…" } else { "" }
-    )
 }
 
 /// The fold of `lines` over `gates`.

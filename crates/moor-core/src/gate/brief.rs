@@ -1,7 +1,7 @@
 //! What a Box's gates say to its agent: the preamble of its first message, the reminder for a
 //! gate it has not reported, and the steer after a check failed.
 
-use super::{Approval, Gate, Gates};
+use super::{Approval, Check, Gate, Gates};
 use crate::workflow::{Evidence, EvidenceName, StepId};
 
 /// Where moor's preamble starts in a first message, after the person's own words.
@@ -50,9 +50,8 @@ impl Gates {
             "{}{GATE_HEAD} The gates open in this order, one at a time, and the Box is done \
              only when all have passed. Report only the gate that is in hand: a report for any \
              other is refused. The first gate is in hand now. moor tells you when each gate is in \
-             hand. report_step is a tool of the `moor` MCP server; if it is \
-             a deferred tool, load it with ToolSearch first. Leave each evidence file in \
-             .moor/artifacts/.\n\n{}",
+             hand. report_step is a tool of the moor MCP server; load it first if your tools \
+             are loaded on demand. Leave each evidence file in .moor/artifacts/.\n\n{}",
             prompt.trim_end(),
             lines.join("\n")
         )
@@ -82,6 +81,17 @@ impl Gate {
             line.push_str(" moor runs ");
             line.push_str(&checks);
             line.push_str(" itself once you are quiet.");
+            let said: Vec<String> = self
+                .checks
+                .iter()
+                .filter_map(|c| c.says.as_deref())
+                .map(|s| format!("“{s}”"))
+                .collect();
+            if !said.is_empty() {
+                line.push_str(" It looks for: ");
+                line.push_str(&said.join(" "));
+                line.push('.');
+            }
         }
         if self.approval == Approval::Owner {
             line.push_str(" Then moor asks the Box's owner to approve.");
@@ -158,14 +168,19 @@ impl Gate {
     #[must_use]
     pub fn failed_check_steer(&self, check: u8, (why, tail): (&str, &str)) -> String {
         let name = &self.name;
-        let command = self
-            .checks
-            .get(usize::from(check))
-            .map_or("", String::as_str);
-        let mut text = format!(
-            "Gate `{name}` is not passed: check {} (`{command}`) {why}.",
-            check + 1
-        );
+        let place = check + 1;
+        let mut text = match self.checks.get(usize::from(check)) {
+            Some(Check {
+                run,
+                says: Some(says),
+            }) => {
+                format!("Gate `{name}` is not passed: check {place}, “{says}” (`{run}`), {why}.")
+            }
+            Some(Check { run, says: None }) => {
+                format!("Gate `{name}` is not passed: check {place} (`{run}`) {why}.")
+            }
+            None => format!("Gate `{name}` is not passed: check {place} {why}."),
+        };
         if !tail.trim().is_empty() {
             text.push_str("\n\nThe end of its output:\n");
             text.push_str(tail.trim_end());

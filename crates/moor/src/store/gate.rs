@@ -2,12 +2,14 @@
 
 use std::collections::HashSet;
 
+use moor_core::domain::event::{Event, WorkflowEvent};
 use moor_core::gate::{GateLine, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::{BoxGateLines, Boxes};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
+use crate::store::apply::insert_event;
 use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
@@ -102,6 +104,26 @@ impl Store {
         let mut writer = self.writer();
         let tx = writer.immediate()?;
         waiting::ensure(&tx, id, at)?;
+        tx.commit()?;
+        drop(writer);
+        Ok(())
+    }
+
+    /// Writes Box `id`'s `report_refused` event: moor did not accept the agent's report of
+    /// `step`, and `reason` is the reply that says why.
+    pub(crate) fn note_report_refused(
+        &self,
+        id: BoxId,
+        at: Ts,
+        (step, reason): (&str, &str),
+    ) -> Result<(), StoreError> {
+        let event = Event::Workflow(WorkflowEvent::ReportRefused {
+            step: step.to_owned(),
+            reason: reason.to_owned(),
+        });
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        insert_event(&tx, id, &event, at)?;
         tx.commit()?;
         drop(writer);
         Ok(())

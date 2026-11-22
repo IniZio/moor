@@ -231,7 +231,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::Workflow(
                 WorkflowEvent::RunWaiting { .. }
                 | WorkflowEvent::RunFailed { .. }
-                | WorkflowEvent::GateWaiting { .. },
+                | WorkflowEvent::GateWaiting { .. }
+                | WorkflowEvent::ReportRefused { .. },
             )
             | Event::Inbox(_)) => Err(e),
         }

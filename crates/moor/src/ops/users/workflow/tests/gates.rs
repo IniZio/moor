@@ -23,7 +23,7 @@ fn done() -> GateDoc {
     GateDoc {
         name: "done".to_owned(),
         evidence: Vec::new(),
-        checks: vec!["true".to_owned()],
+        checks: vec!["true".into()],
         approval: Some(Approval::Owner),
         max_tries: None,
     }

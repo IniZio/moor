@@ -99,6 +99,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "run_waiting",
     "run_failed",
     "gate_waiting",
+    "report_refused",
     "transcript_saved",
     "transcript_failed",
     "transcript_skipped",

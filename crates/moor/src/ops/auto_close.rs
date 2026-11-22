@@ -3,9 +3,9 @@
 //! A workflow run's Box closes a while after its run ends, counted from the last steer or terminal
 //! someone opened since. A one-off Box closes when its pull request merged or closed, or when it sat
 //! idle for long enough. A Box holding work that exists only in it is never closed: the pass says
-//! so on the Box and leaves it to a person. A Box whose gates are not all passed is never closed as
-//! unneeded. The close never wakes an asleep Box; it answers from the check recorded when the Box
-//! went to sleep.
+//! so on the Box and leaves it to a person. A Box whose gates can still move, open or stuck while
+//! its run has not ended, is never closed as unneeded. The close never wakes an asleep Box; it
+//! answers from the check recorded when the Box went to sleep.
 
 use std::cell::Cell;
 use std::collections::HashMap;

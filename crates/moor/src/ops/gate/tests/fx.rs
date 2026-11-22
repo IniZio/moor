@@ -9,7 +9,7 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::gate::{GateDoc, GateLine, GateStatus};
+use moor_core::gate::{CheckDoc, GateDoc, GateLine, GateStatus};
 use moor_core::progress::Progress;
 use moor_core::request::StepReportReq;
 use moor_core::seam::clock::Ts;
@@ -43,7 +43,7 @@ pub(super) fn gate(name: &str, checks: &[&str], tries: u64) -> GateDoc {
     GateDoc {
         name: name.to_owned(),
         evidence: Vec::new(),
-        checks: checks.iter().map(|c| (*c).to_owned()).collect(),
+        checks: checks.iter().map(|c| CheckDoc::from(*c)).collect(),
         approval: None,
         max_tries: Some(tries),
     }

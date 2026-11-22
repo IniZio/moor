@@ -32,6 +32,8 @@ export const WaitSchema = v.object({
 	note: v.nullish(v.string()),
 	/** The check that failed, as written in the gate. */
 	command: v.nullish(v.string()),
+	/** What that check says must be true, when its author wrote it. */
+	says: v.nullish(v.string()),
 	/** The end of the failed check's output. */
 	tail: v.nullish(v.string()),
 	/** The evidence names that were not found. */
@@ -39,6 +41,20 @@ export const WaitSchema = v.object({
 	hint: v.nullish(v.string()),
 });
 
+/** A check as a gate is written: a bare command, or a command with the one sentence it stands for. */
+const CheckDocSchema = v.union([v.string(), v.object({ run: v.string(), says: v.string() })]);
+
+/** One gate as the workflow keeps it. */
+export const GateDocSchema = v.object({
+	name: v.string(),
+	evidence: v.nullish(v.array(v.string())),
+	checks: v.nullish(v.array(CheckDocSchema)),
+	approval: v.nullish(v.string()),
+	max_tries: v.nullish(v.number()),
+});
+
+export type GateDoc = v.InferOutput<typeof GateDocSchema>;
+export type CheckDoc = v.InferOutput<typeof CheckDocSchema>;
 export type GateView = v.InferOutput<typeof GateViewSchema>;
 export type Wait = v.InferOutput<typeof WaitSchema>;
 
@@ -94,9 +110,10 @@ export function plain(text: string, gates: readonly string[] = []): string {
 }
 
 /** A reason moor wrote for a gate that ended short of passing, in plain words: no code marks, the command left to the card's own line for it, the exit code said out. */
-export function whyWords(why: string): string {
+export function whyWords(why: string, says?: string | null): string {
 	const spent = /^out of tries: /i.test(why.trim());
 	let text = why.trim().replace(/^out of tries: /i, '').replace(/\s*\(`[^`]*`\)/, '');
+	if (says) text = text.replace(/\s*\(“[^”]*”\)/, '');
 	text = text.replace(/`/g, '').replace(/\bexited (-?\d+)/, 'exited with code $1');
 	text = text.charAt(0).toUpperCase() + text.slice(1);
 	const sentence = /[.!?]$/.test(text) ? text : `${text}.`;
@@ -123,4 +140,37 @@ export function tailView(tail: string, keep = 4): { shown: string; all: string |
 	const text = tail.replace(/\s+$/, '');
 	const lines = text.split('\n');
 	return lines.length <= keep ? { shown: text, all: null } : { shown: lines.slice(-keep).join('\n'), all: text };
+}
+
+/** What a check is, for a reader: the sentence it says, or a plain stand-in for a bare command. */
+export function checkWords(check: CheckDoc): string {
+	return v.is(v.string(), check) ? 'a command exits with code 0' : check.says;
+}
+
+/** The command of a check as written. */
+export function checkRun(check: CheckDoc): string {
+	return v.is(v.string(), check) ? check : check.run;
+}
+
+const TRIES = ['', 'One try.', 'Two tries.', 'Three tries.', 'Four tries.', 'Five tries.'];
+
+/** The files a gate asks for, in words: a prefix is "files named pr-*". */
+function handIn(names: readonly string[]): string {
+	const items = names.map((n) => (n.endsWith('*') ? `files named ${n}` : n));
+	return items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** One gate in a sentence a teammate can read: what the agent hands in, what moor checks, who must say yes, and how many tries. */
+export function ruleSentence(gate: GateDoc): string {
+	const files = gate.evidence ?? [];
+	const checks = gate.checks ?? [];
+	const owner = gate.approval === 'owner';
+	const first: string[] = [];
+	if (files.length > 0) first.push(`the agent must hand in ${handIn(files)}`);
+	if (checks.length > 0) first.push(`moor checks: ${checks.map((c) => checkWords(c).trim().replace(/\.$/, '')).join('; ')}`);
+	const sentences: string[] = [];
+	if (first.length > 0) sentences.push(`${first.join(', and ')}.`);
+	if (owner) sentences.push(first.length > 0 ? "Then the workflow's owner must say yes." : "the workflow's owner must say yes.");
+	if (checks.length > 0 || owner) sentences.push(TRIES[gate.max_tries ?? 2] ?? '');
+	return sentences.filter(Boolean).join(' ');
 }

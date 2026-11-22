@@ -98,8 +98,8 @@ fn standing(store: &Store, id: BoxId) -> Result<Option<Standing>, CommandError> 
     }))
 }
 
-/// `step-report`: records what the agent in `req.box_id` reported and tells it what to do next.
-pub(crate) fn run(
+/// What the agent in `req.box_id` is told of its report, once what it reported is recorded.
+fn answer(
     cx: &Cx,
     req: &moor_core::request::StepReportReq,
 ) -> Result<StepReportValue, CommandError> {
@@ -383,5 +383,7 @@ fn apply(
     }
 }
 
+mod refusal;
+pub(crate) use refusal::run;
 #[cfg(test)]
 pub(super) mod tests_hook;

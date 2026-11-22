@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 
-import { GateViewSchema, plain, WaitSchema } from './gate';
+import { GateDocSchema, GateViewSchema, plain, WaitSchema } from './gate';
 import { announceSignedOut } from './session';
 
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
@@ -203,6 +203,8 @@ const WorkflowSchema = v.object({
 	prompt: v.string(),
 	plan: v.nullish(v.string()),
 	plan_edited: v.boolean(),
+	/** The gates each run is held to, when the workflow has them in place of a plan. */
+	gates: v.nullish(v.array(GateDocSchema)),
 	revision: v.number(),
 	runs: v.array(RunRowSchema),
 });
@@ -221,6 +223,8 @@ const StepSchema = v.object({
 	instructions: v.nullish(v.string()),
 	done_when: v.nullish(v.string()),
 	command: v.nullish(v.string()),
+	/** A gate's checks, each with its sentence when it has one. */
+	checks: v.nullish(v.array(v.object({ run: v.string(), says: v.nullish(v.string()) }))),
 	question: v.nullish(v.string()),
 	state: v.picklist(['pending', 'running', 'waiting', 'passed', 'failed', 'ended']),
 	history: v.array(LineSchema),

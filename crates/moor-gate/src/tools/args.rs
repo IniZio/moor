@@ -24,7 +24,8 @@ pub(super) struct StartArgs {
     /// rule for this Box only.
     pub(super) config: Option<String>,
     /// Gates the Box must pass before it counts as done, in the order they pass: each is
-    /// evidence files the agent leaves, checks moor runs in the Box, and an owner approval. A Box
+    /// evidence files the agent leaves, checks moor runs in the Box (a command, or `{run, says}` with
+    /// a plain sentence of what must be true), and an owner approval. A Box
     /// with an open gate shows as working, never as done. Written once, at start.
     pub(super) gates: Option<Vec<moor_core::gate::GateDoc>>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so

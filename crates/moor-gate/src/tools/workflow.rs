@@ -52,7 +52,9 @@ impl Tools {
                        The agent gets the prompt and its gates, and no steps. A gate has a `name` \
                        and any of `evidence` (files the agent leaves in .moor/artifacts/ and \
                        reports with report_step, flat names or a prefix such as `pr-*`), `checks` \
-                       (commands moor runs in the Box, exit 0 passes), `approval: owner` and \
+                       (commands moor runs in the Box, exit 0 passes; write one as `{run, says}` with \
+                       `says` a plain sentence of what must be true, which the portal shows first), \
+                       `approval: owner` and \
                        `max_tries` (1 to 5, 2 when left out); the gates open in order. A run with gates is \
                        never done because the agent went quiet: it is delivered when every gate has passed, \
                        and its result is the note of the agent's last accepted report. It fails \

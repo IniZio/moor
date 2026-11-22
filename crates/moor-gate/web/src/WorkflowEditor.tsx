@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 
 import { ClearsPlan, Conflict, failure, toError, type Workflow, workflowGet, workflowSet } from './api';
+import { GatesPanel } from './Gates';
 import { GeneratePlan } from './PlanDraft';
 import { PlanEditor } from './PlanEditor';
 import { reviewed, sameText, textProblems } from './plan';
@@ -114,10 +115,14 @@ export function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 						onInput={(e) => setPrompt(e.currentTarget.value)}
 					/>
 				</label>
-				<div>
-					<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
-					<GeneratePlan csrf={csrf} repos={flow.repos} prompt={prompt} dirty={sameText(plan) !== sameText(flow.plan ?? '')} onPlan={setPlan} />
-				</div>
+				{flow.gates && flow.gates.length > 0 && flow.plan == null ? (
+					<GatesPanel gates={flow.gates} />
+				) : (
+					<div>
+						<PlanEditor text={plan} onText={setPlan} prompt={prompt} />
+						<GeneratePlan csrf={csrf} repos={flow.repos} prompt={prompt} dirty={sameText(plan) !== sameText(flow.plan ?? '')} onPlan={setPlan} />
+					</div>
+				)}
 			</div>
 			{goesStale && (
 				<p class="notice warn" role="status">Saving a changed prompt with this plan marks the plan stale.</p>
