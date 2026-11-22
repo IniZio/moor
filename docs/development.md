@@ -32,10 +32,7 @@ CI the base is the pull request's base branch.
 
 Each failing check prints a `fix:` line. In short:
 
-- `removed-names`: a retired name came back. Use what replaced it. The old
-  name of the removed work-unit concept is banned in every file; a name moor
-  must read from another tool, such as a hook's JSON field, goes in
-  [removed-names.allow](../tools/removed-names.allow) as that exact string.
+- `removed-names`: a retired name came back. Use what replaced it.
 - `box-key`: a name derived from a Box id was built by hand. Build it with a
   `BoxKey` method in
   [box_key.rs](../crates/moor-core/src/box_key.rs).
