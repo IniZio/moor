@@ -102,7 +102,8 @@ export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr'> }) 
 		return <span class="t-rkey">{number ? `${t.workflow.name} · PR #${number}` : t.workflow.name}</span>;
 	}
 	const key = t.issue ? (issueKey(t.issue) ?? t.issue) : '';
-	return <span class={`t-rkey${key ? ' t-rkey-issue' : ''}`}>{key}</span>;
+	if (key) return <span class="t-rkey t-rkey-issue">{key}</span>;
+	return <span class="t-rkey">{t.pr ? `PR #${t.pr.number}` : ''}</span>;
 }
 
 function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: number; only: string; everyone: boolean; settled?: boolean; peeking?: boolean }) {
