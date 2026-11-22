@@ -12,11 +12,12 @@ async function fixtures(page, mockDir, hide, tz) {
   await page.goto('file://' + path.resolve(mockDir) + '/index.html#/tasks?who=all&settled=1');
   await page.addStyleTag({ content: hide });
   await page.waitForSelector('body[data-ready]');
-  const seen = await page.evaluate(() => {
+  const { tasks: seen, github } = await page.evaluate(() => {
     const M = window.MOCK;
     const now = {};
     document.querySelectorAll('a.row[data-task]').forEach((a) => { now[a.dataset.task] = a.querySelector('.rnow').textContent; });
-    return M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: t.pr || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
+    const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: t.pr || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
+    return { tasks, github: M.github };
   });
   const row = (t) => ({
     box: 'mock-' + t.id,
@@ -94,7 +95,7 @@ async function fixtures(page, mockDir, hide, tz) {
       '/account/api/boxes?who=everyone': { boxes: all },
       '/account/api/inbox': { items: inbox, unread: inbox.length },
       ...boxApi,
-      '/account/api/repos': { repos: [...new Set(seen.flatMap((t) => t.repos))].sort() },
+      '/account/api/repos': { repos: [...github].sort() },
       '/account/api/session': {},
     },
   };
