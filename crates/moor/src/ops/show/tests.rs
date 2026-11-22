@@ -27,6 +27,7 @@ mod pins;
 mod reconcile;
 mod said;
 mod target;
+mod ties;
 
 use super::run;
 use crate::cx::Cx;

@@ -82,6 +82,11 @@ fn approval_of(store: &Store, box_id: BoxId) -> Result<Option<ApprovalView>, Com
     }))
 }
 
+/// What Box `id` is tied to.
+fn ties_of_one(store: &Store, id: BoxId) -> Result<moor_core::view::BoxTies, CommandError> {
+    Ok(store.ties_of(&[id])?.remove(&id).unwrap_or_default())
+}
+
 /// The latest version of each of the Box's artifacts as views.
 fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, CommandError> {
     Ok(store
@@ -193,6 +198,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     detail.attention = attention(store, row.id)?;
     detail.approval = approval_of(store, row.id)?;
     detail.gate = gate_of(store, row.id)?;
+    detail.ties = ties_of_one(store, row.id)?;
     detail.said = if req.agent {
         said_of(store, row.id)?
     } else {
@@ -255,10 +261,14 @@ fn timeline_of(
 /// Every open Box the viewer may act on.
 fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
     let mut boxes: Vec<BoxView> = Vec::new();
-    for mut row in store.open_boxes()? {
-        if !cx.viewer().may_act_on(row.user) {
-            continue;
-        }
+    let open: Vec<_> = store
+        .open_boxes()?
+        .into_iter()
+        .filter(|row| cx.viewer().may_act_on(row.user))
+        .collect();
+    let ids: Vec<BoxId> = open.iter().map(|row| row.id).collect();
+    let mut ties = store.ties_of(&ids)?;
+    for mut row in open {
         let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
         activity::settle(cx, store, &row, &reading)?;
         autosleep::run_after_read(cx, store, row.id, &reading);
@@ -269,6 +279,7 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         view.attention = attention(store, row.id)?;
         view.approval = approval_of(store, row.id)?;
         view.gate = gate_of(store, row.id)?;
+        view.ties = ties.remove(&row.id).unwrap_or_default();
         let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
         view.progress = Some(progress::derive(&view, &events, now.as_millis()));

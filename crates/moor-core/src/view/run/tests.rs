@@ -33,6 +33,7 @@ fn sample_box() -> BoxView {
         gate: None,
         said: None,
         progress: None,
+        ties: crate::view::BoxTies::default(),
     }
 }
 

@@ -47,6 +47,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         said: None,
         progress: None,
         gate: None,
+        ties: crate::view::BoxTies::default(),
     }
 }
 

@@ -79,6 +79,7 @@ mod select;
 mod sessions;
 #[cfg(test)]
 mod tests;
+mod ties;
 mod user_inbox;
 mod users;
 

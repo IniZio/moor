@@ -315,6 +315,7 @@ mod overdue;
 mod plan;
 mod pull_claim;
 mod run_history;
+mod ties;
 mod workflow;
 
 #[test]
