@@ -108,6 +108,15 @@ pub struct Verdict {
     pub says: Option<String>,
 }
 
+impl Verdict {
+    /// Whether this is the one outcome of a definition that names none, which a person reads as
+    /// a run that finished and nothing more.
+    #[must_use]
+    pub fn is_implicit(&self) -> bool {
+        *self == Outcome::implicit().verdict()
+    }
+}
+
 impl Outcome {
     /// The outcome as a run keeps it.
     #[must_use]

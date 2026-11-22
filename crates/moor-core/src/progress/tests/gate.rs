@@ -10,6 +10,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
     b.gate = Some(GateView {
         gates: vec!["proof".to_owned()],
         status,
+        gates_passed: 0,
         wait: None,
         note: None,
         run_ended: None,

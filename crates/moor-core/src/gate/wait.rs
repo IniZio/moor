@@ -27,6 +27,22 @@ impl WaitKind {
     }
 }
 
+/// One outcome moor tried at the closing stage that did not hold, with the check that stopped it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitTried {
+    /// The outcome's name.
+    pub outcome: String,
+    /// What the outcome says, when its author wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
+    /// The check that stopped it, as written.
+    pub command: Option<String>,
+    /// Its exit code.
+    pub exit: i32,
+    /// The end of its output.
+    pub tail: String,
+}
+
 /// One gate that waits for a person, with what they need to read to act.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wait {
@@ -57,6 +73,9 @@ pub struct Wait {
     /// The check moor last got no answer from, when that is why the gate is stuck.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unanswered: Option<NoAnswerCause>,
+    /// For the closing stage: each outcome tried and the check that stopped it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tried: Vec<WaitTried>,
     /// What the person can do about it.
     pub hint: String,
 }
@@ -143,7 +162,10 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             }
             match gates.iter().find(|g| g.name == gate) {
                 Some(g) => stuck_by(&mut w, g, lines),
-                None => w.tail = none_held_by(gates, lines),
+                None => {
+                    w.tail = none_held_by(gates, lines);
+                    w.tried = tried_by(gates, lines);
+                }
             }
             Some(w)
         }
@@ -167,9 +189,34 @@ impl Wait {
             tail: None,
             missing: Vec::new(),
             unanswered: None,
+            tried: Vec::new(),
             hint: hint.to_owned(),
         }
     }
+}
+
+/// Each outcome the newest try of the closing stage tried, when none held in it.
+fn tried_by(gates: &Gates, lines: &[GateLine]) -> Vec<WaitTried> {
+    let tried = lines.iter().rev().find_map(|l| match l {
+        GateLine::NoneHeld { tried, .. } => Some(tried),
+        _ => None,
+    });
+    tried
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            let outcome = gates.outcomes().iter().find(|o| o.name == t.outcome);
+            WaitTried {
+                outcome: t.outcome.to_string(),
+                says: outcome.and_then(|o| o.says.clone()),
+                command: outcome
+                    .and_then(|o| o.checks.get(usize::from(t.check)))
+                    .map(|c| c.run.clone()),
+                exit: t.exit,
+                tail: t.tail.clone(),
+            }
+        })
+        .collect()
 }
 
 /// What the newest try of the closing stage found, when no outcome held in it.
