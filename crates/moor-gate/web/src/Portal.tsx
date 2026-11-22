@@ -8,12 +8,10 @@ import {
 	boxAnswer,
 	boxGet,
 	boxList,
-	type BoxRow,
 	boxStart,
 	type Entry,
 	type Needs,
 	type Pick,
-	type Progress,
 	repoList,
 	runAnswer,
 	failure,
@@ -22,7 +20,9 @@ import {
 import { ChangesTab, changesLabel, TurnLine } from './Changes';
 import { HeaderActions } from './Ending';
 import { GateCard, GateList } from './Gates';
+import { STATES } from './Glyph';
 import { gateLine } from './gate';
+import { HomeListView, useMenuDismiss } from './HomeList';
 import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
@@ -34,41 +34,8 @@ import { MakeRecurring } from './MakeRecurring';
 import { TerminalTab } from './Terminal';
 import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
 
-/** The words and the glyph for each state; the controller derives the state, the page only names it. */
-export const STATES: Record<Progress, { word: string; glyph: string; tone: string }> = {
-	needs_you: { word: 'needs you', glyph: '●', tone: 'needs' },
-	working: { word: 'working', glyph: '◐', tone: 'working' },
-	setting_up: { word: 'setting up', glyph: '◌', tone: 'working' },
-	queued: { word: 'queued', glyph: '○', tone: 'quiet' },
-	done: { word: 'done', glyph: '✓', tone: 'done' },
-	asleep: { word: 'asleep', glyph: '◒', tone: 'quiet' },
-	failed: { word: 'failed', glyph: '✕', tone: 'failed' },
-	closed: { word: 'closed', glyph: '–', tone: 'quiet' },
-};
-
 /** How often an open page asks again. */
 const POLL_MS = 4000;
-
-/** A done Box idle this long moves to the Settled shelf. */
-const SETTLE_MS = 7 * 24 * 3600 * 1000;
-
-/** Which list a Box sits in. */
-type Group = 'needs' | 'working' | 'done' | 'settled';
-
-function groupOf(t: BoxRow, now: number): Group {
-	switch (t.state) {
-		case 'needs_you':
-			return 'needs';
-		case 'working':
-		case 'setting_up':
-		case 'queued':
-			return 'working';
-		case 'closed':
-			return 'settled';
-		default:
-			return t.state === 'done' && now - Date.parse(t.last_event_at ?? t.updated_at) > SETTLE_MS ? 'settled' : 'done';
-	}
-}
 
 export function age(iso: string | null | undefined, now: number): string {
 	const at = iso ? Date.parse(iso) : NaN;
@@ -114,15 +81,6 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 	return { value, error, now, reload: () => again.current() };
 }
 
-export function Glyph({ state, stale }: { state: Progress; stale: boolean }) {
-	const s = STATES[state];
-	return (
-		<span class={`t-glyph t-${s.tone}${stale ? ' t-stale' : ''}`} role="img" aria-label={s.word} title={s.word}>
-			{s.glyph}
-		</span>
-	);
-}
-
 /** The repos cloned beside the first: each one up to two, else a count with the names on hover. */
 function OtherRepos({ repos }: { repos: string[] }) {
 	if (repos.length === 0) return null;
@@ -141,42 +99,6 @@ function OtherRepos({ repos }: { repos: string[] }) {
 				</span>
 			))}
 		</>
-	);
-}
-
-function Row({ t, now, quiet }: { t: BoxRow; now: number; quiet?: boolean }) {
-	const s = STATES[t.state];
-	const gated = t.state === 'needs_you' || t.failed ? gateLine(t.gate) : null;
-	return (
-		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
-			<Glyph state={t.state} stale={t.stale} />
-			<span class="t-repo t-mono">
-				<span class="t-repo-name">{t.repo ?? ''}</span>
-				{t.other_repos.length > 0 && (
-					<span class="t-more" title={t.other_repos.join(', ')}>
-						+{t.other_repos.length}
-					</span>
-				)}
-			</span>
-			<span class="t-title">{t.title}</span>
-			<span class={`t-now${t.state === 'needs_you' ? ' t-ask' : ''}`}>
-				{t.stale && <span class="t-warn">⚠ stale </span>}
-				{t.failed && !gated && <span class="t-failword">failed </span>}
-				{gated ?? t.line}
-			</span>
-			<span class="t-age">{age(t.last_event_at ?? t.updated_at, now)}</span>
-		</a>
-	);
-}
-
-function Section({ label, tone, rows, now, empty }: { label: string; tone: string; rows: BoxRow[]; now: number; empty: string }) {
-	return (
-		<section class={`t-grp t-grp-${tone}`}>
-			<h2>
-				{label} · {rows.length}
-			</h2>
-			{rows.length ? rows.map((t) => <Row t={t} now={now} key={t.box} />) : <p class="t-empty">{empty}</p>}
-		</section>
 	);
 }
 
@@ -204,32 +126,18 @@ export function useBoxes() {
 	return usePoll(boxList, 'home');
 }
 
-export function Home({ boxes }: { boxes: Boxes }) {
+export function Home({ boxes, hash }: { boxes: Boxes; hash: string }) {
 	const { value, error, now } = boxes;
 	useRowKeys();
+	useMenuDismiss();
 	if (!value) {
 		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
 	}
-	const by = (g: Group) => value.filter((t) => groupOf(t, now) === g);
-	const settled = by('settled');
 	return (
-		<div class="t-home">
+		<>
 			{error && <p class="notice danger" role="alert">{error}</p>}
-			<p class="t-hint muted">
-				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
-			</p>
-			<Section label="Needs you" tone="needs" rows={by('needs')} now={now} empty="Nothing needs you." />
-			<Section label="Working" tone="working" rows={by('working')} now={now} empty="Nothing is running." />
-			<Section label="Done" tone="done" rows={by('done')} now={now} empty="None." />
-			<details class="t-settled">
-				<summary>
-					<span class="t-chev">▸</span> Settled · {settled.length}{' '}
-					<span class="muted">tasks closed, or done and quiet for 7 days</span>
-				</summary>
-				{settled.map((t) => <Row t={t} now={now} key={t.box} quiet />)}
-			</details>
-			{!value.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
-		</div>
+			<HomeListView rows={value} now={now} hash={hash} />
+		</>
 	);
 }
 

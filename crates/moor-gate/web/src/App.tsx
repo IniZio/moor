@@ -4,6 +4,7 @@ import { type Account, inboxList, load, signOut, SignedOut } from './api';
 import { Checklist } from './Checklist';
 import { dropDrafts, signInHref, useRenewWhileActive } from './session';
 import { SignedOutDialog } from './SignedOutDialog';
+import { pathOf } from './hashQuery';
 import { BoxPage, Home, NewBox, tabOf, useBoxes, usePoll } from './Portal';
 import { sectionAt, Settings } from './Settings';
 import { TopBar } from './TopBar';
@@ -61,7 +62,8 @@ export function App() {
 }
 
 /** The signed-in page: the top bar, then the page the address names. */
-function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; hash: string; onSignedOut: () => void; onChanged: () => void }) {
+function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Account; hash: string; onSignedOut: () => void; onChanged: () => void }) {
+	const hash = pathOf(address);
 	const boxes = useBoxes();
 	const inbox = usePoll(inboxList, 'inbox');
 	const flows = workflowsAt(hash);
@@ -90,7 +92,7 @@ function Ready({ account, hash, onSignedOut, onChanged }: { account: Account; ha
 					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} /> : (
 						<>
 							{fresh && <Checklist account={account} />}
-							<Home boxes={boxes} />
+							<Home boxes={boxes} hash={address} />
 						</>
 					)}
 				</>
