@@ -69,6 +69,7 @@ fn the_question_marker_moves_past_a_question_once_an_answer_is_sent() {
         turn_before: None,
         status_before: None,
         inbox: None,
+        origin: moor_core::domain::event::Origin::Person,
     };
     let idle = w
         .store

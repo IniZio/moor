@@ -143,6 +143,7 @@ pub(in crate::store) fn send_with_launch(
         turn_before: mark.turn_before,
         status_before: None,
         inbox: Some(row.id.get()),
+        origin: moor_core::domain::event::Origin::Person,
     });
     insert_event(tx, box_id, &steered, now)?;
     Ok(())

@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 
+import { GateViewSchema, plain, WaitSchema } from './gate';
 import { announceSignedOut } from './session';
 
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
@@ -374,7 +375,7 @@ const PickSchema = v.object({
 /** What the agent asks, as the controller derives it: the card a person answers. */
 const NeedsSchema = v.object({
 	id: v.string(),
-	kind: v.picklist(['permission', 'question', 'approve']),
+	kind: v.picklist(['permission', 'question', 'approve', 'stuck']),
 	question: v.string(),
 	detail: v.nullish(v.string()),
 	picks: v.array(PickSchema),
@@ -383,9 +384,32 @@ const NeedsSchema = v.object({
 	approve: v.nullish(v.object({ workflow: v.string(), run: v.number(), step: v.string() })),
 	/** Whether a plan-first agent asks to approve the plan it left as evidence. */
 	plan: v.optional(v.boolean(), false),
+	/** For the card of a gate that waits for a person: the gate and what the person needs to read to act. */
+	gate: v.nullish(WaitSchema),
 });
 
-const BoxRowSchema = v.object({
+/** The words of a row a person reads. */
+type Spoken = {
+	line: string;
+	gate?: { gates: string[] } | null;
+	needs?: { question: string; detail?: string | null; gate?: { hint?: string | null; note?: string | null } | null } | null;
+};
+
+/** A row with the code marks taken out of the sentences moor wrote for a person; the gates it names are quoted as the page quotes them. */
+function spoken<T extends Spoken>(row: T): T {
+	const say = (text: string) => plain(text, row.gate?.gates ?? []);
+	row.line = say(row.line);
+	const { needs } = row;
+	if (needs) {
+		needs.question = say(needs.question);
+		if (needs.detail) needs.detail = say(needs.detail);
+		if (needs.gate?.hint) needs.gate.hint = say(needs.gate.hint);
+		if (needs.gate?.note) needs.gate.note = say(needs.gate.note);
+	}
+	return row;
+}
+
+const BoxRowFields = v.object({
 	box: v.string(),
 	repo: v.nullish(v.string()),
 	/** The repos cloned beside the first, in order. */
@@ -401,18 +425,22 @@ const BoxRowSchema = v.object({
 	updated_at: v.string(),
 	pr: v.nullable(PrSchema),
 	needs: v.nullish(NeedsSchema),
+	/** The gates the Box must pass before it counts as done, and where it stands. */
+	gate: v.nullish(GateViewSchema),
 	/** Whether the Box failed, as moor-core decides: the one answer every view reads. */
 	failed: v.optional(v.boolean(), false),
 	/** Whether setup failed, so it can be run again. */
 	retryable: v.optional(v.boolean(), false),
 });
 
+const BoxRowSchema = v.pipe(BoxRowFields, v.transform(spoken));
+
 const TallySchema = v.object({ files: v.number(), added: v.number(), removed: v.number() });
 
 /** What a turn changed in git, read by moor once the turn ended. */
 const ReceiptSchema = v.object({ turn: v.number(), changed: TallySchema, total: TallySchema });
 
-const EntryClassSchema = v.picklist(['message', 'step', 'you', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
+const EntryClassSchema = v.picklist(['message', 'step', 'you', 'moor', 'asked', 'turn', 'evidence', 'error', 'routine', 'hidden']);
 
 /** A text moor kept of a tool call, cut to size; `cut` when part of it was left out. */
 const BodySchema = v.object({ text: v.string(), cut: v.optional(v.boolean(), false) });
@@ -425,6 +453,8 @@ const ToolSchema = v.object({
 	group: v.nullish(v.picklist(['read', 'search', 'plan'])),
 	/** It failed, exited non-zero or was refused: never folded. */
 	failed: v.optional(v.boolean(), false),
+	/** A report moor did not accept: normal flow, shown plain and not as an error. */
+	refused: v.optional(v.boolean(), false),
 	input: v.nullish(BodySchema),
 	diff: v.nullish(BodySchema),
 	output: v.nullish(BodySchema),
@@ -441,6 +471,8 @@ const EntrySchema = v.object({
 	text: v.string(),
 	/** For a workflow run's first message: the title of the step it starts at. */
 	step: v.nullish(v.string()),
+	/** For moor's message that carries a person's words, such as the owner's note in a no: those words, which the text leaves out. */
+	quote: v.nullish(v.string()),
 	/** For a turn: what it changed in git. */
 	receipt: v.nullish(ReceiptSchema),
 });
@@ -456,8 +488,8 @@ const EvidenceSchema = v.object({
 	href: v.string(),
 });
 
-const BoxDetailSchema = v.object({
-	...BoxRowSchema.entries,
+const BoxDetailFields = v.object({
+	...BoxRowFields.entries,
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
 	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
@@ -467,6 +499,8 @@ const BoxDetailSchema = v.object({
 	/** Whether a workflow run made this Box. */
 	from_workflow: v.optional(v.boolean(), false),
 });
+
+const BoxDetailSchema = v.pipe(BoxDetailFields, v.transform(spoken));
 
 export type Needs = v.InferOutput<typeof NeedsSchema>;
 export type Pick = v.InferOutput<typeof PickSchema>;
@@ -502,8 +536,8 @@ const InboxItemSchema = v.object({
 	repo: v.nullish(v.string()),
 	kind: v.picklist(['needs_input', 'run_waiting', 'run_failed']),
 	state: v.picklist(['unread', 'read', 'resolved']),
-	title: v.string(),
-	text: v.string(),
+	title: v.pipe(v.string(), v.transform((s) => plain(s))),
+	text: v.pipe(v.string(), v.transform((s) => plain(s))),
 	at: v.string(),
 });
 
@@ -545,6 +579,16 @@ export async function boxAnswer(csrf: string, box: string, ask: string, n: numbe
 		body: JSON.stringify({ box, ask, n, text }),
 	});
 	await answer(res, v.object({ answered: v.boolean() }));
+}
+
+/** Answers the yes or no a gate asks its owner, for the prompt `ask` names; a note goes to the agent. Says what the answer did. */
+export async function gateAnswer(csrf: string, box: string, ask: string, yes: boolean, note?: string): Promise<string | undefined> {
+	const res = await fetch('/account/api/box/answer', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ box, ask, answer: yes ? 'yes' : 'no', note: note?.trim() || undefined }),
+	});
+	return (await answer(res, v.object({ answered: v.boolean(), outcome: v.nullish(v.string()) }))).outcome ?? undefined;
 }
 
 const FileChangeSchema = v.object({

@@ -48,6 +48,44 @@ fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
 }
 
 #[test]
+fn the_first_message_says_the_gates_go_in_order_and_that_moor_says_when_one_is_in_hand() {
+    let text = gates().first_message("Fix the typo.\n");
+    assert!(text.contains("in this order, one at a time"), "{text}");
+    assert!(
+        text.contains("moor tells you when each gate is in hand"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Report only the gate that is in hand"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_report_is_asked_for_a_one_line_note_of_what_was_done() {
+    let g = gates();
+    let brief = g.get(0).unwrap().brief();
+    assert!(brief.contains("a one-line note of what you did"), "{brief}");
+    let remind = g.get(0).unwrap().remind_steer();
+    assert!(
+        remind.contains("a one-line note of what you did"),
+        "{remind}"
+    );
+}
+
+#[test]
+fn the_hand_over_names_the_gate_that_passed_and_the_one_in_hand_with_its_brief() {
+    let g = gates();
+    let text = g
+        .get(1)
+        .unwrap()
+        .handoff_steer(&StepId::parse("proof").unwrap());
+    assert!(text.contains("Gate `proof` has passed"), "{text}");
+    assert!(text.contains("Gate `tests` is now in hand"), "{text}");
+    assert!(text.contains(&g.get(1).unwrap().brief()), "{text}");
+}
+
+#[test]
 fn the_persons_words_come_back_out_of_the_first_message() {
     let text = gates().first_message("Fix the typo.\n");
     assert_eq!(split_gate_preamble(&text), Some("Fix the typo."));
@@ -127,4 +165,32 @@ fn a_gates_evidence_is_checked_like_a_steps() {
     let bare = evidence_gate(ev, &report(StepResult::Fail, " "), &[]).unwrap_err();
     assert_eq!(bare, ["a fail report needs a note that says why"]);
     assert_eq!(evidence_gate(None, &ok, &[]), Ok(()));
+}
+
+#[test]
+fn the_owners_note_splits_out_of_a_no_whatever_it_holds() {
+    let gate = &gates().iter().next().unwrap().clone();
+    let note = "use the blue header\n\nFix it, then rewrite it";
+    let text = gate.owner_no_steer(note);
+    let (rest, said) = split_owner_note(&text).unwrap();
+    assert_eq!(said, note);
+    assert!(
+        rest.starts_with("The owner did not approve gate `proof`."),
+        "{rest}"
+    );
+    assert!(
+        rest.contains("\n\nFix it, then call report_step again"),
+        "{rest}"
+    );
+    assert!(!rest.contains("blue header"), "{rest}");
+
+    assert_eq!(
+        split_owner_note(&gate.owner_no_steer("  ")),
+        None,
+        "no note, nothing to split"
+    );
+    assert_eq!(
+        split_owner_note("The owner wrote: hi\n\nFix it, then go"),
+        None
+    );
 }

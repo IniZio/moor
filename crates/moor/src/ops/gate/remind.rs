@@ -4,6 +4,7 @@
 //! the same try writes `Quiet`, which `status()` reads as stuck. A reminder is sent before its
 //! line is written, so one that was not sent is tried again by the next pass.
 
+use moor_core::domain::event::Origin;
 use moor_core::gate::{status, Gate, GateLine, GateNext, GateStatus, Gates};
 use moor_core::request::BoxTarget;
 use moor_core::SteerReq;
@@ -67,5 +68,6 @@ fn send(cx: &Cx, row: &BoxRow, gate: &Gate) -> Result<(), CommandError> {
         interrupt: false,
         ask: None,
     };
-    cx.for_box(row.user, || steer::run(cx, &req)).map(drop)
+    cx.for_box(row.user, || steer::run_as(cx, &req, Origin::Moor))
+        .map(drop)
 }

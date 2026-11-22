@@ -1,19 +1,22 @@
 //! The inbox row a steer waits in from just before its send until its turn ends.
 
+use moor_core::domain::event::{Origin, MOOR_SENDER};
 use moor_core::domain::inbox::{Delivery, InboxId, InboxKind};
 use moor_core::seam::engine::{SessionRef, Steer, SteerOutcome};
-use moor_core::BoxId;
+use moor_core::{BoxId, SteerReq};
 
-use super::{is_exit, send};
+use super::{attempt, is_exit, send, Attempt};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::failpoint;
-use crate::store::{Launch, Store};
+use crate::store::{BoxRow, Launch, Store};
 
 /// The inbox row a steer is sent from, made at its first send.
 pub(super) struct Slot {
     /// Who a text is from.
     kind: InboxKind,
+    /// Who wrote the text, which the row's sender keeps for the inbox pass.
+    origin: Origin,
     /// The row, once made, with what it holds.
     row: Option<(InboxId, InboxKind, String)>,
 }
@@ -21,13 +24,37 @@ pub(super) struct Slot {
 impl Slot {
     /// No row yet for a steer whose text is of `kind`.
     pub(super) const fn new(kind: InboxKind) -> Self {
-        Self { kind, row: None }
+        Self {
+            kind,
+            origin: Origin::Person,
+            row: None,
+        }
+    }
+
+    /// The same slot for a text moor wrote.
+    pub(super) const fn by(mut self, origin: Origin) -> Self {
+        self.origin = origin;
+        self
+    }
+
+    /// Who wrote the text.
+    pub(super) const fn origin(&self) -> Origin {
+        self.origin
+    }
+
+    /// The sender an inbox row of `kind` carries when `origin` wrote it.
+    pub(super) const fn sender(kind: InboxKind, origin: Origin) -> &'static str {
+        match origin {
+            Origin::Moor => MOOR_SENDER,
+            Origin::Person => kind.as_str(),
+        }
     }
 
     /// Row `row`, already queued with `text` of `kind`.
     pub(super) fn made(kind: InboxKind, row: InboxId, text: &str) -> Self {
         Self {
             kind,
+            origin: Origin::Person,
             row: Some((row, kind, text.to_owned())),
         }
     }
@@ -45,7 +72,7 @@ impl Slot {
             Some((row, k, t)) if *k == kind && t == text => *row,
             _ => {
                 self.withdraw(store, id)?;
-                let row = store.enqueue(id, kind, text, self.kind.as_str())?;
+                let row = store.enqueue(id, kind, text, Self::sender(self.kind, self.origin))?;
                 self.row = Some((row, kind, text.to_owned()));
                 row
             }
@@ -122,5 +149,23 @@ impl Slot {
             store.withdraw(id, *row)?;
         }
         Ok(())
+    }
+}
+
+/// Sends `text` to the live agent of awake Box `row`, the way a steer does.
+pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result<(), CommandError> {
+    let req = SteerReq {
+        target: moor_core::request::BoxTarget::Id(row.id),
+        text: Some(text),
+        menu: None,
+        interrupt: false,
+        ask: None,
+    };
+    let mut slot = Slot::new(InboxKind::Note).by(Origin::Moor);
+    let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
+    slot.withdraw(store, row.id)?;
+    match sent? {
+        Attempt::Sent(_) => Ok(()),
+        Attempt::Gone(gone) => Err(gone.error),
     }
 }

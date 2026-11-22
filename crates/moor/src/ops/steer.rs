@@ -9,6 +9,7 @@ use std::time::Duration;
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::Decision;
+use moor_core::domain::event::Origin;
 use moor_core::domain::inbox::{InboxId, InboxKind};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
@@ -39,27 +40,41 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 /// [`CommandError`] when the Box is unknown or has no live agent, the agent ended and could not
 /// be relaunched or ended again, the choice does not fit what the agent shows, or the send failed.
 pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
+    run_as(cx, req, Origin::Person)
+}
+
+/// Run `steer` for a text `origin` wrote: moor's own steers to the agent say so, so a front never
+/// shows them as the person's.
+///
+/// # Errors
+/// As [`run`].
+pub(crate) fn run_as(cx: &Cx, req: &SteerReq, origin: Origin) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
     let found = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
-    let sent = send_to(cx, req, &found)?;
+    let sent = send_to(cx, req, &found, origin)?;
     crate::ops::gate::hold::after_steer(cx, store, found.id);
     Ok(sent)
 }
 
 /// Sends `req` to the agent of `found`.
-fn send_to(cx: &Cx, req: &SteerReq, found: &BoxRow) -> Result<SteerValue, CommandError> {
+fn send_to(
+    cx: &Cx,
+    req: &SteerReq,
+    found: &BoxRow,
+    origin: Origin,
+) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
     if req.menu.is_none() && !req.interrupt && req.text.is_some() && !is_exit_req(req) {
-        return queue::steer(cx, store, req, found);
+        return queue::steer(cx, store, req, found, origin);
     }
     let target = (found.id, found.name.as_str());
     if lost(found) {
         bring_back(cx, found)?;
     }
     let _turn = cx.turn(target.0, Cmd::Steer)?;
-    let mut slot = Slot::new(InboxKind::Steer);
+    let mut slot = Slot::new(InboxKind::Steer).by(origin);
     let sent = steer_awake(cx, store, req, target, &mut slot);
     slot.give_up(store, target.0, sent.is_err())?;
     sent
@@ -103,24 +118,6 @@ fn steer_awake(
                 revived = relaunch::once(cx, store, target, again)?;
             }
         }
-    }
-}
-
-/// Sends `text` to the live agent of awake Box `row`, the way a steer does.
-pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result<(), CommandError> {
-    let req = SteerReq {
-        target: moor_core::request::BoxTarget::Id(row.id),
-        text: Some(text),
-        menu: None,
-        interrupt: false,
-        ask: None,
-    };
-    let mut slot = Slot::new(InboxKind::Note);
-    let sent = attempt(cx, store, &req, (row.id, row.name.as_str()), &mut slot);
-    slot.withdraw(store, row.id)?;
-    match sent? {
-        Attempt::Sent(_) => Ok(()),
-        Attempt::Gone(gone) => Err(gone.error),
     }
 }
 
@@ -260,6 +257,7 @@ fn attempt(
         turn_before: turn_before(reading.term.as_ref(), &steer).filter(|_| starts_turn),
         status_before: status_before(reading.term.as_ref()).filter(|_| starts_turn),
         submit_retried: outcome.submit_retried,
+        origin: slot.origin(),
     };
     let shown = shown_of(&steer, req, before.as_ref());
     let steer_id = record(store, id, &session, &shown, mark, inbox)?;
@@ -387,6 +385,7 @@ mod typed;
 pub(crate) use queue::{deliver, pass, Backoff};
 
 use choose::choose;
+pub(crate) use inbox::tell;
 use inbox::Slot;
 use lost::{bring_back, first_run_refusal, lost};
 use record::{delivered, idle, record, status_before, turn_before, Mark};

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::inbox::{cause, next, AgentFact, Facts, Next};
+use moor_core::domain::event::Origin;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery as Row, InboxId, InboxKind, QueueCause, MAX_SENDS};
 use moor_core::seam::clock::Ts;
@@ -36,10 +37,12 @@ pub(super) fn steer(
     store: &Store,
     req: &SteerReq,
     found: &BoxRow,
+    origin: Origin,
 ) -> Result<SteerValue, CommandError> {
     let (id, name) = (found.id, found.name.as_str());
     let text = req.text.clone().unwrap_or_default();
-    let inbox = store.enqueue(id, InboxKind::Steer, &text, InboxKind::Steer.as_str())?;
+    let sender = Slot::sender(InboxKind::Steer, origin);
+    let inbox = store.enqueue(id, InboxKind::Steer, &text, sender)?;
     let queued = |why| SteerValue {
         box_name: name.to_owned(),
         sent: text.clone(),
@@ -70,7 +73,7 @@ pub(super) fn steer(
             },
         ));
     }
-    let mut slot = Slot::made(InboxKind::Steer, inbox, &text);
+    let mut slot = Slot::made(InboxKind::Steer, inbox, &text).by(origin);
     match send_now(cx, store, req, (id, name), &mut slot) {
         Ok(Some(v)) => Ok(v),
         Ok(None) if capped(cx, store, id)? => Ok(queued(QueueCause::RelaunchCapped)),
@@ -159,6 +162,7 @@ pub(crate) fn deliver(
                     turn_before: turn_before(reading.term.as_ref(), &steer),
                     status_before: status_before(reading.term.as_ref()),
                     submit_retried: outcome.submit_retried,
+                    origin: Origin::of_sender(&item.sender),
                 };
                 sent.push((
                     item.id,

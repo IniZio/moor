@@ -20,7 +20,7 @@ mod status_tests;
 mod tests;
 mod wait;
 
-pub use brief::split_gate_preamble;
+pub use brief::{split_gate_preamble, split_owner_note};
 pub use line::GateLine;
 pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
 pub use wait::{wait, Wait, WaitKind};

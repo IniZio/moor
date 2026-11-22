@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::changes::{RepoReceipt, Tally};
-use crate::gate::split_gate_preamble;
+use crate::gate::{split_gate_preamble, split_owner_note};
 use crate::progress::transcript::{Sent, Tool, Transcript};
 use crate::view::progress::step;
 use crate::view::EventView;
@@ -21,6 +21,8 @@ pub enum Class {
     Step,
     /// A message from a person to the agent.
     You,
+    /// A message moor itself sent the agent, such as its steer about a gate.
+    Moor,
     /// The agent stopped to ask.
     Asked,
     /// A turn ended.
@@ -170,6 +172,10 @@ pub struct TimelineEntry {
     /// then the workflow's own prompt, without moor's instructions to the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
+    /// For a message from moor that carries a person's words, such as the owner's note in a no:
+    /// those words, which the text leaves out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
     /// For a turn, what it changed in git, as moor read it once the turn ended.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt: Option<Receipt>,
@@ -337,9 +343,15 @@ fn build<'e>(
     out
 }
 
+/// Whether `e` is a message moor wrote to the agent itself, which its `steered` event says.
+fn from_moor(e: &EventView) -> bool {
+    e.kind == "steered" && field(&e.payload, &["origin"]) == Some("moor")
+}
+
 /// The timeline entry of one event, without a receipt; none for a hidden kind.
 fn entry(e: &EventView) -> Option<TimelineEntry> {
     let class = Class::of(&e.kind).unwrap_or(Class::Error);
+    let class = if from_moor(e) { Class::Moor } else { class };
     if class == Class::Hidden {
         return None;
     }
@@ -355,6 +367,10 @@ fn entry(e: &EventView) -> Option<TimelineEntry> {
         Some((prompt, step)) => (prompt, Some(step)),
         None => (words(e), None),
     };
+    let (text, quote) = match split_owner_note(&text).filter(|_| class == Class::Moor) {
+        Some((rest, note)) => (rest, Some(note.to_owned())),
+        None => (text, None),
+    };
     Some(TimelineEntry {
         id: e.id,
         at: e.ts.clone(),
@@ -363,6 +379,7 @@ fn entry(e: &EventView) -> Option<TimelineEntry> {
         text,
         artifact,
         step,
+        quote,
         receipt: None,
         key: None,
         tool: None,

@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { type BoxDetail, boxRetry, failure, workflowRunNow, toError } from './api';
+import { gateLine } from './gate';
 
 /** What the composer opens with when a person starts a failed Box again. */
 export type Draft = { repos: string[]; base: string; prompt: string };
@@ -63,7 +64,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 	return (
 		<div class="t-fail" role="region" aria-label="This task failed">
 			<div class="t-fail-h">{failed ? 'This task failed' : 'The workflow run behind this task failed'}</div>
-			<p class="t-fail-q">{setupFailure(detail) ?? detail.line}</p>
+			<p class="t-fail-q">{setupFailure(detail) ?? gateLine(detail.gate) ?? detail.line}</p>
 			<div class="t-wait-btns">
 				{detail.retryable && (
 					<button type="button" class="t-btn" disabled={busy} onClick={() => void act(() => boxRetry(csrf, detail.box))}>

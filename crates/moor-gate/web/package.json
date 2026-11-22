@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "test": "bun test"
   },
   "dependencies": {
     "@xterm/addon-clipboard": "0.2.0",

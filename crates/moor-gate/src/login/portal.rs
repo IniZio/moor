@@ -156,6 +156,8 @@ struct Row {
     lifecycle: Option<String>,
     /// The derived state.
     progress: Option<ProgressView>,
+    /// The Box's gates and where it stands, handed on as `show` sent it.
+    gate: Option<Value>,
 }
 
 /// What `show` sends, the parts a page reads.
@@ -200,6 +202,7 @@ fn summary(row: &Row) -> Option<Value> {
         "updated_at": row.updated_at,
         "pr": pr_json(progress.pr.as_ref()),
         "needs": progress.needs,
+        "gate": row.gate,
         "retryable": row.lifecycle.as_deref() == Some("setup_failed"),
     }))
 }

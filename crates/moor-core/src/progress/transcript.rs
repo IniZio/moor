@@ -87,6 +87,9 @@ pub struct Tool {
     /// The call failed, exited non-zero or was refused: never folded.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub failed: bool,
+    /// The call was a report moor did not accept: normal flow, so not `failed` and not red.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub refused: bool,
     /// What the call was given: a command, a search, a prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<Body>,

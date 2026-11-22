@@ -36,6 +36,7 @@ fn steered(row: InboxId) -> Event {
         turn_before: MARK.turn_before,
         status_before: MARK.status_before,
         inbox: Some(row.get()),
+        origin: moor_core::domain::event::Origin::Person,
     })
 }
 

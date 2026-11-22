@@ -79,6 +79,7 @@ web:
 	@command -v bun >/dev/null || { echo "web: bun $(BUN_VERSION) is not installed"; exit 1; }
 	bun install --cwd crates/moor-gate/web --frozen-lockfile
 	bun run --cwd crates/moor-gate/web build
+	bun run --cwd crates/moor-gate/web test
 
 chart:
 	@command -v helm >/dev/null || { echo "chart: helm $(HELM_VERSION) is not installed"; exit 1; }

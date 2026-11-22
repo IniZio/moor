@@ -81,6 +81,7 @@ fn gate_run(row: &RunRow) -> Option<GateRun> {
 pub(crate) mod answer;
 mod ask;
 pub(crate) mod checks;
+mod handoff;
 pub(crate) mod hold;
 mod remind;
 pub(crate) mod report;

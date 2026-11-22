@@ -173,6 +173,7 @@ fn a_steer_sent_after_a_newer_row_is_not_closed_by_that_row_s_turn() {
             turn_before: mark.turn_before,
             status_before: None,
             inbox: Some(row.get()),
+            origin: moor_core::domain::event::Origin::Person,
         });
         store.confirm_sent(f.id, row, mark, &event).unwrap().1
     };

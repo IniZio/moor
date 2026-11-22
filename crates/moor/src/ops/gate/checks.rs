@@ -9,6 +9,7 @@
 //! A failed check ends the try, as `status()` reads it. When tries remain, the end of its output is
 //! steered to the agent, which then fixes the work and goes quiet again.
 
+use moor_core::domain::event::Origin;
 use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
 use moor_core::request::BoxTarget;
 use moor_core::view::steer::SteerValue;
@@ -21,6 +22,7 @@ use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::settled;
 use crate::ops::gate::ask::ask;
+use crate::ops::gate::handoff::hand_over;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
@@ -86,6 +88,9 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     }
     let Some(due) = due_check(&gates, &lines) else {
         ask(cx, store, row, (&gates, &lines))?;
+        if hand_over(cx, store, row, (&gates, &lines))? {
+            return Ok(());
+        }
         return remind(cx, store, row, (&gates, &lines));
     };
     if !settled(cx, store, row)? {
@@ -197,7 +202,8 @@ fn tell_failure(
         interrupt: false,
         ask: None,
     };
-    cx.for_box(row.user, || steer::run(cx, &req)).map(Some)
+    cx.for_box(row.user, || steer::run_as(cx, &req, Origin::Moor))
+        .map(Some)
 }
 
 /// Whether `e` says another line took the number.

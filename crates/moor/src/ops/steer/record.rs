@@ -1,7 +1,7 @@
 //! The `steered` event a sent steer leaves behind, and where the agent's terminal was at it.
 
 use moor_core::activity::{Status, Term};
-use moor_core::domain::event::{Event, SteerSent};
+use moor_core::domain::event::{Event, Origin, SteerSent};
 use moor_core::domain::inbox::{InboxId, SendMark};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::Steer;
@@ -20,6 +20,8 @@ pub(super) struct Mark {
     pub(super) status_before: Option<i64>,
     /// Whether the submit key was pressed a second time.
     pub(super) submit_retried: bool,
+    /// Who wrote the message.
+    pub(super) origin: Origin,
 }
 
 /// Append the `steered` event and confirm inbox row `inbox`, which the steer was sent from, in
@@ -39,6 +41,7 @@ pub(super) fn record(
         turn_before: mark.turn_before,
         status_before: mark.status_before,
         inbox: Some(inbox.get()),
+        origin: mark.origin,
     });
     let sent = SendMark {
         turn_before: mark.turn_before,

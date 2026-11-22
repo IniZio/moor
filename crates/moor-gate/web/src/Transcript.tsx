@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import type { Clipped, Entry, Tool } from './api';
+import { plain } from './gate';
 
 /** Lines an input, diff or output shows before Show all. */
 const SHOW_LINES = 12;
@@ -74,10 +75,59 @@ function inputLabel(t: Tool): string {
 	}
 }
 
+/** A paragraph of moor's message in plain words: the Markdown list dash of a gate line is dropped, and a gate it names is quoted as the page quotes gates. */
+function moorSays(text: string, gates: readonly string[]): string {
+	return plain(text.replace(/^- (?=Gate )/gm, ''), gates);
+}
+
+/** What moor itself told the agent, such as its steer about a gate: a system note under the speaker moor, never the person's message. The owner's note in a no is shown as theirs. */
+export function MoorLine({ e, when, gates }: { e: Entry; when: string; gates: readonly string[] }) {
+	const [first = '', ...rest] = e.text.split('\n\n');
+	return (
+		<div class="t-ev t-moor">
+			<span class="t-who">moor</span>
+			<span class="t-when">{when}</span>
+			<div class="t-what">
+				<p>{moorSays(first, gates)}</p>
+				{e.quote && (
+					<figure class="t-moor-quote">
+						<figcaption>The owner wrote</figcaption>
+						<blockquote>{e.quote}</blockquote>
+					</figure>
+				)}
+				{rest.map((para) => (
+					<p key={para}>{moorSays(para, gates)}</p>
+				))}
+			</div>
+		</div>
+	);
+}
+
+/** A report moor did not accept: a plain item with moor's reason, and what the agent sent folded away. */
+function RefusedLine({ t, when }: { t: Tool; when: string }) {
+	return (
+		<div class="t-ev t-refused">
+			<span class="t-who">Agent</span>
+			<span class="t-when">{when}</span>
+			<div class="t-what">
+				<p class="t-refused-title">{t.title}</p>
+				{t.output && <p class="t-refused-why">{plain(t.output.text)}</p>}
+				{t.input && (
+					<details class="t-refused-sent">
+						<summary>What the agent sent</summary>
+						<pre class="t-quote">{t.input.text}</pre>
+					</details>
+				)}
+			</div>
+		</div>
+	);
+}
+
 /** One tool call: a line that opens to its input, diff and output. A failed call stays open. */
 export function ToolLine({ e, when }: { e: Entry; when: string }) {
 	const t = e.tool;
 	if (!t) return null;
+	if (t.refused) return <RefusedLine t={t} when={when} />;
 	return (
 		<details class={`t-tool${t.failed ? ' t-tool-err' : ''}`} open={t.failed}>
 			<summary>

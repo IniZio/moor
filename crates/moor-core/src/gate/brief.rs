@@ -2,7 +2,7 @@
 //! gate it has not reported, and the steer after a check failed.
 
 use super::{Approval, Gate, Gates};
-use crate::workflow::{Evidence, EvidenceName};
+use crate::workflow::{Evidence, EvidenceName, StepId};
 
 /// Where moor's preamble starts in a first message, after the person's own words.
 const GATE_HEAD: &str = "\n\nmoor keeps this Box open until its gates pass.";
@@ -12,6 +12,24 @@ const GATE_HEAD: &str = "\n\nmoor keeps this Box open until its gates pass.";
 #[must_use]
 pub fn split_gate_preamble(text: &str) -> Option<&str> {
     text.find(GATE_HEAD).map(|at| text.split_at(at).0)
+}
+
+/// How moor's steer after a refusal introduces what the owner wrote.
+const OWNER_WROTE: &str = "\n\nThe owner wrote: ";
+
+/// Where what the agent does next starts in that steer, after the owner's words.
+const TRY_AGAIN: &str = "\n\nFix it, then";
+
+/// The owner's own words in a steer [`Gate::owner_no_steer`] made, and the rest of the steer
+/// without them; none for any other message.
+#[must_use]
+pub fn split_owner_note(text: &str) -> Option<(String, &str)> {
+    if !text.starts_with("The owner did not approve gate ") {
+        return None;
+    }
+    let (head, rest) = text.split_once(OWNER_WROTE)?;
+    let (note, tail) = rest.rsplit_once(TRY_AGAIN)?;
+    Some((format!("{head}{TRY_AGAIN}{tail}"), note))
 }
 
 /// The evidence names of `gate`, as the agent reads them.
@@ -30,7 +48,9 @@ impl Gates {
         let lines: Vec<String> = self.iter().map(Gate::brief).collect();
         format!(
             "{}{GATE_HEAD} The gates open in this order, one at a time, and the Box is done \
-             only when all have passed. report_step is a tool of the `moor` MCP server; if it is \
+             only when all have passed. Report only the gate that is in hand: a report for any \
+             other is refused. The first gate is in hand now. moor tells you when each gate is in \
+             hand. report_step is a tool of the `moor` MCP server; if it is \
              a deferred tool, load it with ToolSearch first. Leave each evidence file in \
              .moor/artifacts/.\n\n{}",
             prompt.trim_end(),
@@ -47,7 +67,7 @@ impl Gate {
         let mut line = if self.evidence.is_some() {
             format!(
                 "- Gate `{name}`: leave {} in .moor/artifacts/, then call report_step with step \
-                 \"{name}\", result ok and those names.",
+                 \"{name}\", result ok, those names and a one-line note of what you did.",
                 names(self).join(", ")
             )
         } else {
@@ -88,9 +108,21 @@ impl Gate {
         let name = &self.name;
         format!(
             "Gate `{name}` has no report yet. Leave {} in .moor/artifacts/, then call \
-             report_step with step \"{name}\", result ok and those names. Or call it with \
-             result fail and a note that says why the gate cannot be passed.",
+             report_step with step \"{name}\", result ok, those names and a one-line note of what \
+             you did. Or call it with result fail and a note that says why the gate cannot be \
+             passed.",
             names(self).join(", ")
+        )
+    }
+
+    /// The steer when gate `passed` has passed and this gate, which waits for the agent, is now in
+    /// hand. It is not the reminder.
+    #[must_use]
+    pub fn handoff_steer(&self, passed: &StepId) -> String {
+        format!(
+            "Gate `{passed}` has passed. Gate `{}` is now in hand.\n\n{}",
+            self.name,
+            self.brief()
         )
     }
 

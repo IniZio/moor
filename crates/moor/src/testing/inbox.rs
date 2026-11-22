@@ -24,6 +24,7 @@ pub(crate) fn sent(
         turn_before,
         status_before,
         inbox: Some(row.get()),
+        origin: moor_core::domain::event::Origin::Person,
     });
     let mark = SendMark {
         turn_before,
