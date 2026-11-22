@@ -7,6 +7,7 @@ mod fx;
 mod handoff;
 mod hold;
 mod origin;
+mod outcomes;
 mod remind;
 mod report;
 

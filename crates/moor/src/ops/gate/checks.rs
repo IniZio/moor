@@ -10,7 +10,7 @@
 //! steered to the agent, which then fixes the work and goes quiet again.
 
 use moor_core::domain::event::Origin;
-use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
+use moor_core::gate::{due_check, due_outcomes, status, GateLine, GateStatus, Gates};
 use moor_core::request::BoxTarget;
 use moor_core::view::steer::SteerValue;
 use moor_core::workflow::{Answer, StepId};
@@ -22,27 +22,39 @@ use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::settled;
 use crate::ops::gate::ask::ask;
+use crate::ops::gate::decide::{self, Due};
 use crate::ops::gate::handoff::hand_over;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
 use crate::store::{BoxRow, RunOfBox, Store, StoreError};
 
-/// A check to run: the gate, the try and the Box, and the number of the line it writes.
+/// What to run in a Box, and the number of the line the result takes.
 pub(crate) struct Job {
     /// The Box to run it in.
     box_id: BoxId,
-    /// The gate.
-    gate: StepId,
-    /// The try.
-    try_n: u8,
-    /// The check's place among the gate's checks.
-    check: u8,
-    /// The command.
-    command: String,
+    /// What to run.
+    work: Work,
     /// The number of the line the result takes: the one after those the pass read.
     n: i64,
     /// Held until the job is dropped, so no pass starts a check of the Box twice.
     _flight: Flight,
+}
+
+/// What a job runs.
+enum Work {
+    /// One check of a gate.
+    Check {
+        /// The gate.
+        gate: StepId,
+        /// The try.
+        try_n: u8,
+        /// The check's place among the gate's checks.
+        check: u8,
+        /// The command.
+        command: String,
+    },
+    /// The checks of the outcomes due, to find the one that holds.
+    Outcomes(Due),
 }
 
 /// Looks at each open Box with gates, handing the check that is due to `checks`, which must not
@@ -95,28 +107,36 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     if tell_failure(cx, store, row, (&gates, &lines))?.is_some() {
         return Ok(());
     }
-    let Some(due) = due_check(&gates, &lines) else {
+    let n = i64::try_from(lines.len())
+        .unwrap_or(i64::MAX)
+        .saturating_add(1);
+    let work = if let Some(due) = due_check(&gates, &lines) {
+        let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
+            return Ok(());
+        };
+        Work::Check {
+            gate: due.gate.name.clone(),
+            try_n: due.try_n,
+            check: due.check,
+            command: command.run.clone(),
+        }
+    } else {
         ask(cx, store, row, (&gates, &lines))?;
         if hand_over(cx, store, row, (&gates, &lines))? {
             return Ok(());
         }
-        return remind(cx, store, row, (&gates, &lines));
+        let Some(due) = due_outcomes(&gates, &lines) else {
+            return remind(cx, store, row, (&gates, &lines));
+        };
+        Work::Outcomes(Due::of(&due))
     };
     if !settled(cx, store, row)? {
         return Ok(());
     }
-    let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
-        return Ok(());
-    };
     checks(Job {
         box_id: row.id,
-        gate: due.gate.name.clone(),
-        try_n: due.try_n,
-        check: due.check,
-        command: command.run.clone(),
-        n: i64::try_from(lines.len())
-            .unwrap_or(i64::MAX)
-            .saturating_add(1),
+        work,
+        n,
         _flight: flight,
     });
     Ok(())
@@ -146,8 +166,13 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
         .enumerate()
         .rev()
         .find(|(_, l)| !of_this_try(l, try_n))?;
-    let waiting = gates.iter().find(|g| g.name == gate)?;
+    let waiting = || gates.iter().find(|g| g.name == gate);
     let (failed_try, text) = match line {
+        GateLine::NoneHeld {
+            gate: g,
+            try_n,
+            tried,
+        } if g == &gate => (*try_n, gates.none_held_steer(tried)),
         GateLine::Checked {
             gate: g,
             try_n,
@@ -156,7 +181,7 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             tail,
         } if g == &gate && *exit != 0 => (
             *try_n,
-            waiting.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
+            waiting()?.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
         ),
         GateLine::CheckLost {
             gate: g,
@@ -164,7 +189,7 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             check,
         } if g == &gate => (
             *try_n,
-            waiting.failed_check_steer(*check, ("lost its output twice", "")),
+            waiting()?.failed_check_steer(*check, ("lost its output twice", "")),
         ),
         GateLine::Answered {
             gate: g,
@@ -172,7 +197,7 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             answer: Answer::No,
             note,
             ..
-        } if g == &gate => (*try_n, waiting.owner_no_steer(note)),
+        } if g == &gate => (*try_n, waiting()?.owner_no_steer(note)),
         _ => return None,
     };
     if failed_try + 1 != try_n {
@@ -222,24 +247,42 @@ pub(super) fn taken(e: &StoreError) -> bool {
     }))
 }
 
-/// Runs the check of `job` in its Box as the Box's owner and writes how it ended, then tells the
-/// agent when that failed the try. A result whose line number was taken meanwhile is dropped.
-/// Returns what to log.
+/// Runs `job` in its Box as the Box's owner and writes how it ended. Returns what to log.
 pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
+    match &job.work {
+        Work::Check {
+            gate,
+            try_n,
+            check,
+            command,
+        } => run_check(cx, (job.box_id, job.n), (gate, *try_n, *check), command),
+        Work::Outcomes(due) => decide::run(cx, (job.box_id, job.n), due),
+    }
+}
+
+/// Runs check `check` of try `try_n` of `gate` in Box `id` and writes how it ended as line `n`,
+/// then tells the agent when that failed the try. A result whose line number was taken meanwhile
+/// is dropped.
+fn run_check(
+    cx: &Cx,
+    (id, n): (BoxId, i64),
+    (gate, try_n, check): (&StepId, u8, u8),
+    command: &str,
+) -> Vec<String> {
     let mut out = Vec::new();
     let Ok(store) = cx.store() else { return out };
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);
-    let Some(ran) = execute(cx, job.box_id, &job.command, timeout) else {
+    let Some(ran) = execute(cx, id, command, timeout) else {
         return out;
     };
-    let name = job.gate.as_str();
+    let name = gate.as_str();
     if let Some(why) = &ran.error {
         out.push(format!(
             "gate {name}: no result from Box {}: {why}",
-            job.box_id.get()
+            id.get()
         ));
     }
-    let (gate, try_n, check) = (job.gate.clone(), job.try_n, job.check);
+    let gate = gate.clone();
     let line = match ran.ended {
         Ended::Lost => GateLine::CheckLost { gate, try_n, check },
         Ended::Exit { exit, tail } => GateLine::Checked {
@@ -250,9 +293,9 @@ pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
             tail,
         },
     };
-    match store.append_gate_line(job.box_id, job.n, cx.clock().now(), &line) {
+    match store.append_gate_line(id, n, cx.clock().now(), &line) {
         Ok(()) => {
-            if let Err(e) = tell(cx, store, job.box_id) {
+            if let Err(e) = tell(cx, store, id) {
                 out.push(format!(
                     "gate {name}: could not tell the agent: {}",
                     e.error
