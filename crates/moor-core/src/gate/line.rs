@@ -6,7 +6,7 @@ use crate::workflow::{Answer, StepId, StepReport, StepResult};
 /// One thing that happened at a gate.
 ///
 /// A line carries the number of the try it belongs to, from 1 within the span since the gate's
-/// last [`GateLine::Reopened`], and [`super::status()`] ignores a line of a try that is over, so
+/// last [`GateLine::Reopened`] that gave fresh tries, and [`super::status()`] ignores a line of a try that is over, so
 /// replaying a line twice changes nothing.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -90,7 +90,8 @@ pub enum GateLine {
         /// Why.
         why: String,
     },
-    /// A person's steer reopened a stuck gate with fresh tries.
+    /// A person's steer reopened a stuck gate: with fresh tries, or at the try it was at when moor
+    /// got no answer from its checks.
     Reopened {
         /// The gate.
         gate: StepId,

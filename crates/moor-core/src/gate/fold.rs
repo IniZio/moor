@@ -157,12 +157,21 @@ impl Walk<'_> {
         self.settle();
     }
 
-    /// A reopening frees a stuck gate with fresh tries.
+    /// A reopening frees a stuck gate with fresh tries; one stuck for want of answers keeps its try
+    /// and what was handed in, so moor's check is due again at once.
     fn reopen(&mut self, line: &GateLine) {
-        if matches!(line, GateLine::Reopened { .. }) {
-            self.end = None;
+        let Some(End::Stuck { unanswered, .. }) = &self.end else {
+            return;
+        };
+        if !matches!(line, GateLine::Reopened { .. }) {
+            return;
+        }
+        if unanswered.is_some() {
+            self.tries.unanswered = 0;
+        } else {
             self.tries = Attempts::default();
         }
+        self.end = None;
     }
 
     /// Moves on while the stage in hand has passed, so no passed gate is left in hand. The closing

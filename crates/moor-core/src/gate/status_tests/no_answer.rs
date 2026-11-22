@@ -215,3 +215,60 @@ fn no_answers_from_two_checks_in_a_row_wait_naming_the_last_and_claim_no_more() 
     let gone = cause(CheckOf::Gate { check: 0 }, "make", Unanswered::Lost);
     assert_eq!(status(&g, &lines), unheard("tests", 1, why, gone));
 }
+
+#[test]
+fn a_reopen_after_no_answers_keeps_the_report_so_the_check_is_due_at_once() {
+    let g = gates(&[doc("tests", &["proof.md"], &["make"], None)]);
+    let lines = [
+        submitted("tests", 1),
+        busy("tests", 1, 0),
+        busy("tests", 1, 0),
+        reopened("tests"),
+    ];
+    assert_eq!(status(&g, &lines), open("tests", 1, GateNext::RunChecks));
+    let due = due_check(&g, &lines).map(|d| (d.try_n, d.check));
+    assert_eq!(due, Some((1, 0)));
+}
+
+#[test]
+fn a_reopen_after_no_answers_at_a_later_try_keeps_that_try_and_its_report() {
+    let g = gates(&[tries(
+        3,
+        doc("tests", &["proof.md"], &["make"], Some(Approval::Owner)),
+    )]);
+    let second = GateLine::Submitted {
+        gate: id("tests"),
+        try_n: 2,
+        report: StepReport {
+            step: id("tests"),
+            result: StepResult::Ok,
+            evidence: vec!["second.md".to_owned()],
+            note: String::new(),
+        },
+    };
+    let mut lines = vec![
+        submitted("tests", 1),
+        checked("tests", 1, 0, 1),
+        second,
+        busy("tests", 2, 0),
+        busy("tests", 2, 0),
+        reopened("tests"),
+    ];
+    assert_eq!(status(&g, &lines), open("tests", 2, GateNext::RunChecks));
+    let due = due_check(&g, &lines).map(|d| (d.try_n, d.check));
+    assert_eq!(due, Some((2, 0)));
+    lines.push(checked("tests", 2, 0, 0));
+    assert_eq!(status(&g, &lines), open("tests", 2, GateNext::Ask));
+    assert_eq!(wait(&g, &lines).unwrap().handed, ["second.md"]);
+}
+
+#[test]
+fn a_reopen_after_the_tries_ran_out_still_waits_for_the_agent() {
+    let g = gates(&[tries(1, doc("tests", &["proof.md"], &["make"], None))]);
+    let lines = [
+        submitted("tests", 1),
+        checked("tests", 1, 0, 1),
+        reopened("tests"),
+    ];
+    assert_eq!(status(&g, &lines), open("tests", 1, GateNext::Agent));
+}
