@@ -33,6 +33,7 @@ impl Request {
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
             Self::Retry(_) => "retry",
+            Self::GateAnswer(_) => "gate-answer",
             Self::Pulls(_) => "pulls",
             Self::CloseFailed(_) => "close-failed",
             Self::Attach(_) => "attach",

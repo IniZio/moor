@@ -1,4 +1,4 @@
-//! Events about a workflow's run.
+//! Events about a workflow's run, and about a Box's gates that wait for their owner.
 
 use serde::Serialize;
 
@@ -28,6 +28,19 @@ pub enum WorkflowEvent {
         /// The run page, as a path on the portal.
         link: String,
     },
+    /// A gate of the Box began to wait for a person: the owner's yes or no, or a steer for a stuck
+    /// gate.
+    GateWaiting {
+        /// The gate.
+        gate: String,
+        /// What the person is asked: `approve` or `stuck`.
+        wait: String,
+        /// The number of gate lines written when the wait began; the wait is over once the gate
+        /// moves on.
+        seq: u32,
+        /// What the owner is told, in a sentence.
+        question: String,
+    },
     /// A run ended Failed, Incomplete, `TimedOut` or Refused.
     RunFailed {
         /// The workflow's name.
@@ -56,6 +69,7 @@ impl WorkflowEvent {
             Self::PreviousBoxKept { .. } => "previous_box_kept",
             Self::RunWaiting { .. } => "run_waiting",
             Self::RunFailed { .. } => "run_failed",
+            Self::GateWaiting { .. } => "gate_waiting",
         }
     }
 }

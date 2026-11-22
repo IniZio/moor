@@ -24,6 +24,7 @@ mod exec;
 pub(crate) use events::{fetch, EventsArgs};
 pub(crate) use listen::client_down;
 mod failed;
+mod gate;
 mod inspect;
 mod listen;
 mod node_settings;

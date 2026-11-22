@@ -179,8 +179,8 @@ fn prepare(
         .next()
         .ok_or("the owner has no identity to start a Box as")?;
     let planned = !w.plan.is_single_of(&w.prompt);
-    if let Some(why) = planned.then(|| unreportable(cx)).flatten() {
-        return Err(why.to_owned());
+    if let Some(why) = planned.then(|| unreportable(cx, "the plan")).flatten() {
+        return Err(why);
     }
     let prompt = if planned {
         w.plan.start_prompt(&w.prompt)
@@ -208,13 +208,13 @@ fn prepare(
 
 /// Why an agent in a Box of this controller could not call `report_step`, when it could not: the
 /// tool is the `moor` MCP server's, which `moor_service` gives every Box, and it reports through
-/// a front whose config sets `step_reports: true`.
-fn unreportable(cx: &Cx) -> Option<&'static str> {
+/// a front whose config sets `step_reports: true`. `what` is what needs the tool.
+pub(crate) fn unreportable(cx: &Cx, what: &str) -> Option<String> {
     if cx.config().moor_service.is_none() {
-        return Some("the plan needs report_step, and this controller gives its Boxes no moor MCP server: set moor_service in the user config");
+        return Some(format!("{what} needs report_step, and this controller gives its Boxes no moor MCP server: set moor_service in the user config"));
     }
     if !cx.env().reports_steps() {
-        return Some("the plan needs report_step, and no front of this controller reports steps: give the gate's front step_reports: true in the controller config");
+        return Some(format!("{what} needs report_step, and no front of this controller reports steps: give the gate's front step_reports: true in the controller config"));
     }
     None
 }

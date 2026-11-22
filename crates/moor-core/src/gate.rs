@@ -18,10 +18,12 @@ mod status;
 mod status_tests;
 #[cfg(test)]
 mod tests;
+mod wait;
 
 pub use brief::split_gate_preamble;
 pub use line::GateLine;
 pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
+pub use wait::{wait, Wait, WaitKind};
 
 /// The most gates a Box may have.
 pub const GATES_MAX: usize = 8;

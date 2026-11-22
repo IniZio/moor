@@ -94,6 +94,33 @@ impl Gate {
         )
     }
 
+    /// What the agent does after a try the owner refused, before moor goes through the gate again.
+    fn try_again(&self) -> String {
+        let name = &self.name;
+        if self.evidence.is_some() {
+            format!(
+                "\n\nFix it, then call report_step again with step \"{name}\" and its evidence. \
+                 moor goes through the gate again after your report."
+            )
+        } else {
+            "\n\nFix it, then stop. moor goes through the gate again once you are quiet.".to_owned()
+        }
+    }
+
+    /// The steer after the owner said no to a try that leaves more tries: what they wrote, then
+    /// what the agent does next.
+    #[must_use]
+    pub fn owner_no_steer(&self, note: &str) -> String {
+        let name = &self.name;
+        let mut text = format!("The owner did not approve gate `{name}`.");
+        if !note.trim().is_empty() {
+            text.push_str("\n\nThe owner wrote: ");
+            text.push_str(note.trim());
+        }
+        text.push_str(&self.try_again());
+        text
+    }
+
     /// The steer after check `check`, from 0, failed with `why` and printed `tail` at the end.
     /// A gate that asks for evidence needs a new report before its checks run again.
     #[must_use]

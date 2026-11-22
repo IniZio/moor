@@ -61,7 +61,8 @@ impl Store {
 
     /// Appends `line` at `at` as line `n` of Box `id`'s gate lines. The key on the line number
     /// is the compare-and-set: of two appends of one number, the second fails with a unique
-    /// violation and the caller reads the lines again.
+    /// violation and the caller reads the lines again. A line that makes a gate wait for a person
+    /// writes the Box's `gate_waiting` event with it.
     pub(crate) fn append_gate_line(
         &self,
         id: BoxId,
@@ -69,7 +70,9 @@ impl Store {
         at: Ts,
         line: &GateLine,
     ) -> Result<(), StoreError> {
-        self.writer().run(
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        tx.run(
             Query::insert()
                 .into_table(BoxGateLines::Table)
                 .columns([
@@ -85,6 +88,21 @@ impl Store {
                     serde_json::to_string(line)?.into(),
                 ]),
         )?;
+        waiting::note(&tx, id, at)?;
+        tx.commit()?;
+        drop(writer);
+        Ok(())
+    }
+
+    /// Writes the `gate_waiting` event of Box `id` when its gates wait for a person and the wait has
+    /// none yet. It is the way a gate that waits before any line exists, such as one that only
+    /// asks the owner, tells the person; calling it again for the same wait writes nothing.
+    pub(crate) fn note_gate_wait(&self, id: BoxId, at: Ts) -> Result<(), StoreError> {
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        waiting::ensure(&tx, id, at)?;
+        tx.commit()?;
+        drop(writer);
         Ok(())
     }
 
@@ -109,3 +127,4 @@ impl Store {
 
 #[cfg(test)]
 mod tests;
+mod waiting;

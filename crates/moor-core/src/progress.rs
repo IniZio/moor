@@ -16,6 +16,7 @@ mod gate;
 mod markdown;
 mod needs;
 mod timeline;
+pub use gate::gate_ask_id;
 pub use needs::{approve_needs, ask_id, needs_of, Approve, NeedKind, Needs, Pick, Role};
 pub use timeline::{timeline, timeline_with, Class, TimelineEntry};
 mod title;
@@ -105,7 +106,7 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
         needs: (state == Progress::NeedsYou)
             .then(|| {
                 approval_of(boxed).map_or_else(
-                    || boxed.agent.as_ref().and_then(needs_of),
+                    || gate::needs(boxed).or_else(|| boxed.agent.as_ref().and_then(needs_of)),
                     |a| Some(approve_needs(a)),
                 )
             })
@@ -223,7 +224,10 @@ fn line_of(
         }
         Progress::Done => match pr_of(b, events) {
             Some(pr) => format!("PR #{}", pr.number),
-            None => said().unwrap_or_else(|| "done".to_owned()),
+            None => gate::done_note(b)
+                .map(first_line)
+                .or_else(said)
+                .unwrap_or_else(|| "done".to_owned()),
         },
         Progress::Asleep => "asleep".to_owned(),
         Progress::Closed => closed_failure(events)

@@ -11,7 +11,7 @@ use crate::error::CommandError;
 use crate::store::Store;
 use crate::vault::Vault;
 
-mod inbox;
+pub(in crate::ops) mod inbox;
 mod machine;
 pub(crate) mod mcp;
 mod profile;

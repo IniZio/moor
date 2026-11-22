@@ -150,6 +150,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Wait(_)
         | Request::WaitEvents(_)
         | Request::Steer(_)
+        | Request::GateAnswer(_)
         | Request::EndSession(_)
         | Request::OpenSession(_)
         | Request::OpenHostSession(_)

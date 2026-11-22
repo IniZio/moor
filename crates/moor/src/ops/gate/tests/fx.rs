@@ -267,6 +267,12 @@ impl Fx {
 
     /// Where the Box stands against its gates, and what `show` derives of it.
     pub(super) fn standing(&self) -> (GateStatus, Progress) {
+        let shown = self.shown();
+        (shown.gate.unwrap().status, shown.progress.unwrap().state)
+    }
+
+    /// The Box as `show` lists it.
+    pub(super) fn shown(&self) -> moor_core::view::BoxView {
         let req = ShowReq {
             target: None,
             events: None,
@@ -280,7 +286,6 @@ impl Fx {
             .unwrap()
             .boxes
             .unwrap();
-        let shown = listed.into_iter().find(|b| b.id == self.id.get()).unwrap();
-        (shown.gate.unwrap().status, shown.progress.unwrap().state)
+        listed.into_iter().find(|b| b.id == self.id.get()).unwrap()
     }
 }

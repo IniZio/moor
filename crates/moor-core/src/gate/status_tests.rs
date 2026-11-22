@@ -92,9 +92,10 @@ fn quiet(g: &str, try_n: u8) -> GateLine {
     GateLine::Quiet { gate: id(g), try_n }
 }
 
-fn answered(g: &str, answer: Answer) -> GateLine {
+fn answered(g: &str, try_n: u8, answer: Answer) -> GateLine {
     GateLine::Answered {
         gate: id(g),
+        try_n,
         by: "owner".to_owned(),
         answer,
         note: String::new(),
@@ -156,7 +157,7 @@ fn an_accepted_report_leads_to_the_checks_then_the_question_then_passes() {
     assert_eq!(status(&g, &lines), open("all", 1, GateNext::RunChecks));
     lines.push(checked("all", 1, 1, 0));
     assert_eq!(status(&g, &lines), open("all", 1, GateNext::Ask));
-    lines.push(answered("all", Answer::Yes));
+    lines.push(answered("all", 1, Answer::Yes));
     assert_eq!(status(&g, &lines), GateStatus::Passed);
 }
 
@@ -265,16 +266,19 @@ fn quiet_and_reminders_mean_nothing_while_the_checks_run() {
 #[test]
 fn an_owner_no_fails_the_try_and_a_yes_passes() {
     let g = gates(&[tries(2, doc("ok", &[], &[], Some(Approval::Owner)))]);
-    let no = [answered("ok", Answer::No)];
+    let no = [answered("ok", 1, Answer::No)];
     assert_eq!(status(&g, &no), open("ok", 2, GateNext::Ask));
-    let yes = [answered("ok", Answer::No), answered("ok", Answer::Yes)];
+    let yes = [
+        answered("ok", 1, Answer::No),
+        answered("ok", 2, Answer::Yes),
+    ];
     assert_eq!(status(&g, &yes), GateStatus::Passed);
 }
 
 #[test]
 fn an_owner_no_on_the_last_try_fails_the_gate() {
     let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
-    let got = status(&g, &[answered("ok", Answer::No)]);
+    let got = status(&g, &[answered("ok", 1, Answer::No)]);
     assert!(
         matches!(&got, GateStatus::Failed { gate, .. } if *gate == id("ok")),
         "{got:?}"
@@ -285,9 +289,9 @@ fn an_owner_no_on_the_last_try_fails_the_gate() {
 fn a_failed_gate_stays_failed() {
     let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
     let lines = [
-        answered("ok", Answer::No),
+        answered("ok", 1, Answer::No),
         reopened("ok"),
-        answered("ok", Answer::Yes),
+        answered("ok", 1, Answer::Yes),
     ];
     assert!(matches!(status(&g, &lines), GateStatus::Failed { .. }));
 }
@@ -358,7 +362,7 @@ fn lines_of_a_stale_try_or_another_gate_change_nothing() {
         failed_try("proof", 1),
         submitted("proof", 1),
         checked("tests", 1, 0, 0),
-        answered("proof", Answer::Yes),
+        answered("proof", 1, Answer::Yes),
     ];
     assert_eq!(status(&g, &lines), open("proof", 2, GateNext::Agent));
 }
@@ -380,4 +384,5 @@ fn a_check_out_of_order_changes_nothing() {
     assert_eq!(status(&g, &lines), open("tests", 1, GateNext::RunChecks));
 }
 
+mod answered;
 mod due;

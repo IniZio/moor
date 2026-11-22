@@ -64,6 +64,84 @@ fn write_attention(out: &mut String, view: &Value, indent: &str) {
     }
 }
 
+/// The progress state as a person reads it: `needs_you` is `needs you`.
+fn state_words(state: &str) -> String {
+    state.replace('_', " ")
+}
+
+/// The gate status as a line, when the Box has gates: where it stands, and what it waits for.
+fn gate_text(view: &Value) -> Option<String> {
+    let gate = view.get("gate").filter(|g| !g.is_null())?;
+    let status = gate.get("status")?;
+    let name = field(status, "gate");
+    Some(match field(status, "state") {
+        "passed" => "gates: all passed".to_owned(),
+        "stuck" => format!("gate {name} is stuck: {}", field(status, "why")),
+        "failed" => format!("gate {name} failed: {}", field(status, "why")),
+        _ => {
+            let waits = match field(status, "next") {
+                "agent" => "the agent's evidence",
+                "run_checks" => "its checks",
+                _ => "your approval",
+            };
+            let try_n = status.get("try_n").and_then(Value::as_u64).unwrap_or(1);
+            format!("gate {name}, try {try_n}: waiting for {waits}")
+        }
+    })
+}
+
+/// A line with the Box's progress state and what it is doing, then its gate when the line does not
+/// already speak of one, prefixed by `indent`. Nothing for a Box with no `progress`.
+fn write_progress(out: &mut String, view: &Value, indent: &str) {
+    let Some(progress) = view.get("progress").filter(|p| !p.is_null()) else {
+        return;
+    };
+    let line = field(progress, "line");
+    let _ = writeln!(
+        out,
+        "{indent}{}: {line}",
+        state_words(field(progress, "state"))
+    );
+    if let Some(gate) = gate_text(view).filter(|_| !line.starts_with("gate ")) {
+        let _ = writeln!(out, "{indent}{gate}");
+    }
+    write_stuck(out, progress, indent);
+}
+
+/// What a stuck gate's card carries beyond its reason, indented under the line: the failing
+/// command and the end of its output, or the evidence names that were missing, and the hint.
+fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
+    let Some(card) = progress
+        .pointer("/needs/gate")
+        .filter(|c| field(c, "kind") == "stuck")
+    else {
+        return;
+    };
+    let pad = format!("{}  ", " ".repeat(indent.chars().count()));
+    if let Some(command) = card.get("command").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}command: {command}");
+    }
+    if let Some(tail) = card.get("tail").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}output:");
+        for line in tail.trim_end().lines() {
+            let _ = writeln!(out, "{pad}  {line}");
+        }
+    }
+    let missing: Vec<&str> = card
+        .get("missing")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !missing.is_empty() {
+        let _ = writeln!(out, "{pad}missing: {}", missing.join(", "));
+    }
+    if let Some(hint) = card.get("hint").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}hint: {hint}");
+    }
+}
+
 /// An `asleep, turn unfinished` line when the Box slept mid-turn, prefixed by `indent`.
 fn write_unfinished(out: &mut String, view: &Value, indent: &str) {
     if view.get("unfinished_turn").and_then(Value::as_bool) == Some(true) {
@@ -120,6 +198,7 @@ fn list(boxes: &[Value]) -> Option<String> {
         );
         write_attention(&mut out, t, "  ");
         write_unfinished(&mut out, t, "  ");
+        write_progress(&mut out, t, "  ");
     }
     Some(out)
 }
@@ -203,6 +282,7 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
     let _ = writeln!(out, "lifecycle: {}", field(view, "lifecycle"));
     let _ = writeln!(out, "session:   {}", field(view, "session_state"));
     write_unfinished(&mut out, view, "");
+    write_progress(&mut out, view, "progress: ");
     let _ = writeln!(out, "repo:     {}", repos(view));
     let _ = writeln!(out, "branch:   {}", field(view, "branch"));
     match view.get("driver").filter(|b| !b.is_null()) {

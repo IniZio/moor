@@ -111,6 +111,7 @@ impl Class {
             | "proxy_credential_recovered"
             | "session_restored"
             | "run_waiting"
+            | "gate_waiting"
             | "cache_cold"
             | "ran" => Self::Routine,
             "caches_not_saved"

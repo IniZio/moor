@@ -11,7 +11,8 @@
 
 use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
 use moor_core::request::BoxTarget;
-use moor_core::workflow::StepId;
+use moor_core::view::steer::SteerValue;
+use moor_core::workflow::{Answer, StepId};
 use moor_core::{BoxId, SteerReq};
 use moor_schema::tables::BoxGateLines;
 
@@ -19,6 +20,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::settled;
+use crate::ops::gate::ask::ask;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
@@ -79,10 +81,11 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
         return Ok(());
     };
     let lines = store.gate_lines(row.id)?;
-    if tell_failure(cx, store, row, (&gates, &lines))? {
+    if tell_failure(cx, store, row, (&gates, &lines))?.is_some() {
         return Ok(());
     }
     let Some(due) = due_check(&gates, &lines) else {
+        ask(cx, store, row, (&gates, &lines))?;
         return remind(cx, store, row, (&gates, &lines));
     };
     if !settled(cx, store, row)? {
@@ -117,8 +120,8 @@ const fn of_this_try(line: &GateLine, try_n: u8) -> bool {
     )
 }
 
-/// The place of the line that failed a check and ended the try before the one in hand, when tries
-/// remain, and what the agent is told of it. The try in hand may have lines of its own after the
+/// The place of the line that failed a check, or the owner's no, which ended the try before the one
+/// in hand, when tries remain, and what the agent is told of it. The try in hand may have lines of its own after the
 /// failure, such as a refused report.
 fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
     let GateStatus::Open { gate, try_n, .. } = status(gates, lines) else {
@@ -129,42 +132,52 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
         .enumerate()
         .rev()
         .find(|(_, l)| !of_this_try(l, try_n))?;
-    let (failed_try, check, why, tail) = match line {
+    let waiting = gates.iter().find(|g| g.name == gate)?;
+    let (failed_try, text) = match line {
         GateLine::Checked {
             gate: g,
             try_n,
             check,
             exit,
             tail,
-        } if g == &gate && *exit != 0 => (*try_n, *check, format!("exited {exit}"), tail.as_str()),
+        } if g == &gate && *exit != 0 => (
+            *try_n,
+            waiting.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
+        ),
         GateLine::CheckLost {
             gate: g,
             try_n,
             check,
-        } if g == &gate => (*try_n, *check, "lost its output twice".to_owned(), ""),
+        } if g == &gate => (
+            *try_n,
+            waiting.failed_check_steer(*check, ("lost its output twice", "")),
+        ),
+        GateLine::Answered {
+            gate: g,
+            try_n,
+            answer: Answer::No,
+            note,
+            ..
+        } if g == &gate => (*try_n, waiting.owner_no_steer(note)),
         _ => return None,
     };
     if failed_try + 1 != try_n {
         return None;
     }
-    let text = gates
-        .iter()
-        .find(|g| g.name == gate)?
-        .failed_check_steer(check, (&why, tail));
     Some((at, text))
 }
 
 /// Steers the agent of `row` the failure that ended the try before the one in hand, unless it was
-/// told already: a steer came after the failure's line, or one waits in the inbox. True when it
-/// sent one.
+/// told already: a steer came after the failure's line, or one waits in the inbox. What the steer
+/// came to when it sent one.
 fn tell_failure(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     (gates, lines): (&Gates, &[GateLine]),
-) -> Result<bool, CommandError> {
+) -> Result<Option<SteerValue>, CommandError> {
     let Some((at, text)) = failure_text(gates, lines) else {
-        return Ok(false);
+        return Ok(None);
     };
     let wrote = store.gate_line_at(
         row.id,
@@ -175,7 +188,7 @@ fn tell_failure(
         .zip(wrote)
         .is_some_and(|(steered, wrote)| steered >= wrote);
     if told || !store.unsent(row.id)?.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     let req = SteerReq {
         target: BoxTarget::Id(row.id),
@@ -184,8 +197,7 @@ fn tell_failure(
         interrupt: false,
         ask: None,
     };
-    cx.for_box(row.user, || steer::run(cx, &req))?;
-    Ok(true)
+    cx.for_box(row.user, || steer::run(cx, &req)).map(Some)
 }
 
 /// Whether `e` says another line took the number.
@@ -240,9 +252,9 @@ pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
 }
 
 /// Tells the agent of Box `id` what failed, when its newest line ended a try.
-fn tell(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+pub(super) fn tell(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<SteerValue>, CommandError> {
     let (Some(row), Some(gates)) = (store.box_row(id)?, store.box_gates(id)?) else {
-        return Ok(());
+        return Ok(None);
     };
-    tell_failure(cx, store, &row, (&gates, &store.gate_lines(id)?)).map(drop)
+    tell_failure(cx, store, &row, (&gates, &store.gate_lines(id)?))
 }

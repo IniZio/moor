@@ -36,9 +36,9 @@ pub use name::{
 };
 pub use request::{
     ArtifactReadReq, ArtifactsReq, AttachReq, BoxReq, BoxRsyncReq, BoxTarget, CloseReq, CpReq,
-    EnvReq, ExecReq, ForwardCloseReq, ForwardOpenReq, ForwardReq, GateReq, HoldOp, HoldValue,
-    InspectReq, MachineHoldReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq,
-    WaitFor, WaitMode, WaitReq,
+    EnvReq, ExecReq, ForwardCloseReq, ForwardOpenReq, ForwardReq, GateAnswerReq, GateReq, HoldOp,
+    HoldValue, InspectReq, MachineHoldReq, Request, RunReq, ShowReq, StartReq, SteerReq,
+    WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{
     CloseRefusal, ErrorDetail, ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA,

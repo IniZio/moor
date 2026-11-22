@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::inbox::{is_resolved, state_of, Facts, InboxItemView, InboxKind, InboxValue};
+use moor_core::inbox::{
+    gate_wait_seq, is_resolved, state_of, Facts, InboxItemView, InboxKind, InboxValue,
+};
 use moor_core::request::InboxOp;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
@@ -19,7 +21,7 @@ use crate::store::{Store, UserInboxRow};
 const LIST_MAX: u32 = 50;
 
 /// Run `op` for `user`; both answer with the inbox as it stands after it.
-pub(super) fn run(
+pub(in crate::ops) fn run(
     store: &Store,
     user: UserId,
     op: &InboxOp,
@@ -58,6 +60,7 @@ fn facts_of(
         box_closed: false,
         newest_marker: None,
         run_waits_here: true,
+        gate_waits_here: None,
     };
     match row.kind {
         InboxKind::NeedsInput => {
@@ -73,6 +76,12 @@ fn facts_of(
             };
             facts.box_closed = closed;
             facts.newest_marker = marker;
+            let seq = serde_json::from_str::<Value>(&row.payload)
+                .ok()
+                .and_then(|p| gate_wait_seq(&p));
+            if let Some(seq) = seq {
+                facts.gate_waits_here = Some(gate_still_waits(store, row.box_id, seq)?);
+            }
         }
         InboxKind::RunWaiting => {
             let run = serde_json::from_str::<Value>(&row.payload)
@@ -86,4 +95,13 @@ fn facts_of(
         InboxKind::RunFailed => {}
     }
     Ok(facts)
+}
+
+/// Whether Box `id` still waits at the gate wait that began after `seq` gate lines.
+fn gate_still_waits(store: &Store, id: BoxId, seq: u64) -> Result<bool, CommandError> {
+    let Some(gates) = store.box_gates(id)? else {
+        return Ok(false);
+    };
+    let waits = moor_core::gate::wait(&gates, &store.gate_lines(id)?);
+    Ok(waits.is_some_and(|w| u64::from(w.seq) == seq))
 }

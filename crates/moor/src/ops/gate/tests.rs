@@ -1,6 +1,8 @@
 //! Tests for `gate`.
 
+mod answer;
 mod checks;
+mod first;
 mod fx;
 mod hold;
 mod remind;

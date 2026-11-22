@@ -1,9 +1,11 @@
 //! A start's gates: checked before any write, and kept with the Box.
 
-use moor_core::gate::Gates;
+use moor_core::gate::{Approval, Gates};
 use moor_core::{ErrorKind, StartReq};
 
+use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::workflow::unreportable;
 use crate::store::{BoxRow, Store};
 
 /// Refuses gates that are not valid, so a bad set fails when it is given.
@@ -17,6 +19,35 @@ pub(super) fn check(req: &StartReq) -> Result<(), CommandError> {
     Gates::parse(docs)
         .map(drop)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))
+}
+
+/// Refuses gates that a new Box could not honour: with no prompt and no issue the agent is never
+/// told its gates, and on a controller that cannot offer `report_step` an agent could not hand in
+/// evidence or ask its owner. Checked before any write, for a start that makes a new Box; a start
+/// that attaches keeps the gates its Box has.
+///
+/// # Errors
+/// Usage naming what is missing.
+pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
+    let Some(docs) = &req.gates else {
+        return Ok(());
+    };
+    let usage = |why: String| CommandError::new(ErrorKind::Usage, why);
+    let gates = Gates::parse(docs).map_err(|e| usage(e.to_string()))?;
+    if req.prompt.is_none() && req.issue.is_none() {
+        return Err(usage(
+            "a start with gates needs a prompt or an issue: the agent is told its gates in its \
+             first message"
+                .to_owned(),
+        ));
+    }
+    let reports = gates
+        .iter()
+        .any(|g| g.evidence.is_some() || g.approval != Approval::None);
+    match reports.then(|| unreportable(cx, "a gate with evidence or approval")) {
+        Some(Some(why)) => Err(usage(why)),
+        _ => Ok(()),
+    }
 }
 
 /// The JSON a Box keeps of the gates `req` asks for; `None` for none.

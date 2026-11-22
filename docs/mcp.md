@@ -17,7 +17,7 @@ token's audience.
 | Scope | Allows |
 | --- | --- |
 | `moor:read` | `list_boxes`, `list_nodes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `list_workflow_runs`, `get_repo_config`, `list_events`, `GET /events`, artifact downloads, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled`, `answer_run`, `run_workflow`, `set_repo_config` |
+| `moor:write` | `start_box`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled`, `answer_run`, `answer_gate`, `run_workflow`, `set_repo_config` |
 
 ## Tools
 
@@ -44,6 +44,7 @@ token's audience.
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
 | `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note`, `pull` (`OWNER/NAME#NUMBER`, which run when several wait) |
+| `answer_gate` | `box`, `answer` (`yes` or `no`); optional `note` (told to the agent), `ask` (the `needs.id` answered) |
 | `run_workflow` | `name`, with optional `expected_revision` and `pull` (`OWNER/NAME#NUMBER`) |
 | `get_repo_config` | `repo` |
 | `set_repo_config` | `repo`, `text`; optional `expected_revision` |

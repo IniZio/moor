@@ -24,7 +24,7 @@ impl InboxKind {
     #[must_use]
     pub fn of_event(event_kind: &str) -> Option<Self> {
         match event_kind {
-            "needs_input" => Some(Self::NeedsInput),
+            "needs_input" | "gate_waiting" => Some(Self::NeedsInput),
             "run_waiting" => Some(Self::RunWaiting),
             "run_failed" => Some(Self::RunFailed),
             _ => None,
@@ -127,17 +127,33 @@ pub struct Facts {
     pub newest_marker: Option<i64>,
     /// The run still waits at the step, since the moment, the item was written for.
     pub run_waits_here: bool,
+    /// For an item written for a gate that waits for a person: whether no more gate lines have
+    /// been written since the wait began. None for any other item.
+    pub gate_waits_here: Option<bool>,
+}
+
+/// The number of gate lines written when the gate wait that `payload` tells of began; none for a
+/// payload that is not of a gate wait.
+#[must_use]
+pub fn gate_wait_seq(payload: &Value) -> Option<u64> {
+    payload.get("gate")?;
+    payload.get("seq")?.as_u64()
 }
 
 /// Whether the wait of the item made from event `event` is over.
 ///
 /// A question is over once the Box moved on (the agent works again, however the answer came) or
-/// closed. An approve wait is over once its run left that wait, answered, declined or expired.
+/// closed; a gate's wait, once the gate moved on or the Box closed. An approve wait is over once its run left that wait, answered, declined or expired.
 /// A failed run is a fact, not a wait.
 #[must_use]
 pub fn is_resolved(kind: InboxKind, event: i64, facts: &Facts) -> bool {
     match kind {
-        InboxKind::NeedsInput => facts.box_closed || facts.newest_marker != Some(event),
+        InboxKind::NeedsInput => {
+            facts.box_closed
+                || facts
+                    .gate_waits_here
+                    .map_or_else(|| facts.newest_marker != Some(event), |waits| !waits)
+        }
         InboxKind::RunWaiting => !facts.run_waits_here,
         InboxKind::RunFailed => false,
     }
