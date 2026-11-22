@@ -29,12 +29,12 @@ function step(p: RepoPull): string | null {
 	return 'View PR';
 }
 
-function State({ p }: { p: RepoPull }) {
+function State({ p, listed }: { p: RepoPull; listed: number | null }) {
 	const s = STATES[p.state];
 	const checks = p.checks ? CHECKS[p.checks] : null;
 	return (
 		<span class={`pr-state pr-${s.tone}`}>
-			{p.number !== null && <span class="t-mono">#{p.number}</span>}
+			{p.number !== null && p.number !== listed && <span class="t-mono">#{p.number}</span>}
 			<span class="pr-word">
 				<span aria-hidden="true">{s.glyph}</span> {s.word}
 			</span>
@@ -47,8 +47,8 @@ function State({ p }: { p: RepoPull }) {
 	);
 }
 
-/** Where the Box's pull request stands on GitHub, and a link to its next step. Other repos are listed below the first. */
-export function PrHeader({ box, named }: { box: string; named: BoxDetail['pr'] }) {
+/** Where the Box's pull request stands on GitHub, and a link to its next step. Other repos are listed below the first. The task head already shows the number `listed`, so this line does not repeat it. */
+export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail['pr']; listed: number | null }) {
 	const [pulls, setPulls] = useState<RepoPull[] | null>(null);
 	const [error, setError] = useState('');
 	useEffect(() => {
@@ -70,7 +70,7 @@ export function PrHeader({ box, named }: { box: string; named: BoxDetail['pr'] }
 		return (
 			<p class="t-prline pr-line">
 				<span class="pr-label">PR</span>
-				{named ? (
+				{named && named.number !== listed ? (
 					<a class="t-mono" href={named.url} rel="noopener">
 						#{named.number}
 					</a>
@@ -84,10 +84,10 @@ export function PrHeader({ box, named }: { box: string; named: BoxDetail['pr'] }
 		<div class="pr-head">
 			<p class="t-prline pr-line">
 				<span class="pr-label">PR</span>
-				{first.unread ? <span class="muted">GitHub could not be read: {first.unread}</span> : <State p={first} />}
+				{first.unread ? <span class="muted">GitHub could not be read: {first.unread}</span> : <State p={first} listed={listed} />}
 				{(first.state === 'none' || first.state === 'unpushed') && named && (
 					<a class="t-mono" href={named.url} rel="noopener" title="The agent named this PR, but none on GitHub is from this task's branch">
-						#{named.number} named by the agent
+						{named.number === listed ? 'named by the agent' : `#${named.number} named by the agent`}
 					</a>
 				)}
 				<span class="grow" />
@@ -102,7 +102,7 @@ export function PrHeader({ box, named }: { box: string; named: BoxDetail['pr'] }
 					{rest.map((p) => (
 						<li key={p.repo}>
 							<span class="t-mono muted">{p.repo}</span>
-							{p.unread ? <span class="muted">GitHub could not be read</span> : <State p={p} />}
+							{p.unread ? <span class="muted">GitHub could not be read</span> : <State p={p} listed={null} />}
 							{p.url && (
 								<a href={p.url} target="_blank" rel="noopener">
 									{step(p)} ↗
