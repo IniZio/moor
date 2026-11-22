@@ -85,6 +85,19 @@ impl Facts {
         let socket = Path::new(&runtime).join("docker.sock");
         let path = var("PATH");
         let kvm_device = kvm::device(var(kvm::DEVICE_VAR).as_deref()).to_owned();
+        let docker_repo = docker_repo(&root);
+        let setuptool = [root.join("usr/bin"), home.join("bin")]
+            .into_iter()
+            .map(|dir| dir.join(SETUPTOOL))
+            .find(|p| p.is_file());
+        let packaged = setuptool
+            .as_ref()
+            .map_or(docker_repo, |p| !p.starts_with(&home));
+        let rootlesskit = if packaged {
+            PathBuf::from("/usr/bin/rootlesskit")
+        } else {
+            home.join("bin/rootlesskit")
+        };
         Ok(Self {
             rootless: rootless::Facts::read(
                 path.as_deref(),
@@ -94,11 +107,10 @@ impl Facts {
             kvm_mode: kvm::mode_of(&kvm_device),
             kvm_device,
             packager: packager(path.as_deref()),
-            docker_repo: docker_repo(&root),
-            setuptool: [root.join("usr/bin"), home.join("bin")]
-                .into_iter()
-                .map(|dir| dir.join(SETUPTOOL))
-                .find(|p| p.is_file()),
+            docker_repo,
+            setuptool,
+            profiled: profiled(&root.join("etc/apparmor.d"), &rootlesskit),
+            rootlesskit,
             daemon: daemon(shell, &socket, &config),
             docker_config: var("DOCKER_CONFIG").map_or_else(|| home.join(".docker"), PathBuf::from),
             home,
@@ -106,6 +118,23 @@ impl Facts {
             socket,
         })
     }
+}
+
+/// Whether a profile in `dir` names `program` as what it confines, as Ubuntu's own
+/// `rootlesskit` profile names /usr/bin/rootlesskit.
+pub(super) fn profiled(dir: &Path, program: &Path) -> bool {
+    let program = program.to_string_lossy();
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+        .any(|text| {
+            text.lines()
+                .filter(|line| !line.trim_start().starts_with('#'))
+                .flat_map(str::split_whitespace)
+                .any(|word| word.trim_matches('"') == program)
+        })
 }
 
 /// The package manager on `path`.

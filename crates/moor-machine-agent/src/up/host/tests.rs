@@ -38,6 +38,8 @@ fn ready(dir: &Path) -> Facts {
         packager: Some(Packager::Apt),
         docker_repo: true,
         setuptool: Some(PathBuf::from(SETUPTOOL)),
+        rootlesskit: PathBuf::from("/usr/bin/rootlesskit"),
+        profiled: true,
         daemon: Daemon::Answers,
         home: dir.to_owned(),
         config: dir.join("config"),
@@ -81,7 +83,11 @@ fn lacking(mut f: Facts, lack: Lack) -> Facts {
             f.rootless.subuid = None;
             f.rootless.subgid = Some(String::new());
         }
-        Lack::AppArmor => f.rootless.apparmor_restrict = Some("1\n".to_owned()),
+        Lack::AppArmor => {
+            f.rootless.apparmor_restrict = Some("1\n".to_owned());
+            f.profiled = false;
+            f.daemon = Daemon::Absent;
+        }
         Lack::Linger => f.rootless.linger = Some(false),
         Lack::Extras => {
             f.setuptool = None;
@@ -108,7 +114,9 @@ fn fixes(script: &str, lack: Lack) -> bool {
             script.contains("usermod --add-subuids 100000-165535 --add-subgids 100000-165535 ada")
         }
         Lack::AppArmor => {
-            script.contains("sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
+            script.contains("cat > /etc/apparmor.d/usr.bin.rootlesskit <<'EOF'")
+                && script.contains("\"/usr/bin/rootlesskit\" flags=(unconfined) {\n  userns,")
+                && script.contains("systemctl restart apparmor.service")
         }
         Lack::Linger => script.contains("loginctl enable-linger ada"),
         Lack::Extras => installs("docker-ce-rootless-extras"),
@@ -170,6 +178,67 @@ fn rootless_extras_is_only_needed_for_a_daemon_that_is_not_set_up() {
         gaps(&f).unwrap().is_empty(),
         "no Docker repository: Docker's rootless installer runs as the user instead"
     );
+}
+
+#[test]
+fn a_restricting_host_with_a_profile_for_its_rootlesskit_keeps_its_sysctl() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = lacking(ready(dir.path()), Lack::AppArmor);
+    f.profiled = true;
+    assert!(
+        gaps(&f).unwrap().is_empty(),
+        "Ubuntu's profile covers /usr/bin/rootlesskit"
+    );
+    f.profiled = false;
+    f.daemon = Daemon::Answers;
+    assert!(
+        gaps(&f).unwrap().is_empty(),
+        "a daemon that runs made its namespace already"
+    );
+}
+
+#[test]
+fn dockers_rootless_installer_gets_a_profile_for_the_rootlesskit_under_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = lacking(ready(dir.path()), Lack::AppArmor);
+    f.setuptool = None;
+    f.docker_repo = false;
+    f.rootlesskit = PathBuf::from("/home/ada/bin/rootlesskit");
+    let s = script(&f);
+    assert!(
+        s.contains("cat > /etc/apparmor.d/home.ada.bin.rootlesskit <<'EOF'"),
+        "{s}"
+    );
+    assert!(
+        s.contains("\"/home/ada/bin/rootlesskit\" flags=(unconfined) {"),
+        "{s}"
+    );
+    assert!(
+        s.contains("include if exists <local/home.ada.bin.rootlesskit>"),
+        "{s}"
+    );
+}
+
+#[test]
+fn a_profile_counts_only_for_the_program_it_names() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("rootlesskit"),
+        "# profile for /home/ada/bin/rootlesskit is not this one\nabi <abi/4.0>,\nprofile rootlesskit /usr/bin/rootlesskit flags=(unconfined) {\n  userns,\n}\n",
+    )
+    .unwrap();
+    assert!(super::probe::profiled(
+        dir.path(),
+        Path::new("/usr/bin/rootlesskit")
+    ));
+    assert!(!super::probe::profiled(
+        dir.path(),
+        Path::new("/home/ada/bin/rootlesskit")
+    ));
+    assert!(!super::probe::profiled(
+        &dir.path().join("none"),
+        Path::new("/usr/bin/rootlesskit")
+    ));
 }
 
 #[test]

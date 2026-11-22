@@ -32,7 +32,7 @@ pub struct Facts {
     pub subgid: Option<String>,
     /// The programs of `BINARIES` that are not on `PATH`.
     pub missing: Vec<String>,
-    /// The `AppArmor` sysctl's value, when the host has it.
+    /// The `AppArmor` sysctl's value, when the host has it; host setup reads it before a daemon runs.
     pub apparmor_restrict: Option<String>,
     /// What `systemctl --user is-enabled docker` printed.
     pub unit: Option<String>,

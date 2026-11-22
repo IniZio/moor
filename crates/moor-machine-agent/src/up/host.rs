@@ -62,6 +62,11 @@ pub(crate) struct Facts {
     pub(crate) docker_repo: bool,
     /// Docker's setup tool, where one is installed.
     pub(crate) setuptool: Option<PathBuf>,
+    /// The rootlesskit the daemon will run: Docker's package's, or the one Docker's rootless
+    /// installer puts under ~/bin.
+    pub(crate) rootlesskit: PathBuf,
+    /// Whether an `AppArmor` profile under /etc/apparmor.d names that rootlesskit.
+    pub(crate) profiled: bool,
     /// The person's rootless daemon.
     pub(crate) daemon: Daemon,
     /// The person's home.
@@ -130,15 +135,7 @@ pub(crate) fn gaps(f: &Facts) -> Result<Vec<Gap>, String> {
     found.extend(kvm_gap(f)?);
     found.extend(package_gap(f)?);
     found.extend(subid_gap(&f.rootless));
-    if let Some(x) = failure("apparmor") {
-        found.push(Gap {
-            why: x.detail.clone(),
-            commands: vec![
-                "echo kernel.apparmor_restrict_unprivileged_userns=0 > /etc/sysctl.d/60-rootless-docker.conf".to_owned(),
-                "sysctl -w kernel.apparmor_restrict_unprivileged_userns=0".to_owned(),
-            ],
-        });
-    }
+    found.extend(apparmor_gap(f));
     if let Some(x) = failure("linger") {
         found.push(Gap {
             why: x.detail.clone(),
@@ -146,6 +143,28 @@ pub(crate) fn gaps(f: &Facts) -> Result<Vec<Gap>, String> {
         });
     }
     Ok(found)
+}
+
+/// An `AppArmor` profile that lets rootlesskit make user namespaces, as Docker's rootless docs
+/// write it, where the host restricts them and no profile names the rootlesskit to run.
+fn apparmor_gap(f: &Facts) -> Option<Gap> {
+    let value = f.rootless.apparmor_restrict.as_deref()?.trim();
+    if value == "0" || f.profiled || f.daemon == Daemon::Answers {
+        return None;
+    }
+    let path = f.rootlesskit.display().to_string();
+    let name = path.trim_start_matches('/').replace('/', ".");
+    Some(Gap {
+        why: format!(
+            "kernel.apparmor_restrict_unprivileged_userns is {value}, and no AppArmor profile lets {path} make user namespaces"
+        ),
+        commands: vec![
+            format!(
+                "cat > /etc/apparmor.d/{name} <<'EOF'\nabi <abi/4.0>,\ninclude <tunables/global>\n\n\"{path}\" flags=(unconfined) {{\n  userns,\n\n  include if exists <local/{name}>\n}}\nEOF"
+            ),
+            "systemctl restart apparmor.service".to_owned(),
+        ],
+    })
 }
 
 /// The KVM device opened to every user.
