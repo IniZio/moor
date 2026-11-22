@@ -12,7 +12,7 @@ type Docs = Pick<Workflow, 'gates' | 'outcomes'>;
 /** A gate's rule starts a sentence, except where it starts with the name moor. */
 const sentence = (rule: string) => (rule.startsWith('moor') ? rule : rule.charAt(0).toUpperCase() + rule.slice(1));
 
-function Row({ look, open, body, summary }: { look: GateRow['state']; open: boolean; body: ComponentChildren; summary: ComponentChildren }) {
+function Row({ look, hand, open, body, summary }: { look: GateRow['state']; hand: boolean; open: boolean; body: ComponentChildren; summary: ComponentChildren }) {
 	const { glyph, tone } = GATE_LOOK[look];
 	const head = (
 		<>
@@ -23,7 +23,7 @@ function Row({ look, open, body, summary }: { look: GateRow['state']; open: bool
 		</>
 	);
 	return (
-		<li class={`t-sg t-${tone}${open ? ' t-sg-hand' : ''}`}>
+		<li class={`t-sg t-${tone}${hand ? ' t-sg-hand' : ''}`}>
 			{body ? (
 				<details open={open}>
 					<summary class="t-sg-row">{head}</summary>
@@ -72,11 +72,12 @@ export function GateStory({ gate, docs, card }: { gate: GateView; docs: Docs | n
 								{open && card}
 							</>
 						) : null;
-					return <Row look={r.state} open={open} key={r.name} body={body} summary={<><span class="t-sg-n">{i + 1}</span><b class="t-sg-name">{r.name}</b><span class="t-sg-state">{r.words}</span></>} />;
+					return <Row look={r.state} hand={open} open={open} key={r.name} body={body} summary={<><span class="t-sg-n">{i + 1}</span><b class="t-sg-name">{r.name}</b><span class="t-sg-state">{r.words}</span></>} />;
 				})}
 				{end && (
 					<Row
 						look={end.look}
+						hand={end.hand}
 						open={end.open}
 						summary={end.line}
 						body={
