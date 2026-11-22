@@ -59,7 +59,8 @@ pub(super) struct AddArgs {
     pub(super) gates: Option<Vec<GateDoc>>,
     /// The outcomes a run may end in, sent with `gates`; see the tool description. Left out, a
     /// new workflow's run ends in `done` once every gate passes and a replaced one keeps its
-    /// outcomes; an empty list clears them.
+    /// outcomes; an empty list clears them. A run's `verdict` in `list_workflow_runs` names
+    /// the outcome it found.
     pub(super) outcomes: Option<Vec<moor_core::gate::OutcomeDoc>>,
 }
 
