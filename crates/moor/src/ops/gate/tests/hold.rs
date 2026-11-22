@@ -15,7 +15,7 @@ use moor_core::progress::Progress;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::StepId;
 
-use super::fx::{fx, gate, Fx};
+use super::fx::{done, fx, gate, Fx};
 use crate::ops::{auto_close_pass, AutoCloseLooked};
 
 const DAY: u64 = 86_400;
@@ -61,7 +61,7 @@ fn tries_used_up_is_stuck_and_a_steer_reopens_the_gate() {
     f.fix();
     f.quiet();
     f.pass();
-    assert_eq!(f.standing(), (GateStatus::Passed, Progress::Done));
+    assert_eq!(f.standing(), (done(), Progress::Done));
 }
 
 #[test]

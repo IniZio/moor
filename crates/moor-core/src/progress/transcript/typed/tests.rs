@@ -64,7 +64,7 @@ fn a_first_message_with_gates_is_not_the_persons() {
         approval: None,
         max_tries: None,
     };
-    let gates = crate::gate::Gates::parse(&[doc]).unwrap();
+    let gates = crate::gate::Gates::parse(&[doc], &[]).unwrap();
     assert_eq!(prompt(&user(&json!(gates.first_message("Fix it.")))), None);
 }
 

@@ -101,7 +101,8 @@ pub struct SpecFields {
     pub labels: Vec<String>,
     /// The override text laid over the repo config for this Box; `None` for none.
     pub config: Option<String>,
-    /// The Box's gates as the JSON text of [`crate::gate::GateDoc`]s; `None` for none.
+    /// The Box's gates and outcomes as the JSON text of a [`crate::gate::GatesDoc`]; `None` for
+    /// none.
     pub gates: Option<String>,
 }
 

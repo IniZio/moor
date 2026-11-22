@@ -238,18 +238,36 @@ fn add(
     })
 }
 
-/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates left out are the
-/// stored ones, and an empty list is none.
+/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates or outcomes left
+/// out are the stored ones, and an empty list is none.
 fn parse_gates(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,
 ) -> Result<Option<Gates>, CommandError> {
+    let outcomes = req.outcomes.as_deref().map(Vec::as_slice);
     match req.gates.as_deref() {
+        None if outcomes.is_some() => Err(usage(
+            "send outcomes with the gates they end, so nothing was saved".to_owned(),
+        )),
         None => Ok(prior.and_then(|w| w.gates.clone())),
+        Some([]) if outcomes.is_some_and(|o| !o.is_empty()) => Err(usage(
+            "outcomes need gates: a workflow without gates ends as its plan says, so nothing was \
+             saved"
+                .to_owned(),
+        )),
         Some([]) => Ok(None),
-        Some(docs) => Gates::parse(docs)
-            .map(Some)
-            .map_err(|e| usage(e.to_string())),
+        Some(docs) => {
+            let stored = || {
+                prior
+                    .and_then(|w| w.gates.as_ref())
+                    .map(Gates::outcome_docs)
+                    .unwrap_or_default()
+            };
+            let outcomes = outcomes.map_or_else(stored, <[_]>::to_vec);
+            Gates::parse(docs, &outcomes)
+                .map(Some)
+                .map_err(|e| usage(e.to_string()))
+        }
     }
 }
 
@@ -367,6 +385,11 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
         revision: w.revision,
         on_pull_request: w.on_pull_request,
         gates: w.gates.as_ref().map(Gates::docs),
+        outcomes: w
+            .gates
+            .as_ref()
+            .map(Gates::outcome_docs)
+            .filter(|o| !o.is_empty()),
         last_run,
     }
 }

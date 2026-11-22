@@ -182,7 +182,7 @@ fn a_two_step_plan_advances_on_a_report_and_delivers_with_the_deliver_note() {
     assert_eq!(told.reply, "Done.");
     let run = r.latest(id);
     let RunState::Done(RunEnd::Ended {
-        outcome: RunOutcome::Delivered { result },
+        outcome: RunOutcome::Delivered { result, .. },
         ..
     }) = run.state
     else {

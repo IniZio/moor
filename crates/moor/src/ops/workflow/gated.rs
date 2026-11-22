@@ -78,7 +78,10 @@ impl Held<'_> {
         let lines = self.store.gate_lines(self.box_id)?;
         let status = status(&gates, &lines);
         let row = self.store.box_row(self.box_id)?;
-        let over = matches!(status, GateStatus::Passed | GateStatus::Failed { .. });
+        let over = matches!(
+            status,
+            GateStatus::Passed { .. } | GateStatus::Failed { .. }
+        );
         if !over && self.cannot_go_on(row.as_ref())? {
             return Ok(());
         }
@@ -113,13 +116,14 @@ impl Held<'_> {
     ) -> Result<(), StoreError> {
         match m {
             GatedMove::Stay => Ok(()),
-            GatedMove::Deliver => self.end(RunOutcome::Delivered {
+            GatedMove::Deliver { outcome } => self.end(RunOutcome::Delivered {
                 result: lines
                     .iter()
                     .rev()
                     .find_map(GateLine::accepted_note)
                     .unwrap_or_default()
                     .to_owned(),
+                verdict: Some(outcome),
             }),
             GatedMove::Fail { gate, reason } => self.end(RunOutcome::Failed { at: gate, reason }),
             GatedMove::Incomplete => self.end(RunOutcome::Incomplete {
@@ -131,14 +135,17 @@ impl Held<'_> {
                 .step_workflow_run(self.run.id, (self.at, (&gate, try_n)), (&[], self.now))
                 .map(drop),
             GatedMove::Wait { gate, try_n } => {
-                let why = match status {
-                    GateStatus::Stuck { why, .. } => Some(why.clone()),
-                    _ => None,
+                let (why, unanswered) = match status {
+                    GateStatus::Stuck {
+                        why, unanswered, ..
+                    } => (Some(why.clone()), unanswered.clone()),
+                    _ => (None, None),
                 };
                 let line = HistoryEntry::GateWaiting {
                     step: gate.clone(),
                     try_n,
                     why,
+                    unanswered,
                 };
                 self.store
                     .wait_workflow_run(

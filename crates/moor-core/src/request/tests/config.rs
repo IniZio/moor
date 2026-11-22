@@ -64,7 +64,7 @@ fn gates_are_left_out_when_absent_and_kept_when_given() {
         approval: None,
         max_tries: None,
     };
-    let start = |gates: Option<Box<Vec<crate::gate::GateDoc>>>| StartReq {
+    let start = |gates: Option<Box<crate::gate::GatesDoc>>| StartReq {
         gates,
         placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,
@@ -84,11 +84,14 @@ fn gates_are_left_out_when_absent_and_kept_when_given() {
     };
     let bare = serde_json::to_value(Request::Start(start(None))).expect("ser");
     assert!(bare.get("gates").is_none(), "{bare}");
-    let given =
-        serde_json::to_value(Request::Start(start(Some(Box::new(vec![gate]))))).expect("ser");
+    let doc = crate::gate::GatesDoc {
+        gates: vec![gate],
+        outcomes: Vec::new(),
+    };
+    let given = serde_json::to_value(Request::Start(start(Some(Box::new(doc))))).expect("ser");
     assert_eq!(
         given.get("gates"),
-        Some(&json!([{"name": "proof", "evidence": ["proof.md"]}]))
+        Some(&json!({"gates": [{"name": "proof", "evidence": ["proof.md"]}]}))
     );
     let back: Request = serde_json::from_value(given.clone()).expect("de");
     assert_eq!(serde_json::to_value(back).expect("ser"), given);

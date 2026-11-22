@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test';
 
-import { type GateView, gateLine, gateRows, plain, ruleSentence, tailView, whyWords } from './gate';
+import * as v from 'valibot';
+
+import { type GateView, GateViewSchema, gateLine, gateRows, plain, ruleSentence, tailView, whyWords } from './gate';
 
 const gates = ['plan', 'tests', 'review'];
 const view = (status: GateView['status']): GateView => ({ gates, status });
@@ -27,6 +29,19 @@ test('a stuck gate needs the person, a failed one failed, and a passed Box has e
 	expect(gateRows(view({ state: 'stuck', gate: 'review', why: 'the agent went quiet' })).map((r) => r.state)).toEqual(['passed', 'passed', 'stuck']);
 	expect(gateRows(view({ state: 'failed', gate: 'plan', why: 'the owner said no' })).map((r) => r.state)).toEqual(['failed', 'later', 'later']);
 	expect(gateRows(view({ state: 'passed' })).map((r) => r.words)).toEqual(['passed', 'passed', 'passed']);
+});
+
+test('while moor decides the outcome every gate reads passed, and a view with an outcome parses', () => {
+	const deciding = view({ state: 'open', gate: 'outcome', try_n: 1, next: 'decide' });
+	expect(gateRows(deciding).map((r) => r.state)).toEqual(['passed', 'passed', 'passed']);
+	expect(gateRows(view({ state: 'stuck', gate: 'outcome', why: 'out of tries: no outcome held' })).map((r) => r.state)).toEqual([
+		'passed',
+		'passed',
+		'passed',
+	]);
+	const passed = { gates, status: { state: 'passed', outcome: { name: 'check failed', tone: 'bad' } } };
+	expect(v.parse(GateViewSchema, passed).status.state).toBe('passed');
+	expect(v.parse(GateViewSchema, { gates, status: deciding.status }).status).toMatchObject({ next: 'decide' });
 });
 
 test('the words for a reason carry no code marks and leave the command to the card', () => {

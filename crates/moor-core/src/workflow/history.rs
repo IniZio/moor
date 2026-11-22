@@ -89,6 +89,11 @@ pub enum HistoryEntry {
         /// The gate.
         step: StepId,
     },
+    /// moor found the outcome the run of a Box with gates ends in.
+    OutcomeReached {
+        /// The outcome.
+        outcome: crate::gate::Verdict,
+    },
     /// The run waits for a person at a gate: the owner is asked, or the gate is stuck.
     GateWaiting {
         /// The gate.
@@ -98,6 +103,9 @@ pub enum HistoryEntry {
         /// Why the gate is stuck; none when the owner is asked.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         why: Option<String>,
+        /// The check moor last got no answer from, when that is why the gate is stuck.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unanswered: Option<crate::gate::NoAnswerCause>,
     },
     /// The owner answered the question of a gate. The wait ends with the run going on.
     GateAnswered {

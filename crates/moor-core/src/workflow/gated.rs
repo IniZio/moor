@@ -2,7 +2,7 @@
 //! person or still being worked, and the run follows them. The agent going quiet decides nothing.
 
 use super::StepId;
-use crate::gate::{GateNext, GateStatus};
+use crate::gate::{GateNext, GateStatus, Verdict};
 
 /// What the tick knows of a run of a Box with gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,8 +43,11 @@ pub enum GatedMove {
         /// Its try.
         try_n: u8,
     },
-    /// Every gate passed.
-    Deliver,
+    /// The run reached an outcome. A bad one is still delivered: the run did its job.
+    Deliver {
+        /// The outcome.
+        outcome: Verdict,
+    },
     /// A gate failed for good.
     Fail {
         /// The gate.
@@ -60,7 +63,9 @@ pub enum GatedMove {
 #[must_use]
 pub fn gated_move(now: Standing<'_>, status: &GateStatus) -> GatedMove {
     match status {
-        GateStatus::Passed => GatedMove::Deliver,
+        GateStatus::Passed { outcome } => GatedMove::Deliver {
+            outcome: outcome.clone(),
+        },
         GateStatus::Failed { gate, why } => GatedMove::Fail {
             gate: gate.clone(),
             reason: why.clone(),
@@ -81,7 +86,7 @@ pub fn gated_move(now: Standing<'_>, status: &GateStatus) -> GatedMove {
         GateStatus::Open {
             gate,
             try_n,
-            next: GateNext::Agent | GateNext::RunChecks,
+            next: GateNext::Agent | GateNext::RunChecks | GateNext::Decide,
         } if now.waiting => GatedMove::Resume {
             gate: gate.clone(),
             try_n: *try_n,
@@ -89,7 +94,7 @@ pub fn gated_move(now: Standing<'_>, status: &GateStatus) -> GatedMove {
         GateStatus::Open {
             gate,
             try_n,
-            next: GateNext::Agent | GateNext::RunChecks,
+            next: GateNext::Agent | GateNext::RunChecks | GateNext::Decide,
         } if now.at != (gate, *try_n) => GatedMove::Enter {
             gate: gate.clone(),
             try_n: *try_n,

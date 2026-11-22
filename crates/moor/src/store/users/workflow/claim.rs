@@ -175,6 +175,7 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<Option<RunId>, StoreErr
                     WorkflowRuns::Trigger,
                     WorkflowRuns::PullNumber,
                     WorkflowRuns::HeadSha,
+                    WorkflowRuns::Verdict,
                 ])
                 .values_panic([
                     run.workflow.get().into(),
@@ -194,6 +195,7 @@ fn insert(tx: &dyn Db, seq: i64, run: &NewRun) -> Result<Option<RunId>, StoreErr
                     run.cause.trigger().as_str().into(),
                     pull_number.into(),
                     head_sha.into(),
+                    cols.verdict.into(),
                 ])
                 .on_conflict(OnConflict::new().do_nothing().to_owned())
                 .returning_col(WorkflowRuns::Id),

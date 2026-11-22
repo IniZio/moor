@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{status, GateLine, GateNext, GateStatus, Gates};
+use super::{status, GateLine, GateNext, GateStatus, Gates, NoAnswerCause};
 use crate::workflow::{StepId, StepResult};
 
 /// What the person is asked to do.
@@ -12,7 +12,7 @@ use crate::workflow::{StepId, StepResult};
 pub enum WaitKind {
     /// Say yes or no to what the agent handed in.
     Approve,
-    /// Steer the agent, which reopens the gate with fresh tries.
+    /// Steer the agent, which reopens the gate.
     Stuck,
 }
 
@@ -45,15 +45,18 @@ pub struct Wait {
     pub handed: Vec<String>,
     /// What the agent wrote with its report.
     pub note: Option<String>,
-    /// The check that failed, as written in the gate.
+    /// The check that failed, or that moor last got no answer from, as written.
     pub command: Option<String>,
-    /// What the failed check says must be true, when its author wrote it.
+    /// What that check says must be true, when its author wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub says: Option<String>,
     /// The end of the failed check's output.
     pub tail: Option<String>,
     /// The evidence names that were not found.
     pub missing: Vec<String>,
+    /// The check moor last got no answer from, when that is why the gate is stuck.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unanswered: Option<NoAnswerCause>,
     /// What the person can do about it.
     pub hint: String,
 }
@@ -79,6 +82,10 @@ impl Wait {
     }
 }
 
+/// What a person can do when moor got no answer from its checks: the agent did nothing wrong.
+const NO_ANSWER_HINT: &str = "moor, not the agent, got no answer from its checks. Send the agent \
+                              a message to reopen the gate and run them again, or close the Box.";
+
 /// The wait the gates are at after `lines`; none unless a gate waits for a person.
 #[must_use]
 pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
@@ -91,20 +98,6 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         began -= 1;
     }
     let seq = u32::try_from(began).unwrap_or(u32::MAX);
-    let blank = |gate: &StepId, kind, hint: &str| Wait {
-        gate: gate.to_string(),
-        kind,
-        seq,
-        try_n: None,
-        why: None,
-        handed: Vec::new(),
-        note: None,
-        command: None,
-        says: None,
-        tail: None,
-        missing: Vec::new(),
-        hint: hint.to_owned(),
-    };
     match now {
         GateStatus::Open {
             gate,
@@ -113,7 +106,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         } => {
             let hint =
                 "Answer yes to pass the gate, or no to fail this try; a note goes to the agent.";
-            let mut w = blank(&gate, WaitKind::Approve, hint);
+            let mut w = Wait::blank(&gate, (WaitKind::Approve, seq), hint);
             w.try_n = Some(u32::from(try_n));
             for line in lines {
                 if let GateLine::Submitted {
@@ -130,17 +123,61 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             }
             Some(w)
         }
-        GateStatus::Stuck { gate, why, .. } => {
-            let hint = "Send the agent a message to reopen the gate with fresh tries.";
-            let mut w = blank(&gate, WaitKind::Stuck, hint);
+        GateStatus::Stuck {
+            gate,
+            why,
+            unanswered,
+            ..
+        } => {
+            let hint = match unanswered {
+                Some(_) => NO_ANSWER_HINT,
+                None => "Send the agent a message to reopen the gate with fresh tries.",
+            };
+            let mut w = Wait::blank(&gate, (WaitKind::Stuck, seq), hint);
             w.why = Some(why);
-            if let Some(g) = gates.iter().find(|g| g.name == gate) {
-                stuck_by(&mut w, g, lines);
+            if let Some(cause) = unanswered {
+                w.command.clone_from(&cause.command);
+                w.says.clone_from(&cause.says);
+                w.unanswered = Some(cause);
+                return Some(w);
+            }
+            match gates.iter().find(|g| g.name == gate) {
+                Some(g) => stuck_by(&mut w, g, lines),
+                None => w.tail = none_held_by(gates, lines),
             }
             Some(w)
         }
-        GateStatus::Open { .. } | GateStatus::Failed { .. } | GateStatus::Passed => None,
+        GateStatus::Open { .. } | GateStatus::Failed { .. } | GateStatus::Passed { .. } => None,
     }
+}
+
+impl Wait {
+    /// A wait at `gate` of `kind` that began at `seq`, with only its `hint` filled.
+    fn blank(gate: &StepId, (kind, seq): (WaitKind, u32), hint: &str) -> Self {
+        Self {
+            gate: gate.to_string(),
+            kind,
+            seq,
+            try_n: None,
+            why: None,
+            handed: Vec::new(),
+            note: None,
+            command: None,
+            says: None,
+            tail: None,
+            missing: Vec::new(),
+            unanswered: None,
+            hint: hint.to_owned(),
+        }
+    }
+}
+
+/// What the newest try of the closing stage found, when no outcome held in it.
+fn none_held_by(gates: &Gates, lines: &[GateLine]) -> Option<String> {
+    lines.iter().rev().find_map(|l| match l {
+        GateLine::NoneHeld { tried, .. } => Some(gates.tried_text(tried)),
+        _ => None,
+    })
 }
 
 /// Fills `w` from the newest line of `gate`, since it was last reopened, that failed a try.
@@ -163,10 +200,6 @@ fn stuck_by(w: &mut Wait, gate: &super::Gate, lines: &[GateLine]) {
             } if *g == gate.name && *exit != 0 => {
                 put(w, *check);
                 w.tail = Some(tail.clone()).filter(|t| !t.trim().is_empty());
-                return;
-            }
-            GateLine::CheckLost { gate: g, check, .. } if *g == gate.name => {
-                put(w, *check);
                 return;
             }
             GateLine::Refused {

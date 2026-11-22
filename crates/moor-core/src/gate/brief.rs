@@ -1,7 +1,7 @@
 //! What a Box's gates say to its agent: the preamble of its first message, the reminder for a
 //! gate it has not reported, and the steer after a check failed.
 
-use super::{Approval, Check, Gate, Gates};
+use super::{Approval, Check, Gate, Gates, Outcome, Tried};
 use crate::workflow::{Evidence, EvidenceName, StepId};
 
 /// Where moor's preamble starts in a first message, after the person's own words.
@@ -51,10 +51,93 @@ impl Gates {
              only when all have passed. Report only the gate that is in hand: a report for any \
              other is refused. The first gate is in hand now. moor tells you when each gate is in \
              hand. report_step is a tool of the moor MCP server; load it first if your tools \
-             are loaded on demand. Leave each evidence file in .moor/artifacts/.\n\n{}",
+             are loaded on demand. Leave each evidence file in .moor/artifacts/.\n\n{}{}",
             prompt.trim_end(),
+            lines.join("\n"),
+            self.outcomes_brief()
+        )
+    }
+
+    /// What the preamble says of the outcomes; nothing when there is only the implicit one.
+    fn outcomes_brief(&self) -> String {
+        if self.outcome_docs().is_empty() {
+            return String::new();
+        }
+        let lines: Vec<String> = self.outcomes().iter().map(Outcome::brief).collect();
+        format!(
+            "\n\nHow the run ends is not yours to say: moor decides it by running the checks of \
+             these outcomes in the order listed, and the first whose checks all pass is the run's \
+             outcome. It tries them all once every gate has passed, and tries those marked \
+             \"anytime\" also whenever you stop before the gate in hand has passed. Never fake \
+             evidence or a result to reach one. If you find there is nothing to do, say so in one \
+             line and stop: moor checks the outcomes then.\n\n{}",
             lines.join("\n")
         )
+    }
+
+    /// Each outcome in `tried` with the check that stopped it and the end of its output.
+    #[must_use]
+    pub fn tried_text(&self, tried: &[Tried]) -> String {
+        let lines: Vec<String> = tried
+            .iter()
+            .map(|t| {
+                let check = self
+                    .outcomes()
+                    .iter()
+                    .find(|o| o.name == t.outcome)
+                    .and_then(|o| o.checks.get(usize::from(t.check)));
+                let what = match check {
+                    Some(Check {
+                        says: Some(says),
+                        run,
+                    }) => format!("“{says}” (`{run}`)"),
+                    Some(Check { run, says: None }) => format!("`{run}`"),
+                    None => format!("check {}", t.check + 1),
+                };
+                let mut line = format!("- `{}`: {what} exited {}.", t.outcome, t.exit);
+                if !t.tail.trim().is_empty() {
+                    line.push_str(" The end of its output:\n");
+                    line.push_str(t.tail.trim_end());
+                }
+                line
+            })
+            .collect();
+        lines.join("\n")
+    }
+
+    /// The steer after moor tried the outcomes at the closing stage and none held.
+    #[must_use]
+    pub fn none_held_steer(&self, tried: &[Tried]) -> String {
+        format!(
+            "Every gate has passed, but no outcome holds yet:\n{}\n\nFix what is missing, then \
+             stop. moor tries the outcomes again once you are quiet.",
+            self.tried_text(tried)
+        )
+    }
+}
+
+impl Outcome {
+    /// The outcome as one line of the preamble.
+    fn brief(&self) -> String {
+        let mut line = format!("- `{}`", self.name);
+        if let Some(says) = &self.says {
+            line.push_str(": ");
+            line.push_str(says);
+        }
+        if self.anytime {
+            line.push_str(" (anytime)");
+        }
+        let said: Vec<String> = self
+            .checks
+            .iter()
+            .filter_map(|c| c.says.as_deref())
+            .map(|s| format!("“{s}”"))
+            .collect();
+        if !said.is_empty() {
+            line.push_str(" It holds when: ");
+            line.push_str(&said.join(" "));
+        }
+        line
     }
 }
 

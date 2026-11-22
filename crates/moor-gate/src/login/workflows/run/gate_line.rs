@@ -30,6 +30,21 @@ pub(super) fn sentence(kind: &str, entry: &Value, tries: &str) -> String {
             )
         }
         "resumed" => "Resumed after the wait".to_owned(),
+        "outcome_reached" => entry
+            .get("outcome")
+            .and_then(|o| text(o, "name"))
+            .map_or_else(
+                || "Outcome reached".to_owned(),
+                |n| format!("Ended in “{n}”"),
+            ),
         other => format!("{other}: {entry}"),
     }
+}
+
+/// `line` with the check moor last got no answer from, when `entry` waits for want of answers.
+pub(super) fn with_cause(mut line: Value, entry: &Value) -> Value {
+    if let (Some(cause), Some(fields)) = (entry.get("unanswered"), line.as_object_mut()) {
+        fields.insert("unanswered".to_owned(), cause.clone());
+    }
+    line
 }

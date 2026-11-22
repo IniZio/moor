@@ -185,6 +185,7 @@ impl Quiet<'_> {
             Move::Ask => self.ask(box_id),
             Move::Delivered => end(RunOutcome::Delivered {
                 result: String::new(),
+                verdict: None,
             }),
             Move::Remind | Move::RunCheck | Move::Enter { .. } | Move::Fail { .. }
                 if open(self.row).is_none() =>

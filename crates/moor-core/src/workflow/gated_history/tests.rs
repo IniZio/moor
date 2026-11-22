@@ -18,10 +18,13 @@ fn gates() -> Gates {
         approval: None,
         max_tries: Some(2),
     };
-    Gates::parse(&[
-        evidence("proof", &["pr-*"], &[]),
-        evidence("done", &["posted.md"], &["true"]),
-    ])
+    Gates::parse(
+        &[
+            evidence("proof", &["pr-*"], &[]),
+            evidence("done", &["posted.md"], &["true"]),
+        ],
+        &[],
+    )
     .unwrap()
 }
 
@@ -59,6 +62,7 @@ fn kinds(entries: &[HistoryEntry]) -> Vec<(&'static str, String)> {
             HistoryEntry::GatePassed { step } => ("passed", name(step)),
             HistoryEntry::Entered { step, try_n } => ("entered", format!("{step} {try_n}")),
             HistoryEntry::GateAnswered { step, .. } => ("answered", name(step)),
+            HistoryEntry::OutcomeReached { outcome } => ("outcome", outcome.name.to_string()),
             other => panic!("{other:?}"),
         })
         .collect()
@@ -71,13 +75,16 @@ fn a_check_line_names_the_check_by_what_it_says_else_by_its_command() {
         run: "gh pr view --json comments".to_owned(),
         says: says.to_owned(),
     };
-    let gates = Gates::parse(&[GateDoc {
-        name: "done".to_owned(),
-        evidence: Vec::new(),
-        checks: vec![CheckDoc::Said(said), CheckDoc::from("make test")],
-        approval: None,
-        max_tries: Some(2),
-    }])
+    let gates = Gates::parse(
+        &[GateDoc {
+            name: "done".to_owned(),
+            evidence: Vec::new(),
+            checks: vec![CheckDoc::Said(said), CheckDoc::from("make test")],
+            approval: None,
+            max_tries: Some(2),
+        }],
+        &[],
+    )
     .unwrap();
     let ran = |check: u8, exit: i32| GateLine::Checked {
         gate: id("done"),
@@ -123,7 +130,11 @@ fn a_report_that_leaves_the_gate_waiting_for_its_check_adds_only_the_report() {
 fn a_check_that_passes_the_last_gate_passes_it() {
     let before = [submitted("proof", 1), submitted("done", 1)];
     let got = gate_history(&gates(), &before, &checked("done", 1, 0), false);
-    let want = [("checked", "done 0"), ("passed", "done")];
+    let want = [
+        ("checked", "done 0"),
+        ("passed", "done"),
+        ("outcome", "done"),
+    ];
     assert_eq!(kinds(&got), want.map(|(k, v)| (k, v.to_owned())));
 }
 
@@ -157,4 +168,56 @@ fn a_run_that_waits_leaves_the_gate_in_hand_to_its_resume() {
         got.first(),
         Some(HistoryEntry::GateAnswered { note: None, .. })
     ));
+}
+
+fn with_outcomes() -> Gates {
+    let outcome = |name: &str, check: &str, anytime: bool| crate::gate::OutcomeDoc {
+        name: name.to_owned(),
+        says: None,
+        tone: None,
+        checks: vec![check.into()],
+        anytime,
+    };
+    let docs = gates().docs();
+    Gates::parse(
+        &docs,
+        &[
+            outcome("nothing to do", "no-pr", true),
+            outcome("check passed", "passed", false),
+        ],
+    )
+    .unwrap()
+}
+
+fn held(stage: &str, name: &str) -> GateLine {
+    let line = serde_json::json!({"kind": "held", "gate": stage, "try_n": 1, "outcome": name});
+    serde_json::from_value(line).unwrap()
+}
+
+#[test]
+fn an_anytime_outcome_names_the_outcome_and_passes_no_gate() {
+    let got = gate_history(
+        &with_outcomes(),
+        &[],
+        &held("proof", "nothing to do"),
+        false,
+    );
+    assert_eq!(kinds(&got), [("outcome", "nothing to do".to_owned())]);
+}
+
+#[test]
+fn the_last_gate_puts_the_closing_stage_in_hand_and_its_outcome_ends_it() {
+    let before = [submitted("proof", 1), submitted("done", 1)];
+    let gates = with_outcomes();
+    let last = checked("done", 1, 0);
+    let got = gate_history(&gates, &before, &last, false);
+    let want = [
+        ("checked", "done 0"),
+        ("passed", "done"),
+        ("entered", "outcome 1"),
+    ];
+    assert_eq!(kinds(&got), want.map(|(k, v)| (k, v.to_owned())));
+    let all: Vec<GateLine> = before.into_iter().chain([last]).collect();
+    let got = gate_history(&gates, &all, &held("outcome", "check passed"), false);
+    assert_eq!(kinds(&got), [("outcome", "check passed".to_owned())]);
 }

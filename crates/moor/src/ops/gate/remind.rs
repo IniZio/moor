@@ -41,9 +41,13 @@ pub(super) fn remind(
     if !settled(cx, store, row)? {
         return Ok(());
     }
-    let reminded = lines.iter().any(
-        |l| matches!(l, GateLine::Reminded { gate: g, try_n: t } if g == &gate && *t == try_n),
-    );
+    let reminded = lines
+        .iter()
+        .rev()
+        .take_while(|l| !matches!(l, GateLine::Reopened { gate: g, .. } if g == &gate))
+        .any(
+            |l| matches!(l, GateLine::Reminded { gate: g, try_n: t } if g == &gate && *t == try_n),
+        );
     let line = if reminded {
         GateLine::Quiet { gate, try_n }
     } else {

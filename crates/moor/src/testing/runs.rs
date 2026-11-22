@@ -58,6 +58,7 @@ pub(crate) fn delivered(box_id: i64, ended_at: i64) -> RunState {
         ended_at,
         RunOutcome::Delivered {
             result: String::new(),
+            verdict: None,
         },
     )
 }

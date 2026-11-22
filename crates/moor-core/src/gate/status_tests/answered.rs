@@ -1,5 +1,6 @@
 //! What an answer is read at, and how a failed check is named.
 
+use super::no_answer::{cause, unheard};
 use super::*;
 
 #[test]
@@ -38,8 +39,10 @@ fn a_failed_check_is_named_by_its_command() {
     );
     let got = status(&h, &[lost("tests", 1, 0), lost("tests", 1, 0)]);
     let want = format!(
-        "out of tries: check 1 (`{}…`) lost its output twice",
+        "moor, not the agent, got no answer from its checks twice in a row; the last was check 1 \
+         (`{}…`): its output stream was lost",
         "x".repeat(60)
     );
-    assert_eq!(got, stuck("tests", 1, &want));
+    let long = cause(CheckOf::Gate { check: 0 }, &long, Unanswered::Lost);
+    assert_eq!(got, unheard("tests", 1, &want, long));
 }

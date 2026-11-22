@@ -2,6 +2,7 @@
 
 use moor_client::Client;
 use moor_core::config::override_text;
+use moor_core::gate::GatesDoc;
 use moor_core::name::{BoxName, ForgeRepo};
 use moor_core::request::{Request as ControllerRequest, ShowReq, StartReq};
 use serde_json::Value;
@@ -33,8 +34,16 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
     let name = BoxName::parse_allow_bare(&name).map_err(|e| {
         format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
     })?;
+    let gates = match (args.gates, args.outcomes) {
+        (None, Some(_)) => return Err("send outcomes with the gates they end".to_owned()),
+        (None, None) => None,
+        (Some(gates), outcomes) => Some(Box::new(GatesDoc {
+            gates,
+            outcomes: outcomes.unwrap_or_default(),
+        })),
+    };
     Ok(ControllerRequest::Start(StartReq {
-        gates: args.gates.map(Box::new),
+        gates,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: override_text(args.config),
@@ -145,6 +154,7 @@ pub(crate) fn start_from_portal(
 ) -> Result<Value, String> {
     let request = start_request(StartArgs {
         gates: None,
+        outcomes: None,
         repos: new.repos,
         name: None,
         prompt: Some(new.prompt),

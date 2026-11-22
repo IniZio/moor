@@ -16,6 +16,7 @@ use sea_query::{Cond, Expr, ExprTrait as _, Func, Order, Query};
 pub(crate) use claim::OpenClaim;
 pub(in crate::store) use history::append_to_open_run;
 pub(crate) use put::Put;
+pub(in crate::store) use runs::run_of_box_in;
 pub(crate) use runs::RunOfBox;
 
 mod changes;

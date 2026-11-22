@@ -2,7 +2,8 @@
 
 use schemars::JsonSchema;
 
-use super::{Gate, GateError};
+use super::{CheckOf, Gate, GateError, Gates, NoAnswerCause, Unanswered};
+use crate::workflow::StepId;
 
 /// The longest sentence a check may say, in characters.
 pub const SAYS_MAX: usize = 200;
@@ -66,21 +67,10 @@ impl Check {
                 len: run.len(),
             });
         }
-        if let Some(says) = says {
-            if says.is_empty() {
-                return Err(GateError::EmptySays { gate: gate() });
-            }
-            if says.contains('\n') {
-                return Err(GateError::SaysNotOneLine { gate: gate() });
-            }
-            let len = says.chars().count();
-            if len > SAYS_MAX {
-                return Err(GateError::SaysTooLong { gate: gate(), len });
-            }
-        }
+        let says = says.map(|s| said(s, &gate())).transpose()?;
         Ok(Self {
             run: run.clone(),
-            says: says.map(str::to_owned),
+            says,
         })
     }
 
@@ -106,14 +96,99 @@ impl Gate {
         let Some(c) = self.checks.get(usize::from(check)) else {
             return "``".to_owned();
         };
-        if let Some(says) = &c.says {
-            return says.clone();
-        }
-        let run = c.run.trim();
-        let cut: String = run.chars().take(60).collect();
-        let more = if run.chars().count() > 60 { "…" } else { "" };
-        format!("`{cut}{more}`")
+        c.says.clone().unwrap_or_else(|| cut(&c.run))
     }
+}
+
+/// Command `run` cut short and in backticks.
+fn cut(run: &str) -> String {
+    let run = run.trim();
+    let cut: String = run.chars().take(60).collect();
+    let more = if run.chars().count() > 60 { "…" } else { "" };
+    format!("`{cut}{more}`")
+}
+
+impl Gates {
+    /// The check `of` names at stage `stage`: a gate's own, or an outcome's.
+    #[must_use]
+    pub fn check_of(&self, stage: &StepId, of: &CheckOf) -> Option<&Check> {
+        match of {
+            CheckOf::Gate { check } => self
+                .iter()
+                .find(|g| g.name == *stage)?
+                .checks
+                .get(usize::from(*check)),
+            CheckOf::Outcome { outcome, check } => self
+                .outcomes()
+                .iter()
+                .find(|o| o.name == *outcome)?
+                .checks
+                .get(usize::from(*check)),
+        }
+    }
+
+    /// What moor got no answer from at stage `stage`: check `of`, for `reason`.
+    pub(super) fn no_answer(
+        &self,
+        stage: &StepId,
+        of: &CheckOf,
+        reason: &Unanswered,
+    ) -> NoAnswerCause {
+        let check = self.check_of(stage, of);
+        NoAnswerCause {
+            check: of.clone(),
+            command: check.map(|c| c.run.clone()),
+            says: check.and_then(|c| c.says.clone()),
+            reason: reason.clone(),
+        }
+    }
+}
+
+impl NoAnswerCause {
+    /// Why the stage waits for a person, in one line. The count of no answers runs across the
+    /// checks of a pass, so this names only the last.
+    #[must_use]
+    pub fn why(&self) -> String {
+        let (whose, check) = match &self.check {
+            CheckOf::Gate { check } => (String::new(), *check),
+            CheckOf::Outcome { outcome, check } => (format!("outcome `{outcome}` "), *check),
+        };
+        let what = match (&self.says, &self.command) {
+            (Some(says), _) => format!(" (“{says}”)"),
+            (None, Some(run)) => format!(" ({})", cut(&one_line(run))),
+            (None, None) => String::new(),
+        };
+        let reason = match &self.reason {
+            Unanswered::NotRun { reason } => one_line(reason),
+            Unanswered::Lost => "its output stream was lost".to_owned(),
+        };
+        format!(
+            "moor, not the agent, got no answer from its checks twice in a row; the last was \
+             {whose}check {}{what}: {reason}",
+            check + 1
+        )
+    }
+}
+
+/// `text` on one line, each run of whitespace a single space.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `says`, trimmed, when it is one line of 1 to [`SAYS_MAX`] characters; errors name `gate`.
+pub(super) fn said(says: &str, gate: &str) -> Result<String, GateError> {
+    let gate = || gate.to_owned();
+    if says.is_empty() {
+        return Err(GateError::EmptySays { gate: gate() });
+    }
+    if says.contains('\n') {
+        return Err(GateError::SaysNotOneLine { gate: gate() });
+    }
+    let len = says.chars().count();
+    if len > SAYS_MAX {
+        return Err(GateError::SaysTooLong { gate: gate(), len });
+    }
+    Ok(says.to_owned())
 }
 
 /// Check `check`, from 0, of `gate` as a person reads it: its place, then its label.

@@ -3,7 +3,7 @@
 //! things happened, whenever the tick gets to the run.
 
 use super::{HistoryEntry, StepId};
-use crate::gate::{status, GateLine, GateStatus, Gates};
+use crate::gate::{passed_gates, status, GateLine, GateStatus, Gates};
 
 /// The history lines for `line`, which came after `before`. A run that waits for a person is
 /// put back in hand by its tick, so `run_waits` leaves the gate in hand to that.
@@ -17,23 +17,23 @@ pub fn gate_history(
     let mut out: Vec<HistoryEntry> = of_line(gates, line).into_iter().collect();
     let after: Vec<GateLine> = before.iter().chain([line]).cloned().collect();
     let (was, now) = (status(gates, before), status(gates, &after));
-    let passed = |s: &GateStatus| match s {
-        GateStatus::Passed => gates.iter().count(),
-        GateStatus::Open { gate, .. }
-        | GateStatus::Stuck { gate, .. }
-        | GateStatus::Failed { gate, .. } => {
-            gates.iter().position(|g| g.name == *gate).unwrap_or(0)
-        }
-    };
+    let (from, to) = (passed_gates(gates, before), passed_gates(gates, &after));
     out.extend(
         gates
             .iter()
-            .skip(passed(&was))
-            .take(passed(&now).saturating_sub(passed(&was)))
+            .skip(from)
+            .take(to.saturating_sub(from))
             .map(|g| HistoryEntry::GatePassed {
                 step: g.name.clone(),
             }),
     );
+    if let (GateStatus::Passed { outcome }, false) =
+        (&now, matches!(was, GateStatus::Passed { .. }))
+    {
+        out.push(HistoryEntry::OutcomeReached {
+            outcome: outcome.clone(),
+        });
+    }
     if let (GateStatus::Open { gate, try_n, .. }, false) = (&now, run_waits) {
         if in_hand(&was) != Some((gate, *try_n)) {
             out.push(HistoryEntry::Entered {
@@ -90,7 +90,6 @@ fn of_line(gates: &Gates, line: &GateLine) -> Option<HistoryEntry> {
             exit,
             tail,
         },
-        GateLine::CheckLost { gate, try_n, .. } => HistoryEntry::CheckLost { step: gate, try_n },
         GateLine::Reminded { gate, try_n } => HistoryEntry::Reminded { step: gate, try_n },
         GateLine::Answered {
             gate,
@@ -105,9 +104,12 @@ fn of_line(gates: &Gates, line: &GateLine) -> Option<HistoryEntry> {
             answer,
             note: Some(note).filter(|n| !n.is_empty()),
         },
-        GateLine::Quiet { .. } | GateLine::TryFailed { .. } | GateLine::Reopened { .. } => {
-            return None
-        }
+        GateLine::Quiet { .. }
+        | GateLine::NoAnswer { .. }
+        | GateLine::TryFailed { .. }
+        | GateLine::Reopened { .. }
+        | GateLine::Held { .. }
+        | GateLine::NoneHeld { .. } => return None,
     })
 }
 

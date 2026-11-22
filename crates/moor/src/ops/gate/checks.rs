@@ -10,7 +10,9 @@
 //! steered to the agent, which then fixes the work and goes quiet again.
 
 use moor_core::domain::event::Origin;
-use moor_core::gate::{due_check, status, GateLine, GateStatus, Gates};
+use moor_core::gate::{
+    due_check, due_outcomes, status, CheckOf, GateLine, GateStatus, Gates, Unanswered,
+};
 use moor_core::request::BoxTarget;
 use moor_core::view::steer::SteerValue;
 use moor_core::workflow::{Answer, StepId};
@@ -22,15 +24,34 @@ use crate::error::CommandError;
 use crate::ops::common::check::{execute, Claim, Ended, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::settled;
 use crate::ops::gate::ask::ask;
+use crate::ops::gate::decide::{self, Due};
 use crate::ops::gate::handoff::hand_over;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
-use crate::store::{BoxRow, RunOfBox, Store, StoreError};
+use crate::store::{Appended, BoxRow, RunOfBox, Store, StoreError};
 
-/// A check to run: the gate, the try and the Box, and the number of the line it writes.
+/// What to run in a Box, and the number of the line the result takes.
 pub(crate) struct Job {
     /// The Box to run it in.
     box_id: BoxId,
+    /// What to run.
+    work: Work,
+    /// The number of the line the result takes: the one after those the pass read.
+    n: i64,
+    /// Held until the job is dropped, so no pass starts a check of the Box twice.
+    _flight: Flight,
+}
+
+/// What a job runs.
+enum Work {
+    /// One check of a gate.
+    Check(GateCheck),
+    /// The checks of the outcomes due, to find the one that holds.
+    Outcomes(Due),
+}
+
+/// One check of a gate, due at a try.
+pub(super) struct GateCheck {
     /// The gate.
     gate: StepId,
     /// The try.
@@ -39,10 +60,6 @@ pub(crate) struct Job {
     check: u8,
     /// The command.
     command: String,
-    /// The number of the line the result takes: the one after those the pass read.
-    n: i64,
-    /// Held until the job is dropped, so no pass starts a check of the Box twice.
-    _flight: Flight,
 }
 
 /// Looks at each open Box with gates, handing the check that is due to `checks`, which must not
@@ -95,31 +112,57 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     if tell_failure(cx, store, row, (&gates, &lines))?.is_some() {
         return Ok(());
     }
-    let Some(due) = due_check(&gates, &lines) else {
-        ask(cx, store, row, (&gates, &lines))?;
-        if hand_over(cx, store, row, (&gates, &lines))? {
-            return Ok(());
-        }
-        return remind(cx, store, row, (&gates, &lines));
+    let n = i64::try_from(lines.len())
+        .unwrap_or(i64::MAX)
+        .saturating_add(1);
+    let Some(work) = due_work(cx, store, row, (&gates, &lines))? else {
+        return Ok(());
     };
     if !settled(cx, store, row)? {
         return Ok(());
     }
-    let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
-        return Ok(());
-    };
     checks(Job {
         box_id: row.id,
-        gate: due.gate.name.clone(),
-        try_n: due.try_n,
-        check: due.check,
-        command: command.run.clone(),
-        n: i64::try_from(lines.len())
-            .unwrap_or(i64::MAX)
-            .saturating_add(1),
+        work,
+        n,
         _flight: flight,
     });
     Ok(())
+}
+
+/// What the pass runs next in Box `row`: the check that is due, after the `anytime` outcomes when
+/// there are any, else the outcomes that are due once the owner is asked and the agent told of a
+/// hand-over. None when nothing is to run, after the agent is reminded if it waits for one.
+fn due_work(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    (gates, lines): (&Gates, &[GateLine]),
+) -> Result<Option<Work>, CommandError> {
+    if let Some(due) = due_check(gates, lines) {
+        let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
+            return Ok(None);
+        };
+        let check = GateCheck {
+            gate: due.gate.name.clone(),
+            try_n: due.try_n,
+            check: due.check,
+            command: command.run.clone(),
+        };
+        return Ok(Some(match due_outcomes(gates, lines) {
+            Some(anytime) => Work::Outcomes(Due::of(&anytime).then(check)),
+            None => Work::Check(check),
+        }));
+    }
+    ask(cx, store, row, (gates, lines))?;
+    if hand_over(cx, store, row, (gates, lines))? {
+        return Ok(None);
+    }
+    let Some(due) = due_outcomes(gates, lines) else {
+        remind(cx, store, row, (gates, lines))?;
+        return Ok(None);
+    };
+    Ok(Some(Work::Outcomes(Due::of(&due))))
 }
 
 /// Whether `line` is one the agent's own doings wrote in try `try_n`, which a failure that ended
@@ -146,8 +189,13 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
         .enumerate()
         .rev()
         .find(|(_, l)| !of_this_try(l, try_n))?;
-    let waiting = gates.iter().find(|g| g.name == gate)?;
+    let waiting = || gates.iter().find(|g| g.name == gate);
     let (failed_try, text) = match line {
+        GateLine::NoneHeld {
+            gate: g,
+            try_n,
+            tried,
+        } if g == &gate => (*try_n, gates.none_held_steer(tried)),
         GateLine::Checked {
             gate: g,
             try_n,
@@ -156,15 +204,7 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             tail,
         } if g == &gate && *exit != 0 => (
             *try_n,
-            waiting.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
-        ),
-        GateLine::CheckLost {
-            gate: g,
-            try_n,
-            check,
-        } if g == &gate => (
-            *try_n,
-            waiting.failed_check_steer(*check, ("lost its output twice", "")),
+            waiting()?.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
         ),
         GateLine::Answered {
             gate: g,
@@ -172,7 +212,7 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             answer: Answer::No,
             note,
             ..
-        } if g == &gate => (*try_n, waiting.owner_no_steer(note)),
+        } if g == &gate => (*try_n, waiting()?.owner_no_steer(note)),
         _ => return None,
     };
     if failed_try + 1 != try_n {
@@ -215,6 +255,14 @@ fn tell_failure(
         .map(Some)
 }
 
+/// What to log when a job's result is dropped because the run of Box `id` ended while it ran.
+pub(super) fn dropped(what: &str, id: BoxId) -> String {
+    format!(
+        "{what}: dropped the result for Box {}: its run has ended",
+        id.get()
+    )
+}
+
 /// Whether `e` says another line took the number.
 pub(super) fn taken(e: &StoreError) -> bool {
     matches!(e, StoreError::Db(db) if db.unique_key().is_some_and(|k| {
@@ -222,48 +270,80 @@ pub(super) fn taken(e: &StoreError) -> bool {
     }))
 }
 
-/// Runs the check of `job` in its Box as the Box's owner and writes how it ended, then tells the
-/// agent when that failed the try. A result whose line number was taken meanwhile is dropped.
-/// Returns what to log.
+/// Runs `job` in its Box as the Box's owner and writes how it ended. Returns what to log.
 pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
+    match &job.work {
+        Work::Check(check) => run_check(cx, (job.box_id, job.n), check),
+        Work::Outcomes(due) => decide::run(cx, (job.box_id, job.n), due),
+    }
+}
+
+/// Runs `check` in Box `id` and writes how it ended as line `n`, then tells the agent when that
+/// failed the try. A result whose line number was taken meanwhile is dropped.
+pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Vec<String> {
+    let GateCheck {
+        gate,
+        try_n,
+        check,
+        command,
+    } = check;
+    let (try_n, check) = (*try_n, *check);
     let mut out = Vec::new();
     let Ok(store) = cx.store() else { return out };
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);
-    let Some(ran) = execute(cx, job.box_id, &job.command, timeout) else {
+    let Some(ran) = execute(cx, id, command, timeout) else {
         return out;
     };
-    let name = job.gate.as_str();
+    let name = gate.as_str();
     if let Some(why) = &ran.error {
         out.push(format!(
             "gate {name}: no result from Box {}: {why}",
-            job.box_id.get()
+            id.get()
         ));
     }
-    let (gate, try_n, check) = (job.gate.clone(), job.try_n, job.check);
-    let line = match ran.ended {
-        Ended::Lost => GateLine::CheckLost { gate, try_n, check },
-        Ended::Exit { exit, tail } => GateLine::Checked {
+    let gate = gate.clone();
+    let line = match unanswered(ran.ended, ran.error) {
+        Ok((exit, tail)) => GateLine::Checked {
             gate,
             try_n,
             check,
             exit,
             tail,
         },
+        Err(why) => GateLine::NoAnswer {
+            gate,
+            try_n,
+            check: CheckOf::Gate { check },
+            why,
+        },
     };
-    match store.append_gate_line(job.box_id, job.n, cx.clock().now(), &line) {
-        Ok(()) => {
-            if let Err(e) = tell(cx, store, job.box_id) {
+    match store.append_job_line(id, n, cx.clock().now(), &line) {
+        Ok(Appended::Written) => {
+            if let Err(e) = tell(cx, store, id) {
                 out.push(format!(
                     "gate {name}: could not tell the agent: {}",
                     e.error
                 ));
             }
         }
+        Ok(Appended::RunEnded) => out.push(dropped(&format!("gate {name}"), id)),
         Err(e) if taken(&e) => {}
         Err(e) => out.push(format!("gate {name}: {e}")),
     }
     out.extend(cx.take_warnings().into_iter().map(|w| w.message));
     out
+}
+
+/// The exit code and tail of a check that ended as `ended`, or why moor got no answer from it,
+/// with the exec's `error` as the reason it did not run.
+pub(super) fn unanswered(ended: Ended, error: Option<String>) -> Result<(i32, String), Unanswered> {
+    match ended {
+        Ended::Exit { exit, tail } => Ok((exit, tail)),
+        Ended::Lost => Err(Unanswered::Lost),
+        Ended::NotRun { tail } => Err(Unanswered::NotRun {
+            reason: error.unwrap_or(tail),
+        }),
+    }
 }
 
 /// Tells the agent of Box `id` what failed, when its newest line ended a try.

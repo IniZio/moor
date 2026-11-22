@@ -13,10 +13,10 @@ use crate::store::{BoxRow, Store};
 /// # Errors
 /// Usage for the first thing wrong with the gates.
 pub(super) fn check(req: &StartReq) -> Result<(), CommandError> {
-    let Some(docs) = &req.gates else {
+    let Some(doc) = &req.gates else {
         return Ok(());
     };
-    Gates::parse(docs)
+    Gates::parse(&doc.gates, &doc.outcomes)
         .map(drop)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))
 }
@@ -29,11 +29,11 @@ pub(super) fn check(req: &StartReq) -> Result<(), CommandError> {
 /// # Errors
 /// Usage naming what is missing.
 pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
-    let Some(docs) = &req.gates else {
+    let Some(doc) = &req.gates else {
         return Ok(());
     };
     let usage = |why: String| CommandError::new(ErrorKind::Usage, why);
-    let gates = Gates::parse(docs).map_err(|e| usage(e.to_string()))?;
+    let gates = Gates::parse(&doc.gates, &doc.outcomes).map_err(|e| usage(e.to_string()))?;
     if req.prompt.is_none() && req.issue.is_none() {
         return Err(usage(
             "a start with gates needs a prompt or an issue: the agent is told its gates in its \
@@ -54,7 +54,8 @@ pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
 pub(super) fn column(req: &StartReq) -> Option<String> {
     req.gates
         .as_ref()
-        .and_then(|docs| serde_json::to_string(docs).ok())
+        .and_then(|doc| Gates::parse(&doc.gates, &doc.outcomes).ok())
+        .and_then(|gates| serde_json::to_string(&gates.doc()).ok())
 }
 
 /// Refuses a start of open Box `row` that asks for gates other than the Box's own, rather than
@@ -63,11 +64,11 @@ pub(super) fn column(req: &StartReq) -> Option<String> {
 /// # Errors
 /// Refused when `req` carries gates that differ from the Box's.
 pub(super) fn check_kept(store: &Store, req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
-    let Some(docs) = &req.gates else {
+    let Some(doc) = &req.gates else {
         return Ok(());
     };
-    let asked =
-        Gates::parse(docs).map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
+    let asked = Gates::parse(&doc.gates, &doc.outcomes)
+        .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     if store.box_gates(row.id)? == Some(asked) {
         return Ok(());
     }

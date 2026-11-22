@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 
 /** What an open gate waits for. */
-const NextSchema = v.picklist(['agent', 'run_checks', 'ask']);
+const NextSchema = v.picklist(['agent', 'run_checks', 'ask', 'decide']);
 
 /** Where a Box stands against its gates, as moor derives it. */
 const GateStatusSchema = v.variant('state', [
@@ -93,7 +93,8 @@ function atGate(name: string, status: Exclude<GateView['status'], { state: 'pass
 export function gateRows(view: GateView): GateRow[] {
 	const { status } = view;
 	if (status.state === 'passed') return view.gates.map((name) => ({ name, state: 'passed', words: 'passed' }));
-	const at = view.gates.indexOf(status.gate);
+	const named = view.gates.indexOf(status.gate);
+	const at = named === -1 ? view.gates.length : named;
 	return view.gates.map((name, i) =>
 		i < at ? { name, state: 'passed', words: 'passed' } : i === at ? atGate(name, status) : { name, state: 'later', words: 'not started' },
 	);

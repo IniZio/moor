@@ -15,7 +15,7 @@ use moor_core::view::gate::GateAnswerValue;
 use moor_core::workflow::{Answer, StepId, StepResult};
 use moor_core::{ErrorKind, GateAnswerReq};
 
-use super::fx::{evidence_gate, fx, gate, Fx};
+use super::fx::{done, evidence_gate, fx, gate, Fx};
 use crate::error::CommandError;
 use crate::ops::gate::answer::run;
 use crate::testing::cx::REQUESTER_USER;
@@ -83,7 +83,7 @@ fn an_asking_gate_needs_the_owner_and_a_yes_passes_it() {
         "{}",
         said.outcome
     );
-    assert_eq!(f.standing(), (GateStatus::Passed, Progress::Done));
+    assert_eq!(f.standing(), (done(), Progress::Done));
     let lines = f.lines();
     assert!(
         matches!(lines.last(), Some(GateLine::Answered { try_n: 1, answer: Answer::Yes, by, .. }) if !by.is_empty()),
@@ -243,7 +243,7 @@ fn an_answer_to_an_earlier_question_is_refused_and_a_replayed_no_fails_one_try_o
         "an answer of try 1 does not fail try 2"
     );
     run(&f.cx, &req(&f, Answer::Yes, None, Some(second))).unwrap();
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn a_yes_to_an_asleep_box_passes_the_gate_and_wakes_nothing() {
     ask(&f);
     sleep(&f);
     answer(&f, Answer::Yes, None).unwrap();
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
     assert!(f.told().is_empty());
     assert!(f.driver.calls().iter().all(|c| !c.starts_with("wake ")));
 }

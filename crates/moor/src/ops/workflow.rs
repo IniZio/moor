@@ -7,7 +7,7 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{run_verdict, workflow_due, RunVerdict, WorkflowVerdict};
-use moor_core::gate::{GateDoc, Gates};
+use moor_core::gate::{Gates, GatesDoc};
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
@@ -65,8 +65,9 @@ pub(crate) struct Firing {
     pub(crate) prompt: String,
     /// The step of the workflow's plan the run starts at.
     pub(crate) first_step: StepId,
-    /// The gates the Box starts with, frozen into it; none for a workflow without gates.
-    pub(crate) gates: Option<Vec<GateDoc>>,
+    /// The gates and outcomes the Box starts with, frozen into it; none for a workflow without
+    /// gates.
+    pub(crate) gates: Option<GatesDoc>,
 }
 
 impl Firing {
@@ -210,7 +211,7 @@ fn prepare(
             name,
             prompt,
             first_step: gated::first_step(w.gates.as_ref(), w.plan.first().id.clone()),
-            gates: w.gates.as_ref().map(Gates::docs),
+            gates: w.gates.as_ref().map(Gates::doc),
         },
     })
 }

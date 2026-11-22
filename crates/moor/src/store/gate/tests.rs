@@ -32,7 +32,7 @@ fn reminded(try_n: u8) -> GateLine {
 fn gates_are_stored_with_the_box_and_a_box_without_has_none() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let json = serde_json::to_string(&[proof()]).unwrap();
+    let json = serde_json::to_string(&Gates::parse(&[proof()], &[]).unwrap().doc()).unwrap();
     let with = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
@@ -47,7 +47,7 @@ fn gates_are_stored_with_the_box_and_a_box_without_has_none() {
     let without = new_box(&store, "b");
     assert_eq!(
         store.box_gates(with).unwrap(),
-        Some(Gates::parse(&[proof()]).unwrap())
+        Some(Gates::parse(&[proof()], &[]).unwrap())
     );
     assert_eq!(store.box_gates(without).unwrap(), None);
 }
@@ -122,4 +122,14 @@ fn the_lines_of_a_box_go_with_the_box() {
         .unwrap();
     assert_eq!(store.gate_lines(gone).unwrap(), []);
     assert_eq!(store.gate_lines(kept).unwrap(), [reminded(1)]);
+}
+
+#[test]
+fn a_job_line_of_a_box_no_run_used_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_box(&store, "a");
+    let wrote = store.append_job_line(id, 1, Ts::from_millis(5), &reminded(1));
+    assert_eq!(wrote.unwrap(), crate::store::Appended::Written);
+    assert_eq!(store.gate_lines(id).unwrap(), [reminded(1)]);
 }

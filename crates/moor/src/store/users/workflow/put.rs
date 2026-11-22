@@ -63,7 +63,7 @@ pub(crate) enum Put {
 fn gates_json(def: &WorkflowDef) -> Result<Option<String>, StoreError> {
     def.gates
         .as_ref()
-        .map(|g| serde_json::to_string(&g.docs()))
+        .map(|g| serde_json::to_string(&g.doc()))
         .transpose()
         .map_err(StoreError::from)
 }

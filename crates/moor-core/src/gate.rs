@@ -15,7 +15,12 @@ mod brief_tests;
 mod check;
 #[cfg(test)]
 mod check_tests;
+mod error;
+mod fold;
 mod line;
+mod outcome;
+#[cfg(test)]
+mod outcome_tests;
 mod shown;
 mod status;
 #[cfg(test)]
@@ -26,8 +31,15 @@ mod wait;
 
 pub use brief::{split_gate_preamble, split_owner_note};
 pub use check::{Check, CheckDoc, SaidDoc, SAYS_MAX};
-pub use line::GateLine;
-pub use status::{due_check, status, DueCheck, GateNext, GateStatus};
+pub use error::GateError;
+pub use line::{CheckOf, GateLine, NoAnswerCause, Tried, Unanswered};
+pub use outcome::{
+    closing, Outcome, OutcomeDoc, OutcomeName, Tone, Verdict, CLOSING, OUTCOMES_MAX,
+    OUTCOME_NAME_MAX,
+};
+pub use status::{
+    due_check, due_outcomes, passed_gates, status, DueCheck, DueOutcomes, GateNext, GateStatus,
+};
 pub use wait::{wait, Wait, WaitKind};
 
 /// The most gates a Box may have.
@@ -94,111 +106,34 @@ pub struct GateDoc {
     pub max_tries: Option<u64>,
 }
 
-/// Why gates are not valid.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum GateError {
-    /// The text is not gates: not JSON, a field of the wrong type, or an unknown field.
-    #[error("the gates are not valid: {0}")]
-    Json(String),
-    /// No gates.
-    #[error("a Box with gates needs at least one gate")]
-    NoGates,
-    /// More than [`GATES_MAX`].
-    #[error("{0} gates; use at most 8")]
-    TooManyGates(usize),
-    /// A name that is not 1-32 of `[a-z0-9-]` starting with a letter.
-    #[error("gate `{gate}`: use 1-32 lowercase letters, digits or '-', starting with a letter")]
-    BadName {
-        /// The name as written.
-        gate: String,
-    },
-    /// Two gates share a name.
-    #[error("gate name `{0}` is used twice")]
-    DuplicateName(String),
-    /// Nothing to pass: no evidence, no checks and no approval.
-    #[error("gate `{gate}` needs evidence, a check or an owner approval")]
-    NothingToPass {
-        /// The gate.
-        gate: String,
-    },
-    /// An evidence name that is neither an artifact name nor a `prefix*`.
-    #[error("gate `{gate}`: evidence `{name}` is not a flat file name or a `prefix*`")]
-    BadEvidence {
-        /// The gate.
-        gate: String,
-        /// What was written.
-        name: String,
-    },
-    /// More evidence names than a report may list.
-    #[error("gate `{gate}` lists {len} evidence names; use at most 32")]
-    TooManyEvidence {
-        /// The gate.
-        gate: String,
-        /// How many.
-        len: usize,
-    },
-    /// More than [`CHECKS_MAX`] checks.
-    #[error("gate `{gate}` has {len} checks; use at most 8")]
-    TooManyChecks {
-        /// The gate.
-        gate: String,
-        /// How many.
-        len: usize,
-    },
-    /// A check with no command.
-    #[error("gate `{gate}` has an empty check")]
-    EmptyCheck {
-        /// The gate.
-        gate: String,
-    },
-    /// A check with a blank sentence.
-    #[error("gate `{gate}` has a check whose `says` is empty")]
-    EmptySays {
-        /// The gate.
-        gate: String,
-    },
-    /// A check's sentence over more than one line.
-    #[error("gate `{gate}`: a check's `says` must be one line")]
-    SaysNotOneLine {
-        /// The gate.
-        gate: String,
-    },
-    /// A check's sentence over [`SAYS_MAX`] characters.
-    #[error("gate `{gate}`: a check says {len} characters; use at most 200")]
-    SaysTooLong {
-        /// The gate.
-        gate: String,
-        /// Its length.
-        len: usize,
-    },
-    /// A check over [`CHECK_MAX`] bytes.
-    #[error("gate `{gate}`: a check is {len} bytes; use at most 4096")]
-    CheckTooLong {
-        /// The gate.
-        gate: String,
-        /// Its length.
-        len: usize,
-    },
-    /// A `max_tries` outside 1 to 5.
-    #[error("gate `{gate}`: max_tries must be 1 to 5, not {got}")]
-    MaxTries {
-        /// The gate.
-        gate: String,
-        /// What was written.
-        got: u64,
-    },
+/// Gates and outcomes as a Box or a workflow keeps them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GatesDoc {
+    /// The gates.
+    pub gates: Vec<GateDoc>,
+    /// The outcomes; none for the one implicit outcome.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outcomes: Vec<OutcomeDoc>,
 }
 
-/// A Box's gates: one to eight, in the order they pass.
+/// A Box's gates, one to eight in the order they pass, and the outcomes its run may end in, at
+/// least one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Gates(Vec<Gate>);
+pub struct Gates {
+    /// The gates.
+    gates: Vec<Gate>,
+    /// The outcomes, in the order moor tries them.
+    outcomes: Vec<Outcome>,
+}
 
 impl Gates {
-    /// The gates `docs` describe.
+    /// The gates `docs` and the outcomes `outcomes` describe; no outcomes gives the one
+    /// implicit outcome `done`, which holds once every gate has passed.
     ///
     /// # Errors
     /// [`GateError`] for the first thing wrong.
-    pub fn parse(docs: &[GateDoc]) -> Result<Self, GateError> {
+    pub fn parse(docs: &[GateDoc], outcomes: &[OutcomeDoc]) -> Result<Self, GateError> {
         if docs.is_empty() {
             return Err(GateError::NoGates);
         }
@@ -214,23 +149,48 @@ impl Gates {
             }
             gates.push(gate);
         }
-        Ok(Self(gates))
+        let outcomes = outcome::parse_outcomes(outcomes)?;
+        Ok(Self { gates, outcomes })
     }
 
-    /// The gates in `text`, a JSON array of [`GateDoc`].
+    /// The gates in `text`, the JSON of a [`GatesDoc`].
     ///
     /// # Errors
     /// [`GateError`] when it is not JSON of that shape, or its gates are not valid.
     pub fn from_json(text: &str) -> Result<Self, GateError> {
-        let docs: Vec<GateDoc> =
+        let doc: GatesDoc =
             serde_json::from_str(text).map_err(|e| GateError::Json(e.to_string()))?;
-        Self::parse(&docs)
+        Self::parse(&doc.gates, &doc.outcomes)
+    }
+
+    /// The gates and outcomes as a Box or a workflow keeps them.
+    #[must_use]
+    pub fn doc(&self) -> GatesDoc {
+        GatesDoc {
+            gates: self.docs(),
+            outcomes: self.outcome_docs(),
+        }
     }
 
     /// The gates as written, leaving out what is default.
     #[must_use]
     pub fn docs(&self) -> Vec<GateDoc> {
-        self.0.iter().map(doc_of).collect()
+        self.gates.iter().map(doc_of).collect()
+    }
+
+    /// The outcomes as written; none when there is only the implicit one.
+    #[must_use]
+    pub fn outcome_docs(&self) -> Vec<OutcomeDoc> {
+        if self.outcomes == [Outcome::implicit()] {
+            return Vec::new();
+        }
+        self.outcomes.iter().map(Outcome::doc).collect()
+    }
+
+    /// The outcomes, in the order moor tries them.
+    #[must_use]
+    pub fn outcomes(&self) -> &[Outcome] {
+        &self.outcomes
     }
 
     /// Whether a gate needs the agent to call `report_step` or the owner to answer, which only a
@@ -243,13 +203,13 @@ impl Gates {
 
     /// Every gate, the first one first.
     pub fn iter(&self) -> impl Iterator<Item = &Gate> {
-        self.0.iter()
+        self.gates.iter()
     }
 
     /// The gate at place `at`, from 0.
     #[must_use]
     pub fn get(&self, at: usize) -> Option<&Gate> {
-        self.0.get(at)
+        self.gates.get(at)
     }
 }
 
@@ -257,6 +217,9 @@ impl Gates {
 fn parse_gate(doc: &GateDoc) -> Result<Gate, GateError> {
     let gate = || doc.name.clone();
     let name = StepId::parse(&doc.name).map_err(|_| GateError::BadName { gate: gate() })?;
+    if name.as_str() == CLOSING {
+        return Err(GateError::ReservedName(gate()));
+    }
     let evidence = parse_evidence(doc)?;
     let checks = parse_checks(doc)?;
     let approval = doc.approval.unwrap_or_default();

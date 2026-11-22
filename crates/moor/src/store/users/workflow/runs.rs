@@ -20,7 +20,7 @@ use super::row::{
     SKIPPED_OVERLAP, STARTED, STARTING, WAITING,
 };
 use super::subject::{about, Subject};
-use crate::store::db::{self, Db, DbExt as _, Tx};
+use crate::store::db::{self, Db, DbExt, Tx};
 use crate::store::{Store, StoreError};
 
 /// A phase a run can move on from.
@@ -68,14 +68,7 @@ pub(crate) enum RunOfBox {
 impl Store {
     /// How Box `box_id` relates to its latest workflow run.
     pub(crate) fn run_of_box(&self, box_id: BoxId) -> Result<RunOfBox, StoreError> {
-        Ok(match self.latest_run_of_box(box_id)? {
-            None => RunOfBox::NoRun,
-            Some((outcome, _)) if [STARTING, STARTED, WAITING].contains(&outcome.as_str()) => {
-                RunOfBox::Open
-            }
-            Some((_, Some(ended))) => RunOfBox::Ended(Ts::from_millis(ended)),
-            Some((_, None)) => RunOfBox::Open,
-        })
+        run_of_box_in(&self.reader()?, box_id)
     }
 
     /// How the latest workflow run of Box `box_id` ended short of delivering, as its stored
@@ -83,35 +76,10 @@ impl Store {
     /// for a Box no run used.
     pub(crate) fn run_end_of_box(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
         let not_ended = [STARTING, STARTED, WAITING, FINISHED];
-        Ok(match self.latest_run_of_box(box_id)? {
+        Ok(match latest_run_of_box(&self.reader()?, box_id)? {
             Some((outcome, Some(_))) if !not_ended.contains(&outcome.as_str()) => Some(outcome),
             _ => None,
         })
-    }
-
-    /// The outcome and end time of the latest workflow run of Box `box_id`.
-    fn latest_run_of_box(
-        &self,
-        box_id: BoxId,
-    ) -> Result<Option<(String, Option<i64>)>, StoreError> {
-        let latest = self
-            .reader()?
-            .rows(
-                Query::select()
-                    .columns([WorkflowRuns::Outcome, WorkflowRuns::EndedAt])
-                    .from(WorkflowRuns::Table)
-                    .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
-                    .order_by(WorkflowRuns::Id, Order::Desc)
-                    .limit(1),
-                |r| {
-                    let outcome: String = r.get(0)?;
-                    let ended: Option<i64> = r.get(1)?;
-                    Ok::<_, db::Error>((outcome, ended))
-                },
-            )?
-            .next()
-            .transpose()?;
-        Ok(latest)
     }
 
     /// Moves run `run` from the phase `from` to `to` at `at`, and appends the line for the
@@ -334,6 +302,7 @@ pub(super) fn move_in(
         .value(WorkflowRuns::TryN, cols.try_n)
         .value(WorkflowRuns::WaitingSince, cols.waiting_since)
         .value(WorkflowRuns::EndedStep, cols.ended_step)
+        .value(WorkflowRuns::Verdict, cols.verdict)
         .value(WorkflowRuns::Seq, seq)
         .and_where(Expr::col(WorkflowRuns::Id).eq(run.get()))
         .and_where(Expr::col(WorkflowRuns::Outcome).eq(from.outcome()));
@@ -380,4 +349,43 @@ pub(super) fn real_run(
     .map(|row| run_of(workflow, &row?))
     .next()
     .transpose()
+}
+
+/// How Box `box_id` relates to its latest workflow run, as `db` reads it.
+pub(in crate::store) fn run_of_box_in(
+    db: &(impl DbExt + ?Sized),
+    box_id: BoxId,
+) -> Result<RunOfBox, StoreError> {
+    Ok(match latest_run_of_box(db, box_id)? {
+        None => RunOfBox::NoRun,
+        Some((outcome, _)) if [STARTING, STARTED, WAITING].contains(&outcome.as_str()) => {
+            RunOfBox::Open
+        }
+        Some((_, Some(ended))) => RunOfBox::Ended(Ts::from_millis(ended)),
+        Some((_, None)) => RunOfBox::Open,
+    })
+}
+
+/// The outcome and end time of the latest workflow run of Box `box_id`, as `db` reads it.
+fn latest_run_of_box(
+    db: &(impl DbExt + ?Sized),
+    box_id: BoxId,
+) -> Result<Option<(String, Option<i64>)>, StoreError> {
+    let latest = db
+        .rows(
+            Query::select()
+                .columns([WorkflowRuns::Outcome, WorkflowRuns::EndedAt])
+                .from(WorkflowRuns::Table)
+                .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
+                .order_by(WorkflowRuns::Id, Order::Desc)
+                .limit(1),
+            |r| {
+                let outcome: String = r.get(0)?;
+                let ended: Option<i64> = r.get(1)?;
+                Ok::<_, db::Error>((outcome, ended))
+            },
+        )?
+        .next()
+        .transpose()?;
+    Ok(latest)
 }

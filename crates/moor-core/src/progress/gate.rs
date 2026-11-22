@@ -69,20 +69,20 @@ pub(super) fn forced(b: &BoxView) -> Option<Progress> {
             ..
         } if quiet(b) => Some(Progress::NeedsYou),
         GateStatus::Failed { .. } => Some(Progress::Failed),
-        GateStatus::Open { .. } | GateStatus::Passed => None,
+        GateStatus::Open { .. } | GateStatus::Passed { .. } => None,
     }
 }
 
 /// Whether a gate is still open, so an agent that ended its turn has not finished the Box.
 pub(super) fn holds(b: &BoxView) -> bool {
-    open_status(b).is_some_and(|s| *s != GateStatus::Passed)
+    open_status(b).is_some_and(|s| !matches!(s, GateStatus::Passed { .. }))
 }
 
 /// What the agent wrote with its last accepted report, once every gate has passed: it says what
 /// was done, where the agent's last sentence may be stale.
 pub(super) fn done_note(b: &BoxView) -> Option<&str> {
     let gate = b.gate.as_ref()?;
-    (gate.status == GateStatus::Passed).then_some(gate.note.as_deref())?
+    matches!(gate.status, GateStatus::Passed { .. }).then_some(gate.note.as_deref())?
 }
 
 /// The line a gate gives a Box in `state`, when it has something to say that the agent's own
@@ -98,6 +98,7 @@ pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
             GateNext::Agent => format!("gate {gate}: waiting for the agent's evidence"),
             GateNext::RunChecks => format!("gate {gate}: running its checks"),
             GateNext::Ask => format!("gate {gate}: waiting for your approval"),
+            GateNext::Decide => "deciding the outcome: running its checks".to_owned(),
         }),
         (Progress::NeedsYou, GateStatus::Open { gate, .. }) => {
             Some(format!("gate {gate}: waiting for your approval"))

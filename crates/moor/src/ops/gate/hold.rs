@@ -26,7 +26,8 @@ pub(crate) fn holds(store: &Store, id: BoxId) -> Result<bool, StoreError> {
 }
 
 /// Writes `Reopened` for the gate of Box `id` that is stuck, after a person's steer reached its
-/// agent: they have taken it up, so the gate gets fresh tries. moor's own steers, a gate that is
+/// agent: they have taken it up, so the gate goes on, with fresh tries unless moor got no answer
+/// from its checks. moor's own steers, a gate that is
 /// not stuck, and the Box of a run that ended, whose gates nothing runs, are left alone. A failure
 /// is a warning on the steer, which was sent.
 pub(crate) fn after_steer(cx: &Cx, store: &Store, id: BoxId, origin: Origin) {

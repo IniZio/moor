@@ -295,7 +295,14 @@ fn timed_out(r: &str, due: i64) -> WorkflowRun {
 
 fn finished(r: &str, due: i64) -> WorkflowRun {
     let result = String::new();
-    ended(r, due, RunOutcome::Delivered { result })
+    ended(
+        r,
+        due,
+        RunOutcome::Delivered {
+            result,
+            verdict: None,
+        },
+    )
 }
 
 fn skipped(r: &str, due: i64) -> WorkflowRun {
