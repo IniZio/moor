@@ -45,16 +45,20 @@ header.top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: now
 /* popovers */
 [popover] { margin: 0; inset: auto; }
 .pop { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); color: var(--moor-color-text); box-shadow: var(--moor-shadow-lg); padding: 0.3rem; }
-.pop.inbox { position: fixed; top: 3.2rem; right: 1rem; width: 25rem; max-width: 94vw; }
+.pop.inbox { position: fixed; top: 3.2rem; right: 1rem; width: 38rem; max-width: 94vw; }
 .pop-h { padding: 0.4rem 0.6rem 0.5rem; font-weight: 650; display: flex; justify-content: space-between; }
 .inbox-all { font: inherit; font-weight: var(--moor-weight-body); font-size: var(--app-text-xs); padding: 0 0.4rem; border: 0; background: none; color: var(--moor-color-accent); cursor: pointer; }
 .inbox-all:hover { text-decoration: underline; }
-.inbox-body { min-width: 0; overflow-wrap: anywhere; }
-.inbox-age { font-size: var(--app-text-xs); }
-.inbox-read .inbox-body, .inbox-resolved .inbox-body { color: var(--moor-color-text-muted); }
-.inbox-read b, .inbox-resolved b { font-weight: var(--moor-weight-body); }
-.inbox-item { display: grid; grid-template-columns: 1rem 1fr auto; gap: 0.5rem; padding: 0.5rem 0.6rem; border-radius: var(--moor-radius-sm); text-decoration: none; color: inherit; font-size: var(--app-text-sm); }
-.inbox-item:hover { background: var(--moor-color-bg-sunken); }
+.inbox-time { grid-area: time; font-size: var(--app-text-xs); color: var(--moor-color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inbox-title { grid-area: title; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-now { grid-area: now; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--moor-color-text-muted); font-size: 0.8125rem; }
+.inbox-unread .inbox-now { color: var(--moor-color-text); }
+.inbox-read, .inbox-resolved { opacity: 0.65; }
+.inbox-read .inbox-title, .inbox-resolved .inbox-title { font-weight: var(--moor-weight-body); }
+.inbox-item { display: grid; grid-template-columns: 1.1em 11rem minmax(0, 1fr) auto; grid-template-areas: "mark repo title time" ". . now now"; align-items: center; column-gap: 0.6rem; padding: 0.4rem 0.6rem; border-radius: var(--moor-radius-sm); text-decoration: none; color: inherit; font-size: var(--app-text-sm); }
+.inbox-item > .t-glyph { grid-area: mark; }
+.inbox-item > .t-rrepo { grid-area: repo; }
+.inbox-item:hover, .inbox-item:focus-visible { background: var(--moor-color-bg-sunken); }
 .pop.usermenu { position: fixed; top: 3.2rem; right: 1rem; min-width: 13rem; }
 .pop.usermenu:popover-open { display: grid; }
 .menu-who { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--moor-color-border); margin-bottom: 0.2rem; overflow-wrap: anywhere; }
@@ -107,24 +111,28 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 .t-grp h2 .t-mono { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--moor-color-text); }
 .t-grp-needs h2 { color: var(--moor-color-accent); }
 .t-row {
-	display: grid; grid-template-columns: 1.25rem 14rem 4.25rem minmax(10rem, 22rem) 1fr 6.5rem; align-items: center; gap: var(--moor-space-3);
+	display: grid; grid-template-columns: 1.25rem 14rem 4.25rem minmax(10rem, 22rem) 1fr 6.5rem 2.6rem; align-items: center; gap: var(--moor-space-3);
 	min-height: 2.25rem; padding: 0 var(--moor-space-3); border-radius: var(--moor-radius-sm); text-decoration: none; color: inherit;
 }
 .t-row:hover, .t-row:focus-visible { background: var(--moor-color-bg-sunken); outline-offset: -2px; }
 .t-row.t-needs { background: var(--moor-color-accent-soft); margin-bottom: 2px; }
+.t-row.t-peeking { box-shadow: inset 2px 0 0 var(--moor-color-accent); background: var(--moor-color-bg-sunken); }
+.t-peekbtn { justify-self: end; font-size: 0.8125rem; color: var(--moor-color-accent); cursor: pointer; }
+.t-peekbtn:hover { text-decoration: underline; }
 .t-glyph { color: var(--t-tone); text-align: center; }
 .t-working .t-glyph { display: inline-block; animation: t-spin 2.4s linear infinite; }
 .t-glyph.t-stale, .t-warn { color: var(--moor-color-warning); animation: none; }
 @keyframes t-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .t-working .t-glyph { animation: none; } }
 @media (max-width: 48rem) {
-	.t-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto auto; grid-template-areas: "g repo pr time" ". title title title" ". now now now"; row-gap: 2px; padding: var(--moor-space-1) var(--moor-space-3); }
+	.t-row { grid-template-columns: 1.25rem minmax(0, 1fr) auto auto; grid-template-areas: "g repo pr time" ". title title title" ". now now peek"; row-gap: 2px; padding: var(--moor-space-1) var(--moor-space-3); }
 	.t-row > .t-glyph { grid-area: g; }
 	.t-row > .t-rrepo { grid-area: repo; }
 	.t-row > .t-pr { grid-area: pr; }
 	.t-row > .t-title { grid-area: title; white-space: normal; }
 	.t-row > .t-now { grid-area: now; white-space: normal; }
 	.t-row > .t-age { grid-area: time; }
+	.t-row > .t-peekbtn { grid-area: peek; }
 }
 .t-rrepo { display: flex; align-items: center; gap: 0.4rem; min-width: 0; color: var(--moor-color-text-muted); white-space: nowrap; }
 .t-rfirst { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

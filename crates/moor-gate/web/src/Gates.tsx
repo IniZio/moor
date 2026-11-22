@@ -104,8 +104,8 @@ export function ApproveView({ box, wait, busy, refusing, note, error, onYes, onN
 	);
 }
 
-/** The card of a gate that asks its owner: Yes passes it, No fails the try and the note goes to the agent. */
-function ApproveCard({ box, needs, wait, csrf, onSent }: { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void }) {
+/** The state and handlers of the card for a gate that asks its owner: Yes passes it, No fails the try and the note goes to the agent. The task page and the peek panel share it. */
+export function useApproval(box: string, needs: Needs, wait: Wait, csrf: string, onSent: () => void): ApproveProps {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [refusing, setRefusing] = useState(false);
@@ -125,21 +125,23 @@ function ApproveCard({ box, needs, wait, csrf, onSent }: { box: string; needs: N
 			setBusy(false);
 		}
 	};
-	return (
-		<ApproveView
-			box={box}
-			wait={wait}
-			busy={busy}
-			refusing={refusing}
-			note={note}
-			error={error}
-			onYes={() => void send(true)}
-			onNo={() => setRefusing(true)}
-			onSendNo={() => void send(false)}
-			onBack={() => setRefusing(false)}
-			onNote={setNote}
-		/>
-	);
+	return {
+		box,
+		wait,
+		busy,
+		refusing,
+		note,
+		error,
+		onYes: () => void send(true),
+		onNo: () => setRefusing(true),
+		onSendNo: () => void send(false),
+		onBack: () => setRefusing(false),
+		onNote: setNote,
+	};
+}
+
+function ApproveCard({ box, needs, wait, csrf, onSent }: { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void }) {
+	return <ApproveView {...useApproval(box, needs, wait, csrf, onSent)} />;
 }
 
 /** The outcomes moor tried at the closing stage, each with what it says, how its check ended, what it printed and the command behind a click. */

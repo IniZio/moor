@@ -2,9 +2,9 @@ import type { ComponentChildren } from 'preact';
 import { useEffect } from 'preact/hooks';
 
 import type { BoxRow } from './api';
-import { gateLine } from './gate';
+import { gateLine, peekable } from './gate';
 import { Glyph, STATES } from './Glyph';
-import { type Grouping, homeFilter, withQuery } from './hashQuery';
+import { type Grouping, homeFilter, peekOf, withQuery } from './hashQuery';
 
 /** A done Box idle this long moves to the Settled shelf. */
 const SETTLE_MS = 7 * 24 * 3600 * 1000;
@@ -57,7 +57,7 @@ export function reposOf(t: BoxRow): string[] {
 	return [t.repo, ...t.other_repos].filter((r): r is string => !!r);
 }
 
-function RepoName({ repo }: { repo: string }) {
+export function RepoName({ repo }: { repo: string }) {
 	return (
 		<>
 			<Dot repo={repo} /> <span class="t-mono">{repo}</span>
@@ -70,8 +70,7 @@ function Dot({ repo }: { repo: string }) {
 }
 
 /** The first repo with a dot and "+N" for the rest; under a repo filter, only the repos beside the filtered one. */
-function RepoCell({ t, only }: { t: BoxRow; only: string }) {
-	const repos = reposOf(t);
+export function RepoCell({ repos, only }: { repos: string[]; only: string }) {
 	const title = repos.length > 1 ? repos.join(', ') : undefined;
 	if (only) {
 		const others = repos.filter((r) => r !== only);
@@ -90,13 +89,20 @@ function RepoCell({ t, only }: { t: BoxRow; only: string }) {
 	);
 }
 
-function Row({ t, now, only, quiet }: { t: BoxRow; now: number; only: string; quiet?: boolean }) {
+function Row({ t, now, only, quiet, peeking }: { t: BoxRow; now: number; only: string; quiet?: boolean; peeking?: boolean }) {
 	const s = STATES[t.state];
 	const gated = t.state === 'needs_you' || t.failed ? gateLine(t.gate) : null;
+	const askable = peekable(t);
 	return (
-		<a class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}`} href={`#/box/${encodeURIComponent(t.box)}`} data-row>
+		<a
+			class={`t-row t-${s.tone}${quiet ? ' t-settled-row' : ''}${peeking ? ' t-peeking' : ''}`}
+			href={`#/box/${encodeURIComponent(t.box)}`}
+			data-row
+			data-box={t.box}
+			data-peek={askable ? t.box : undefined}
+		>
 			<Glyph state={t.state} stale={t.stale} />
-			<RepoCell t={t} only={only} />
+			<RepoCell repos={reposOf(t)} only={only} />
 			<span class="t-pr" title={t.pr ? `${t.pr.repo}#${t.pr.number}` : undefined}>
 				{t.pr ? `PR #${t.pr.number}` : ''}
 			</span>
@@ -109,17 +115,22 @@ function Row({ t, now, only, quiet }: { t: BoxRow; now: number; only: string; qu
 			<time class="t-age" dateTime={t.last_event_at ?? t.updated_at}>
 				{exactTime(t.last_event_at ?? t.updated_at, now)}
 			</time>
+			{askable && (
+				<span class="t-peekbtn" role="button" tabIndex={-1} data-peekbtn={t.box} title="Answer here (Space)">
+					peek
+				</span>
+			)}
 		</a>
 	);
 }
 
-function Section({ heading, tone, rows, now, only, empty }: { heading: ComponentChildren; tone: string; rows: BoxRow[]; now: number; only: string; empty?: string }) {
+function Section({ heading, tone, rows, now, only, peeking, empty }: { heading: ComponentChildren; tone: string; rows: BoxRow[]; now: number; only: string; peeking: string; empty?: string }) {
 	return (
 		<section class={`t-grp t-grp-${tone}`}>
 			<h2>
 				{heading} · {rows.length}
 			</h2>
-			{rows.length ? rows.map((t) => <Row t={t} now={now} only={only} key={t.box} />) : <p class="t-empty">{empty}</p>}
+			{rows.length ? rows.map((t) => <Row t={t} now={now} only={only} peeking={t.box === peeking} key={t.box} />) : <p class="t-empty">{empty}</p>}
 		</section>
 	);
 }
@@ -169,6 +180,8 @@ const RANK: Record<Group, number> = { needs: 0, working: 1, done: 2, settled: 3 
 export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number; hash: string }) {
 	const known = [...new Set(rows.flatMap(reposOf))].sort();
 	const filter = homeFilter(hash);
+	const peeking = peekOf(hash);
+	const bare = withQuery(hash, { peek: '' });
 	const repo = known.includes(filter.repo) ? filter.repo : '';
 	const kept = rows.filter((t) => !repo || reposOf(t).includes(repo));
 	const by = (g: Group) => kept.filter((t) => groupOf(t, now) === g);
@@ -181,12 +194,12 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 	return (
 		<div class="t-home">
 			<p class="t-hint muted">
-				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open
+				<kbd>j</kbd> <kbd>k</kbd> move · <kbd>enter</kbd> open · <kbd>space</kbd> peek
 			</p>
-			<Filters hash={hash} repos={known} repo={repo} grp={filter.grp} />
+			<Filters hash={bare} repos={known} repo={repo} grp={filter.grp} />
 			{filter.grp === 'repo' ? (
 				stacks.map((s) =>
-					s.rows.length ? <Section key={s.name} tone="repo" heading={s.name ? <RepoName repo={s.name} /> : 'No repo'} rows={s.rows} now={now} only={repo} /> : null,
+					s.rows.length ? <Section key={s.name} tone="repo" heading={s.name ? <RepoName repo={s.name} /> : 'No repo'} rows={s.rows} now={now} only={repo} peeking={peeking} /> : null,
 				)
 			) : (
 				<>
@@ -195,9 +208,9 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 							<RepoName repo={repo} />
 						</h2>
 					)}
-					<Section heading="Needs you" tone="needs" rows={by('needs')} now={now} only={repo} empty="Nothing needs you." />
-					<Section heading="Working" tone="working" rows={by('working')} now={now} only={repo} empty="Nothing is running." />
-					<Section heading="Done" tone="done" rows={by('done')} now={now} only={repo} empty="None." />
+					<Section heading="Needs you" tone="needs" rows={by('needs')} now={now} only={repo} peeking={peeking} empty="Nothing needs you." />
+					<Section heading="Working" tone="working" rows={by('working')} now={now} only={repo} peeking={peeking} empty="Nothing is running." />
+					<Section heading="Done" tone="done" rows={by('done')} now={now} only={repo} peeking={peeking} empty="None." />
 				</>
 			)}
 			<details class="t-settled">
@@ -205,7 +218,7 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 					<span class="t-chev">▸</span> Settled · {settled.length} <span class="muted">tasks closed, or done and quiet for 7 days</span>
 				</summary>
 				{settled.map((t) => (
-					<Row t={t} now={now} only={repo} key={t.box} quiet />
+					<Row t={t} now={now} only={repo} key={t.box} quiet peeking={t.box === peeking} />
 				))}
 			</details>
 			{!rows.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}

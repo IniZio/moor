@@ -97,23 +97,6 @@ function OtherRepos({ repos }: { repos: string[] }) {
 	);
 }
 
-/** Moves focus between rows with j and k, as the keyboard hint says. */
-function useRowKeys() {
-	useEffect(() => {
-		const on = (e: KeyboardEvent) => {
-			const tag = (document.activeElement as HTMLElement | null)?.tagName;
-			if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || document.querySelector('dialog[open]')) return;
-			if (e.key !== 'j' && e.key !== 'k') return;
-			const rows = [...document.querySelectorAll<HTMLElement>('[data-row]')];
-			if (!rows.length) return;
-			const at = rows.indexOf(document.activeElement as HTMLElement);
-			rows[e.key === 'j' ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1)]?.focus();
-		};
-		addEventListener('keydown', on);
-		return () => removeEventListener('keydown', on);
-	}, []);
-}
-
 export type Boxes = ReturnType<typeof useBoxes>;
 
 /** The person's Boxes, one poll the whole page shares: the list, the switcher and the Inbox count. */
@@ -123,7 +106,6 @@ export function useBoxes() {
 
 export function Home({ boxes, hash }: { boxes: Boxes; hash: string }) {
 	const { value, error, now } = boxes;
-	useRowKeys();
 	useMenuDismiss();
 	if (!value) {
 		return error ? <p class="notice danger" role="alert">{error}</p> : <p class="muted" aria-busy="true">Loading tasks…</p>;
