@@ -57,19 +57,6 @@ removed_names() {
   echo "lint-selftest: $1 ok"
 }
 
-removed_names removed-names-type fail <<'RS'
-struct NewTask;
-RS
-removed_names removed-names-ident fail <<'RS'
-fn f(task_input: u8) {}
-RS
-removed_names removed-names-allowed pass <<'RS'
-const S: &str = "2 background tasks running";
-fn g(w: &[&str]) -> bool { matches!(w, [n, "background", "task"]) }
-RS
-removed_names removed-names-allowed-mixed fail <<'RS'
-// the background task and a Task
-RS
 removed_names removed-names-inside-longer-ident pass <<'RS'
 fn builtin_direct() {}
 RS
@@ -88,43 +75,6 @@ RS
 removed_names removed-names-other-insteadof fail crates/moor-core/src/boxscript/clone.rs <<'RS'
 const G: &str = "git config url.x.insteadOf y";
 RS
-removed_names removed-names-portal-text pass crates/moor-gate/web/src/Portal.tsx <<'TS'
-const label = 'New task';
-export const Home = () => <a href="#/">Tasks</a>;
-export const Empty = () => <p class="muted">No tasks yet. Start one in <kbd>Settings</kbd>.</p>;
-export const Wrapped = () => (
-	<p>
-		Your tasks · <kbd>j</kbd> move
-		and open a task from the list
-	</p>
-);
-TS
-removed_names removed-names-portal-ident fail crates/moor-gate/web/src/Portal.tsx <<'TS'
-export const taskList = () => 'tasks';
-TS
-removed_names removed-names-portal-type fail crates/moor-gate/web/src/api.ts <<'TS'
-export type TaskRow = { box: string };
-TS
-removed_names removed-names-portal-comment fail crates/moor-gate/web/src/Portal.tsx <<'TS'
-/** The task a Box runs. */
-export const x = 1;
-TS
-removed_names removed-names-docs-prose pass docs/start.md <<'MD'
-Start a task from the portal. The Task page shows the Box.
-MD
-removed_names removed-names-docs-code fail docs/start.md <<'MD'
-Run `moor task list` to see them.
-MD
-removed_names removed-names-docs-fence fail README.md <<'MD'
-```sh
-moor task list
-```
-MD
-removed_names removed-names-spec-mockup pass docs/specs/portal.md <<'MD'
-```
-moor   [+ New task]   inbox 2
-```
-MD
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS

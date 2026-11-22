@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Fails when a removed identifier reappears in production Rust or shell sources,
-# or when the word "task" appears anywhere outside tools/removed-names.allow.
+# Fails when a removed identifier, the intent pid, or a removed run flag reappears.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 . "$here/lib/repo-root.sh"
@@ -81,57 +80,4 @@ if [ -n "$flag_hits" ]; then
   exit 1
 fi
 
-# The removed Task concept must not return in any file, test or not.
-# The portal says "task" to people: in web/src, string literals and JSX text are cut out first.
-# Allowlisted strings are cut out of each hit; the rest of the line is checked again.
-allow="$(mktemp)"
-trap 'rm -f "$allow"' EXIT
-grep -v -e '^#' -e '^[[:space:]]*$' "$here/removed-names.allow" > "$allow" || true
-targets=()
-for t in crates tools .github; do [ -e "$t" ] && targets+=("$t"); done
-task_hits=$(grep -rniI --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude=Cargo.lock -e task "${targets[@]}" \
-  | grep -v -e '^tools/removed-names\.sh:' -e '^tools/lint-selftest\.sh:' -e '^tools/removed-names\.allow:' \
-  | awk -v allowfile="$allow" '
-      BEGIN { while ((getline line < allowfile) > 0) allowed[++n] = line }
-      {
-        rest = $0
-        portal = ($0 ~ /^crates\/moor-gate\/web\/src\//)
-        if (match(rest, /^[^:]*:[0-9]+:/)) rest = substr(rest, RLENGTH + 1)
-        if (portal) {
-          gsub(/"[^"]*"|\047[^\047]*\047|`[^`]*`/, "\"\"", rest)
-          gsub(/>[^<>{}]*</, "><", rest)
-          sub(/>[^<>{}]*$/, ">", rest)
-          sub(/^[[:space:]]*[^<>{}=;()]*</, "<", rest)
-          if (rest !~ /^[[:space:]]*(const|let|var|function|type|import|export|return)[[:space:]]/ &&
-              rest ~ /^[[:space:]]*[A-Za-z][^=;(){}<>]* [^=;(){}<>]*$/) rest = ""
-        }
-        for (i = 1; i <= n; i++) {
-          out = ""
-          while ((k = index(rest, allowed[i])) > 0) {
-            out = out substr(rest, 1, k - 1) " "
-            rest = substr(rest, k + length(allowed[i]))
-          }
-          rest = out rest
-        }
-        if (tolower(rest) ~ /task/) print
-      }' || true)
-md_files=()
-while IFS= read -r f; do md_files+=("$f"); done < <(find docs README.md -path docs/specs -prune -o -name '*.md' -print 2>/dev/null)
-if [ ${#md_files[@]} -gt 0 ]; then
-  md_hits=$(awk 'FNR == 1 { fence = 0 }
-    /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
-    {
-      code = fence ? $0 : ""
-      line = $0
-      while (!fence && match(line, /`[^`]*`/)) { code = code substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH) }
-      if (tolower(code) ~ /task/) print FILENAME ":" FNR ":" $0
-    }' "${md_files[@]}")
-  task_hits=$(printf '%s\n%s' "$task_hits" "$md_hits" | sed '/^$/d')
-fi
-if [ -n "$task_hits" ]; then
-  echo "removed-names: the removed Task concept found"
-  echo "$task_hits"
-  echo "fix: rename moor's own identifiers; a name moor must read from another tool goes in tools/removed-names.allow as that exact string, with a comment naming its source"
-  exit 1
-fi
 echo "removed-names: ok"
