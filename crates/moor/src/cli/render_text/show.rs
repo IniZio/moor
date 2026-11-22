@@ -75,7 +75,7 @@ fn gate_text(view: &Value) -> Option<String> {
     let status = gate.get("status")?;
     let name = field(status, "gate");
     Some(match field(status, "state") {
-        "passed" => "gates: all passed".to_owned(),
+        "passed" => passed_text(gate, status),
         "stuck" => format!("gate {name} is stuck: {}", field(status, "why")),
         "failed" => format!("gate {name} failed: {}", field(status, "why")),
         _ => {
@@ -88,6 +88,30 @@ fn gate_text(view: &Value) -> Option<String> {
             format!("gate {name}, try {try_n}: waiting for {waits}")
         }
     })
+}
+
+/// The line for gates that passed: when the run ended in an outcome it names, that outcome too,
+/// and how many gates passed when an `anytime` outcome ended it before the rest.
+fn passed_text(gate: &Value, status: &Value) -> String {
+    let outcome = status
+        .get("outcome")
+        .and_then(|o| serde_json::from_value::<moor_core::gate::Verdict>(o.clone()).ok())
+        .filter(|v| !v.is_implicit());
+    let Some(outcome) = outcome else {
+        return "gates: all passed".to_owned();
+    };
+    let total = gate
+        .get("gates")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let passed = gate.get("gates_passed").and_then(Value::as_u64);
+    match passed
+        .and_then(|n| usize::try_from(n).ok())
+        .filter(|n| *n < total)
+    {
+        Some(n) => format!("outcome: {}, {n} of {total} gates passed", outcome.name),
+        None => format!("gates: all passed, outcome: {}", outcome.name),
+    }
 }
 
 /// A line with the Box's progress state and what it is doing, then its gate when the line does not
@@ -118,13 +142,40 @@ fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
         return;
     };
     let pad = format!("{}  ", " ".repeat(indent.chars().count()));
+    let tried = card
+        .get("tried")
+        .and_then(Value::as_array)
+        .filter(|t| !t.is_empty());
+    for t in tried.into_iter().flatten() {
+        let _ = writeln!(
+            out,
+            "{pad}not met: {}",
+            t.get("says")
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| field(t, "outcome"))
+        );
+        if let Some(command) = t.get("command").and_then(Value::as_str) {
+            let _ = writeln!(out, "{pad}  command: {command}");
+        }
+        let exit = t.get("exit").and_then(Value::as_i64);
+        let exit = exit.map_or_else(|| "output lost".to_owned(), |c| c.to_string());
+        let _ = writeln!(out, "{pad}  exit: {exit}");
+        let tail = t.get("tail").and_then(Value::as_str).unwrap_or_default();
+        if !tail.trim().is_empty() {
+            let _ = writeln!(out, "{pad}  output:");
+            for line in tail.trim_end().lines() {
+                let _ = writeln!(out, "{pad}    {line}");
+            }
+        }
+    }
     if let Some(says) = card.get("says").and_then(Value::as_str) {
         let _ = writeln!(out, "{pad}not yet true: {says}");
     }
+    let blob = tried.is_none();
     if let Some(command) = card.get("command").and_then(Value::as_str) {
         let _ = writeln!(out, "{pad}command: {command}");
     }
-    if let Some(tail) = card.get("tail").and_then(Value::as_str) {
+    if let Some(tail) = card.get("tail").and_then(Value::as_str).filter(|_| blob) {
         let _ = writeln!(out, "{pad}output:");
         for line in tail.trim_end().lines() {
             let _ = writeln!(out, "{pad}  {line}");
