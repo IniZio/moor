@@ -10,7 +10,7 @@ use moor_core::workflow::{Answer, PullTarget};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use super::{decode, label, not_found, span, status, value_of, Failure, TAIL_MAX};
+use super::{decode, not_found, span, status, value_of, verdict, Failure, TAIL_MAX};
 use crate::login::account::{failed, json};
 use crate::login::repos::answered;
 use crate::login::{check_csrf, Session};
@@ -155,15 +155,7 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
             "Close not confirmed, the run stays open: {}",
             text(entry, "detail").unwrap_or("no reason")
         ),
-        "ended" => {
-            let outcome = entry.get("outcome").cloned().unwrap_or_default();
-            format!(
-                "Ended: {}",
-                text(&outcome, "outcome")
-                    .unwrap_or("done")
-                    .replace('_', " ")
-            )
-        }
+        "ended" => format!("Ended: {}", verdict::ended_word(entry)),
         other => gate_line::sentence(other, entry, &tries),
     };
     let line = json!({"at": at, "kind": kind, "text": sentence, "evidence": evidence});
@@ -173,6 +165,9 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
 /// How a step stands in the run: what the last thing recorded for it says, unless the run is
 /// at it now.
 fn step_state(id: &str, run: &RunRowView, lines: &[&Value]) -> &'static str {
+    if verdict::ended_early(&run.run, lines) {
+        return "pending";
+    }
     let at_it = run.run.step.as_deref() == Some(id);
     if at_it && run.run.phase == "waiting" {
         return "waiting";
@@ -306,7 +301,9 @@ fn run_view(workflow: &str, row: &RunRowView) -> Value {
         "phase": run.phase,
         "outcome": run.outcome,
         "status": status(&run.phase, &run.outcome),
-        "label": label(&run.phase, &run.outcome, run.step.as_deref()),
+        "label": verdict::label_of(run),
+        "verdict": verdict::named(run),
+        "closing": verdict::closing(run),
         "pull": run.pull,
         "step": run.step,
         "result": run.result,
