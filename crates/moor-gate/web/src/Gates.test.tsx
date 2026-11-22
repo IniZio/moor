@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 import { ApproveView, type ApproveProps, GateList, RulesView, StuckView } from './Gates';
-import type { GateDoc, Wait } from './gate';
+import type { GateDoc, OutcomeDoc, Wait } from './gate';
 import { all, button, textOf } from './testkit';
 
 const base: Wait = { gate: 'review', kind: 'approve', seq: 4, try_n: 1, why: null, handed: ['plan.md', 'after.png'], note: 'Ready for you.', command: null, tail: null, missing: [], hint: null };
@@ -149,4 +149,70 @@ test('the gates JSON sits behind the toggle, read-only', () => {
 	expect(box?.props.readOnly).toBe(true);
 	expect(JSON.parse(String(box?.props.value))).toEqual(gates);
 	expect(all(view, 'ol')).toHaveLength(0);
+});
+
+test('the gate list ends with the outcome row, and gates never reached read not reached', () => {
+	const rows = (gate: Parameters<typeof GateList>[0]['gate']) => all(GateList({ gate }), 'li').map(textOf);
+	const early = { name: 'nothing to do', tone: 'plain', says: 'The pull request is closed.' } as const;
+	expect(rows({ gates: ['proof', 'done'], gates_passed: 1, status: { state: 'passed', outcome: early } })).toEqual([
+		'✓proofpassed',
+		'○donenot reached',
+		'✓Outcomenothing to do · The pull request is closed.',
+	]);
+	const bad = { name: 'check failed', tone: 'bad' } as const;
+	expect(rows({ gates: ['proof'], gates_passed: 1, status: { state: 'passed', outcome: bad } })).toEqual(['✓proofpassed', '!Outcomecheck failed']);
+	expect(rows({ gates: ['proof'], status: { state: 'open', gate: 'outcome', try_n: 1, next: 'decide' } })).toEqual([
+		'✓proofpassed',
+		'◐Outcomemoor is checking which outcome holds',
+	]);
+	const implicit = { name: 'done', tone: 'good' } as const;
+	expect(rows({ gates: ['proof'], gates_passed: 1, status: { state: 'passed', outcome: implicit } })).toEqual(['✓proofpassed']);
+});
+
+const none: Wait = {
+	...stuck,
+	gate: 'outcome',
+	why: 'out of tries: no outcome held',
+	command: null,
+	tail: 'every outcome, as one blob',
+	tried: [
+		{ outcome: 'check passed', says: 'The newest status is success.', command: 'test "$s" = success', exit: 1, tail: 'the newest status is none' },
+		{ outcome: 'check failed', says: null, command: 'false', exit: null, tail: '' },
+	],
+};
+
+test('the stuck card of the closing stage lists each outcome tried with its sentence or name, exit, output and command', () => {
+	const card = StuckView({ wait: none });
+	const text = textOf(card);
+	expect(text).toContain('No outcome holds yet.');
+	expect(text).not.toContain('“outcome” is stuck');
+	expect(text).toContain('No outcome held. No tries left.');
+	expect(text).not.toContain('one blob');
+	const items = all(card, 'li').map(textOf);
+	expect(items[0]).toContain('The newest status is success.');
+	expect(items[0]).toContain('Exited with code 1.');
+	expect(items[0]).toContain('the newest status is none');
+	expect(items[1]).toContain('check failed');
+	expect(items[1]).toContain('Its output was lost.');
+	expect(all(card, 'details')).toHaveLength(2);
+	expect(all(card, 'pre').map(textOf)).toEqual(expect.arrayContaining(['test "$s" = success', 'false']));
+});
+
+const outcomes: OutcomeDoc[] = [
+	{ name: 'nothing to do', says: 'There is no open pull request.', tone: 'plain', anytime: true, checks: ['true'] },
+	{ name: 'check failed', says: 'The check failed.', tone: 'bad', checks: ['false'] },
+	{ name: 'done', says: 'The run delivered.' },
+];
+
+test('the workflow page lists how a run ends in place of the static delivery line', () => {
+	const view = RulesView({ gates, outcomes, asJson: false, onToggle: () => {} });
+	const text = textOf(view);
+	expect(text).toContain('A run ends as one of');
+	expect(text).not.toContain('Then the run is delivered.');
+	const rows = all(view, 'li').map(textOf).slice(gates.length);
+	expect(rows).toEqual([
+		'nothing to do — There is no open pull request. · at any point',
+		'check failed — The check failed.',
+		'done — The run delivered. · when no other holds',
+	]);
 });

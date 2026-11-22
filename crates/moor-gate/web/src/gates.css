@@ -28,6 +28,7 @@
 .t-refused-sent summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
 .t-refused-sent .t-quote { margin: 0.3rem 0 0; }
 .t-gate.t-needs .t-gate-words, .t-gate.t-failed .t-gate-words { color: var(--t-tone); font-weight: 600; }
+.t-gate-tried { list-style: none; margin: 0 0 var(--moor-space-3); padding: 0; display: grid; gap: var(--moor-space-3); }
 .t-gate-says { margin: 0 0 0.4rem; font-weight: 650; overflow-wrap: anywhere; }
 .t-gate-cmd { margin: 0.4rem 0 0.6rem; }
 .t-gate-cmd summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }

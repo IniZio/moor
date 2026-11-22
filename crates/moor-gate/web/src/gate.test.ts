@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import * as v from 'valibot';
 
-import { type GateView, GateViewSchema, gateLine, gateRows, plain, ruleSentence, tailView, whyWords } from './gate';
+import { closingRow, type GateView, GateViewSchema, gateLine, gateRows, outcomeLine, plain, ruleSentence, tailView, whyWords } from './gate';
 
 const gates = ['plan', 'tests', 'review'];
 const view = (status: GateView['status']): GateView => ({ gates, status });
@@ -90,4 +90,39 @@ test('a gate reads as a sentence: what the agent hands in, what moor checks, who
 	expect(ruleSentence({ name: 'ship', evidence: ['x.md'], approval: 'owner' })).toBe(
 		"the agent must hand in x.md. Then the workflow's owner must say yes. Two tries.",
 	);
+});
+
+const nothing = { name: 'nothing to do', tone: 'plain', says: 'The pull request is closed.' } as const;
+const failedCheck = { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' } as const;
+
+test('gates an anytime outcome ended the run before read not reached, and a count that is missing keeps them all passed', () => {
+	const early: GateView = { gates, gates_passed: 1, status: { state: 'passed', outcome: nothing } };
+	expect(gateRows(early).map((r) => [r.state, r.words])).toEqual([
+		['passed', 'passed'],
+		['later', 'not reached'],
+		['later', 'not reached'],
+	]);
+	expect(gateRows({ gates, status: { state: 'passed', outcome: nothing } }).map((r) => r.state)).toEqual(['passed', 'passed', 'passed']);
+	expect(v.parse(GateViewSchema, { gates, gates_passed: 0, status: { state: 'passed', outcome: nothing } }).gates_passed).toBe(0);
+});
+
+test('the closing row names what moor found with its sentence, says moor is checking while it decides, and is absent otherwise', () => {
+	const bad = closingRow({ gates, status: { state: 'passed', outcome: failedCheck } });
+	expect(bad).toEqual({ name: 'Outcome', state: 'bad', words: 'check failed · The pull request check failed.' });
+	expect(closingRow({ gates, status: { state: 'passed', outcome: { name: 'done', tone: 'good' } } })).toBeNull();
+	expect(closingRow({ gates, status: { state: 'passed', outcome: { name: 'check passed', tone: 'good' } } })).toEqual({ name: 'Outcome', state: 'passed', words: 'check passed' });
+	expect(closingRow({ gates, status: { state: 'passed', outcome: nothing } })?.state).toBe('plain');
+	expect(closingRow({ gates, status: { state: 'open', gate: 'outcome', try_n: 1, next: 'decide' } })).toEqual({
+		name: 'Outcome',
+		state: 'working',
+		words: 'moor is checking which outcome holds',
+	});
+	expect(closingRow({ gates, status: { state: 'stuck', gate: 'outcome', why: 'out of tries: no outcome held' } })?.state).toBe('stuck');
+	expect(closingRow({ gates, status: { state: 'open', gate: 'tests', try_n: 1, next: 'agent' } })).toBeNull();
+	expect(closingRow({ gates, status: { state: 'passed' } })).toBeNull();
+});
+
+test('an outcome is one line of its name and what it says', () => {
+	expect(outcomeLine({ name: 'check failed', says: 'It failed.' })).toBe('check failed · It failed.');
+	expect(outcomeLine({ name: 'nothing to do' })).toBe('nothing to do');
 });

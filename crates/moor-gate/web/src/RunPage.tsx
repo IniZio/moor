@@ -58,6 +58,30 @@ function GateChecks({ checks }: { checks: NonNullable<Step['checks']> }) {
 	);
 }
 
+const OUTCOME_STATE = { good: 'passed', bad: 'failed', plain: 'ended' } as const;
+
+/** The closing row of a run: what moor found, or that it is still checking which outcome holds. */
+export function OutcomeItem({ run, number }: { run: Run; number: number }) {
+	const found = run.verdict;
+	if (!found && !run.closing) return null;
+	const waiting = run.closing === 'waiting';
+	const word = found ? found.name : waiting ? 'waiting for you' : 'moor is checking which outcome holds';
+	const state = found ? OUTCOME_STATE[found.tone] : waiting ? 'waiting' : 'running';
+	return (
+		<li>
+			<details open>
+				<summary>
+					<span class="kind outcome">outcome</span>
+					<span class="grow">{number}. Outcome</span>
+					<span class={`state ${state}`}>{word}</span>
+				</summary>
+				{found?.says && <p class="muted">{found.says}</p>}
+				{waiting && <p class="muted">No outcome holds yet. Steer the agent from its Box to try again.</p>}
+			</details>
+		</li>
+	);
+}
+
 /** One step of a run: a gate shows its name once with its state, and its entries beneath. */
 export function StepItem({ step, number }: { step: Step; number: number }) {
 	const gate = step.kind === 'gate';
@@ -126,7 +150,7 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 				<>
 					<div class="row-head">
 						<h2 class="run-title">
-							<StatusIcon status={run.status} /> Run {run.id}
+							<StatusIcon status={run.status} verdict={run.verdict} /> Run {run.id}
 						</h2>
 						<span class="pill">{run.label}</span>
 						{run.status === 'failure' && (
@@ -144,7 +168,10 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 					{run.result && <p class="notice ok">{run.result}</p>}
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
-					<ol class="steps">{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}</ol>
+					<ol class="steps">
+						{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}
+						<OutcomeItem run={run} number={run.steps.length + 1} />
+					</ol>
 					{run.lines.length > 0 && <ul class="history">{run.lines.map((l) => <LineItem key={`${l.at}${l.kind}`} line={l} />)}</ul>}
 					<div class="actions"><button class="quiet" onClick={reload}>Refresh</button></div>
 				</>

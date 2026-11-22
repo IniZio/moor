@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 
-import { GateDocSchema, GateViewSchema, plain, WaitSchema } from './gate';
+import { GateDocSchema, GateViewSchema, OutcomeDocSchema, plain, VerdictSchema, WaitSchema } from './gate';
 import { announceSignedOut } from './session';
 
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
@@ -159,6 +159,8 @@ const StatusSchema = v.picklist(['queued', 'running', 'waiting', 'success', 'fai
 const LastRunSchema = v.object({
 	status: StatusSchema,
 	label: v.string(),
+	/** What the run found, when it names it: a bad one such as "check failed" is still a delivered run. */
+	verdict: v.nullish(VerdictSchema),
 	due_at: v.number(),
 });
 
@@ -193,6 +195,7 @@ const RunRowSchema = v.object({
 	duration_ms: v.nullish(v.number()),
 	status: StatusSchema,
 	label: v.string(),
+	verdict: v.nullish(VerdictSchema),
 	result: v.nullish(v.string()),
 	detail: v.nullish(v.string()),
 });
@@ -205,6 +208,8 @@ const WorkflowSchema = v.object({
 	plan_edited: v.boolean(),
 	/** The gates each run is held to, when the workflow has them in place of a plan. */
 	gates: v.nullish(v.array(GateDocSchema)),
+	/** The outcomes its runs may end in, when it names them. */
+	outcomes: v.nullish(v.array(OutcomeDocSchema)),
 	revision: v.number(),
 	runs: v.array(RunRowSchema),
 });
@@ -242,6 +247,9 @@ const RunSchema = v.object({
 	outcome: v.nullish(v.string()),
 	status: StatusSchema,
 	label: v.string(),
+	verdict: v.nullish(VerdictSchema),
+	/** Where the run stands at its closing stage, while it has no outcome yet. */
+	closing: v.nullish(v.picklist(['deciding', 'waiting'])),
 	/** The pull request the run is for, `OWNER/NAME#NUMBER`. */
 	pull: v.nullish(v.string()),
 	result: v.nullish(v.string()),

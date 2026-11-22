@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 
-import { boxGet, boxList, gateAnswer } from './api';
+import { boxGet, boxList, gateAnswer, runGet, workflowGet, workflowList } from './api';
 
 type Call = { url: string; init?: RequestInit };
 let calls: Call[] = [];
@@ -139,4 +139,23 @@ test("a timeline entry of class moor parses, with the owner's quote when moor ca
 	const got = await boxGet('web/gated');
 	expect(got.timeline.map((e) => e.class)).toEqual(['you', 'moor']);
 	expect(got.timeline[1]?.quote).toBe('blue header');
+});
+
+const verdict = { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' };
+
+test('the list row, the run row and the run page keep the outcome the server named', async () => {
+	const flow = { name: 'evidence', repos: ['acme/web'], enabled: true, has_plan: false, plan_stale: false };
+	reply = ok({ workflows: [{ ...flow, last: { status: 'success', label: 'check failed', verdict, due_at: 1 } }] });
+	expect((await workflowList())[0]?.last?.verdict).toEqual(verdict);
+	const outcomes = [{ name: 'nothing to do', tone: 'plain', anytime: true, checks: ['true'] }, { name: 'done' }];
+	const row = { id: 3, due_at: 1, trigger: 'manual', status: 'success', label: 'check failed', verdict };
+	reply = ok({ ...flow, timeout_minutes: 90, prompt: 'p', plan_edited: false, revision: 1, outcomes, runs: [row] });
+	const page = await workflowGet('evidence');
+	expect(page.runs[0]?.verdict?.name).toBe('check failed');
+	expect(page.outcomes?.map((o) => o.name)).toEqual(['nothing to do', 'done']);
+	reply = ok({ workflow: 'evidence', id: 3, due_at: 1, phase: 'running', status: 'running', label: 'running', closing: 'deciding', steps: [], lines: [] });
+	expect((await runGet('evidence', 3)).closing).toBe('deciding');
+	reply = ok({ workflow: 'evidence', id: 3, due_at: 1, phase: 'done', status: 'success', label: 'check failed', verdict, steps: [], lines: [] });
+	const run = await runGet('evidence', 3);
+	expect([run.verdict?.tone, run.closing ?? null]).toEqual(['bad', null]);
 });

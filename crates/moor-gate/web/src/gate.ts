@@ -3,20 +3,40 @@ import * as v from 'valibot';
 /** What an open gate waits for. */
 const NextSchema = v.picklist(['agent', 'run_checks', 'ask', 'decide']);
 
+/** How a person reads an outcome. */
+const ToneSchema = v.picklist(['good', 'bad', 'plain']);
+
+/** What a run ended in: the outcome moor found by running its checks. */
+export const VerdictSchema = v.object({ name: v.string(), tone: ToneSchema, says: v.nullish(v.string()) });
+
+/** The stage after the last gate, where moor decides the outcome. */
+export const CLOSING = 'outcome';
+
 /** Where a Box stands against its gates, as moor derives it. */
 const GateStatusSchema = v.variant('state', [
 	v.object({ state: v.literal('open'), gate: v.string(), try_n: v.number(), next: NextSchema }),
 	v.object({ state: v.literal('stuck'), gate: v.string(), why: v.string() }),
 	v.object({ state: v.literal('failed'), gate: v.string(), why: v.string() }),
-	v.object({ state: v.literal('passed') }),
+	v.object({ state: v.literal('passed'), outcome: v.optional(VerdictSchema) }),
 ]);
 
 /** The gates of a Box, in the order they pass, and where it stands. */
 export const GateViewSchema = v.object({
 	gates: v.array(v.string()),
 	status: GateStatusSchema,
+	/** How many gates passed; fewer than the gates when an outcome that holds at any point ended the run first. */
+	gates_passed: v.optional(v.number()),
 	/** What the agent wrote with the last report moor accepted; none when it wrote nothing. */
 	note: v.nullish(v.string()),
+});
+
+/** One outcome moor tried at the closing stage that did not hold, with the check that stopped it. */
+const TriedSchema = v.object({
+	outcome: v.string(),
+	says: v.nullish(v.string()),
+	command: v.nullish(v.string()),
+	exit: v.nullish(v.number()),
+	tail: v.string(),
 });
 
 /** A gate that waits for a person, with what they need to read to act on it. */
@@ -38,11 +58,22 @@ export const WaitSchema = v.object({
 	tail: v.nullish(v.string()),
 	/** The evidence names that were not found. */
 	missing: v.optional(v.array(v.string()), []),
+	/** For the closing stage: each outcome tried and the check that stopped it. */
+	tried: v.nullish(v.array(TriedSchema)),
 	hint: v.nullish(v.string()),
 });
 
 /** A check as a gate is written: a bare command, or a command with the one sentence it stands for. */
 const CheckDocSchema = v.union([v.string(), v.object({ run: v.string(), says: v.string() })]);
+
+/** One outcome as the workflow keeps it. */
+export const OutcomeDocSchema = v.object({
+	name: v.string(),
+	says: v.nullish(v.string()),
+	tone: v.nullish(ToneSchema),
+	checks: v.nullish(v.array(CheckDocSchema)),
+	anytime: v.nullish(v.boolean()),
+});
 
 /** One gate as the workflow keeps it. */
 export const GateDocSchema = v.object({
@@ -54,11 +85,14 @@ export const GateDocSchema = v.object({
 });
 
 export type GateDoc = v.InferOutput<typeof GateDocSchema>;
+export type OutcomeDoc = v.InferOutput<typeof OutcomeDocSchema>;
+export type Verdict = v.InferOutput<typeof VerdictSchema>;
+export type Tried = v.InferOutput<typeof TriedSchema>;
 export type CheckDoc = v.InferOutput<typeof CheckDocSchema>;
 export type GateView = v.InferOutput<typeof GateViewSchema>;
 export type Wait = v.InferOutput<typeof WaitSchema>;
 
-export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | 'later';
+export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | 'later' | 'bad' | 'plain';
 
 /** One line of the gate list. */
 export type GateRow = { name: string; state: GateState; words: string };
@@ -71,6 +105,8 @@ export const GATE_LOOK: Record<GateState, { glyph: string; tone: string }> = {
 	stuck: { glyph: '●', tone: 'needs' },
 	failed: { glyph: '✕', tone: 'failed' },
 	later: { glyph: '○', tone: 'quiet' },
+	bad: { glyph: '!', tone: 'failed' },
+	plain: { glyph: '✓', tone: 'quiet' },
 };
 
 /** The state of the gate the Box is at. Gates are passed in order, so the ones before it passed and the ones after it have not started. */
@@ -92,12 +128,36 @@ function atGate(name: string, status: Exclude<GateView['status'], { state: 'pass
 /** Each gate by name with its state, in the order they pass. */
 export function gateRows(view: GateView): GateRow[] {
 	const { status } = view;
-	if (status.state === 'passed') return view.gates.map((name) => ({ name, state: 'passed', words: 'passed' }));
+	if (status.state === 'passed') {
+		const reached = view.gates_passed ?? view.gates.length;
+		return view.gates.map((name, i): GateRow => (i < reached ? { name, state: 'passed', words: 'passed' } : { name, state: 'later', words: 'not reached' }));
+	}
 	const named = view.gates.indexOf(status.gate);
 	const at = named === -1 ? view.gates.length : named;
 	return view.gates.map((name, i) =>
 		i < at ? { name, state: 'passed', words: 'passed' } : i === at ? atGate(name, status) : { name, state: 'later', words: 'not started' },
 	);
+}
+
+/** An outcome as one line: its name, then what it says when its author wrote it. */
+export function outcomeLine(o: { name: string; says?: string | null }): string {
+	return o.says ? `${o.name} · ${o.says}` : o.name;
+}
+
+/** The outcome of a workflow that names none, which a person reads as the run finishing. */
+const isImplicit = (o: Verdict) => o.name === 'done' && o.tone === 'good' && !o.says;
+
+/** The row after the gates where moor decides how the run ends; none while a gate is in hand, and none for the implicit outcome. */
+export function closingRow(view: GateView): GateRow | null {
+	const { status } = view;
+	if (status.state === 'passed') {
+		const o = status.outcome;
+		if (!o || isImplicit(o)) return null;
+		return { name: 'Outcome', state: o.tone === 'good' ? 'passed' : o.tone, words: outcomeLine(o) };
+	}
+	if (status.state === 'open' && status.next === 'decide') return { name: 'Outcome', state: 'working', words: 'moor is checking which outcome holds' };
+	if (status.state === 'stuck' && status.gate === CLOSING) return { name: 'Outcome', state: 'stuck', words: 'stuck · needs you' };
+	return null;
 }
 
 /** A gate's name as a sentence quotes it. */

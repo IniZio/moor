@@ -116,7 +116,7 @@ export function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 					/>
 				</label>
 				{flow.gates && flow.gates.length > 0 && flow.plan == null ? (
-					<GatesPanel gates={flow.gates} />
+					<GatesPanel gates={flow.gates} outcomes={flow.outcomes} />
 				) : (
 					<div>
 						<PlanEditor text={plan} onText={setPlan} prompt={prompt} />

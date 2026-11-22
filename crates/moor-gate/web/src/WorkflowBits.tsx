@@ -1,4 +1,5 @@
 import type { RunStatus } from './api';
+import type { Verdict } from './gate';
 
 const ICONS: Record<RunStatus, { glyph: string; word: string }> = {
 	queued: { glyph: '○', word: 'queued' },
@@ -22,9 +23,13 @@ export function duration(ms: number | null | undefined): string {
 	return mins < 60 ? `${mins}m ${secs % 60}s` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-export function StatusIcon({ status }: { status: RunStatus }) {
+/** A delivered run's icon follows the tone of the outcome it found: a bad one is still a delivered run, shown as a warning mark and never as a failure. */
+export function StatusIcon({ status, verdict }: { status: RunStatus; verdict?: Verdict | null }) {
 	const icon = ICONS[status];
-	return <span class={`status ${status}`} role="img" aria-label={icon.word} title={icon.word}>{icon.glyph}</span>;
+	if (status !== 'success' || !verdict) return <span class={`status ${status}`} role="img" aria-label={icon.word} title={icon.word}>{icon.glyph}</span>;
+	const word = `${icon.word}: ${verdict.name}`;
+	const tone = verdict.tone === 'good' ? 'success' : verdict.tone;
+	return <span class={`status ${tone}`} role="img" aria-label={word} title={word}>{verdict.tone === 'bad' ? '!' : icon.glyph}</span>;
 }
 
 export function Failed({ error, retry }: { error: string; retry: () => void }) {

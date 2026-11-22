@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
-import type { Step } from './api';
-import { StepItem } from './RunPage';
+import type { Run, Step } from './api';
+import { OutcomeItem, StepItem } from './RunPage';
 import { all, textOf } from './testkit';
 
 const gate = (over: Partial<Step>): Step => ({
@@ -48,4 +48,24 @@ test('a gate check with a sentence shows it first and the command behind Show th
 test('a plan step keeps its words: a passed work step is done', () => {
 	const row = StepItem({ step: gate({ kind: 'work', title: 'Audit', checks: null }), number: 1 });
 	expect(textOf(all(row, 'summary')[0])).toBe('work1. Auditdone');
+});
+
+const run = (over: Partial<Run>): Run => ({ workflow: 'evidence', id: 3, due_at: 1, phase: 'done', status: 'success', label: 'finished', steps: [], lines: [], ...over });
+
+test('the outcome row after the gates shows the name and what it says', () => {
+	const found = OutcomeItem({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' } }), number: 3 });
+	const [summary] = all(found, 'summary');
+	expect(textOf(summary)).toBe('outcome3. Outcomecheck failed');
+	expect(textOf(found)).toContain('The pull request check failed.');
+	expect(all(summary, 'span').map((s) => s.props.class)).toContain('state failed');
+	const plain = OutcomeItem({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }), number: 2 });
+	expect(textOf(all(plain, 'summary')[0])).toBe('outcome2. Outcomenothing to do');
+});
+
+test('while moor decides the outcome row says so, and a run with no outcome has none', () => {
+	const deciding = OutcomeItem({ run: run({ phase: 'running', status: 'running', label: 'running', closing: 'deciding' }), number: 3 });
+	expect(textOf(all(deciding, 'summary')[0])).toBe('outcome3. Outcomemoor is checking which outcome holds');
+	const waiting = OutcomeItem({ run: run({ phase: 'waiting', status: 'waiting', closing: 'waiting' }), number: 3 });
+	expect(textOf(all(waiting, 'summary')[0])).toContain('waiting for you');
+	expect(OutcomeItem({ run: run({}), number: 3 })).toBeNull();
 });
