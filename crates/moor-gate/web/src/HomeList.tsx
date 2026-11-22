@@ -279,7 +279,7 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 						<Row t={t} now={now} only={repo} everyone={everyone} key={t.box} settled peeking={t.box === peeking} />
 					))}
 				</div>
-				<p class="muted t-settled-note">Closed, merged, or quiet for 7 days.</p>
+				<p class="muted t-settled-note">Closed, or done and quiet for 7 days.</p>
 			</details>
 			{!rows.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
 		</div>
