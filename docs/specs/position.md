@@ -528,6 +528,9 @@ Draft pull requests build the gate mechanism ahead of this spec's merge. The own
 | #1599 | A gate can need its owner's yes. A no sends the owner's note to the agent. | Live. Three later fixes have tests only. |
 | #1600 | The Task page shows a gate list, an approval card and a stuck card. | Live, with screenshots read. |
 | #1601 | A workflow carries gates in place of a plan. Its run stays open until they pass. | Live, on draft pull requests in the fixture repo. |
+| #1602 | A check carries one plain sentence of what must be true. The workflow page lists its gates in sentences. | Live, with screenshots read. |
+| #1604 | A run ends in one named outcome. moor picks it by running each outcome's checks. | Live, on draft pull requests in the fixture repo. |
+| #1605 | The run list, the run page and the Box line name the outcome. | Live, with screenshots read. |
 
 The build differs from the order of work in four ways.
 
@@ -536,11 +539,11 @@ The build differs from the order of work in four ways.
 - A gate tries twice when no count is given. With one try, a failed check left the agent no chance to fix it.
 - moor tells the agent when each gate is in hand. Without that, the agent reported too early and was refused.
 
-The evidence flow was measured before and after. Before, four scenarios on one fixture pull request behaved correctly, in 3 to 4 minutes each. A run whose pull request failed its check still listed as finished. After, an agent told to write a false report and post nothing failed a check that reads GitHub. Its run waited on a person and never delivered.
+The evidence flow was measured before and after. Before, four scenarios on one fixture pull request behaved correctly, in 3 to 4 minutes each. A run whose pull request failed its check still listed as finished. After, an agent told to write a false report and post nothing failed a check that reads GitHub. Its run waited on a person and never delivered. With outcomes, a failing pull request's run ended as "check failed". A run for a closed pull request ended as "nothing to do", with no comment posted.
 
 ## Decided
 
-The owner decided these on 2026-11-20 and 2026-11-21.
+The owner decided these from 2026-11-20 to 2026-11-22.
 
 - "Run" folds into "task" for people. Under this proposal, a run is a task that an automation started.
 - The definition lives in moor's own store, not in a repo of its own and not in moor's source repo. Decided on 2026-11-21.
@@ -562,8 +565,10 @@ The owner decided these on 2026-11-20 and 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
 - A reading runs in a Box with no project, no setup and no capabilities. An orchestrator is reserved as the same Box with a capability to start Boxes. Decided on 2026-11-21.
+- A run ends in exactly one named outcome. moor picks it by running each outcome's checks, and the agent never claims one. No gate is special. Decided on 2026-11-22.
+- An outcome marked anytime can end a run at any open gate. A run with nothing to do ends that way. Decided on 2026-11-22.
+- The step walker is deleted in its own pull request, once the gated evidence flow is proven on the nightly controller. Decided on 2026-11-22.
 
 ## Open questions
 
 1. How does a capability carry a count or a limit? One real prompt allows one comment, and another allows pull requests that are not drafts.
-2. How does a run say what it found? A run that proves a pull request's check fails is a finished run with a bad finding. The run list shows both as finished.
