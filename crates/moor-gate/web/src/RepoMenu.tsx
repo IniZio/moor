@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import type { BoxRow } from './api';
-import { exactTime } from './HomeList';
+import { exactTime, RepoName } from './HomeList';
 import { isRepoName, lastUsed, recentRepos, type Together, usedTogether } from './repoSets';
 
 export const dropped = (repos: string[], repo: string): string[] => repos.filter((r) => r !== repo);
@@ -102,7 +102,9 @@ export function RepoMenuView(p: MenuProps) {
 					<span class="t-mhd">In this task</span>
 					{p.repos.map((r, i) => (
 						<span class="t-rch" key={r}>
-							<span class="t-mono">{r}</span>
+							<span class="t-rname">
+								<RepoName repo={r} />
+							</span>
 							{i === 0 ? (
 								<span class="t-msub">starts here</span>
 							) : (
@@ -132,7 +134,7 @@ export function RepoMenuView(p: MenuProps) {
 			)}
 			{rows.length > 0 && (
 				<>
-					<span class="t-mhd">Your repos, recently used first</span>
+					<span class="t-mhd">Repos your GitHub access can see</span>
 					{rows.map((r) => (
 						<button
 							type="button"
@@ -147,7 +149,9 @@ export function RepoMenuView(p: MenuProps) {
 							<span class="t-rbox" aria-hidden="true">
 								{p.repos.includes(r.repo) ? '✓' : ''}
 							</span>
-							<span class="t-mono">{r.repo}</span>
+							<span class="t-rname">
+								<RepoName repo={r.repo} />
+							</span>
 							<span class="t-msub">{r.used && `used ${r.used}`}</span>
 						</button>
 					))}
@@ -164,7 +168,7 @@ export function RepoMenuView(p: MenuProps) {
 					<span class="t-msub">Enter</span>
 				</button>
 			)}
-			{items.length === 0 && <span class="t-rnone muted">No repo of yours matches. Type a full owner/name to add one.</span>}
+			{items.length === 0 && <span class="t-rnone muted">No repo you can see matches. Type a full owner/name to add one.</span>}
 			<span class="t-pm-done">
 				<span class="muted">Check several. The first is where the agent starts.</span>
 				<button type="button" class="btn primary" onClick={p.onDone}>

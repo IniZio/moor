@@ -4,6 +4,7 @@ import * as v from 'valibot';
 import { type Account, type BoxRow, boxStart, failure, type Node, repoList, toError } from './api';
 import { exactTime } from './HomeList';
 import { RepoPanel, RepoSlot, refocus, useDismiss } from './RepoMenu';
+import { recentRepos } from './repoSets';
 import { takeAgain } from './Retry';
 import { useDraft } from './session';
 
@@ -187,8 +188,8 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 				</label>
 				<textarea
 					id="t-prompt"
-					rows={5}
-					placeholder="What should the agent do?"
+					rows={1}
+					placeholder="What should the agent do? The first line is the title."
 					value={s.prompt}
 					onInput={(e) => act.prompt(e.currentTarget.value)}
 					onKeyDown={(e) => {
@@ -202,15 +203,15 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 				)}
 				<TargetSentence s={s} act={act} />
 				<div class="t-wact">
+					<button class="btn primary" type="submit" disabled={!ready(s)}>
+						{s.busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
+					</button>
 					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
 						<input type="checkbox" class="pf-check" checked={s.planFirst} onChange={(e) => act.plan(e.currentTarget.checked)} />
 						Plan first
 					</label>
 					<span class="grow" />
-					<span class="muted">Esc closes</span>
-					<button class="btn primary" type="submit" disabled={!ready(s)}>
-						{s.busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
-					</button>
+					<span class="muted t-wesc">{s.prompt.trim() ? 'Esc keeps the draft' : 'Esc to close'}</span>
 				</div>
 				{s.error && (
 					<p class="notice danger" role="alert">
@@ -250,6 +251,13 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 	useEffect(() => {
 		repoList().then(setKnown, () => setKnown([]));
 	}, []);
+	// With no earlier start to copy, the repo the person used last is the one the sentence names.
+	const chosen = useRef(repos.length > 0);
+	useEffect(() => {
+		if (chosen.current) return;
+		const last = recentRepos(rows, [])[0];
+		if (last) setRepos([last]);
+	}, [rows]);
 	const openUp = () => {
 		wantFocus.current = true;
 		setOpen(true);
@@ -324,7 +332,10 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 			openUp();
 		},
 		prompt: setPrompt,
-		repos: setRepos,
+		repos: (next) => {
+			chosen.current = true;
+			setRepos(next);
+		},
 		base: setBase,
 		node: setNode,
 		plan: setPlanFirst,
