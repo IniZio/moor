@@ -166,7 +166,8 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
         }
         other => gate_line::sentence(other, entry, &tries),
     };
-    json!({"at": at, "kind": kind, "text": sentence, "evidence": evidence})
+    let line = json!({"at": at, "kind": kind, "text": sentence, "evidence": evidence});
+    gate_line::with_cause(line, entry)
 }
 
 /// How a step stands in the run: what the last thing recorded for it says, unless the run is

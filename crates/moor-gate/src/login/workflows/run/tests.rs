@@ -58,3 +58,13 @@ fn a_gated_runs_lines_read_as_what_happened() {
         "Resumed after the wait"
     );
 }
+
+#[test]
+fn a_wait_for_want_of_answers_passes_its_cause_to_the_page_and_others_have_none() {
+    let cause =
+        json!({"check": {"gate": {"check": 0}}, "command": "make", "reason": {"kind": "lost"}});
+    let entry = json!({"kind": "gate_waiting", "step": "done", "try_n": 1, "why": "w", "unanswered": cause});
+    assert_eq!(line_of(0, &entry, None)["unanswered"], cause);
+    let plain = json!({"kind": "gate_waiting", "step": "done", "try_n": 2, "why": "out of tries"});
+    assert!(line_of(0, &plain, None).get("unanswered").is_none());
+}

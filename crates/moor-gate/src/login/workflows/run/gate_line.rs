@@ -40,3 +40,11 @@ pub(super) fn sentence(kind: &str, entry: &Value, tries: &str) -> String {
         other => format!("{other}: {entry}"),
     }
 }
+
+/// `line` with the check moor last got no answer from, when `entry` waits for want of answers.
+pub(super) fn with_cause(mut line: Value, entry: &Value) -> Value {
+    if let (Some(cause), Some(fields)) = (entry.get("unanswered"), line.as_object_mut()) {
+        fields.insert("unanswered".to_owned(), cause.clone());
+    }
+    line
+}
