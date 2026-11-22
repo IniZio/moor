@@ -166,7 +166,10 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
 /// at it now.
 fn step_state(id: &str, run: &RunRowView, lines: &[&Value]) -> &'static str {
     if verdict::ended_early(&run.run, lines) {
-        return "pending";
+        return if lines.is_empty() { "pending" } else { "ended" };
+    }
+    if lines.iter().any(|e| text(e, "kind") == Some("gate_passed")) {
+        return "passed";
     }
     let at_it = run.run.step.as_deref() == Some(id);
     if at_it && run.run.phase == "waiting" {
@@ -281,6 +284,7 @@ fn run_view(workflow: &str, row: &RunRowView) -> Value {
     let loose: Vec<Value> = entries
         .iter()
         .filter(|(_, e)| text(e, "step").is_none_or(|s| !in_plan(s)))
+        .filter(|(_, e)| !verdict::told_by_end(e, &entries))
         .map(|(at, e)| line_of(*at, e, r#box))
         .collect();
     let question = (run.phase == "waiting")

@@ -102,7 +102,7 @@ fn gates_an_anytime_outcome_ended_the_run_before_read_not_reached() {
         "evidence",
         &row(&serde_json::from_str(EARLY).unwrap(), &verdict),
     );
-    assert_eq!(states(&view), ["pending", "pending"]);
+    assert_eq!(states(&view), ["ended", "pending"]);
     assert_eq!(view["label"], "nothing to do");
     assert_eq!(view["status"], "success");
     assert_eq!(view["verdict"]["name"], "nothing to do");
@@ -138,4 +138,59 @@ fn a_run_without_a_named_outcome_reads_as_it_did() {
     assert_eq!(view["verdict"], serde_json::Value::Null);
     let lines = view["lines"].as_array().unwrap();
     assert_eq!(lines.last().unwrap()["text"], "Ended: delivered");
+}
+
+fn texts(view: &serde_json::Value) -> Vec<&str> {
+    let lines = view["lines"].as_array().unwrap();
+    lines.iter().map(|l| l["text"].as_str().unwrap()).collect()
+}
+
+#[test]
+fn a_run_says_how_it_ended_once() {
+    let verdict = json!({"name": "nothing to do", "tone": "plain"});
+    let early = run_view("w", &row(&serde_json::from_str(EARLY).unwrap(), &verdict));
+    let ended: Vec<&str> = texts(&early)
+        .into_iter()
+        .filter(|t| t.starts_with("Ended"))
+        .collect();
+    assert_eq!(ended, ["Ended: nothing to do"]);
+    let implicit = json!([
+        {"at": 1, "entry": {"kind": "outcome_reached", "outcome": {"name": "done", "tone": "good"}}},
+        {"at": 2, "entry": {"kind": "ended", "outcome": {"outcome": "delivered", "verdict": {"name": "done", "tone": "good"}}}},
+    ]);
+    let view = run_view(
+        "w",
+        &row(&implicit, &json!({"name": "done", "tone": "good"})),
+    );
+    assert_eq!(texts(&view), ["Ended: delivered"]);
+    let reached = json!([
+        {"at": 1, "entry": {"kind": "outcome_reached", "outcome": {"name": "check failed", "tone": "bad"}}},
+    ]);
+    let view = run_view(
+        "w",
+        &row(&reached, &json!({"name": "check failed", "tone": "bad"})),
+    );
+    assert_eq!(texts(&view), ["Ended: check failed"]);
+}
+
+#[test]
+fn a_run_deciding_its_outcome_keeps_its_last_gate_passed() {
+    let deciding: moor_core::view::workflow::RunRowView = serde_json::from_value(json!({
+        "id": 3, "due_at": 1, "outcome": "started", "phase": "running", "step": "done",
+        "history": [
+            {"at": 1, "entry": {"kind": "entered", "step": "proof", "try_n": 1}},
+            {"at": 2, "entry": {"kind": "gate_passed", "step": "proof"}},
+            {"at": 3, "entry": {"kind": "entered", "step": "done", "try_n": 1}},
+            {"at": 4, "entry": {"kind": "gate_passed", "step": "done"}},
+            {"at": 5, "entry": {"kind": "entered", "step": "outcome", "try_n": 1}},
+        ],
+        "plan": {"steps": [
+            {"id": "proof", "title": "proof", "kind": "gate"},
+            {"id": "done", "title": "done", "kind": "gate"},
+        ]},
+    }))
+    .unwrap();
+    let view = run_view("w", &deciding);
+    assert_eq!(states(&view), ["passed", "passed"]);
+    assert_eq!(view["closing"], "deciding");
 }

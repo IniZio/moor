@@ -34,6 +34,15 @@ pub(super) fn ended_word(entry: &Value) -> String {
     )
 }
 
+/// Whether `entry` is the outcome line of a run whose own end line names the outcome again.
+pub(super) fn told_by_end(entry: &Value, entries: &[(i64, &Value)]) -> bool {
+    let kind = |e: &Value| e.get("kind").and_then(Value::as_str).map(str::to_owned);
+    kind(entry).as_deref() == Some("outcome_reached")
+        && entries
+            .iter()
+            .any(|(_, e)| kind(e).as_deref() == Some("ended"))
+}
+
 /// Whether an `anytime` outcome ended the run before this gate passed.
 pub(super) fn ended_early(run: &LastRunView, gate_lines: &[&Value]) -> bool {
     run.verdict.is_some()
