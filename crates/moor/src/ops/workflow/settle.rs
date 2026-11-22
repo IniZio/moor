@@ -1,8 +1,7 @@
 //! Settling the started runs of a workflow: finished, refused or expired.
 
 use moor_core::decide::workflow::{
-    waited_millis, workflow_expired, workflow_start_overdue, workflow_unanswered, RunBoxFacts,
-    START_LIMIT,
+    waited_millis, workflow_expired, workflow_start_overdue, workflow_unanswered, START_LIMIT,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::deaths;
@@ -19,39 +18,6 @@ use moor_core::BoxId;
 use crate::cx::Cx;
 use crate::ops::{close, end_session};
 use crate::store::{BoxRow, Store, StoreError};
-
-/// What the tick reads of Box `row` to tell where its run stands.
-///
-/// A sleep clears the Box's `idle_since`, so an asleep Box whose agent went quiet before the
-/// sleep reads as idle since its last `idled` event. One put to sleep while its agent worked
-/// has no such time: the cut turn did not finish its step.
-pub(super) fn box_facts(store: &Store, row: &BoxRow) -> Result<RunBoxFacts, StoreError> {
-    let idle_since = if row.lifecycle == BoxLifecycle::Asleep {
-        match row.parked_at_work {
-            Some(_) => None,
-            None => store.newest_event_of(row.id, "idled")?.map(|e| e.ts),
-        }
-    } else {
-        row.idle_since
-    };
-    Ok(RunBoxFacts {
-        lifecycle: row.lifecycle,
-        session: row.session,
-        idle_since,
-        launch_failed: row.launch_failure.is_some(),
-        death_capped: row.lifecycle == BoxLifecycle::Asleep && death_capped(store, row.id)?,
-    })
-}
-
-/// Whether Box `id` died and moor did not resume it, and no wake has come since. Events
-/// are numbered in the order they were written, so ids tell which came last.
-fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
-    let Some(capped) = store.newest_event_of(id, "death_capped")? else {
-        return Ok(false);
-    };
-    let woke = store.newest_event_of(id, "woke")?;
-    Ok(woke.is_none_or(|w| w.id < capped.id))
-}
 
 /// Fails the run at `at`, which works in Box `box_id` that died and was not resumed, with the
 /// sentence its `death_capped` event told the owner. Nothing is sent to the Box: neither the

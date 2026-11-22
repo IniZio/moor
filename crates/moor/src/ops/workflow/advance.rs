@@ -5,7 +5,7 @@
 //! it.
 
 use moor_core::decide::workflow::{
-    advance, quiet_since, run_verdict, waited_millis, Event, Move, RunBoxFacts, RunVerdict,
+    advance, quiet_since, run_verdict, waited_millis, Event, Move, RunVerdict,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::session_state::SessionState;
@@ -17,10 +17,12 @@ use moor_core::workflow::{
 };
 use moor_core::{BoxId, SteerReq};
 
-use super::check::{CheckJob, Flight, CHECK_LIMIT};
+use super::check::CheckJob;
 use super::facts::history_of;
-use super::settle::{box_facts, broken_detail, fail_death_capped};
+use super::settle::{broken_detail, fail_death_capped};
 use crate::cx::Cx;
+use crate::ops::common::check::{Claim, Flight, CHECK_LIMIT};
+use crate::ops::common::quiet::{box_facts, quiet_for_check};
 use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
 
@@ -119,19 +121,6 @@ struct Quiet<'a> {
     now: Ts,
 }
 
-/// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the
-/// last steer, or ended, in a Box that is up or asleep.
-fn quiet_for_check(facts: &RunBoxFacts, steered: Option<Ts>, now: Ts) -> bool {
-    if !matches!(facts.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep) {
-        return false;
-    }
-    match facts.session {
-        SessionState::Ended => true,
-        SessionState::Idle => steered.is_none_or(|t| quiet_since(facts, t, now)),
-        SessionState::Starting | SessionState::Working => false,
-    }
-}
-
 impl Quiet<'_> {
     /// The run's history lines, and when the agent was last told something: a reading from
     /// before that is still the quiet of the step before. A run from before history kept an
@@ -146,7 +135,7 @@ impl Quiet<'_> {
         if !at_check {
             return Ok(None);
         }
-        Flight::claim(self.cx, self.run.id)
+        Flight::claim(self.cx, Claim::Run(self.run.id))
             .map(Some)
             .ok_or(CheckRunning)
     }

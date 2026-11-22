@@ -1,0 +1,66 @@
+//! What a Box with gates that are not passed holds back: its close, and what a person's steer
+//! does to a stuck one.
+
+use moor_core::gate::{status, GateLine, GateStatus};
+use moor_core::{BoxId, Warning};
+use moor_schema::tables::BoxGateLines;
+
+use crate::cx::Cx;
+use crate::store::{Store, StoreError};
+
+/// Whether Box `id` has gates and they are not all passed, so nobody may close it as unneeded.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn holds(store: &Store, id: BoxId) -> Result<bool, StoreError> {
+    let Some(gates) = store.box_gates(id)? else {
+        return Ok(false);
+    };
+    Ok(status(&gates, &store.gate_lines(id)?) != GateStatus::Passed)
+}
+
+/// Writes `Reopened` for the gate of Box `id` that is stuck, after a steer reached its agent: a
+/// person has taken it up, so the gate gets fresh tries. A gate that is not stuck is left alone,
+/// which is also why moor's own steers, sent only while tries remain, reopen nothing. A failure
+/// is a warning on the steer, which was sent.
+pub(crate) fn after_steer(cx: &Cx, store: &Store, id: BoxId) {
+    if let Err(e) = reopen(cx, store, id) {
+        cx.warn(Warning {
+            code: "gate_not_reopened".to_owned(),
+            message: format!("the steer was sent, but its gate stays stuck: {e}"),
+        });
+    }
+}
+
+/// Writes `Reopened` when the gate of Box `id` is stuck; one retry when another line took the
+/// number, since that line may be the reopening itself.
+fn reopen(cx: &Cx, store: &Store, id: BoxId) -> Result<(), StoreError> {
+    let Some(gates) = store.box_gates(id)? else {
+        return Ok(());
+    };
+    let by = cx.requester().map_or_else(
+        |_| "a person".to_owned(),
+        |(who, _)| who.as_str().to_owned(),
+    );
+    for _ in 0..2 {
+        let lines = store.gate_lines(id)?;
+        let GateStatus::Stuck { gate, .. } = status(&gates, &lines) else {
+            return Ok(());
+        };
+        let n = i64::try_from(lines.len())
+            .unwrap_or(i64::MAX)
+            .saturating_add(1);
+        let line = GateLine::Reopened {
+            gate,
+            by: by.clone(),
+        };
+        match store.append_gate_line(id, n, cx.clock().now(), &line) {
+            Err(StoreError::Db(db))
+                if db.unique_key().is_some_and(|k| {
+                    k.is(&BoxGateLines::Table, &[BoxGateLines::Box, BoxGateLines::N])
+                }) => {}
+            done => return done,
+        }
+    }
+    Ok(())
+}

@@ -1,5 +1,9 @@
 //! Tests for `gate`.
 
+mod checks;
+mod fx;
+mod hold;
+
 use std::path::Path;
 use std::sync::Arc;
 

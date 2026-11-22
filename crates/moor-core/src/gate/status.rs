@@ -112,6 +112,42 @@ struct Walk<'a> {
 /// Where a Box stands, from its `gates` and the `lines` written for them, oldest first.
 #[must_use]
 pub fn status(gates: &Gates, lines: &[GateLine]) -> GateStatus {
+    walk(gates, lines).status()
+}
+
+/// The check moor runs next: the gate it belongs to, the try, and its place among the gate's checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DueCheck<'a> {
+    /// The gate.
+    pub gate: &'a Gate,
+    /// The try, from 1.
+    pub try_n: u8,
+    /// The check's place among the gate's checks, from 0.
+    pub check: u8,
+}
+
+/// The check due from `gates` and the `lines` written for them; none unless the status is open at
+/// `RunChecks`.
+#[must_use]
+pub fn due_check<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueCheck<'a>> {
+    let walk = walk(gates, lines);
+    let GateStatus::Open {
+        try_n,
+        next: GateNext::RunChecks,
+        ..
+    } = walk.status()
+    else {
+        return None;
+    };
+    Some(DueCheck {
+        gate: gates.get(walk.at)?,
+        try_n,
+        check: walk.tries.checks,
+    })
+}
+
+/// The fold of `lines` over `gates`.
+fn walk<'a>(gates: &'a Gates, lines: &[GateLine]) -> Walk<'a> {
     let mut walk = Walk {
         gates,
         at: 0,
@@ -121,7 +157,7 @@ pub fn status(gates: &Gates, lines: &[GateLine]) -> GateStatus {
     for line in lines {
         walk.apply(line);
     }
-    walk.status()
+    walk
 }
 
 impl Walk<'_> {

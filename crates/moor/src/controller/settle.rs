@@ -124,6 +124,12 @@ pub(super) fn spawn_wanted(env: &Env, every: Duration, drain: &Arc<Drain>, sink:
     passes(every, drain, sink, Moor::wanted_pass(env));
 }
 
+/// Runs the gate pass each `every`, on its own thread, since a steer to a stuck agent can take a
+/// while and must not hold up settling the others.
+pub(super) fn spawn_gates(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
+    passes(every, drain, sink, Moor::gate_pass(env));
+}
+
 /// Runs the promotion pass each `every`, on its own thread, since setting up a promoted Box can
 /// take many minutes and must not hold up a close or the other passes.
 pub(super) fn spawn_promote(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
