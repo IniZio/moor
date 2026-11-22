@@ -10,7 +10,7 @@ use moor_core::gate::{DueOutcomes, GateLine, OutcomeName, Tried};
 use moor_core::workflow::StepId;
 use moor_core::BoxId;
 
-use super::checks::{run_check, taken, tell, GateCheck};
+use super::checks::{run_check, run_ended, taken, tell, GateCheck};
 use super::remind::remind;
 use crate::cx::Cx;
 use crate::ops::common::check::{execute, Ended, CHECK_LIMIT};
@@ -75,6 +75,9 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
     let Some(found) = find(cx, id, due, &mut out) else {
         return out;
     };
+    if run_ended(store, id) {
+        return out;
+    }
     let line = match found {
         Found::Held(outcome) => GateLine::Held {
             gate: due.stage.clone(),

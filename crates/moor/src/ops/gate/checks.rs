@@ -261,6 +261,12 @@ fn tell_failure(
         .map(Some)
 }
 
+/// Whether the workflow run of Box `id` has ended, or cannot be read: a job's result is then
+/// dropped, with no line written and nobody told.
+pub(super) fn run_ended(store: &Store, id: BoxId) -> bool {
+    !matches!(store.run_of_box(id), Ok(RunOfBox::NoRun | RunOfBox::Open))
+}
+
 /// Whether `e` says another line took the number.
 pub(super) fn taken(e: &StoreError) -> bool {
     matches!(e, StoreError::Db(db) if db.unique_key().is_some_and(|k| {
@@ -302,6 +308,7 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
     let gate = gate.clone();
     let line = match ran.ended {
         Ended::NotRun { .. } => return out,
+        _ if run_ended(store, id) => return out,
         Ended::Lost => GateLine::CheckLost { gate, try_n, check },
         Ended::Exit { exit, tail } => GateLine::Checked {
             gate,
