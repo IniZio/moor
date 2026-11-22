@@ -159,6 +159,7 @@ definition/
   automations/deps-check.md        one recurring job, whole
   skills/deps-check/SKILL.md       how to check dependencies
   repos/acme-web.md                the team's note on one repo
+  repos/acme-web.yaml              the plan moor read from that note
 ```
 
 One unit is one file, and the file has two parts. The lower part is the prompt, in the words a person or an orchestrating agent wrote. It is the source. The upper part is the plan moor read from that prompt. Nobody writes the upper part by hand.
@@ -202,6 +203,10 @@ Three names in this file point elsewhere. They are the repos, the skill, and the
 Each entry under `repos` is one repo list, as the [experience spec](end-user-experience.md#repos-of-a-task) defines it. The agent starts in the first repo, and the others are cloned beside it. The automation starts one task per repo list.
 
 A repo's note is plain words. It says how to install the repo and names its checks. It also says what network it needs, what to keep and what an agent should know first. The team shares one note per repo. A task with several repos uses each repo's note.
+
+The note works as a prompt does. It is the source, and moor reads it into a plan. Unlike an automation, the plan sits in its own YAML file beside the note, as the tree above shows. The plan is what moor acts on, never the note. The same plan always does the same thing.
+
+Nobody has to write the YAML, but anyone can open it. The note's page shows the note with side notes in the margin, as the prompt page does. Each side note is one thing moor read, such as "before the agent starts, moor runs npm ci". A sentence moor could not read is marked unclear, with its question. An edit to the note makes a new plan. It applies when a person accepts it, as any proposal does.
 
 ### From prompt to plan
 
@@ -543,6 +548,8 @@ The build differs from the order of work in four ways.
 - A gate tries twice when no count is given. With one try, a failed check left the agent no chance to fix it.
 - moor tells the agent when each gate is in hand. Without that, the agent reported too early and was refused.
 
+Repo config is older than the gates. moor stores one YAML config per repo and acts on it. People edit that YAML in the portal. The plain-words note and moor's reading of it are not built.
+
 The evidence flow was measured before and after. Before, four scenarios on one fixture pull request behaved correctly, in 3 to 4 minutes each. A run whose pull request failed its check still listed as finished. After, an agent told to write a false report and post nothing failed a check that reads GitHub. Its run waited on a person and never delivered. With outcomes, a failing pull request's run ended as "check failed". A run for a closed pull request ended as "nothing to do", with no comment posted.
 
 ## Decided
@@ -563,6 +570,7 @@ The owner decided these from 2026-11-20 to 2026-11-22.
 - The story underlines what moor enforces as solid and what the prose asks as dashed. Decided on 2026-11-21.
 - Repo config becomes files in the definition, with the same versions and proposals. Decided on 2026-11-21.
 - moor has no project concept for now. Everything keys on a task's repo list, and each repo has one plain-words note. The owner's reason is that a project might use a different repo combination for different tasks. Decided on 2026-11-22.
+- Each repo's note is read into a plan in YAML beside it, as a prompt is. The plan is what runs. The note's page shows it as side notes. Decided on 2026-11-22.
 - Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
 - Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
 - moor's reading is told as a story for now, for the definition, a running task and a proposal. It is plain paragraphs, not cards. Every underlined fact opens its detail. Decided on 2026-11-21.
