@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::process::Stdio;
 
-use moor_testkit::{write_executable, ChildGuard};
+use moor_testkit::ChildGuard;
 
 use super::up::Host;
 use super::Run;
@@ -18,6 +18,7 @@ impl Host {
             .current_dir(&self.home)
             .env_clear()
             .env("MOOR_KVM_DEVICE", self.bin.join("kvm"))
+            .env("MOOR_HOST_ROOT", self.root())
             .envs(vars.iter().copied())
             .env("PATH", self.path())
             .env("HOME", &self.home)
@@ -48,20 +49,16 @@ impl Host {
     }
 }
 
-const DOCKER_NO_IMAGES: &str = r#"#!/bin/sh
-case "$*" in
-  "info --format {{.ServerVersion}}") echo 27.0.0 ;;
-  "network inspect bridge --format {{(index .IPAM.Config 0).Gateway}}") echo 127.0.0.1 ;;
+/// The `docker` answers of a daemon that has no image of this build, nor its registry.
+const NO_IMAGES: &str = r#"  "info --format {{.ServerVersion}}") echo 29.10.0 ;;
   "image inspect "*) echo "Error: No such image" >&2; exit 1 ;;
   "manifest inspect "*) echo "no such manifest: $3" >&2; exit 1 ;;
-  *) echo "fake docker: $*" >&2; exit 2 ;;
-esac
 "#;
 
 #[test]
 fn up_warns_and_doctor_fails_when_the_agents_default_images_do_not_exist() {
     let host = Host::new();
-    write_executable(&host.bin.join("docker"), DOCKER_NO_IMAGES).unwrap();
+    host.docker(NO_IMAGES);
     let up = host.moor(&["up"], "sk-claude\ngh-token\n");
     assert_eq!(up.code, 0, "up only warns: {up:?}");
     let warned = up
@@ -92,7 +89,7 @@ fn up_warns_and_doctor_fails_when_the_agents_default_images_do_not_exist() {
 #[test]
 fn an_image_override_up_copied_into_the_agent_unit_is_what_the_doctor_checks() {
     let host = Host::new();
-    write_executable(&host.bin.join("docker"), DOCKER_NO_IMAGES).unwrap();
+    host.docker(NO_IMAGES);
     let up = host.moor_with(
         &["up"],
         "sk-claude\ngh-token\n",
@@ -115,26 +112,4 @@ fn an_image_override_up_copied_into_the_agent_unit_is_what_the_doctor_checks() {
     let doctor = host.moor(&["doctor"], "");
     assert!(doctor.stdout.contains("fail  images"), "{doctor:?}");
     assert!(doctor.stdout.contains("agent:dev"), "{doctor:?}");
-}
-
-#[test]
-fn up_on_a_host_whose_boxes_cannot_open_kvm_refuses_and_writes_nothing() {
-    let host = Host::new();
-    let missing = host.bin.join("no-kvm");
-    let r = host.moor_with(
-        &["up"],
-        "",
-        &[("MOOR_KVM_DEVICE", missing.to_str().unwrap())],
-    );
-    assert_eq!(r.code, 1, "{r:?}");
-    assert!(
-        r.stdout.starts_with(&format!(
-            "fail  kvm         {} is missing, and every Box gets KVM; fix: ",
-            missing.display()
-        )),
-        "{r:?}"
-    );
-    assert!(r.stdout.contains("docs/rootless-docker.md#kvm"), "{r:?}");
-    assert!(!host.units().exists());
-    assert_eq!(host.systemctl_log(), "");
 }

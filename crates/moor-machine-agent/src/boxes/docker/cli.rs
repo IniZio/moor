@@ -147,13 +147,13 @@ fn unanswered(stderr: &str, host: Option<&str>) -> Option<String> {
     })
 }
 
-/// What a failed `docker ps` of every Box means. A rootless daemon that does not answer took
-/// every Box's places with it, since their network namespace was its own; a rootful one may not.
-pub(super) fn listing_failed(stderr: &str, host: Option<&str>, rootless: bool) -> ProvideError {
-    match unanswered(stderr, host) {
-        Some(why) if rootless => ProvideError::Lost(why),
-        _ => ProvideError::Failed(format!("docker: {}", stderr.trim())),
-    }
+/// What a failed `docker ps` of every Box means. A daemon that does not answer took every Box's
+/// places with it, since their network namespace was its own.
+pub(super) fn listing_failed(stderr: &str, host: Option<&str>) -> ProvideError {
+    unanswered(stderr, host).map_or_else(
+        || ProvideError::Failed(format!("docker: {}", stderr.trim())),
+        ProvideError::Lost,
+    )
 }
 
 /// The daemon address Docker's own error names, such as the `unix:///…` after "daemon at".

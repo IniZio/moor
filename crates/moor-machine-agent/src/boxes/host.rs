@@ -87,9 +87,7 @@ impl Host {
     #[must_use]
     pub fn docker(images: Images, home: &Path) -> Self {
         Self(Arc::new(Boxes::new(
-            Docker::new(images, None)
-                .kept_in(home)
-                .rootless(moor_client::rootless::detect()),
+            Docker::new(images, None).kept_in(home),
             home,
         )))
     }

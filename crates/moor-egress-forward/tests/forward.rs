@@ -358,12 +358,6 @@ async fn a_wss_upstream_is_verified_against_the_given_roots() {
 }
 
 #[test]
-fn a_machines_box_may_dial_its_host_by_the_name_moor_host_over_plain_ws() {
-    let config = r#"{"listen":"127.0.0.1:1","upstream":"ws://moor-host:8443/egress","token":"t"}"#;
-    assert!(Config::parse(config).is_ok());
-}
-
-#[test]
 fn a_box_may_dial_a_private_ip_literal_over_plain_ws_but_not_a_public_one() {
     for ok in [
         "10.0.2.100:8443",
@@ -380,7 +374,7 @@ fn a_box_may_dial_a_private_ip_literal_over_plain_ws_but_not_a_public_one() {
             format!(r#"{{"listen":"127.0.0.1:1","upstream":"ws://{bad}/egress","token":"t"}}"#);
         let err = Config::parse(&config).err().unwrap();
         assert!(
-            err.contains("only a loopback ws:// address or moor-host may"),
+            err.contains("only a loopback or private ws:// address may"),
             "{bad}: {err}"
         );
     }
@@ -421,15 +415,15 @@ fn the_config_names_its_listener_upstream_and_token() {
         (r#"{"listen":"127.0.0.1:1"}"#, "bad config"),
         (
             r#"{"listen":"127.0.0.1:1","upstream":"ws://moor-host.example/egress","token":"t"}"#,
-            "only a loopback ws:// address or moor-host may",
+            "only a loopback or private ws:// address may",
         ),
         (
             r#"{"listen":"127.0.0.1:1","upstream":"ws://moor.example/egress","token":"t"}"#,
-            "only a loopback ws:// address or moor-host may",
+            "only a loopback or private ws:// address may",
         ),
         (
             r#"{"listen":"127.0.0.1:1","upstream":"ws://127.0.0.1.evil.example/egress","token":"t"}"#,
-            "only a loopback ws:// address or moor-host may",
+            "only a loopback or private ws:// address may",
         ),
     ] {
         let err = Config::parse(bad).err().unwrap();

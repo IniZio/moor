@@ -121,7 +121,7 @@ fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
         clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
         log: w.log.clone(),
     });
-    host.route = crate::proxy::route::EgressRoute::Local { socket, host: None };
+    host.route = crate::proxy::route::EgressRoute::Local { socket };
     let spec = ProxySpec {
         box_id: w.id,
         box_handle: Some(w.handle()),

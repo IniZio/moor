@@ -1,4 +1,6 @@
-//! Rootless Docker: how `moor up` and `moor-machine-agent up` tell it from rootful Docker, and
+//! Rootless Docker, the only Docker that runs Boxes.
+//!
+//! How `moor up`, `moor-machine-agent up` and `moor doctor` tell it from rootful Docker, and
 //! what they check before they trust it. Nothing here changes the host.
 
 use std::path::{Path, PathBuf};
@@ -7,7 +9,7 @@ mod probe;
 #[cfg(test)]
 mod tests;
 
-pub use probe::{child_ip, daemon_state, detect, Facts};
+pub use probe::{child_ip, daemon_state, detect, Facts, ROOT_VAR};
 /// Docker's security options as JSON; `name=rootless` is among them under rootless Docker.
 pub const SECURITY_ARGS: [&str; 3] = ["info", "--format", "{{json .SecurityOptions}}"];
 
@@ -18,6 +20,8 @@ const LIVE_RESTORE_ARGS: [&str; 3] = ["info", "--format", "{{.LiveRestoreEnabled
 const SUBIDS_MIN: u64 = 65_536;
 /// The flag that closes the host's loopback to every Box.
 const LOOPBACK_FLAG: &str = "--disable-host-loopback";
+/// The runbook that sets a host up for Docker Boxes.
+const RUNBOOK: &str = "https://github.com/IniZio/moor/blob/develop/docs/rootless-docker.md";
 
 /// Whether `options`, the JSON of `docker info`'s `SecurityOptions`, name rootless Docker.
 #[must_use]
@@ -44,6 +48,19 @@ pub fn notice(user: &str) -> String {
         "Docker Boxes run on rootless Docker as {user}. Each Box's work place runs with \
          --privileged so Docker works inside it, and a Box that breaks out is {user} on this \
          host, not root. It can reach {user}'s files and every other Box here."
+    )
+}
+
+/// Why a daemon that is not rootless gets no Docker Boxes, and the command that points `docker` at
+/// one that is.
+#[must_use]
+pub fn refusal() -> Failure {
+    fail(
+        "docker",
+        "this Docker daemon is not rootless, and Docker Boxes run only on rootless Docker",
+        format!(
+            "point docker at your rootless daemon with `export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock`; to set one up, see {RUNBOOK}"
+        ),
     )
 }
 

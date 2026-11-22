@@ -108,7 +108,6 @@ impl World {
     fn config(&self, burst: f64, lookups: f64, tunnels: usize) -> Config {
         Config {
             listen: Listen::Tcp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
-            also: None,
             ledger: Endpoint::Unix(self.dir.path().join("proxy.sock")),
             key: Zeroizing::new(EGRESS_KEY.to_owned()),
             work_dir: self.dir.path().join("egress"),

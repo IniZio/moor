@@ -25,7 +25,6 @@ fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
         route(&[("MOOR_STATE_DIR", "/s")]),
         Ok(EgressRoute::Local {
             socket: "/s/egress/egress.sock".into(),
-            host: None,
         })
     );
     assert_eq!(
@@ -40,15 +39,14 @@ fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
 }
 
 #[test]
-fn a_box_dials_moor_host_on_the_local_route_and_only_wss_elsewhere() {
+fn a_box_reaches_the_local_route_only_through_a_relay_and_only_wss_elsewhere() {
     let local = EgressRoute::Local {
         socket: "/s/egress/egress.sock".into(),
-        host: Some("172.17.0.1:8443".parse().unwrap()),
     };
-    assert_eq!(
-        local.upstream(),
-        Ok("ws://moor-host:8443/egress".to_owned())
-    );
+    assert!(local
+        .upstream()
+        .unwrap_err()
+        .contains("MOOR_EGRESS_RELAYED"));
     assert_eq!(local.socket(), Some(Path::new("/s/egress/egress.sock")));
     let direct = EgressRoute::parse("wss://moor.example/egress").unwrap();
     assert_eq!(
@@ -181,15 +179,15 @@ impl Rig {
 
 const KEY: &[u8] = b"egress-key";
 
-fn tunneled() -> EgressRoute {
-    EgressRoute::Local {
+fn relayed() -> EgressRoute {
+    EgressRoute::Relayed {
         socket: "/s/egress/egress.sock".into(),
-        host: Some("172.17.0.1:8443".parse().unwrap()),
+        host: "10.0.2.100:8443".parse().unwrap(),
     }
 }
 
 #[test]
-fn a_relayed_proxy_is_dialed_like_a_bound_one_but_the_controller_never_binds_it() {
+fn a_relayed_proxy_is_dialed_at_the_relays_own_address() {
     let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
     let relayed = route(&[
         ("MOOR_STATE_DIR", "/s"),
@@ -208,63 +206,18 @@ fn a_relayed_proxy_is_dialed_like_a_bound_one_but_the_controller_never_binds_it(
         Ok("ws://10.0.2.100:8443/egress".to_owned())
     );
     assert_eq!(relayed.socket(), Some(Path::new("/s/egress/egress.sock")));
-    assert_eq!(relayed.bind(), None);
-    let bound = route(&[
-        ("MOOR_STATE_DIR", "/s"),
-        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
-    ])
-    .unwrap();
-    assert_eq!(
-        bound.upstream(),
-        Ok("ws://moor-host:8443/egress".to_owned())
-    );
-    assert_eq!(bound.bind(), Some("172.17.0.1:8443".parse().unwrap()));
 }
 
 #[test]
-fn naming_both_a_bound_and_a_relayed_address_is_an_error_and_a_relayed_one_must_be_private() {
+fn a_relayed_address_must_be_private_and_a_direct_route_ignores_it() {
     let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
-    let both = route(&[
-        ("MOOR_STATE_DIR", "/s"),
-        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
-        ("MOOR_EGRESS_RELAYED", "172.17.0.1:8443"),
-    ]);
-    let why = both.unwrap_err();
-    assert!(
-        why.contains("MOOR_EGRESS_LISTEN") && why.contains("MOOR_EGRESS_RELAYED"),
-        "{why}"
-    );
-    for bad in ["0.0.0.0:8443", "8.8.8.8:8443", "172.17.0.1:0", "172.17.0.1"] {
-        let why = route(&[("MOOR_STATE_DIR", "/s"), ("MOOR_EGRESS_RELAYED", bad)]).unwrap_err();
-        assert!(why.contains("MOOR_EGRESS_RELAYED"), "{bad}: {why}");
-    }
+    let env = |relay: &str| route(&[("MOOR_STATE_DIR", "/s"), ("MOOR_EGRESS_RELAYED", relay)]);
     let url = route(&[
         ("MOOR_STATE_DIR", "/s"),
         ("MOOR_EGRESS_URL", "wss://moor.example/egress"),
-        ("MOOR_EGRESS_LISTEN", "172.17.0.1:8443"),
         ("MOOR_EGRESS_RELAYED", "172.17.0.1:8443"),
     ]);
-    assert!(
-        url.is_ok(),
-        "a Direct route ignores both, as it ignored LISTEN before"
-    );
-}
-
-#[test]
-fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
-    let env = |listen: &str| {
-        EgressRoute::from_env(&Env::from_pairs([
-            ("MOOR_STATE_DIR", "/s"),
-            ("MOOR_EGRESS_LISTEN", listen),
-        ]))
-    };
-    let route = env("172.17.0.1:8443").unwrap();
-    assert_eq!(
-        route.upstream(),
-        Ok("ws://moor-host:8443/egress".to_owned())
-    );
-    let unset = EgressRoute::from_env(&Env::from_pairs([("MOOR_STATE_DIR", "/s")])).unwrap();
-    assert!(unset.upstream().unwrap_err().contains("MOOR_EGRESS_LISTEN"));
+    assert!(url.is_ok(), "a Direct route ignores it");
     for ok in [
         "127.0.0.1:9",
         "10.1.2.3:9",
@@ -281,14 +234,15 @@ fn a_machines_box_dials_moor_host_on_the_port_the_proxy_also_listens_on() {
         "172.17.0.1",
         "[2001:db8::1]:9",
     ] {
-        assert!(env(bad).is_err(), "{bad}");
+        let why = env(bad).unwrap_err();
+        assert!(why.contains("MOOR_EGRESS_RELAYED"), "{bad}: {why}");
     }
 }
 
 #[test]
 fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
     let r = rig();
-    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert_eq!(r.deliver(&relayed(), &Rig::endpoint()), Ok(10556));
     let written = r.written();
     let [bin, config] = written.as_slice() else {
         unreachable!("two files, not {written:?}")
@@ -307,7 +261,7 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
     assert_eq!(config.get("listen").unwrap(), "127.0.0.1:10556");
     assert_eq!(
         config.get("upstream").unwrap(),
-        "ws://moor-host:8443/egress"
+        "ws://10.0.2.100:8443/egress"
     );
     let sent = config.get("token").unwrap().as_str().unwrap();
     assert!(
@@ -329,15 +283,15 @@ fn the_first_delivery_mints_a_token_and_writes_the_forwarder_then_its_config() {
 #[test]
 fn the_forwarder_is_delivered_in_the_agent_place() {
     let r = rig();
-    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert_eq!(r.deliver(&relayed(), &Rig::endpoint()), Ok(10556));
     assert!(r.driver.all_in(Place::Agent));
 }
 
 #[test]
 fn a_delivered_token_is_not_delivered_again() {
     let r = rig();
-    r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
-    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    r.deliver(&relayed(), &Rig::endpoint()).unwrap();
+    assert_eq!(r.deliver(&relayed(), &Rig::endpoint()), Ok(10556));
     assert_eq!(r.written().len(), 2, "one delivery");
     assert!(
         r.driver.execs().is_empty(),
@@ -348,11 +302,11 @@ fn a_delivered_token_is_not_delivered_again() {
 #[test]
 fn a_new_egress_key_delivers_a_token_under_it() {
     let r = rig();
-    r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
+    r.deliver(&relayed(), &Rig::endpoint()).unwrap();
     let other = b"another-egress-key";
     let ep = Rig::endpoint();
     assert_eq!(
-        r.deliver_under(&tunneled(), &ep, r.binary.path(), other),
+        r.deliver_under(&relayed(), &ep, r.binary.path(), other),
         Ok(10556)
     );
     let written = r.written();
@@ -377,12 +331,12 @@ fn a_failed_write_leaves_the_token_undelivered_for_the_next_exec() {
             )),
         ..r
     };
-    assert!(r.deliver(&tunneled(), &Rig::endpoint()).is_err());
+    assert!(r.deliver(&relayed(), &Rig::endpoint()).is_err());
     assert!(!r
         .store
         .egress_token_delivered(r.id, token::key_id(KEY))
         .unwrap());
-    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert_eq!(r.deliver(&relayed(), &Rig::endpoint()), Ok(10556));
     assert!(r
         .store
         .egress_token_delivered(r.id, token::key_id(KEY))
@@ -394,7 +348,7 @@ fn a_proxy_from_before_the_forwarder_is_refused_on_the_shared_route() {
     let r = rig();
     let mut ep = Rig::endpoint();
     ep.forward_port = None;
-    let err = r.deliver(&tunneled(), &ep).unwrap_err();
+    let err = r.deliver(&relayed(), &ep).unwrap_err();
     assert!(err.contains("start the Box again"), "{err}");
 }
 
@@ -407,7 +361,7 @@ fn a_dynamically_linked_binary_is_refused_and_nothing_is_written_or_minted() {
         crate::proxy::forwarder::elf::tests::elf64(3, format!("{loader}\0").as_bytes()),
     )
     .unwrap();
-    let err = r.deliver(&tunneled(), &Rig::endpoint()).unwrap_err();
+    let err = r.deliver(&relayed(), &Rig::endpoint()).unwrap_err();
     assert!(
         err.contains(&format!("dynamically linked (it needs {loader})")),
         "{err}"
@@ -425,7 +379,7 @@ fn a_missing_binary_is_named_and_nothing_is_minted() {
     let r = rig();
     let gone = Path::new("/nonexistent/moor-egress-forward");
     let err = r
-        .deliver_from(&tunneled(), &Rig::endpoint(), gone)
+        .deliver_from(&relayed(), &Rig::endpoint(), gone)
         .unwrap_err();
     assert!(err.contains("/nonexistent/moor-egress-forward"), "{err}");
     assert!(!r

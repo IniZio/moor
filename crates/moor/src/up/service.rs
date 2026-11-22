@@ -44,14 +44,12 @@ pub(crate) struct Unit {
 }
 
 impl Unit {
-    /// The unit for `layout`, run by this executable with this `PATH`, whose Proxy also listens
-    /// on `egress`, the address the Boxes of Docker machines on this host dial. When `relayed`,
-    /// a relay holds `egress` and the controller only names it.
+    /// The unit for `layout`, run by this executable with this `PATH`, whose Proxy the Boxes of
+    /// Docker machines on this host reach through the relay at `egress`.
     pub(crate) fn new(
         env: &Env,
         layout: &Layout,
         egress: SocketAddr,
-        relayed: bool,
         env_file: Option<PathBuf>,
     ) -> Result<Self, Check> {
         let exe = std::env::current_exe()
@@ -61,15 +59,7 @@ impl Unit {
                 "MOOR_CONFIG".to_owned(),
                 layout.user_config.display().to_string(),
             ),
-            (
-                if relayed {
-                    "MOOR_EGRESS_RELAYED"
-                } else {
-                    "MOOR_EGRESS_LISTEN"
-                }
-                .to_owned(),
-                egress.to_string(),
-            ),
+            ("MOOR_EGRESS_RELAYED".to_owned(), egress.to_string()),
         ];
         if let Some(path) = env.get("PATH") {
             vars.push(("PATH".to_owned(), path.to_owned()));

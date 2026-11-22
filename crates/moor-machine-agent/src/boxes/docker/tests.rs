@@ -7,7 +7,7 @@
     reason = "tests assert on fixed fixtures"
 )]
 
-use super::args::{agent_run, gid_of, kvm_group, work_memory_mib, work_run};
+use super::args::{agent_run, work_memory_mib, work_run};
 use super::cli::{listing_failed, parse_ended, read_state, State};
 use super::names::Names;
 use super::observe::held_by_box;
@@ -80,18 +80,16 @@ fn the_unanswering_daemons_address_comes_from_docker_then_docker_host() {
 }
 
 #[test]
-fn a_rootless_daemon_that_does_not_answer_loses_every_box_and_a_rootful_one_does_not() {
-    let ProvideError::Lost(why) = listing_failed(SOCKET_GONE, None, true) else {
-        panic!("a rootless daemon that does not answer loses its Boxes");
+fn a_daemon_that_does_not_answer_loses_every_box_and_any_other_failure_does_not() {
+    let ProvideError::Lost(why) = listing_failed(SOCKET_GONE, None) else {
+        panic!("a daemon that does not answer loses its Boxes");
     };
     assert!(
         why.starts_with("the Docker daemon at unix:///run/user/1003/docker.sock is not answering"),
         "{why}"
     );
-    for (said, rootless) in [(NOT_RUNNING, false), ("permission denied", true)] {
-        let e = listing_failed(said, None, rootless);
-        assert!(matches!(e, ProvideError::Failed(_)), "{said}: {e:?}");
-    }
+    let e = listing_failed("permission denied", None);
+    assert!(matches!(e, ProvideError::Failed(_)), "{e:?}");
 }
 
 #[test]
@@ -133,7 +131,7 @@ fn the_agent_place_is_unprivileged_and_never_restarted_by_docker() {
     let a = agent_run(&settings(), &slug(), &Names::of(&slug()), &[]).join(" ");
     assert!(a.starts_with("run -d --name moor-3b3b3b3b-9001-agent --hostname moor-3b3b3b3b-9001"));
     assert!(a.contains("--network net --restart no"));
-    assert!(a.contains("--add-host moor-host:host-gateway"));
+    assert!(!a.contains("--add-host"));
     assert!(a.contains("-v moor-3b3b3b3b-9001-tree:/home/agent/moor"));
     assert!(!a.contains("--privileged"));
     assert!(a.ends_with(" agent:dev"));
@@ -142,35 +140,13 @@ fn the_agent_place_is_unprivileged_and_never_restarted_by_docker() {
 #[test]
 fn the_work_place_joins_the_agent_places_network_and_is_privileged() {
     let n = Names::of(&slug());
-    let w = work_run(&settings(), &slug(), &n, 4096, None, &[]).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, &[]).join(" ");
     assert!(w.contains("--network container:moor-3b3b3b3b-9001-agent"));
     assert!(w.contains("--privileged --restart no"));
     assert!(w.contains("--memory 4096m --memory-swap 4096m"));
     assert!(w.contains("-v moor-3b3b3b3b-9001-docker:/var/lib/docker"));
     assert!(!w.contains("--hostname"));
     assert!(w.ends_with(" work:dev"));
-    assert!(!w.contains("MOOR_KVM_GID"));
-}
-
-#[test]
-fn the_work_place_joins_the_group_of_a_hosts_kvm_device() {
-    let n = Names::of(&slug());
-    let w = work_run(&settings(), &slug(), &n, 4096, Some(994), &[]).join(" ");
-    assert!(w.contains("--privileged --restart no -e MOOR_KVM_GID=994 --memory"));
-}
-
-#[test]
-fn rootless_docker_drops_the_kvm_group_so_the_work_place_gets_no_gid() {
-    assert_eq!(kvm_group(false, Some(994)), Some(994));
-    assert_eq!(kvm_group(true, Some(994)), None);
-    assert_eq!(kvm_group(false, None), None);
-}
-
-#[test]
-fn a_device_the_host_lacks_has_no_group() {
-    let dir = std::env::temp_dir();
-    assert_eq!(gid_of(&dir.join("moor-no-such-kvm-device")), None);
-    assert!(gid_of(&dir).is_some());
 }
 
 #[test]
@@ -210,7 +186,7 @@ fn docker_ps_lines_become_each_boxes_two_places() {
 fn both_places_mount_the_shared_skills_volumes_and_nothing_else_of_the_home() {
     let n = Names::of(&slug());
     let a = agent_run(&settings(), &slug(), &n, &[]).join(" ");
-    let w = work_run(&settings(), &slug(), &n, 4096, None, &[]).join(" ");
+    let w = work_run(&settings(), &slug(), &n, 4096, &[]).join(" ");
     for argv in [&a, &w] {
         assert!(argv.contains("-v moor-3b3b3b3b-9001-agents:/home/agent/.agents "));
         assert!(argv.contains("-v moor-3b3b3b3b-9001-skills:/home/agent/.claude/skills "));
@@ -259,15 +235,7 @@ fn the_docker_provider_keeps_cache_volumes_and_the_work_place_mounts_them() {
         "-v".to_owned(),
         "moor-cache-0123456789abcdef-go-0:/home/agent/go/pkg/mod".to_owned(),
     ];
-    let w = work_run(
-        &settings(),
-        &slug(),
-        &Names::of(&slug()),
-        4096,
-        None,
-        &cache,
-    )
-    .join(" ");
+    let w = work_run(&settings(), &slug(), &Names::of(&slug()), 4096, &cache).join(" ");
     assert!(w.contains("-v moor-cache-0123456789abcdef-go-0:/home/agent/go/pkg/mod work:dev"));
 }
 

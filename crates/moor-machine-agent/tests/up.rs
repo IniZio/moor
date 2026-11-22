@@ -22,19 +22,26 @@ use moor_core::response::Response;
 use moor_gate::{Gate, Login, Verifier};
 use moor_testkit::oidc::Issuer;
 use moor_testkit::pairing::Pairings;
-use moor_testkit::ChildGuard;
+use moor_testkit::{ChildGuard, Rootless};
 use serde_json::{json, Value};
 
 const CLIENT_ID: &str = "moor-test-client";
 
-const DOCKER: &str = r#"#!/bin/sh
+/// A `docker` of the rootless daemon `arms` describe, which logs each call.
+fn docker(arms: &str) -> String {
+    format!(
+        r#"#!/bin/sh
 echo "$*" >> "$HOME/docker.log"
 if [ -e "$HOME/docker-fail" ]; then
   echo "permission denied while trying to connect to the Docker daemon socket" >&2
   exit 1
 fi
-echo 27.0.1
-"#;
+case "$*" in
+{arms}  *) echo 27.0.1 ;;
+esac
+"#
+    )
+}
 
 const SYSTEMCTL: &str = r#"#!/bin/sh
 echo "$*" >> "$HOME/systemctl.log"
@@ -43,6 +50,7 @@ mark() {
     "$(awk '{print $22}' "/proc/$1/stat")" > "$XDG_STATE_HOME/moor-machine-agent/linked"
 }
 case "$2" in
+  is-enabled) echo enabled ;;
   start|restart)
     [ -f "$HOME/service.pid" ] && kill "$(cat "$HOME/service.pid")" 2>/dev/null
     sleep 30 >/dev/null 2>&1 &
@@ -52,13 +60,12 @@ case "$2" in
 esac
 "#;
 
-const LOGINCTL: &str = "#!/bin/sh\necho Linger=yes\n";
-
 struct World {
     gate: String,
     enrolled: Arc<Mutex<Vec<Value>>>,
     pairings: Arc<Mutex<Pairings>>,
     home: tempfile::TempDir,
+    rootless: Rootless,
     _issuer: Issuer,
     _dir: tempfile::TempDir,
 }
@@ -89,11 +96,19 @@ fn world() -> World {
         verifier: Verifier::new(issuer.base.clone(), CLIENT_ID.to_owned(), None),
     });
     std::thread::spawn(move || moor_gate::serve_with(&tcp, &config, Some(&login)));
+    let home = home();
+    let rootless = Rootless::start(&home.path().join("bin")).unwrap();
+    moor_testkit::write_executable(
+        &home.path().join("bin/docker"),
+        docker(&rootless.docker_arms()),
+    )
+    .unwrap();
     World {
         gate,
         enrolled,
         pairings: held,
-        home: home(),
+        home,
+        rootless,
         _issuer: issuer,
         _dir: dir,
     }
@@ -127,21 +142,15 @@ fn answer(
     }
 }
 
-/// A home with the stand-ins in its `bin`.
+/// A home with the `systemctl` stand-in in its `bin`.
 fn home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let bin = home.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::create_dir_all(home.path().join("state/moor-machine-agent")).unwrap();
-    for (name, body) in [
-        ("docker", DOCKER),
-        ("systemctl", SYSTEMCTL),
-        ("loginctl", LOGINCTL),
-    ] {
-        let path = bin.join(name);
-        std::fs::write(&path, body).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    let path = bin.join("systemctl");
+    std::fs::write(&path, SYSTEMCTL).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     home
 }
 
@@ -246,6 +255,7 @@ impl World {
                 .env("XDG_CONFIG_HOME", self.home.path().join("config"))
                 .env("MOOR_AGENT_SERVICE_DIR", self.units())
                 .env("MOOR_KVM_DEVICE", self.kvm())
+                .env("MOOR_HOST_ROOT", self.rootless.root())
                 .env("PATH", path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
@@ -349,11 +359,14 @@ fn a_second_up_keeps_the_pairing_and_the_running_service() {
 }
 
 #[test]
-fn up_says_docker_boxes_are_privileged_before_pairing() {
+fn up_says_what_a_box_that_breaks_out_is_before_pairing() {
     let w = world();
     let ran = w.up();
     assert!(ran.ok, "{}", ran.said);
-    let privileged = ran.said.find("privileged containers").expect(&ran.said);
+    let privileged = ran
+        .said
+        .find("Docker Boxes run on rootless Docker as")
+        .expect(&ran.said);
     let pairing = ran.said.find("/pair?code=").expect(&ran.said);
     assert!(privileged < pairing, "{}", ran.said);
 }
@@ -370,7 +383,7 @@ fn up_stops_at_dockers_own_error_before_pairing() {
         "{}",
         ran.said
     );
-    assert!(ran.said.contains("docker group"), "{}", ran.said);
+    assert!(ran.said.contains("rootless daemon"), "{}", ran.said);
     assert!(w.enrolled.lock().unwrap().is_empty());
     assert!(!w.unit().exists());
 }
@@ -540,7 +553,35 @@ fn up_on_rootless_docker_that_is_not_ready_says_each_fix_before_pairing() {
     );
     assert!(ran.said.contains("- loopback:"), "{}", ran.said);
     assert!(ran.said.contains("fix: "), "{}", ran.said);
-    assert!(!ran.said.contains("privileged containers"), "{}", ran.said);
+    assert!(
+        !ran.said.contains("Docker Boxes run on rootless Docker as"),
+        "{}",
+        ran.said
+    );
+    assert!(w.enrolled.lock().unwrap().is_empty());
+    assert!(!w.unit().exists());
+}
+
+#[test]
+fn up_on_rootful_docker_refuses_with_the_runbook_before_pairing() {
+    let w = world();
+    moor_testkit::write_executable(&w.home.path().join("bin/docker"), docker("")).unwrap();
+    let ran = w.up();
+    assert!(!ran.ok);
+    assert!(
+        ran.said.contains(
+            "docker: this Docker daemon is not rootless, and Docker Boxes run only on rootless Docker; fix: "
+        ),
+        "{}",
+        ran.said
+    );
+    assert!(
+        ran.said
+            .contains("export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"),
+        "{}",
+        ran.said
+    );
+    assert!(ran.said.contains("docs/rootless-docker.md"), "{}", ran.said);
     assert!(w.enrolled.lock().unwrap().is_empty());
     assert!(!w.unit().exists());
 }

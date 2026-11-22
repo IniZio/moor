@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 use std::process::Command;
 
-use moor_testkit::{write_executable, LockedPort};
+use moor_testkit::{write_executable, LockedPort, Rootless};
 
 use super::{fresh_dir, Dir, Run};
 
@@ -15,6 +15,7 @@ const SYSTEMCTL: &str = r#"dir=$(dirname "$0")
 echo "$*" >> "$dir/systemctl.log"
 shift
 verb=$1
+[ "$*" = "is-enabled docker" ] && echo enabled
 units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 pid="$dir/controller.pid"
 alive() { [ -f "$pid" ] && kill -0 "$(cat "$pid")" 2>/dev/null; }
@@ -41,20 +42,15 @@ esac
 exit 0
 "#;
 
-/// A `docker` that answers `info` and names a bridge on loopback, which the controller can bind.
-const DOCKER: &str = r#"#!/bin/sh
-case "$*" in
-  "info --format {{.ServerVersion}}") echo 27.0.0 ;;
-  "network inspect bridge --format {{(index .IPAM.Config 0).Gateway}}") echo 127.0.0.1 ;;
-  *) echo "fake docker: $*" >&2; exit 2 ;;
-esac
-"#;
+/// The `docker` answer every working stand-in gives.
+pub(super) const VERSION: &str = "  \"info --format {{.ServerVersion}}\") echo 29.10.0 ;;\n";
 
 /// A temp HOME with fake tools on `PATH`; stops the controller it ran on drop.
 pub(super) struct Host {
     pub(super) home: Dir,
     pub(super) state: tempfile::TempDir,
     pub(super) bin: Dir,
+    rootless: Rootless,
     ports: [LockedPort; 3],
 }
 
@@ -63,18 +59,10 @@ impl Host {
         Self::with_docker(true)
     }
 
-    /// A host with or without a working `docker`.
+    /// A rootless host with or without a working `docker`.
     fn with_docker(works: bool) -> Self {
         let bin = fresh_dir("up-bin");
-        write_executable(
-            &bin.join("docker"),
-            if works {
-                DOCKER
-            } else {
-                "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n"
-            },
-        )
-        .unwrap();
+        let rootless = Rootless::start(&bin).unwrap();
         for tool in ["moor-machine-runner", "moor-machine-agent", "moor-gate"] {
             write_executable(&bin.join(tool), "#!/bin/sh\nexit 0\n").unwrap();
         }
@@ -83,29 +71,58 @@ impl Host {
         let kvm = bin.join("kvm");
         fs::write(&kvm, "").unwrap();
         fs::set_permissions(&kvm, fs::Permissions::from_mode(0o666)).unwrap();
-        Self {
+        let host = Self {
             home: fresh_dir("up-home"),
             state: moor_testkit::short_tempdir("up").unwrap(),
             bin,
+            rootless,
             ports: [(); 3].map(|()| LockedPort::reserve()),
-        }
+        };
+        host.docker(if works { VERSION } else { "" });
+        host
+    }
+
+    /// Makes `docker` a stand-in that answers `arms`, then as this rootless daemon; with no
+    /// `arms`, it does not work for this user.
+    pub(super) fn docker(&self, arms: &str) {
+        let text = if arms.is_empty() {
+            "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n".to_owned()
+        } else {
+            format!(
+                "#!/bin/sh\ncase \"$*\" in\n{arms}{}  *) echo \"fake docker: $*\" >&2; exit 2 ;;\nesac\n",
+                self.rootless.docker_arms()
+            )
+        };
+        write_executable(&self.bin.join("docker"), text).unwrap();
+    }
+
+    /// The root of the host files the preflight reads.
+    pub(super) fn root(&self) -> PathBuf {
+        self.rootless.root()
     }
 
     /// Gives `up` ports no other test holds: parallel hosts can probe one free port before either
-    /// controller binds it. A host whose `docker` names no bridge fails first and writes nothing.
+    /// controller binds it. A host whose `docker` is not a rootless daemon on this host fails
+    /// first and writes nothing.
     pub(super) fn keep_ports(&self) {
         let file = self.state.path().join("up-ports.json");
-        let gateway = Command::new(self.bin.join("docker"))
-            .args([
-                "network",
+        let said = |args: &[&str]| {
+            Command::new(self.bin.join("docker"))
+                .args(args)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default()
+        };
+        let ready = said(&["info", "--format", "{{json .SecurityOptions}}"])
+            .contains("name=rootless")
+            && said(&[
+                "context",
                 "inspect",
-                "bridge",
                 "--format",
-                "{{(index .IPAM.Config 0).Gateway}}",
+                "{{.Endpoints.docker.Host}}",
             ])
-            .output()
-            .is_ok_and(|o| o.status.success());
-        if gateway && !file.exists() {
+            .starts_with("unix://");
+        if ready && !file.exists() {
             let [agents, listen, egress] = self.ports.each_ref().map(LockedPort::port);
             let kept = format!("{{\"agents\":{agents},\"listen\":{listen},\"egress\":{egress}}}\n");
             fs::write(file, kept).unwrap();
@@ -129,7 +146,7 @@ impl Host {
     }
 
     /// Every file `up` writes, with its text.
-    fn written(&self) -> Vec<(PathBuf, String)> {
+    pub(super) fn written(&self) -> Vec<(PathBuf, String)> {
         [
             self.home.join(".config/moor/controller.yaml"),
             self.home.join(".config/moor/config.yaml"),
@@ -138,6 +155,7 @@ impl Host {
             self.units().join("moor-gate.service"),
             self.units().join("moor-runner.service"),
             self.units().join("moor-agent.service"),
+            self.units().join("moor-relay.service"),
             self.state.path().join("service.env"),
             self.state.path().join("up-ports.json"),
             self.state
@@ -181,10 +199,13 @@ fn converged() -> (Host, Run) {
 }
 
 /// The `systemctl` calls of a first `up`.
-const FIRST_CALLS: &str = "--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
+const FIRST_CALLS: &str = "--user is-enabled docker\n\
+                           --user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
                            --user start moor.socket moor-front@authgear.socket\n--user restart moor.service\n\
                            --user daemon-reload\n--user enable moor-gate.service\n\
                            --user restart moor-gate.service\n\
+                           --user daemon-reload\n--user enable moor-relay.service\n\
+                           --user restart moor-relay.service\n\
                            --user daemon-reload\n--user enable moor-runner.service\n\
                            --user restart moor-runner.service\n\
                            --user daemon-reload\n--user enable moor-agent.service\n\
@@ -199,8 +220,9 @@ fn up_converges_a_fresh_host() {
         "ok    user        enrolled as user 1\n",
         "ok    secret      claude: set\n",
         "ok    secret      github: set\n",
-        "ok    docker      Docker 27.0.0 answers\n",
-        "Docker Boxes are privileged containers",
+        "ok    docker      Docker 29.10.0 answers\n",
+        "Docker Boxes run on rootless Docker as",
+        "ok    relay       moor-relay.service relays Box egress on 10.0.2.100:",
         "ok    node        local: Docker Boxes by moor-agent.service",
         "ok    gate        moor-gate.service serves report_step to the Boxes at 127.0.0.1:8444\n",
     ] {
@@ -212,7 +234,7 @@ fn up_converges_a_fresh_host() {
     assert_eq!(host.systemctl_log(), FIRST_CALLS);
     let service = fs::read_to_string(host.units().join("moor.service")).unwrap();
     assert!(service.contains(&format!("Environment=\"MOOR_CONFIG={}\"", config.display())));
-    assert!(service.contains("Environment=\"MOOR_EGRESS_LISTEN=127.0.0.1:"));
+    assert!(service.contains("Environment=\"MOOR_EGRESS_RELAYED=10.0.2.100:"));
     let secrets = host.moor(&["user", "secret", "ls"], "");
     assert!(
         secrets.stdout.contains("claude") && secrets.stdout.contains("github"),
@@ -271,8 +293,10 @@ fn a_rerun_changes_nothing_and_prints_the_same_state() {
     );
     assert_eq!(
         host.systemctl_log().strip_prefix(FIRST_CALLS).unwrap(),
-        "--user enable moor.socket moor.service moor-front@authgear.socket\n--user start moor.socket moor-front@authgear.socket\n--user start moor.service\n\
+        "--user is-enabled docker\n\
+         --user enable moor.socket moor.service moor-front@authgear.socket\n--user start moor.socket moor-front@authgear.socket\n--user start moor.service\n\
          --user enable moor-gate.service\n--user start moor-gate.service\n\
+         --user enable moor-relay.service\n--user start moor-relay.service\n\
          --user enable moor-runner.service\n--user start moor-runner.service\n\
          --user enable moor-agent.service\n--user start moor-agent.service\n"
     );
@@ -288,7 +312,7 @@ fn down_removes_the_units_and_keeps_config_and_state() {
     assert!(host
         .systemctl_log()
         .ends_with(
-            "--user disable --now moor-gate.service moor-agent.service moor-runner.service moor.service moor-front@authgear.socket moor.socket\n--user daemon-reload\n"
+            "--user disable --now moor-relay.service moor-gate.service moor-agent.service moor-runner.service moor.service moor-front@authgear.socket moor.socket\n--user daemon-reload\n"
         ));
     let left = fs::read_dir(host.units()).unwrap().count();
     assert_eq!(
@@ -366,7 +390,11 @@ fn up_over_the_crabbox_node_of_an_earlier_release_says_to_delete_it() {
     let r = host.moor(&["up"], "");
     assert_eq!(r.code, 1, "{r:?}");
     assert!(r.stdout.contains("delete nodes.local from"), "{r:?}");
-    assert_eq!(host.systemctl_log(), "");
+    assert_eq!(
+        host.systemctl_log(),
+        "--user is-enabled docker\n",
+        "only a read"
+    );
 }
 
 /// The front the controller config gets so the gate can report steps.
@@ -472,73 +500,6 @@ fn a_rerun_after_an_up_that_failed_part_way_still_starts_the_gate() {
     assert!(service.contains("EnvironmentFile="), "{service}");
 }
 
-/// A `docker` of rootless Docker whose rootlesskit `up` cannot read, because the daemon is not
-/// at a Unix socket on this host.
-const ROOTLESS_DOCKER: &str = r#"#!/bin/sh
-case "$*" in
-  "info --format {{.ServerVersion}}") echo 29.10.0 ;;
-  "info --format {{json .SecurityOptions}}") echo '["name=seccomp,profile=builtin","name=rootless"]' ;;
-  "context inspect --format {{.Endpoints.docker.Host}}") echo tcp://10.0.0.2:2375 ;;
-  *) echo "fake docker: $*" >&2; exit 2 ;;
-esac
-"#;
-
-#[test]
-fn up_on_rootless_docker_that_is_not_ready_names_each_fix_and_writes_nothing() {
-    let host = Host::new();
-    write_executable(&host.bin.join("docker"), ROOTLESS_DOCKER).unwrap();
-    let run = host.moor(&["up"], "");
-    assert_eq!(run.code, 1, "{}", run.stdout);
-    assert!(
-        run.stdout
-            .contains("rootless Docker is not ready for Boxes:"),
-        "{}",
-        run.stdout
-    );
-    assert!(run.stdout.contains("- loopback: "), "{}", run.stdout);
-    assert!(run.stdout.contains("; fix: "), "{}", run.stdout);
-    assert!(
-        !run.stdout.contains("a user who can run Docker is root"),
-        "{}",
-        run.stdout
-    );
-    assert!(host.written().iter().all(|(_, text)| text.is_empty()));
-    assert_eq!(
-        host.systemctl_log(),
-        "--user is-enabled docker\n",
-        "only a read"
-    );
-}
-
-#[test]
-fn a_rootful_up_after_a_rootless_one_removes_the_stale_relay_once() {
-    let host = Host::new();
-    fs::create_dir_all(host.units()).unwrap();
-    let relay = host.units().join("moor-relay.service");
-    fs::write(&relay, "[Unit]\nDescription=moor egress relay\n").unwrap();
-    let first = host.moor(&["up"], "sk-claude\ngh-token\n");
-    assert_eq!(first.code, 0, "{first:?}");
-    assert!(!relay.exists(), "the rootless relay outlived a rootful up");
-    assert!(
-        host.systemctl_log()
-            .contains("--user disable --now moor-relay.service\n--user daemon-reload\n"),
-        "{}",
-        host.systemctl_log()
-    );
-    let calls = host.systemctl_log();
-    let again = host.moor(&["up"], "");
-    assert_eq!(again.code, 0, "{again:?}");
-    assert!(
-        !host
-            .systemctl_log()
-            .strip_prefix(&calls)
-            .expect("the systemctl log only grows")
-            .contains("moor-relay"),
-        "a rerun touched the relay again: {}",
-        host.systemctl_log()
-    );
-}
-
 #[test]
 fn up_enables_the_gate_fronts_socket_before_it_starts_the_controller() {
     let (host, first) = converged();
@@ -552,7 +513,7 @@ fn up_enables_the_gate_fronts_socket_before_it_starts_the_controller() {
     let log = host.systemctl_log();
     assert!(
         log.starts_with(
-            "--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
+            "--user is-enabled docker\n--user daemon-reload\n--user enable moor.socket moor.service moor-front@authgear.socket\n\
              --user start moor.socket moor-front@authgear.socket\n--user restart moor.service\n"
         ),
         "{log}"
@@ -585,8 +546,8 @@ fn down_stops_the_front_socket_and_removes_its_template() {
     assert_eq!(down.code, 0, "{down:?}");
     assert!(
         host.systemctl_log().contains(
-            "--user disable --now moor-gate.service moor-agent.service moor-runner.service \
-             moor.service moor-front@authgear.socket moor.socket\n"
+            "--user disable --now moor-relay.service moor-gate.service moor-agent.service \
+             moor-runner.service moor.service moor-front@authgear.socket moor.socket\n"
         ),
         "{}",
         host.systemctl_log()

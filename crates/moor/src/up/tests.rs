@@ -388,21 +388,14 @@ fn a_dollar_or_percent_in_a_relay_path_is_not_expanded_by_systemd() {
 }
 
 #[test]
-fn a_controller_unit_names_a_relayed_address_and_never_asks_to_bind_it() {
+fn a_controller_unit_names_the_relayed_address() {
     let egress = "10.0.2.100:20003".parse().unwrap();
     let env = Env::from_pairs([("HOME", "/home/ada")]);
-    let relayed = Unit::new(&env, &layout(), egress, true, None).unwrap();
+    let relayed = Unit::new(&env, &layout(), egress, None).unwrap();
     assert!(relayed.env.contains(&(
         "MOOR_EGRESS_RELAYED".to_owned(),
         "10.0.2.100:20003".to_owned()
     )));
-    assert!(relayed.env.iter().all(|(k, _)| k != "MOOR_EGRESS_LISTEN"));
-    let bound = Unit::new(&env, &layout(), egress, false, None).unwrap();
-    assert!(bound.env.contains(&(
-        "MOOR_EGRESS_LISTEN".to_owned(),
-        "10.0.2.100:20003".to_owned()
-    )));
-    assert!(bound.env.iter().all(|(k, _)| k != "MOOR_EGRESS_RELAYED"));
 }
 
 /// A rootless host where every preflight check passes.

@@ -34,13 +34,9 @@ pub(crate) const EGRESS_KEY: &str = "MOOR_EGRESS_KEY";
 /// The variable naming the shared egress Proxy's `/egress` address, `wss://`, that Boxes dial.
 /// Unset, the controller runs the shared Proxy itself and each Box reaches it over its tunnel.
 pub(crate) const EGRESS_URL: &str = "MOOR_EGRESS_URL";
-/// The variable naming a private address of this host, `IP:PORT`, where the controller's own
-/// shared Proxy also listens, so the Boxes of Docker machines on this host dial it at
-/// `ws://moor-host:PORT/egress`. Unset, such Boxes have no way to the Proxy.
-pub(crate) const EGRESS_LISTEN: &str = "MOOR_EGRESS_LISTEN";
-/// The variable naming the address, `IP:PORT`, where a relay another process runs, as on rootless
-/// Docker, carries a Box's `ws://moor-host:PORT/egress` to the shared Proxy's socket. The
-/// controller dials it like [`EGRESS_LISTEN`]'s and never binds it. Set only one of the two.
+/// The variable naming the address, `IP:PORT`, where a relay another process runs inside the
+/// rootless Docker daemon's namespace carries a Box's `ws://IP:PORT/egress` to the shared Proxy's
+/// socket. The controller never binds it. Unset, Boxes on this host have no way to the Proxy.
 pub(crate) const EGRESS_RELAYED: &str = "MOOR_EGRESS_RELAYED";
 /// The key the shared egress Proxy sends the machine service, which checks it before it trusts
 /// the Box the request names.

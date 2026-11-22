@@ -28,10 +28,10 @@ pub fn mode_of(device: &str) -> Option<u32> {
 
 /// Why Boxes cannot open `device`, with permission bits `mode`; none when they can.
 ///
-/// Rootless Docker drops the device's group, so only bits open to everyone count there. Rootful
-/// Boxes join its group. `mode` is none when the device is missing.
+/// Rootless Docker drops the device's group, so only bits open to everyone count. `mode` is none
+/// when the device is missing.
 #[must_use]
-pub fn refusal(rootless: bool, device: &str, mode: Option<u32>) -> Option<Failure> {
+pub fn refusal(device: &str, mode: Option<u32>) -> Option<Failure> {
     let udev = format!(
         "add a udev rule with MODE=\"0666\" for KERNEL==\"kvm\", such as in \
          /etc/udev/rules.d/65-kvm.rules; see {RUNBOOK}"
@@ -45,19 +45,11 @@ pub fn refusal(rootless: bool, device: &str, mode: Option<u32>) -> Option<Failur
             ),
         });
     };
-    let open = |bits: u32| mode & bits == bits;
-    let detail = if rootless && !open(0o006) {
-        format!(
-            "{device} is mode {mode:04o}, and rootless Docker drops its group, so Boxes cannot open it"
-        )
-    } else if !rootless && !open(0o060) && !open(0o006) {
-        format!("{device} is mode {mode:04o}, so Boxes cannot open it even in its group")
-    } else {
-        return None;
-    };
-    Some(Failure {
+    (mode & 0o006 != 0o006).then(|| Failure {
         check: "kvm",
-        detail,
+        detail: format!(
+            "{device} is mode {mode:04o}, and rootless Docker drops its group, so Boxes cannot open it"
+        ),
         fix: udev,
     })
 }
