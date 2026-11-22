@@ -150,19 +150,20 @@ const fn at_rootless_docker(_allow_exec: bool) -> Option<ExitCode> {
     None
 }
 
-/// Asks `question` on the terminal; an empty answer is yes.
+/// Asks `question` on the terminal; an empty answer is yes, and end of input is no.
 fn confirm(question: &str) -> bool {
     let mut err = std::io::stderr();
     let _ = write!(err, "{question}");
     let _ = err.flush();
     let mut answer = String::new();
-    if std::io::stdin().lock().read_line(&mut answer).is_err() {
-        return false;
+    let read = std::io::stdin().lock().read_line(&mut answer);
+    match read {
+        Ok(0) | Err(_) => false,
+        Ok(_) => matches!(
+            answer.trim().to_ascii_lowercase().as_str(),
+            "" | "y" | "yes"
+        ),
     }
-    matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "" | "y" | "yes"
-    )
 }
 
 fn main() -> ExitCode {
