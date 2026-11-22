@@ -16,7 +16,7 @@ async function fixtures(page, mockDir, hide, tz) {
     const M = window.MOCK;
     const now = {};
     document.querySelectorAll('a.row[data-task]').forEach((a) => { now[a.dataset.task] = a.querySelector('.rnow').textContent; });
-    const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: t.pr || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
+    const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: (t.kind === 'pr' ? t.pr : PRS[t.id]) || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
     return { tasks, github: M.github };
   });
   const row = (t) => ({
@@ -30,13 +30,13 @@ async function fixtures(page, mockDir, hide, tz) {
     stale: false,
     line: t.line,
     last_event_at: iso(t.at), updated_at: iso(t.at),
-    pr: t.kind === 'pr' && t.pr ? { repo: t.repos[0], number: t.pr, url: 'https://github.com/' + t.repos[0] + '/pull/' + t.pr } : null,
+    pr: t.pr ? { repo: t.repos[0], number: t.pr, url: 'https://github.com/' + t.repos[0] + '/pull/' + t.pr } : null,
     needs: null, gate: null, failed: false, retryable: false,
     owner: t.owner,
   });
   const GATES = {
     41: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'review', try_n: 1, next: 'ask' }, wait: { gate: 'review', kind: 'approve', seq: 1, handed: ['before.png', 'after.png'], note: 'The avatar sat in a 48px box that hid its overflow, so tall pictures lost their top. The box is square now and the picture covers it.' } },
-    43: { gates: ['tests', 'review'], status: { state: 'stuck', gate: 'tests', why: 'exited with code 1' }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, why: 'exited with code 1', command: 'make test', tail: '--- FAIL: TestRefundOldOrder (0.02s)\n    status = 409, want 200' } },
+    43: { gates: ['tests', 'review'], status: { state: 'stuck', gate: 'tests', why: 'exited with code 1' }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, why: 'exited with code 1', command: 'make test', says: 'all tests pass', tail: '--- FAIL: TestRefundOldOrder (0.02s)\n    status = 409, want 200' } },
     57: { gates: ['evidence', 'tests', 'comment'], status: { state: 'stuck', gate: 'tests', why: 'could not run', unanswered: { check: 'npm run e2e', command: 'npm run e2e', says: null, reason: { kind: 'lost' } } }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, command: 'npm run e2e', unanswered: { check: 'npm run e2e', command: 'npm run e2e', says: null, reason: { kind: 'lost' } } } },
     44: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'agent' } },
     58: { gates: ['evidence', 'tests', 'comment'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' } },
