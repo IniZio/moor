@@ -251,7 +251,6 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 	useEffect(() => {
 		repoList().then(setKnown, () => setKnown([]));
 	}, []);
-	// With no earlier start to copy, the repo the person used last is the one the sentence names.
 	const chosen = useRef(repos.length > 0);
 	useEffect(() => {
 		if (chosen.current) return;
