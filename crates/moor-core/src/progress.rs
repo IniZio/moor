@@ -222,13 +222,18 @@ fn line_of(
                 None => now,
             }
         }
-        Progress::Done => match pr_of(b, events) {
-            Some(pr) => format!("PR #{}", pr.number),
-            None => gate::done_note(b)
-                .map(first_line)
-                .or_else(said)
-                .unwrap_or_else(|| "done".to_owned()),
-        },
+        Progress::Done => {
+            let pr = pr_of(b, events).map(|pr| format!("PR #{}", pr.number));
+            match (gate::found(b), pr) {
+                (Some(found), Some(pr)) => format!("{found} · {pr}"),
+                (found, pr) => found.or(pr).unwrap_or_else(|| {
+                    gate::done_note(b)
+                        .map(first_line)
+                        .or_else(said)
+                        .unwrap_or_else(|| "done".to_owned())
+                }),
+            }
+        }
         Progress::Asleep => "asleep".to_owned(),
         Progress::Closed => closed_failure(events)
             .and_then(|e| timeline(std::slice::from_ref(e)).pop())

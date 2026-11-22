@@ -481,3 +481,23 @@ fn a_finished_box_says_the_outcome_it_ended_in_unless_that_is_the_implicit_done(
     plain.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
     assert_eq!(derive(&plain, &[], ten()).line, "PR #7 was checked.");
 }
+
+#[test]
+fn a_finished_box_with_a_pull_request_names_the_outcome_and_the_pull_request() {
+    let b = gated(
+        BoxLifecycle::Ready,
+        SessionState::Idle,
+        passed_as("check failed", "bad"),
+    );
+    let said = ev(
+        1,
+        "agent_said",
+        "2026-11-18T09:58:00Z",
+        json!({"text": "Checked https://github.com/acme/web/pull/12."}),
+    );
+    let p = derive(&b, &[said], ten());
+    assert_eq!(
+        (p.state, p.line.as_str()),
+        (Progress::Done, "check failed · PR #12")
+    );
+}

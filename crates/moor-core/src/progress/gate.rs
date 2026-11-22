@@ -85,6 +85,14 @@ pub(super) fn done_note(b: &BoxView) -> Option<&str> {
     matches!(gate.status, GateStatus::Passed { .. }).then_some(gate.note.as_deref())?
 }
 
+/// The outcome a finished Box's run ended in, unless it is the implicit `done`.
+pub(super) fn found(b: &BoxView) -> Option<String> {
+    match open_status(b)? {
+        GateStatus::Passed { outcome } if !outcome.is_implicit() => Some(outcome.name.to_string()),
+        _ => None,
+    }
+}
+
 /// The line a gate gives a Box in `state`, when it has something to say that the agent's own
 /// words do not.
 pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
@@ -94,9 +102,6 @@ pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
     }
     let status = open_status(b)?;
     match (state, status) {
-        (Progress::Done, GateStatus::Passed { outcome }) if !outcome.is_implicit() => {
-            Some(outcome.name.to_string())
-        }
         (Progress::Working, GateStatus::Open { gate, next, .. }) if quiet(b) => Some(match next {
             GateNext::Agent => format!("gate {gate}: waiting for the agent's evidence"),
             GateNext::RunChecks => format!("gate {gate}: running its checks"),
