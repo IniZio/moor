@@ -66,11 +66,11 @@ impl Gates {
         let lines: Vec<String> = self.outcomes().iter().map(Outcome::brief).collect();
         format!(
             "\n\nHow the run ends is not yours to say: moor decides it by running the checks of \
-             these outcomes in order, and the first whose checks all pass is the run's outcome. \
-             It tries them once every gate has passed, and tries those marked \"anytime\" also \
-             whenever you stop before the gate in hand has passed. Never fake evidence or a \
-             result to reach one. If you find there is nothing to do, say so in one line and \
-             stop: moor checks the outcomes then.\n\n{}",
+             these outcomes in the order listed, and the first whose checks all pass is the run's \
+             outcome. It tries them all once every gate has passed, and tries those marked \
+             \"anytime\" also whenever you stop before the gate in hand has passed. Never fake \
+             evidence or a result to reach one. If you find there is nothing to do, say so in one \
+             line and stop: moor checks the outcomes then.\n\n{}",
             lines.join("\n")
         )
     }

@@ -56,7 +56,8 @@ impl std::fmt::Display for OutcomeName {
     }
 }
 
-/// One outcome a run may end in.
+/// One outcome a run may end in. At the closing stage moor tries every outcome, `anytime` ones
+/// included, in the order listed, and the first that holds is the run's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     /// Its name.
@@ -85,7 +86,8 @@ pub struct OutcomeDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tone: Option<Tone>,
     /// What moor runs in the Box, at most 8, as a gate's checks are written. The outcome holds
-    /// when all exit 0; moor tries the outcomes in order and the first that holds is the run's.
+    /// when all exit 0; moor tries the outcomes in the order listed and the first that holds is
+    /// the run's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<CheckDoc>,
     /// True to also try it whenever the agent goes quiet before the gate in hand has passed;

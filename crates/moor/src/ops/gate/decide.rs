@@ -1,5 +1,5 @@
-//! Deciding the outcome: moor runs the checks of the outcomes due, in order, and the first whose
-//! checks all pass is the run's. The agent never claims one.
+//! Deciding the outcome: moor runs the checks of the outcomes due, in the order listed, and the
+//! first whose checks all pass is the run's. The agent never claims one.
 //!
 //! At the closing stage a result is always written: the outcome that held, or that none did,
 //! which fails the try and is steered to the agent. While the gate in hand has not passed only the
