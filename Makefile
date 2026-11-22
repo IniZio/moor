@@ -8,11 +8,11 @@ LLVM_COV_VERSION := 0.9.1
 HELM_VERSION := 3.21.3
 BUN_VERSION := 1.3.14
 
-PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
-MOOR_TEST_S3_PORT ?= 9000
-export MOOR_TEST_S3_PORT
+PG_PORT = $$(docker compose port postgres 5432 2>/dev/null | sed 's/.*://' | grep . || echo 5432)
+S3_PORT = $$(docker compose port s3 9000 2>/dev/null | sed 's/.*://' | grep . || echo 9000)
+PG_URL ?= postgres://moor:moor@127.0.0.1:$(PG_PORT)/moor
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci ci-gates ci-down ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
 
 help:
 	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
@@ -146,8 +146,8 @@ dev-db:
 	docker compose up -d --wait postgres
 
 unit-pg:
-	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-schema)'
-	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked -E 'package(moor) & ((kind(lib) & test(/^store::/) - test(/^store::db::sqlite::/)) | (binary(cli) & test(/^controller_lock::/)))'
+	MOOR_TEST_POSTGRES_URL="$(PG_URL)" cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-schema)'
+	MOOR_TEST_POSTGRES_URL="$(PG_URL)" cargo nextest run --workspace --all-targets --locked -E 'package(moor) & ((kind(lib) & test(/^store::/) - test(/^store::db::sqlite::/)) | (binary(cli) & test(/^controller_lock::/)))'
 
 overlap:
 	@set -f; tools/stack-overlap.sh --pretty '$(BASE)' $(if $(HEAD),'$(HEAD)') $(if $(FILES),--files $(FILES))
@@ -156,6 +156,12 @@ coverage:
 	cargo llvm-cov --workspace --locked
 
 ci: ci-tools
+	@$(MAKE) ci-gates; status=$$?; $(MAKE) ci-down; exit $$status
+
+ci-down:
+	docker compose --profile setup down --volumes --remove-orphans
+
+ci-gates:
 	$(MAKE) audit
 	$(MAKE) chart
 	$(MAKE) web
@@ -182,11 +188,11 @@ build:
 
 dev-s3:
 	docker compose up -d s3
-	@for _ in $$(seq 30); do curl -fs -o /dev/null http://127.0.0.1:$(MOOR_TEST_S3_PORT)/health && break; sleep 1; done
+	@for _ in $$(seq 30); do curl -fs -o /dev/null http://127.0.0.1:$(S3_PORT)/health && break; sleep 1; done
 	docker compose run --rm s3-bucket
 
 unit-s3:
-	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(MOOR_TEST_S3_PORT) cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor) & kind(lib) & test(/::s3_/)'
+	MOOR_TEST_S3_ENDPOINT=http://127.0.0.1:$(S3_PORT) cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor) & kind(lib) & test(/::s3_/)'
 
 unit-egress:
 	cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-core) & kind(lib) & test(exec_env::tests::egress_load)'
