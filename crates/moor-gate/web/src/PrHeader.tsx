@@ -48,23 +48,7 @@ function State({ p, listed }: { p: RepoPull; listed: number | null }) {
 }
 
 /** Where the Box's pull request stands on GitHub, inline in the task head after its PR link, and a link to its next step unless that link is the head's own. Other repos follow the first. The task head already shows the number `listed`, so this does not repeat it. */
-export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail['pr']; listed: number | null }) {
-	const [pulls, setPulls] = useState<RepoPull[] | null>(null);
-	const [error, setError] = useState('');
-	useEffect(() => {
-		let live = true;
-		const run = () =>
-			boxPulls(box).then(
-				(next) => live && (setPulls(next), setError('')),
-				(e: Error) => live && setError(e.message),
-			);
-		void run();
-		const timer = setInterval(() => !document.hidden && void run(), PR_POLL_MS);
-		return () => {
-			live = false;
-			clearInterval(timer);
-		};
-	}, [box]);
+export function PrInline({ pulls, error, named, listed }: { pulls: RepoPull[] | null; error: string; named: BoxDetail['pr']; listed: number | null }) {
 	const [first, ...rest] = pulls ?? [];
 	const silent = !error && (!first || (!first.url && !first.unread && (first.state === 'none' || first.state === 'unpushed') && !named));
 	if (silent) return null;
@@ -88,7 +72,7 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 				</a>
 			)}
 			{first.url && !own && (
-				<a class={`pr-step${first.state === 'merged' ? ' pr-done' : ''}`} href={first.url} target="_blank" rel="noopener">
+				<a class={`pr-step${first.state === 'none' ? ' pr-go' : ''}${first.state === 'merged' ? ' pr-done' : ''}`} href={first.url} target="_blank" rel="noopener">
 					{step(first)} ↗
 				</a>
 			)}
@@ -97,7 +81,7 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 					<span class="t-mono muted">{p.repo}</span>
 					{p.unread ? <span class="muted">GitHub could not be read</span> : <State p={p} listed={null} />}
 					{p.url && (
-						<a class="pr-step" href={p.url} target="_blank" rel="noopener">
+						<a class={`pr-step${p.state === 'none' ? ' pr-go' : ''}`} href={p.url} target="_blank" rel="noopener">
 							{step(p)} ↗
 						</a>
 					)}
@@ -105,4 +89,25 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 			))}
 		</span>
 	);
+}
+
+/** `PrInline` for Box `box`, read through moor's cache of GitHub on a slow poll. */
+export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail['pr']; listed: number | null }) {
+	const [pulls, setPulls] = useState<RepoPull[] | null>(null);
+	const [error, setError] = useState('');
+	useEffect(() => {
+		let live = true;
+		const run = () =>
+			boxPulls(box).then(
+				(next) => live && (setPulls(next), setError('')),
+				(e: Error) => live && setError(e.message),
+			);
+		void run();
+		const timer = setInterval(() => !document.hidden && void run(), PR_POLL_MS);
+		return () => {
+			live = false;
+			clearInterval(timer);
+		};
+	}, [box]);
+	return <PrInline pulls={pulls} error={error} named={named} listed={listed} />;
 }

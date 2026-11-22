@@ -182,12 +182,6 @@ a.t-row[data-peek]:hover .t-age, a.t-row[data-peek]:focus-visible .t-age, a.t-ro
 .t-pill { font-weight: 650; padding: 0.15rem 0.6rem; border-radius: var(--moor-radius-pill); border: 1px solid currentColor; color: var(--t-tone); font-size: 0.8125rem; }
 .t-pill.t-needs { background: var(--moor-color-accent-soft); }
 .t-pill.t-stale { color: var(--moor-color-warning); }
-.t-prline { margin: var(--moor-space-2) 0 0; }
-.t-prline a { color: var(--moor-color-accent); }
-.pr-line { display: flex; align-items: center; gap: var(--moor-space-2); flex-wrap: wrap; }
-.pr-line .btn { color: var(--moor-color-text); height: 1.75rem; }
-.pr-line .btn.primary { color: var(--moor-color-on-accent); }
-.pr-label { font-weight: 650; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
 .pr-state { display: inline-flex; align-items: center; gap: var(--moor-space-2); }
 .pr-word { font-weight: 600; color: var(--pr-tone, var(--moor-color-text-muted)); }
 .pr-draft { --pr-tone: var(--moor-color-text-muted); }
@@ -198,9 +192,6 @@ a.t-row[data-peek]:hover .t-age, a.t-row[data-peek]:focus-visible .t-age, a.t-ro
 .pr-checks { font-size: 0.8125rem; color: var(--moor-color-warning); }
 .pr-checks.pr-passing { color: var(--moor-color-success); }
 .pr-checks.pr-failing { color: var(--moor-color-danger); }
-.btn.pr-done { border-color: var(--moor-color-success); color: var(--moor-color-success); }
-.pr-others { list-style: none; margin: var(--moor-space-1) 0 0; padding: 0; font-size: 0.8125rem; }
-.pr-others li { display: flex; align-items: center; gap: var(--moor-space-2); }
 .t-tabs { display: flex; gap: var(--moor-space-1); border-bottom: 1px solid var(--moor-color-border); margin: var(--moor-space-3) 0 var(--moor-space-4); }
 .t-tab { padding: 0.55rem 0.8rem; text-decoration: none; color: var(--moor-color-text-muted); font-weight: 560; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .t-tab[aria-selected='true'] { color: var(--moor-color-text); border-bottom-color: var(--moor-color-accent); }

@@ -11,6 +11,9 @@
 .t-th-pr, .pr-inline { line-height: 18px; }
 .pr-inline, .pr-other { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .pr-inline .pr-step { color: inherit; }
+.pr-inline a.t-mono { color: var(--moor-color-accent); }
+.pr-inline .pr-step.pr-go { color: var(--moor-color-accent); font-weight: var(--moor-weight-strong); }
+.pr-inline .pr-step.pr-done { color: var(--moor-color-success); }
 .t-th1 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
 .t-th-title { margin: 0; font: var(--moor-weight-heading) var(--moor-text-2xl) / 1.2 var(--moor-font-heading); min-width: 0; overflow-wrap: anywhere; }
 .t-th1 > .t-pill { flex: none; padding: 1px 9px; font-size: 0.75rem; font-weight: var(--moor-weight-strong); }
@@ -43,6 +46,7 @@ summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-sg-state { font-size: 0.875rem; font-weight: var(--moor-weight-strong); color: var(--moor-color-text-muted); }
 .t-sg-state::before { content: '· '; font-weight: 400; }
 .t-sg.t-quiet .t-sg-row { color: var(--moor-color-text-muted); }
+.t-sg.t-warn { --t-tone: var(--moor-color-warning); color: inherit; }
 .t-sg-hand { box-shadow: inset 2px 0 0 var(--t-tone); }
 .t-sg-hand .t-sg-state, .t-sg-hand .t-sg-n { color: var(--t-tone); }
 .t-sg-end .t-sg-row { font-size: 0.875rem; }
@@ -74,4 +78,5 @@ summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-box .t-moor .t-what { padding-left: 0; border-left: 0; font-size: inherit; }
 .t-box .t-fold, .t-box .t-tool-fold { padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
 .t-box .t-fold summary, .t-box .t-tool-fold > summary { display: block; width: auto; padding: 0 0 0 calc(4rem + 10px); font-size: 0.875rem; color: var(--moor-color-text-muted); }
+.t-box .t-fold .t-chev { margin-right: 4px; }
 .t-box .t-fold-body, .t-box .t-tool-runs { margin: 4px 0 0 calc(4rem + 10px); }

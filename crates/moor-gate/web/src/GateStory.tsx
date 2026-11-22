@@ -5,7 +5,7 @@ import { closingRow, GATE_LOOK, type GateRow, type GateView, gateRows, ruleSente
 import './story.css';
 
 /** The states in which a gate is in hand. */
-const IN_HAND = new Set<GateRow['state']>(['working', 'asking', 'stuck', 'failed']);
+const IN_HAND = new Set<GateRow['state']>(['working', 'asking', 'stuck', 'nocheck', 'failed']);
 
 type Docs = Pick<Workflow, 'gates' | 'outcomes'>;
 

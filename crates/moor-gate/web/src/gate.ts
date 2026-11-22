@@ -100,7 +100,7 @@ export type GateView = v.InferOutput<typeof GateViewSchema>;
 export type Wait = v.InferOutput<typeof WaitSchema>;
 export type Unanswered = v.InferOutput<typeof UnansweredSchema>;
 
-export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | 'later' | 'bad' | 'plain';
+export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'nocheck' | 'failed' | 'later' | 'bad' | 'plain';
 
 /** One line of the gate list. */
 export type GateRow = { name: string; state: GateState; words: string };
@@ -111,6 +111,7 @@ export const GATE_LOOK: Record<GateState, { glyph: string; tone: string }> = {
 	working: { glyph: '◐', tone: 'working' },
 	asking: { glyph: '●', tone: 'needs' },
 	stuck: { glyph: '✗', tone: 'failed' },
+	nocheck: { glyph: '!', tone: 'warn' },
 	failed: { glyph: '✕', tone: 'failed' },
 	later: { glyph: '○', tone: 'quiet' },
 	bad: { glyph: '!', tone: 'failed' },
@@ -123,6 +124,7 @@ const TRIED = ['', 'once', 'twice'];
 function atGate(name: string, status: Exclude<GateView['status'], { state: 'passed' }>, tries?: number | null): GateRow {
 	switch (status.state) {
 		case 'stuck':
+			if (status.unanswered) return { name, state: 'nocheck', words: 'moor could not run it' };
 			return { name, state: 'stuck', words: tries ? `stuck, tried ${TRIED[tries] ?? `${tries} times`}` : 'stuck' };
 		case 'failed':
 			return { name, state: 'failed', words: 'failed' };
@@ -180,7 +182,7 @@ export function closingRow(view: GateView): GateRow | null {
 		return { name: 'Outcome', state: o.tone === 'good' ? 'passed' : o.tone, words: outcomeLine(o) };
 	}
 	if (status.state === 'open' && status.next === 'decide') return { name: 'Outcome', state: 'working', words: 'moor is checking which outcome holds' };
-	if (status.state === 'stuck' && status.gate === CLOSING) return { name: 'Outcome', state: 'stuck', words: 'stuck · needs you' };
+	if (status.state === 'stuck' && status.gate === CLOSING) return status.unanswered ? { name: 'Outcome', state: 'nocheck', words: 'moor could not run its checks' } : { name: 'Outcome', state: 'stuck', words: 'stuck' };
 	return null;
 }
 

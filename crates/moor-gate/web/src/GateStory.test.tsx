@@ -96,3 +96,11 @@ test('a one-off gate that waits for a person reads what it holds the agent to of
 	const yes = GateStory({ gate: waiting, docs: null, card: null, wait: { ...stuckWait, gate: 'review', kind: 'approve', try_n: 1, says: null } });
 	expect(rows(yes)[2]).toBe('●3reviewwaiting for your yesneeds your yes before it counts as done');
 });
+
+test("a gate stuck because moor got no answer from its check is moor's trouble, not a failed try", () => {
+	const unanswered = { check: 'npm run e2e', command: 'npm run e2e', says: null, reason: { kind: 'lost' as const } };
+	const view = GateStory({ gate: { gates: ['evidence', 'tests'], status: { state: 'stuck', gate: 'tests', why: 'could not run', unanswered } }, docs: null, card: null });
+	expect(rows(view)).toEqual(['✓1evidencepassed', '!2testsmoor could not run it']);
+	const closing = GateStory({ gate: { gates: ['proof'], status: { state: 'stuck', gate: 'outcome', why: 'no answer', unanswered } }, docs: null, card: null });
+	expect(rows(closing).at(-1)).toBe('!outcomemoor could not run its checks');
+});

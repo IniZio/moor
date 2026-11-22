@@ -61,7 +61,8 @@ test('setup lines fold as setting up the Box on its machine; other routine lines
 		timeline: kinds.map((kind, i) => entry({ id: i + 1, kind, class: 'routine', text: kind })),
 	});
 	const summary = (d: BoxDetail) => textOf(all(Timeline({ detail: d }), 'summary')[0]);
-	expect(summary(detail('my-laptop', ['setup_line_finished', 'cloned']))).toBe('▸ Set up the Box on my-laptop');
-	expect(summary(detail(null, ['setup_line_finished']))).toBe('▸ 1 setup note');
-	expect(summary(detail('my-laptop', ['setup_line_finished', 'session_ended']))).toBe('▸ 2 setup notes');
+	const real = ['started', 'setting_up', 'box_requested', 'step_started', 'box_progress', 'step_finished', 'box_ready', 'cloned', 'working', 'session_started'];
+	expect(summary(detail('local-agent', real))).toBe('▸ Set up the Box on local-agent');
+	expect(summary(detail(null, real))).toBe('▸ 10 setup notes');
+	expect(summary(detail('local-agent', ['step_finished', 'idled']))).toBe('▸ 2 setup notes');
 });

@@ -105,15 +105,18 @@ function clock(iso: string): string {
 	return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-/** Whether a line is part of setting the Box up. */
-const isSetup = (e: Entry) => e.class === 'routine' && (e.kind.startsWith('setup') || e.kind === 'cloned');
+/** The lines that only setting a Box up writes. */
+const SETUP = new Set(['setting_up', 'box_requested', 'box_ready', 'cloned']);
 
-/** Folded routine lines; a fold of setup lines alone reads as setting up the Box on `machine`. */
+/** Whether a fold of lines is the Box being set up: routine lines only, with one that only setup writes. */
+const isSetup = (entries: Entry[]) => entries.every((e) => e.class === 'routine') && entries.some((e) => SETUP.has(e.kind) || e.kind.startsWith('setup'));
+
+/** Folded routine lines; the fold that sets the Box up reads as setting it up on `machine`. */
 function Fold({ entries, machine }: { entries: Entry[]; machine: string | null | undefined }) {
 	const steps = entries.filter((e) => e.class === 'step').length;
 	const notes = entries.length - steps;
 	const said =
-		machine && entries.every(isSetup)
+		machine && isSetup(entries)
 			? `Set up the Box on ${machine}`
 			: [steps && `${steps} tool call${steps === 1 ? '' : 's'}`, notes && `${notes} setup note${notes === 1 ? '' : 's'}`].filter(Boolean).join(', ');
 	return (
