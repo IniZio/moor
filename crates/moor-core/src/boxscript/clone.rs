@@ -106,7 +106,7 @@ impl CloneStep {
 /// `c.url`'s branches and tags into the mirror and then clones with `--reference` and
 /// `--dissociate`, so two Boxes never write the mirror at once, a fetch never prunes objects a clone
 /// is reading, and the Box keeps no link to the mirror. The URL is passed on the command line, so
-/// the mirror's config holds no remote. A missing `flock`, a lock held past [`MIRROR_WAIT_SECS`]
+/// the mirror's config holds no remote. A missing `flock`, a lock held past ten minutes
 /// or a mirror git cannot fetch into is printed after [`MIRROR_SKIPPED`], and the clone goes to
 /// `c.url` alone, as without a mirror.
 ///
