@@ -325,3 +325,16 @@ fn with_no_anytime_outcome_holding_the_gates_check_runs_in_the_same_pass() {
         "tried again on the next try"
     );
 }
+
+#[test]
+fn a_lost_anytime_check_at_a_gate_with_only_checks_holds_back_the_gates_check_too() {
+    let f = fx_outcomes_on(
+        FakeDriver::new().exec_fails_once_when("no nothing to do", cut()),
+        |dir| three(dir, vec![gate("tests", &["true"], 2)]),
+    );
+    f.quiet();
+    f.pass();
+    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    f.pass();
+    assert_eq!(kinds(&f), ["checked"], "the next pass runs both");
+}
