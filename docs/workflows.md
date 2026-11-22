@@ -153,8 +153,8 @@ without `gates` keeps them, and `gates: []` removes them.
 The gates, not the agent going quiet, decide how the run ends.
 
 - Every gate passed, or an `anytime` outcome held first. The run is `finished`
-  in the outcome moor found, and its result is the note of the agent's last
-  accepted report.
+  in the outcome moor found. Its result is the note of the agent's last accepted
+  report.
 - A gate failed for good, as when the owner says no on its last try. The run
   `failed` with the gate's reason.
 - moor got no answer from its checks twice in a row, of the gate or of an
@@ -224,15 +224,15 @@ An outcome has a `name` and any of these.
 | `says` | One plain sentence of what the outcome means, up to 200 characters. |
 | `tone` | `good` when left out, `bad` for bad news such as a failed check, or `plain` for neither. |
 | `checks` | What moor runs in the Box, written as a gate's checks. The outcome holds when all exit 0. |
-| `anytime` | `true` to also try the outcome whenever the agent goes quiet before it hands in the gate in hand. It needs a check. |
+| `anytime` | `true` to also try it each time the agent goes quiet before the gate in hand passes. It needs a check. |
 
 moor decides the outcome itself, and the agent never claims one. Once every gate
 has passed, moor tries the outcomes in order. The first whose checks all exit 0
 is the run's outcome. An outcome with no checks always holds, so it goes last.
 
-An `anytime` outcome that holds ends the run at once. The gates it never
-reached read `not reached` on the run page and the Box page. `moor show` says
-how many gates passed.
+An `anytime` outcome that holds ends the run at once. On the run page and the
+Box page, the gate in hand reads `ended` and the gates after it read `not
+reached`. `moor show` says how many gates passed.
 
 When no outcome holds, moor steers the agent once and tries again. When none
 holds again, the run waits as for a stuck gate. The Box card lists each outcome
