@@ -203,6 +203,13 @@ export function whyWords(why: string, says?: string | null): string {
 	return spent ? `${sentence} No tries left.` : sentence;
 }
 
+/** A reason as the tail of a row's line: no code marks, the exit code said out, no capital and no full stop. */
+function whyPhrase(why: string): string {
+	const spent = /^out of tries: /i.test(why.trim());
+	const text = why.trim().replace(/^out of tries: /i, '').replace(/\s*\(`[^`]*`\)/, '').replace(/`/g, '').replace(/\bexited (-?\d+)/, 'exited with code $1').replace(/[.!?]$/, '');
+	return spent ? `${text}, no tries left` : text;
+}
+
 /** What a stage stuck for want of answers says first: moor's trouble, not the agent's. */
 export const UNANSWERED_HEAD = 'moor got no answer from its checks.';
 
@@ -217,18 +224,20 @@ export function closingWaitWords(lines: readonly { kind: string; unanswered?: Un
 	return lines.filter((l) => l.kind === 'gate_waiting').at(-1)?.unanswered ? UNANSWERED_HEAD : 'No outcome holds.';
 }
 
-/** The one line a list row or a card says about its gates when a person has something to do or it failed; none otherwise. */
+/** The one line a list row or a card says about its gates: the gate it works toward, waits at, or failed at; none once it passed. */
 export function gateLine(view: GateView | null | undefined): string | null {
 	const status = view && !stopped(view) ? view.status : undefined;
 	switch (status?.state) {
 		case 'stuck':
-			if (status.unanswered) return UNANSWERED_HEAD;
-			if (status.gate !== CLOSING) return `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
+			if (status.unanswered) return status.gate === CLOSING ? UNANSWERED_HEAD : `moor could not run ${quoted(status.gate)} twice`;
+			if (status.gate !== CLOSING) return `Stuck on ${quoted(status.gate)}: ${whyPhrase(status.why)}`;
 			return 'No outcome holds. moor tried each outcome twice.';
 		case 'failed':
 			return `Failed at ${quoted(status.gate)}: ${whyWords(status.why)}`;
 		case 'open':
-			return status.next === 'ask' ? `Waiting for your yes or no on ${quoted(status.gate)}` : null;
+			if (status.next === 'ask') return `Waiting for your yes on ${quoted(status.gate)}`;
+			if (status.next === 'agent') return `Working toward ${quoted(status.gate)}`;
+			return status.next === 'run_checks' ? `moor is running ${quoted(status.gate)}` : null;
 		default:
 			return null;
 	}

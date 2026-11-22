@@ -51,11 +51,13 @@ test('the words for a reason carry no code marks and leave the command to the ca
 	expect(whyWords('the agent went quiet')).toBe('The agent went quiet.');
 });
 
-test('the one-line gate story names a gate that waits for a person or failed, and is silent when nothing is asked', () => {
-	expect(gateLine(view({ state: 'open', gate: 'review', try_n: 1, next: 'ask' }))).toBe('Waiting for your yes or no on “review”');
-	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'the agent went quiet' }))).toBe('“tests” is stuck: The agent went quiet.');
+test('the one-line gate story names the gate a task works toward, waits at or failed at, and is silent once it passed', () => {
+	expect(gateLine(view({ state: 'open', gate: 'review', try_n: 1, next: 'ask' }))).toBe('Waiting for your yes on “review”');
+	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'the agent went quiet' }))).toBe('Stuck on “tests”: the agent went quiet');
+	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 (`make test`) exited 1' }))).toBe('Stuck on “tests”: check 1 exited with code 1, no tries left');
 	expect(gateLine(view({ state: 'failed', gate: 'review', why: 'the owner said no: too wide' }))).toBe('Failed at “review”: The owner said no: too wide.');
-	expect(gateLine(view({ state: 'open', gate: 'plan', try_n: 1, next: 'agent' }))).toBeNull();
+	expect(gateLine(view({ state: 'open', gate: 'plan', try_n: 1, next: 'agent' }))).toBe('Working toward “plan”');
+	expect(gateLine(view({ state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' }))).toBe('moor is running “tests”');
 	expect(gateLine(view({ state: 'passed' }))).toBeNull();
 	expect(gateLine(null)).toBeNull();
 });
@@ -126,14 +128,14 @@ test('the closing row names what moor found with its sentence, says moor is chec
 test('the rail line for a stuck closing stage speaks of the outcome, not a gate named outcome', () => {
 	const line = gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why: 'out of tries: no outcome held' } });
 	expect(line).toBe('No outcome holds. moor tried each outcome twice.');
-	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 exited 2' }))).toContain('“tests” is stuck');
+	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 exited 2' }))).toContain('Stuck on “tests”');
 });
 
 test('the rail line for a stage moor got no answer from says so for either reason, with no word of an outcome holding', () => {
 	const why = 'moor, not the agent, got no answer from its checks twice in a row; the last was check 1';
 	for (const unanswered of [NOT_RUN, LOST]) {
 		expect(gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why, unanswered } })).toBe('moor got no answer from its checks.');
-		expect(gateLine(view({ state: 'stuck', gate: 'tests', why, unanswered }))).toBe('moor got no answer from its checks.');
+		expect(gateLine(view({ state: 'stuck', gate: 'tests', why, unanswered }))).toBe('moor could not run “tests” twice');
 	}
 });
 
