@@ -2,7 +2,7 @@
 
 moor reads a task prompt before the task starts. It shows the prompt back with marks on the words and notes in the margin. A person answers moor's questions, then starts the task. The task is held to the reading they saw.
 
-The same reader reads a repo's note and an automation's prompt. This page settles the data shape, where the reading runs, how answers and edits work, and the order of pull requests. It is the design behind "Read it" in the signed-off portal mock v5. The [position spec](https://github.com/IniZio/moor/blob/db4373fc99339012e785ccd63fd021989c518f2b/docs/specs/position.md) on [#1592](https://github.com/IniZio/moor/pull/1592) proposes the model. This page is the build plan for its reading.
+The same reader reads a repo's note and an automation's prompt. This page settles the data shape, where the reading runs, how answers and edits work, and the order of pull requests. It is the design behind "Read it" in the signed-off portal mock v5. The [position spec](https://github.com/IniZio/moor/blob/db4373fc99339012e785ccd63fd021989c518f2b/docs/specs/position.md) on [#1592](https://github.com/IniZio/moor/pull/1592) proposes the model. This page is the build plan for its reading. The [experience spec](end-user-experience.md) and the [runs spec](runs.md) are unchanged by it, except where open question 4 retires Plan first.
 
 ## Decisions
 
@@ -13,7 +13,8 @@ The same reader reads a repo's note and an automation's prompt. This page settle
 | A note says one plan item, and moor writes its sentence. | The words beside the prompt are then exactly what moor will hold. |
 | The reading runs as an agent turn in a reading Box. | The harness stays swappable and moor holds no model key. The position spec already decided it. |
 | A task or automation reading has no repos. A repo note reading clones that one repo. | A note's questions need the repo's files, such as "package.json has both". |
-| An answer applies at once, with no model call. An edit needs Read again. | Each answer carries its new words and its plan items. Only free text needs reading. |
+| An answer applies at once, with no model call. An edit, or an answer that adds a repo, needs Read again. | Each answer carries its new words and its plan items. Only free text and a new repo's note need reading. |
+| An ending or check moor cannot run reads dashed. The reader may write a check command, and the note shows it. | A solid line must stand for a command moor runs. The person sees every command before Start. |
 | Start sends a reading id and the answers. moor compiles the gates and refuses a stale reading. | The plan is frozen from what the person saw, never from a fresh reading. |
 | A one-off task gets gates through the existing `gates` field of a Box start. | `start_box` already takes gates. Only the portal start lacks them. |
 | A repo note names checks. A gate check can point at one by name. | "The tests pass" then means one command, written once per repo. |
@@ -27,6 +28,7 @@ The same reader reads a repo's note and an automation's prompt. This page settle
 - **Gate types.** [gate.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor-core/src/gate.rs) allows 1 to 8 gates. A gate has evidence, checks and an `owner` approval. A check is a command or `{run, says}`, per [check.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor-core/src/gate/check.rs). Outcomes are in [outcome.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor-core/src/gate/outcome.rs).
 - **Repo config.** [repo.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor-core/src/config/repo.rs) holds brief, setup, teardown, env, compose, box, credentials, cache, machine, node and proxy. It has no checks. People edit it as YAML in the portal.
 - **Inbox.** [user_inbox.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor/src/store/user_inbox.rs) writes one row per event and a read mark. There is no way to remove a row.
+- **Box with no repo.** The controller's start request has an optional repo, per [tests.rs](https://github.com/IniZio/moor/blob/e11ae95fff9f089d905eaab59e8f21972555ef28/crates/moor/src/ops/start/tests.rs). The portal and `start_box` both require repos.
 - **No reader.** Nothing reads a prompt. The mock fakes it with a timer and two canned readings.
 
 ## Prior art
@@ -56,7 +58,7 @@ classDiagram
 		quote: exact, prefix, suffix
 		at: start, end
 	}
-	class Note {
+	class MarginNote {
 		para
 		item
 		why
@@ -70,12 +72,12 @@ classDiagram
 		text
 	}
 	Reading "1" o-- "*" Mark
-	Reading "1" o-- "*" Note
+	Reading "1" o-- "*" MarginNote
 	Reading "1" o-- "*" Question
-	Note "*" --> "0..*" Mark : ties to
+	MarginNote "*" --> "0..*" Mark : ties to
 	Question "1" --> "1" Mark : asks about
 	Question "1" o-- "2..4" Answer
-	Answer "1" o-- "*" Note : replaces the question's notes
+	Answer "1" o-- "*" MarginNote : replaces the question notes
 ```
 
 ```ts
@@ -94,7 +96,7 @@ type Reading = {
 type Mark = { id: MarkId; quote: { exact: string; prefix?: string; suffix?: string }; at: { start: number; end: number } }
 type Note = { id: NoteId; marks: MarkId[]; para: number; item: Item; why?: string }
 type Question = { id: QuestionId; mark: MarkId; ask: string; why?: string; answers: Answer[] }
-type Answer = { label: string; text: string; notes: Note[] }   // text replaces the mark's exact words
+type Answer = { label: string; text?: string; notes: Note[]; adds_repo?: Repo }  // text replaces the mark's exact words
 type Item =
   | { gate: GateDoc }              // checks may name a repo note's check
   | { outcome: OutcomeDoc }
@@ -111,6 +113,9 @@ Rules the shape keeps.
 - **A note may tie to several marks.** One gate can rest on two phrases.
 - **A note's sentence comes from its item.** moor writes the gate's sentence from the gate itself, such as "the tests pass". The model's own words go only in `why`.
 - **An answer's notes replace its question's notes.** So a note's text can change with the answer, as the mock shows.
+- **An answer may add a repo.** A prompt that names a repo outside the task asks "Add it or leave it". "Leave it" rewrites the words. "Add it" adds the repo and reads again, since that repo's note joins the reading.
+- **Outcomes need a gate.** `Gates::parse` refuses zero gates. A reading with endings and no gate reads its endings dashed.
+- **An ending moor cannot check reads dashed.** "If the avatar already shows in full, stop" has no command. Its note says moor cannot check it, and the agent may stop and say so.
 - **Live state is not in the reading.** The task page joins a gate note to the gate's status by name. An outcome note joins to the verdict.
 - **A diff is not in the reading.** moor compares two readings when it shows a change.
 
@@ -174,7 +179,7 @@ sequenceDiagram
 	C-->>P: reading
 ```
 
-- **What the Box has.** No repos for a task or an automation. The one repo, cloned at its default branch, for a repo note. No setup, no secrets, no GitHub writes.
+- **What the Box has.** No repos for a task or an automation. The one repo, cloned at its default branch, for a repo note. No setup, no repo secrets and no Box credentials. The harness keeps only its own model login. No GitHub writes.
 - **What it gets.** Reader instructions for the kind of source. The source. For a task, each repo's note plan and check names. On a re-read, the earlier answers.
 - **How it hands in.** One MCP tool, `hand_in_reading`. moor validates it at the boundary. Every combination of answers must compile through `Gates::parse`.
 - **When it fails.** Three refused hand-ins, or none in 3 minutes, ends the reading as failed. The page shows the reason and a Read again button. moor never retries by itself.
@@ -252,7 +257,7 @@ checks:
 
 A gate check gains a third form, `{ check: tests, repo: acme/web }`. Leave out `repo` when exactly one repo of the task names the check. moor resolves a one-off's checks at Start. It resolves a workflow's when a run fires. It runs in that repo's folder. The frozen gate keeps both the name and the command, so the page says "tests (npm test)". A name that resolves to no repo, or to two, is refused with the name. The reader asks "Which tests?" before that can happen.
 
-A check the prompt describes and no note names has no command yet. "Compare main and the branch" is one. The reader may write the command. The note's detail shows it and says moor's reading wrote it. See open question 3.
+A check the prompt describes and no note names has no command yet. "Compare main and the branch" is one. The reader may write the command. The note's detail shows it and says moor's reading wrote it. With no command, the words read dashed.
 
 ## The repo note
 
@@ -299,12 +304,12 @@ An automation's prompt is read the same way. Edit and Read again give a new read
 ```mermaid
 flowchart LR
 	P1[1 Inbox clear]
-	P2[2 Named checks] --> P9
-	P3[3 Reading type] --> P4[4 Reading Box] --> P5[5 Reading page] --> P6[6 Start from a reading]
-	P6 --> P7[7 Edit and Read again]
-	P6 --> P8[8 Whole prompt on the task]
-	P4 --> P9[9 Repo note page] --> P10[10 Drafts and repo list]
-	P7 --> P11[11 Automations read]
+	P2[2 Named checks] --> P3[3 Reading type]
+	P3 --> P4[4 Reading Box] --> P5[5 Marked prose] --> P6[6 Questions] --> P7[7 Start from a reading]
+	P7 --> P8[8 Edit and Read again]
+	P7 --> P9[9 Whole prompt on the task]
+	P4 --> P10[10 Repo note store] --> P11[11 Repo note page] --> P12[12 Drafts and repo list]
+	P8 --> P13[13 Automations read]
 ```
 
 | # | Pull request | Lines | Check that ends it |
@@ -312,23 +317,25 @@ flowchart LR
 | 1 | Inbox remove and Clear all | ~350 | A cleared row stays hidden after its event is written again. In a browser, Clear all survives a reload and the task is unchanged. |
 | 2 | Named checks in the repo config and the gate check form | ~600 | On the fixture repo, a Box with `{check: tests}` and a failing test never reads done. An unknown name is refused at start. |
 | 3 | The reading type, quote placing, style derivation and compile, in moor-core | ~900 | The mock's two readings, as JSON fixtures, place every quote and compile through `Gates::parse`. A doubled or wrong quote is refused by name. |
-| 4 | The reading Box, `hand_in_reading`, the readings table and routes | ~1000 | A live read of the bug prompt on the fixture repo. Every mark's exact text is in the prompt. A forced bad hand-in ends failed with its reason. Time to read is logged. |
-| 5 | Read it and the reading page: marks, margin notes, questions, Start waiting | ~1000 | In a browser, the bug prompt reads, two questions block Start, and answers and Undo change the notes. |
-| 6 | Start from a reading: compile, freeze, stale refusal | ~600 | The started Box shows three gates. Editing after the read makes Start refuse. A failing test keeps the task open. |
-| 7 | Edit in place, Read again, Discard | ~600 | An edited paragraph is flagged. Read again gives a new reading that keeps the answers. |
-| 8 | The whole prompt on the task page, with live state | ~600 | A gated task's page shows passed and waiting on the right notes. |
-| 9 | Repo note page, note and reading on config revisions, YAML view, `set_repo_config` takes a note | ~1000 | A saved fixture note makes the next Box run its setup and its "tests" check. |
-| 10 | Draft it from the repo or from YAML, and the Team repo list | ~800 | An empty fixture repo drafts a note naming npm test. A YAML-only repo drafts a note that reads back to the same config. |
-| 11 | Automations read, plan diff, Save as revision N, Repeat this | ~900 | Adding lint to the fixture evidence prompt shows "+ gate 2 now also checks lint" and saves a revision. |
+| 4 | The reading Box with no repo, `hand_in_reading`, the readings table and routes | ~1000 | A live read of the bug prompt on the fixture repo. Every mark's exact text is in the prompt. A forced bad hand-in ends failed with its reason. Time to read is logged. |
+| 5 | Read it and the marked prose: marks, margin notes, ties, the legend | ~800 | In a browser, the bug prompt reads with solid, dashed and wavy marks. Notes hang beside their paragraphs and stack under 761 px. |
+| 6 | Questions: answers, Undo, Start waiting, keys on notes | ~600 | In a browser, two questions block Start. An answer rewrites its sentence and Undo restores it. |
+| 7 | Start from a reading: compile, freeze, stale refusal | ~600 | The started Box shows three gates. Editing after the read makes Start refuse. A failing test keeps the task open. |
+| 8 | Edit in place, Read again, Discard, Add it | ~600 | An edited paragraph is flagged. Read again gives a new reading that keeps the answers. |
+| 9 | The whole prompt on the task page, with live state | ~600 | A gated task's page shows passed and waiting on the right notes. |
+| 10 | Repo note store: note and reading on config revisions, `set_repo_config` takes a note | ~800 | Over MCP, a fixture note saves. The next Box runs its setup and its "tests" check. |
+| 11 | Repo note page: marked note, questions, revision line, save, YAML view | ~900 | In a browser, the fixture note saves as a new revision. The YAML view matches the stored config. |
+| 12 | Draft it from the repo or from YAML, and the Team repo list | ~800 | An empty fixture repo drafts a note naming npm test. A YAML-only repo drafts a note that reads back to the same config. |
+| 13 | Automations read, plan diff, Save as revision N, Repeat this | ~900 | Adding lint to the fixture evidence prompt shows the new lint line and saves a revision. |
 
-Pull requests 1 and 2 ship any time. Every check runs on the fixture repo first, per the team's dev loop.
+Pull request 1 ships any time. Every check runs on the fixture repo first, per the team's dev loop.
 
 ## Open questions
 
 1. **Default gates for a one-off that names no proof.** Recommend none until the definition's defaults exist. The reading says so in an assumed note.
 2. **Who pays for a reading.** Recommend the person's own token, as for any Box they start. A reading costs one short agent turn.
-3. **A check command the reader writes.** Recommend allowing it, shown in the note's detail as written by moor's reading. The reader prefers a named check and asks when unsure.
-4. **The Plan first checkbox.** Recommend retiring it with pull request 6. "Show me a plan first" reads as a gate with plan.md and your yes.
+3. **A check command the reader writes.** Decided above. Recommend the owner confirms it. The reader prefers a named check and asks when unsure.
+4. **The Plan first checkbox.** Recommend retiring it with pull request 7. "Show me a plan first" reads as a gate with plan.md and your yes.
 5. **YAML input on `set_repo_config`.** Recommend taking both until every stored repo has a note, then words only.
 6. **Answers moor cannot hold yet.** "Wait for my yes before you open it" needs a pull request capability. Recommend the reader offers only answers moor can enforce. Its instructions list them.
 7. **A warm reading Box.** Recommend none at first. Add one per person if pull request 4 measures over 45 seconds at the median.
@@ -342,17 +349,17 @@ Pull requests 1 and 2 ship any time. Every check runs on the fixture repo first,
 | A1 Read it | The reading page, pull requests 4 and 5 |
 | A2 marked prompt, A3 margins | The reading, mark styles, pull request 5 |
 | A4 note kinds | Note kinds. "May" waits for capabilities and reads dashed until then. |
-| A5 questions, Start waits | Answers and edits, pull request 5 |
-| A6 reading across repos | The reader gets each repo's checks. "Which tests?" and "Add it or leave it" are questions. |
-| A7 edit in place | Pull request 7 |
-| A8 whole prompt on the task, E8 prompt phrase | Pull request 8 |
-| A9 frozen plan, one-off gates | Start gives a one-off task its gates, pull request 6 |
-| A10 automation edit, B7 Repeat this | Automations, pull request 11 |
-| A11 repo note page, A16 setup and kept, A17 YAML view, A18 asked | The repo note, pull request 9 |
-| A12 draft, A13 repo list | Pull request 10 |
+| A5 questions, Start waits | Answers and edits, pull request 6 |
+| A6 reading across repos | The reader gets each repo's checks. "Which tests?" and "Add it or leave it" are questions, pull requests 6 and 8. |
+| A7 edit in place | Pull request 8 |
+| A8 whole prompt on the task, E8 prompt phrase | Pull request 9 |
+| A9 frozen plan, one-off gates | Start gives a one-off task its gates, pull request 7 |
+| A10 automation edit, B7 Repeat this | Automations, pull request 13 |
+| A11 repo note page, A16 setup and kept, A17 YAML view, A18 asked | The repo note, pull requests 10 and 11 |
+| A12 draft, A13 repo list | Pull request 12 |
 | A14 named checks | Named checks, pull request 2 |
 | A15 network line | Shown dashed. Enforcement is the egress work, out of scope. |
 | B9 Plan first | Open question 4 |
 | C8 inbox clear | Pull request 1 |
-| D2 to D5 yes, stuck and no-check cards | Out of scope. One-off tasks get these cards once pull request 6 gives them gates. |
-| G1 keys on margin notes | Pull request 5 |
+| D2 to D5 yes, stuck and no-check cards | Out of scope. One-off tasks get these cards once pull request 7 gives them gates. |
+| G1 keys on margin notes | Pull request 6 |
