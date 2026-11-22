@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { type BoxDetail, boxGet, type BoxRow, type Evidence } from './api';
 import { type ApproveProps, ApproveView, StuckView, useApproval } from './Gates';
 import { gateLine, type Peekable, peekable } from './gate';
-import { exactTime, issueKey, RepoName, reposOf } from './HomeList';
+import { exactTime, RepoCell, reposOf, Source } from './HomeList';
 import { peekOf, setPeek } from './hashQuery';
 import { useLoad } from './useLoad';
 import './peek.css';
@@ -20,18 +20,11 @@ export function handedImages(names: readonly string[], detail: Pick<BoxDetail, '
 /** The panel's content without its hooks: where the task is and what it says, then the same approval or stuck card the task page shows. */
 export function PeekView({ t, now, approve, onClose }: { t: Peekable; now: number; approve: ApproveProps; onClose: () => void }) {
 	const wait = t.needs.gate;
-	const key = t.issue ? (issueKey(t.issue) ?? t.issue) : null;
 	return (
 		<aside class={`t-peek${wait.kind === 'approve' ? '' : ' t-peek-stuck'}`} aria-label="Peek">
 			<div class="t-peek-head">
-				<span class="t-peek-repos">
-					{reposOf(t).map((r) => (
-						<span class="t-peek-repo" key={r}>
-							<RepoName repo={r} />
-						</span>
-					))}
-				</span>
-				{key && <span class="t-rkey t-rkey-issue">{key}</span>}
+				<RepoCell repos={reposOf(t)} only="" />
+				<Source t={t} />
 				<span class="grow" />
 				<a class="btn" href={`#/box/${encodeURIComponent(t.box)}`}>
 					Open task
