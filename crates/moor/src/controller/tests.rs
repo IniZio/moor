@@ -213,6 +213,7 @@ fn a_repos_key_stops_the_controller_as_an_unknown_key() {
 
 mod artifacts;
 mod authz;
+mod everyone;
 mod front_attach;
 mod front_processes;
 mod front_read_only;

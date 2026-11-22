@@ -196,6 +196,7 @@ fn never_takes_the_box_lock() {
         artifacts: false,
         pane: true,
         transcript: false,
+        everyone: false,
     };
     let began = cx.clock().now();
     crate::ops::show::run(&cx, &show).unwrap();

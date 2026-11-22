@@ -112,6 +112,7 @@ fn show() -> Request {
         artifacts: false,
         pane: true,
         transcript: false,
+        everyone: false,
     })
 }
 

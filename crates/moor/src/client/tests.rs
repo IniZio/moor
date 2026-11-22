@@ -17,6 +17,7 @@ fn show() -> Request {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     })
 }
 

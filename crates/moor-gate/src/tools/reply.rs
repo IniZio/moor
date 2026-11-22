@@ -253,6 +253,7 @@ fn events_of(
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     }));
     shown.map_or_else(
         |_| Vec::new(),

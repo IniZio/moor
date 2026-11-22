@@ -332,6 +332,7 @@ impl From<ShowArgs> for ShowReq {
             artifacts: false,
             pane: a.pane,
             transcript: false,
+            everyone: false,
         }
     }
 }

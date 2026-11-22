@@ -171,6 +171,7 @@ pub(crate) fn box_view_with_run(
         approval: None,
         gate: None,
         ties: moor_core::view::BoxTies::default(),
+        owner: None,
     }
 }
 

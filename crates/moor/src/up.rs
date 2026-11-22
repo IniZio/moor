@@ -180,6 +180,7 @@ fn open_boxes(ask: Ask<'_>) -> Vec<String> {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     });
     answer::<Listed>(ask, req)
         .ok()

@@ -25,6 +25,8 @@ pub(crate) struct Wanted {
     pub(crate) name: String,
     /// Its version; the newest when none.
     pub(crate) version: Option<u32>,
+    /// Read it from another user's Box too, as the portal's read of everyone's Boxes does.
+    pub(crate) everyone: bool,
 }
 
 impl Wanted {
@@ -41,6 +43,7 @@ impl Wanted {
             r#box,
             name: name.to_owned(),
             version,
+            everyone: false,
         })
     }
 
@@ -103,6 +106,8 @@ pub(crate) struct Found {
     target: BoxName,
     /// Its record: name, version, content type, size and sha256.
     pub(crate) record: ArtifactView,
+    /// Whether it may be another user's, as [`Wanted::everyone`].
+    everyone: bool,
 }
 
 /// The record of the Artifact `wanted` names, read as `person`.
@@ -115,6 +120,7 @@ pub(crate) fn find(client: &Client, person: &Person, wanted: &Wanted) -> Result<
     let list = Request::Artifacts(ArtifactsReq {
         target: wanted.r#box.clone().into(),
         all: true,
+        everyone: wanted.everyone,
     });
     let listed = ask(client, person, list)?.value.unwrap_or_default();
     let rows: Vec<ArtifactView> = serde_json::from_value(listed).map_err(|e| {
@@ -137,6 +143,7 @@ pub(crate) fn find(client: &Client, person: &Person, wanted: &Wanted) -> Result<
     Ok(Found {
         target: wanted.r#box.clone(),
         record,
+        everyone: wanted.everyone,
     })
 }
 
@@ -153,6 +160,7 @@ pub(crate) fn read(
         version: Some(found.record.version),
         offset: 0,
         len: found.record.size,
+        everyone: found.everyone,
     });
     let acting = rewrite::act(request, person).map_err(Refusal::Failed)?;
     let reply = controller

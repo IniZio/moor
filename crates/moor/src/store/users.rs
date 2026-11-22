@@ -106,6 +106,21 @@ impl Store {
         user_of_in(&self.reader()?, identity)
     }
 
+    /// The verified email of `user`, when it has one.
+    pub(crate) fn email_of(&self, user: UserId) -> Result<Option<String>, StoreError> {
+        let email: Option<Option<String>> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(Users::Email)
+                    .from(Users::Table)
+                    .and_where(Expr::col(Users::Id).eq(user.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(email.flatten())
+    }
+
     /// Every identity linked to `user`, in order.
     pub(crate) fn identities(&self, user: UserId) -> Result<Vec<Identity>, StoreError> {
         let conn = self.reader()?;

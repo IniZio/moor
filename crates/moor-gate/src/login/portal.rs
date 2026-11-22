@@ -1,7 +1,8 @@
-//! The Boxes pages' data: the signed-in person's Boxes as Boxes, each with the state moor
-//! derives (the page never computes one), one Box with its timeline and artifacts, and an
-//! artifact's bytes. The controller decides whose Boxes a person sees, so a Box that is not
-//! theirs is a 404 here, never told apart from one that does not exist.
+//! The Boxes pages' data: the signed-in person's Boxes as Boxes, or everyone's, each with the
+//! state moor derives (the page never computes one), one Box with its timeline and artifacts, and
+//! an artifact's bytes. Every read asks for everyone's Boxes, which the controller lets any user
+//! read and none but the owner act on; another user's Box carries its owner. A Box the controller
+//! will not show is a 404 here, never told apart from one that does not exist.
 
 use std::io::Write as _;
 use std::net::TcpStream;
@@ -128,7 +129,7 @@ pub(super) fn serve(
         }
         ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
         (_, "/account/api/inbox") => inbox::list(stream, gate, session),
-        (_, "/account/api/boxes") => list(stream, gate, session),
+        (_, "/account/api/boxes") => list(stream, gate, session, query),
         (_, "/account/api/box") => read(stream, gate, session, query),
         (_, "/account/api/box/changes") => changes::changes(stream, gate, session, query),
         (_, "/account/api/box/pr") => pulls::read(stream, gate, session, query),
@@ -181,8 +182,8 @@ enum Failure {
     Other(String),
 }
 
-/// Answers the person's open Boxes as Boxes.
-pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
+/// Answers the person's open Boxes as Boxes, or every user's with `who=everyone`.
+pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session, query: &str) {
     let all = ShowReq {
         target: None,
         events: None,
@@ -191,6 +192,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session) {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: param(query, "who").as_deref() == Some("everyone"),
     };
     match show(gate, session, all) {
         Ok(shown) => {
@@ -235,10 +237,11 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         artifacts: true,
         pane: false,
         transcript: true,
+        everyone: true,
     };
     let shown = match show(gate, session, one) {
         Ok(shown) => shown,
-        // Every Box the controller shows a person is theirs, so a refusal is no such Box.
+        // A refusal is a Box the person may not read, told as no such Box.
         Err(Failure::Reply(reply)) if reply.class != ExitClass::Usage => {
             return json(stream, "404 Not Found", &json!({"error": "no such Box"}));
         }
@@ -285,7 +288,11 @@ pub(super) fn artifact(stream: &mut TcpStream, gate: &Gate, session: &Session, q
         &param(query, "name").unwrap_or_default(),
         version,
     );
-    let found = wanted.and_then(|w| artifact::find(&gate.controller, &session.person, &w));
+    let everyone = wanted.map(|w| Wanted {
+        everyone: true,
+        ..w
+    });
+    let found = everyone.and_then(|w| artifact::find(&gate.controller, &session.person, &w));
     let found = match found {
         Ok(found) => found,
         Err(refusal) => return refuse(stream, &refusal),

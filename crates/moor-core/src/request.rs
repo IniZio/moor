@@ -352,7 +352,7 @@ pub struct RunReq {
 }
 
 /// Arguments of `show`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(
     clippy::struct_excessive_bools,
@@ -382,6 +382,10 @@ pub struct ShowReq {
     /// when false, so a controller that predates it still reads every other `show`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub transcript: bool,
+    /// Read every user's Boxes, not only the caller's: a list holds each user's open Boxes and
+    /// the Box named may be another user's. It reaches no pane and grants no write.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everyone: bool,
 }
 
 #[cfg(test)]

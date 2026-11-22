@@ -1,8 +1,9 @@
 //! Who may act on a Box: the user it acts for, and the local operator. Every request the
 //! controller serves passes [`authorize`] before it runs.
 
-use moor_core::request::{Grant, Named, Pins};
-use moor_core::user::{Caller, Identity, Viewer};
+use moor_core::request::{ArtifactReadReq, ArtifactsReq, Grant, Named, Pins};
+use moor_core::user::{Caller, Identity, UserId, Viewer};
+use moor_core::ShowReq;
 use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
 
 use crate::cx::Cx;
@@ -98,8 +99,14 @@ pub(crate) fn authorize(
     let mut pins = Pins::new();
     if viewer != Viewer::Operator {
         let store = cx.store()?;
+        let everyone = reads_everyone(request);
         for named in &request.names() {
-            if !may_name(store, viewer, named, &mut pins)? {
+            if !may_name(
+                store,
+                |owner| may_read(viewer, owner, everyone),
+                named,
+                &mut pins,
+            )? {
                 return Err(CommandError::new(ErrorKind::Refused, NOT_YOURS));
             }
         }
@@ -220,6 +227,26 @@ const fn host_only(request: &Request) -> Option<&'static str> {
     }
 }
 
+/// Whether `request` is a read of every user's Boxes: a `show` without the pane, or an artifact
+/// list or read, that asks for everyone's.
+const fn reads_everyone(request: &Request) -> bool {
+    matches!(
+        request,
+        Request::Show(ShowReq {
+            everyone: true,
+            pane: false,
+            ..
+        }) | Request::Artifacts(ArtifactsReq { everyone: true, .. })
+            | Request::ArtifactRead(ArtifactReadReq { everyone: true, .. })
+    )
+}
+
+/// Whether `viewer` may read a Box that acts for `owner`: one it may act on, and with
+/// `everyone` any user's Box for any user. A Box with no user stays the operator's alone.
+pub(crate) fn may_read(viewer: Viewer, owner: Option<UserId>, everyone: bool) -> bool {
+    viewer.may_act_on(owner) || (everyone && matches!(viewer, Viewer::User(_)) && owner.is_some())
+}
+
 /// Whether the context's viewer may see Box `id`; a Box that does not exist counts as no.
 ///
 /// # Errors
@@ -251,11 +278,11 @@ pub(crate) fn may_see_session(
         })
 }
 
-/// Whether `viewer` may act on what `named` names, pinning each name to the Box it means; a
-/// Box or Session that does not exist counts as no.
+/// Whether `allowed` lets the caller at the owner of what `named` names, pinning each name to
+/// the Box it means; a Box or Session that does not exist counts as no.
 fn may_name(
     store: &Store,
-    viewer: Viewer,
+    allowed: impl Fn(Option<UserId>) -> bool,
     named: &Named,
     pins: &mut Pins,
 ) -> Result<bool, CommandError> {
@@ -281,5 +308,5 @@ fn may_name(
             None => None,
         },
     };
-    Ok(owner.is_some_and(|owner| viewer.may_act_on(owner)))
+    Ok(owner.is_some_and(allowed))
 }

@@ -111,6 +111,7 @@ fn only_asleep_boxes_and_too_little_memory_leave_the_head_waiting_with_its_reaso
                 artifacts: false,
                 pane: false,
                 transcript: false,
+                everyone: false,
             },
         )
         .unwrap();

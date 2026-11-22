@@ -418,6 +418,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     };
     show::run(&w.cx, &req).unwrap();
     assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);

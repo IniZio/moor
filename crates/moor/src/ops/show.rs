@@ -16,6 +16,7 @@ use moor_core::{progress, BoxId, ErrorKind, ShowReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
+use crate::ops::authz;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc3339};
 use crate::ops::common::{activity, autosleep, reconcile, transcript};
@@ -182,7 +183,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let store = cx.store()?;
     let now = cx.clock().now();
     let Some(target) = &req.target else {
-        return list(cx, store, now);
+        return list(cx, store, now, req.everyone);
     };
     let row = target::resolve(store, target, Rule::Latest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {target}")))?;
@@ -199,6 +200,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     detail.approval = approval_of(store, row.id)?;
     detail.gate = gate_of(store, row.id)?;
     detail.ties = ties_of_one(store, row.id)?;
+    detail.owner = owner_of(cx, store, row.user)?;
     detail.said = if req.agent {
         said_of(store, row.id)?
     } else {
@@ -258,13 +260,29 @@ fn timeline_of(
     progress::timeline_with(&timed, Transcript { lines, saved_ms })
 }
 
-/// Every open Box the viewer may act on.
-fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
+/// Who a Box that acts for `owner` acts for, when the viewer may not act on it: the user's email,
+/// else the user's number.
+fn owner_of(
+    cx: &Cx,
+    store: &Store,
+    owner: Option<moor_core::user::UserId>,
+) -> Result<Option<String>, CommandError> {
+    let Some(user) = owner.filter(|_| !cx.viewer().may_act_on(owner)) else {
+        return Ok(None);
+    };
+    let email = store.email_of(user)?;
+    Ok(Some(
+        email.unwrap_or_else(|| format!("user {}", user.get())),
+    ))
+}
+
+/// Every open Box the viewer may act on, or with `everyone` may read.
+fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, CommandError> {
     let mut boxes: Vec<BoxView> = Vec::new();
     let open: Vec<_> = store
         .open_boxes()?
         .into_iter()
-        .filter(|row| cx.viewer().may_act_on(row.user))
+        .filter(|row| authz::may_read(cx.viewer(), row.user, everyone))
         .collect();
     let ids: Vec<BoxId> = open.iter().map(|row| row.id).collect();
     let mut ties = store.ties_of(&ids)?;
@@ -280,6 +298,7 @@ fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
         view.approval = approval_of(store, row.id)?;
         view.gate = gate_of(store, row.id)?;
         view.ties = ties.remove(&row.id).unwrap_or_default();
+        view.owner = owner_of(cx, store, row.user)?;
         let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
         view.progress = Some(progress::derive(&view, &events, now.as_millis()));

@@ -55,6 +55,7 @@ fn list_req(n: &str, all: bool) -> ArtifactsReq {
     ArtifactsReq {
         target: name(n).into(),
         all,
+        everyone: false,
     }
 }
 
@@ -65,6 +66,7 @@ fn read_req(n: &str, file: &str, version: Option<u32>, offset: u64, len: u64) ->
         version,
         offset,
         len,
+        everyone: false,
     }
 }
 
