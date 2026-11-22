@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxRow, type Inbox, inboxRead, type Progress } from './api';
 import { Glyph, STATES } from './Glyph';
+import { pathOf } from './hashQuery';
 import { InboxView } from './Inbox';
+import { sectionAt } from './Settings';
 import { currentTheme, setTheme, type Theme } from './theme';
-import { focusWrite } from './WriteField';
+import { workflowsAt } from './Workflows';
 
 /** Where a Box sits in the switcher: the ones that need the person first. */
 const ORDER = {
@@ -132,6 +134,15 @@ type InboxPoll = { value: Inbox | null; now: number; reload: () => void };
 export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string; csrf: string; rows: BoxRow[]; inbox: InboxPoll; onSignOut: () => void }) {
 	const [finding, setFinding] = useState(false);
 	const [theme, setThemeState] = useState<Theme>(currentTheme());
+	const [hash, setHash] = useState(location.hash);
+	useEffect(() => {
+		const on = () => setHash(location.hash);
+		addEventListener('hashchange', on);
+		return () => removeEventListener('hashchange', on);
+	}, []);
+	const path = pathOf(hash);
+	const here = workflowsAt(path) ? 'automations' : sectionAt(path) ? 'team' : 'tasks';
+	const current = (key: string) => (key === here ? 'page' : undefined);
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {
 			const inTerminal = e.target instanceof Element && e.target.closest('.t-term-screen');
@@ -156,26 +167,33 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 	return (
 		<>
 			<header class="top">
-				<a class="brand" href="#/">
-					<span class="mark">◆</span> moor
-				</a>
-				<button class="find" onClick={() => setFinding(true)} aria-keyshortcuts="Meta+K Control+K">
-					<span>Find a task</span>
-					<kbd>{MAC ? '⌘K' : 'Ctrl K'}</kbd>
-				</button>
-				<span class="grow" />
-				<button class="btn primary" onClick={focusWrite}>
-					{'+ New task'}
-				</button>
-				<button class="btn ghost" popovertarget="inbox">
-					Inbox{unread > 0 && <b class="count">{unread}</b>}
-				</button>
-				<button class="btn ghost icon" onClick={flip} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'}`}>
-					{theme === 'dark' ? '☀' : '☾'}
-				</button>
-				<button class="me" popovertarget="usermenu" aria-label="Account menu" title={email}>
-					{email.slice(0, 2).toLowerCase()}
-				</button>
+				<nav class="bar" aria-label="moor">
+					<a class="brand" href="#/">
+						<span class="mark">◆</span> moor
+					</a>
+					<a class="nav" href="#/" aria-current={current('tasks')}>
+						Tasks
+					</a>
+					<a class="nav" href="#/workflows" aria-current={current('automations')}>
+						Automations
+					</a>
+					<a class="nav" href="#/settings" aria-current={current('team')}>
+						Team
+					</a>
+					<span class="grow" />
+					<button class="find" onClick={() => setFinding(true)} aria-keyshortcuts="Meta+K Control+K" aria-label="Find a task">
+						Find
+						<kbd class="findkbd">{MAC ? '⌘K' : 'Ctrl K'}</kbd>
+					</button>
+					<button class="nav inbox" popovertarget="inbox" aria-haspopup="true">
+						{`Inbox${unread > 0 ? ' ' : ''}`}
+						{unread > 0 && <span class="count">{unread}</span>}
+						{' ▾'}
+					</button>
+					<button class="avatar" popovertarget="usermenu" aria-label="Account menu" title={email}>
+						{email.slice(0, 2).toLowerCase()}
+					</button>
+				</nav>
 			</header>
 			<div id="inbox" class="pop inbox" popover="auto">
 				<InboxView
@@ -191,16 +209,17 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 				/>
 			</div>
 			<div id="usermenu" class="pop menu usermenu" popover="auto">
-				<div class="menu-who muted">{email}</div>
-				<a href="#/workflows" onClick={shut}>
-					Workflows
+				<a href="#/settings" onClick={shut} title={email}>
+					You
 				</a>
-				<a href="#/repos" onClick={shut}>
-					Repos
-				</a>
-				<a href="#/settings" onClick={shut}>
-					Settings
-				</a>
+				<button
+					onClick={(e) => {
+						flip();
+						shut(e);
+					}}
+				>
+					{theme === 'dark' ? 'Light theme' : 'Dark theme'}
+				</button>
 				<button onClick={onSignOut}>Sign out</button>
 			</div>
 			<Switcher rows={rows} open={finding} onClose={() => setFinding(false)} />
