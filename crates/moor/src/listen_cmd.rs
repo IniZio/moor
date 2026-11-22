@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use moor_client::session::{normalize, Store};
+use moor_core::workflow::WorkflowName;
 use moor_core::BoxName;
 use moor_listen::{Listen, Session};
 
@@ -25,9 +26,20 @@ struct Args {
     /// Milliseconds between looks for a sign-in while there is none.
     #[arg(long, hide = true, default_value_t = 60_000)]
     signed_out_ms: u64,
-    /// Watch only this Box; repeat for several. Without it every Box is watched.
+    /// Watch only this Box; repeat for several. Without it, or `--workflow`, every Box is watched.
     #[arg(long = "box", value_name = "NAME", value_parser = box_name)]
     boxes: Vec<String>,
+    /// Watch the runs of this workflow; repeat for several. A line when a run starts, enters a
+    /// step, waits on a person, or ends. The listen then runs until it is stopped.
+    #[arg(long = "workflow", value_name = "NAME", value_parser = workflow_name)]
+    workflows: Vec<String>,
+}
+
+/// Checks a workflow name the way the controller does.
+fn workflow_name(s: &str) -> Result<String, String> {
+    WorkflowName::parse(s)
+        .map(|n| n.as_str().to_owned())
+        .map_err(|e| e.to_string())
 }
 
 /// Checks a Box name the way the rest of `moor` does.
@@ -56,8 +68,9 @@ pub fn run(args: &[OsString], say: &mut dyn FnMut(&str) -> io::Result<()>) -> Op
         idle: Duration::from_millis(parsed.idle_ms),
         signed_out: Duration::from_millis(parsed.signed_out_ms),
         only: parsed.boxes,
+        workflows: parsed.workflows,
     };
-    // The loop ends when nobody reads the lines any more or every named Box has closed.
+    // Ends when nobody reads the lines, or every named Box closed and no workflow is watched.
     Some(match listen.run(say) {
         Ok(()) => done(String::new(), String::new(), 0),
         Err(why) => done(String::new(), format!("moor-listen: {why}\n"), 1),

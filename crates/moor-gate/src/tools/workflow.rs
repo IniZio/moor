@@ -5,7 +5,7 @@ use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
     WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
-use moor_core::workflow::{Answer, PullTarget};
+use moor_core::workflow::Answer;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
@@ -14,7 +14,7 @@ use rmcp::{tool, tool_router, RoleServer};
 use super::reply::Reply;
 use super::Tools;
 use crate::mcp::{READ, WRITE};
-use args::{AddArgs, AnswerArg, AnswerArgs, EnableArgs, NameArgs, RunNowArgs, RunsArgs};
+use args::{pull_arg, AddArgs, AnswerArg, AnswerArgs, EnableArgs, NameArgs, RunNowArgs, RunsArgs};
 
 #[tool_router(router = workflow_router, vis = "pub(super)")]
 impl Tools {
@@ -206,12 +206,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<AnswerArgs>,
     ) -> CallToolResult {
-        let pull = args
-            .pull
-            .as_deref()
-            .map(PullTarget::parse)
-            .transpose()
-            .map_err(|e| e.to_string());
+        let pull = pull_arg(args.pull.as_deref());
         let request = pull.map(|pull| {
             ControllerRequest::WorkflowAnswer(WorkflowAnswerReq {
                 identity: None,
@@ -259,12 +254,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunNowArgs>,
     ) -> CallToolResult {
-        let pull = args
-            .pull
-            .as_deref()
-            .map(PullTarget::parse)
-            .transpose()
-            .map_err(|e| e.to_string());
+        let pull = pull_arg(args.pull.as_deref());
         let request = pull.map(|pull| {
             ControllerRequest::WorkflowRunNow(WorkflowRunNowReq {
                 identity: None,
@@ -283,21 +273,29 @@ impl Tools {
                        moves on, from started to finished or timed out. For a run of a Box \
                        with gates, `verdict` names what it found, such as `check failed`, while \
                        `outcome` stays `finished`. Pass the previous \
-                       `next` as `after` to get only newer changes, and `workflow` to read one \
-                       workflow's changes only. Needs the moor:read scope."
+                       `next` as `after` to get only newer changes, `workflow` to read one \
+                       workflow's changes only, and `pull`, such as `owner/name#12`, to read \
+                       only the runs for that pull request. The filters apply before `limit`, \
+                       so paging with `after` still works. To follow runs as they move, use \
+                       `moor listen --workflow NAME` rather than calling this in a loop. Needs \
+                       the moor:read scope."
     )]
     async fn list_workflow_runs(
         &self,
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RunsArgs>,
     ) -> CallToolResult {
-        let request = ControllerRequest::WorkflowRuns(WorkflowRunsReq {
-            identity: None,
-            after: args.after,
-            limit: args.limit,
-            workflow: args.workflow,
+        let pull = pull_arg(args.pull.as_deref());
+        let request = pull.map(|pull| {
+            ControllerRequest::WorkflowRuns(WorkflowRunsReq {
+                identity: None,
+                after: args.after,
+                limit: args.limit,
+                workflow: args.workflow,
+                pull,
+            })
         });
-        self.run(&context, READ, Ok(request), Reply::AsIs).await
+        self.run(&context, READ, request, Reply::AsIs).await
     }
 }
 

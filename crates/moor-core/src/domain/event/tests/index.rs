@@ -115,5 +115,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Access(AccessEvent::TerminalOpened { .. }) => 102,
         Event::Workflow(WorkflowEvent::GateWaiting { .. }) => 103,
         Event::Workflow(WorkflowEvent::ReportRefused { .. }) => 104,
+        Event::Workflow(WorkflowEvent::RunMoved { .. }) => 105,
     }
 }

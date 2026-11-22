@@ -1,5 +1,6 @@
 //! Holds a `subscriptions/listen` stream open on the moor gate and says one line per Box event
-//! worth waking for. It knows nothing of whoever reads those lines.
+//! worth waking for, and one per move of a watched workflow's run. It knows nothing of whoever
+//! reads those lines.
 
 mod gate;
 mod idle;
@@ -22,8 +23,12 @@ pub struct Listen {
     pub idle: Duration,
     /// How long to wait before looking again for a sign-in.
     pub signed_out: Duration,
-    /// Names of the only Boxes to watch; empty watches every Box the login can see.
+    /// Names of the only Boxes to watch; empty watches every Box the login can see, unless
+    /// `workflows` names some.
     pub only: Vec<String>,
+    /// Names of the workflows whose runs to watch: a line when a run starts, enters a step,
+    /// waits on a person, or ends.
+    pub workflows: Vec<String>,
 }
 
 impl Listen {
@@ -34,12 +39,13 @@ impl Listen {
     pub const SIGNED_OUT: Duration = Duration::from_secs(60);
 
     /// Runs until `say` fails, which is when nobody reads the lines any more, or, when `only`
-    /// names Boxes, until all of them have closed.
+    /// names Boxes and `workflows` none, until all of them have closed. A workflow never closes,
+    /// so a listen that watches one runs until it is stopped.
     ///
     /// # Errors
     /// `say` failed.
     pub fn run(self, say: &mut dyn FnMut(&str) -> io::Result<()>) -> io::Result<()> {
         let gate = gate::Gate::new(self.url, self.bearer, self.idle);
-        watch::run(&gate, self.signed_out, self.only, say)
+        watch::run(&gate, self.signed_out, (self.only, self.workflows), say)
     }
 }

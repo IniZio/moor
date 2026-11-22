@@ -230,6 +230,7 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::SteerUnconfirmed { .. }
             | Event::Workflow(
                 WorkflowEvent::RunWaiting { .. }
+                | WorkflowEvent::RunMoved { .. }
                 | WorkflowEvent::RunFailed { .. }
                 | WorkflowEvent::GateWaiting { .. }
                 | WorkflowEvent::ReportRefused { .. },

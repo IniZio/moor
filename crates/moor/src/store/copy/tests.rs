@@ -269,7 +269,7 @@ fn a_copied_store_continues_the_workflow_change_numbers() {
     let copy = Store::open_postgres(&target, 1, dir.path(), clock()).unwrap();
     copy.record_workflow_run(&run(3)).unwrap();
     let seqs: Vec<_> = copy
-        .workflow_changes(user, 0, 10, None)
+        .workflow_changes(user, 0, 10, (None, None))
         .unwrap()
         .iter()
         .map(|c| c.seq)

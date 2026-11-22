@@ -1,12 +1,15 @@
 //! The reads of workflow runs: the change stream and one workflow's run list.
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+
 use moor_core::gate::Gates;
 use moor_core::user::UserId;
 use moor_core::view::workflow::{
     ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowRunListValue,
     WorkflowRunsValue,
 };
-use moor_core::workflow::{box_name, RunEnd, RunOutcome, RunState, WorkflowRun};
+use moor_core::workflow::{box_name, PullTarget, RunEnd, RunOutcome, RunState, WorkflowRun};
 use moor_core::ErrorKind;
 
 use super::{parse_name, to_value};
@@ -109,15 +112,32 @@ pub(super) fn runs(
     store: &Store,
     user: UserId,
     (after, limit): (Option<i64>, Option<u32>),
-    workflow: Option<&str>,
+    (workflow, pull): (Option<&str>, Option<&PullTarget>),
 ) -> Result<serde_json::Value, CommandError> {
     let only = workflow.map(parse_name).transpose()?;
     let after = after.unwrap_or(0).max(0);
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let mut changes = Vec::new();
     let mut next = after;
-    for change in store.workflow_changes(user, after, u64::from(limit), only.as_ref())? {
+    let mut prompts = HashMap::new();
+    for change in store.workflow_changes(user, after, u64::from(limit), (only.as_ref(), pull))? {
         next = next.max(change.seq);
+        let step_title = match change.run.state.step() {
+            Some(step) => {
+                let prompt = match prompts.entry(change.workflow.clone()) {
+                    Entry::Occupied(known) => known.into_mut(),
+                    Entry::Vacant(slot) => slot.insert(
+                        store
+                            .workflow(user, &change.workflow)?
+                            .map(|w| w.prompt)
+                            .unwrap_or_default(),
+                    ),
+                };
+                let plan = store.run_plan(change.run.id, prompt)?;
+                plan.step(step).map(|s| s.title.clone())
+            }
+            None => None,
+        };
         let origin = change.origin.map(|o| OriginView {
             front: o.front,
             key: o.key,
@@ -128,6 +148,8 @@ pub(super) fn runs(
         changes.push(ChangeView::Run {
             seq,
             workflow,
+            id: change.run.id.get(),
+            step_title,
             origin,
             run,
         });

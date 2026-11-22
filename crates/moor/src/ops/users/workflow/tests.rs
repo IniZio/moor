@@ -339,6 +339,7 @@ fn runs(f: &Fixture, who: &Identity, after: Option<i64>, limit: Option<u32>) -> 
             after,
             limit,
             workflow: None,
+            pull: None,
         }),
     )
 }
@@ -555,6 +556,7 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
     assert!(listed["workflows"][0]["last_runs"][0].get("box").is_none());
 }
 
+mod change_stream;
 mod enabled_and_filter;
 mod gates;
 mod keep_omitted;
