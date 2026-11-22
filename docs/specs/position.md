@@ -518,7 +518,7 @@ Handover between automations and roles come after these six steps. They are rese
 
 ## What is built
 
-Draft pull requests build the gate mechanism ahead of this spec's merge. The owner asked for that on 2026-11-21. None is merged.
+Pull requests built the gate mechanism ahead of this spec's merge. The owner asked for that on 2026-11-21. All ten merged on 2026-11-22 and run on the nightly controller. One fixture workflow there uses gates. The other ten still carry step plans.
 
 | Pull request | What it does | Proof |
 | --- | --- | --- |
@@ -529,8 +529,9 @@ Draft pull requests build the gate mechanism ahead of this spec's merge. The own
 | #1600 | The Task page shows a gate list, an approval card and a stuck card. | Live, with screenshots read. |
 | #1601 | A workflow carries gates in place of a plan. Its run stays open until they pass. | Live, on draft pull requests in the fixture repo. |
 | #1602 | A check carries one plain sentence of what must be true. The workflow page lists its gates in sentences. | Live, with screenshots read. |
-| #1604 | A run ends in one named outcome. moor picks it by running each outcome's checks. | Live, on draft pull requests in the fixture repo. |
+| #1604 | A run ends in one named outcome. moor picks it by running each outcome's checks. | Live, on draft pull requests in the fixture repo. One run on nightly, fired by a real pull request, ended "check passed". |
 | #1605 | The run list, the run page and the Box line name the outcome. | Live, with screenshots read. |
+| #1608 | Closing a Box ends its run at once as incomplete, with the reason. | Live, from the portal and the CLI. |
 
 The build differs from the order of work in four ways.
 
