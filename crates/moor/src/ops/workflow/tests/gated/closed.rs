@@ -8,7 +8,7 @@ use moor_core::view::BoxView;
 use moor_core::workflow::{RunOutcome, Unfinished, WorkflowId};
 use moor_core::{BoxId, CloseReq, ShowReq};
 
-use super::super::{rig, Rig};
+use super::super::{rig, Rig, DAY, FIRST_DUE};
 use super::{delivered, gone_quiet, proof, reported, ship, step, MIN};
 use crate::ops::gate::checks::{pass, run};
 use crate::testing::cx::REQUESTER_USER;
@@ -222,4 +222,16 @@ fn closing_the_box_of_a_run_that_already_ended_changes_nothing() {
     r.pass();
     assert_eq!(r.latest(id).state, ended);
     assert!(r.event(id, "run_failed").is_none());
+}
+
+#[test]
+fn the_next_cron_firing_after_the_close_starts_a_new_run() {
+    let r = rig();
+    let id = r.started_gated(&[proof(), ship()]);
+    let first = r.latest_box(id);
+    close_as(&r, &r.cx, first);
+    r.advance_to(FIRST_DUE + DAY + 1_000);
+    assert!(r.pass().is_empty());
+    assert_ne!(r.latest_box(id), first);
+    assert_eq!(r.at(id), ("running", ("proof".to_owned(), 1)));
 }
