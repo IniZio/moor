@@ -2,6 +2,7 @@ use super::*;
 use crate::config::{parse_repo, parse_user};
 
 mod agent;
+mod git;
 mod restore;
 mod tools;
 
@@ -168,6 +169,7 @@ fn presets_expand_to_the_table() {
             "tools",
             vec!["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
         ),
+        ("git", vec!["~/.local/share/git-mirror"]),
     ];
     let want: Vec<(String, Vec<String>)> = want
         .into_iter()
@@ -291,7 +293,8 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
             "bundler",
             "android",
             "android-sdk",
-            "tools"
+            "tools",
+            "git"
         ]
     );
     let err = parse_repo("repo config", "cache: {presets: [dockr]}").unwrap_err();

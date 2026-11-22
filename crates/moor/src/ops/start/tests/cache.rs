@@ -51,7 +51,7 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
     let got = names(&plan);
     assert_eq!(got.first(), Some(&"cache"));
     assert_eq!(got.last(), Some(&"sdk"));
-    assert_eq!(got.len(), 16);
+    assert_eq!(got.len(), 17);
     assert!(cache_warnings(&w).is_empty());
 }
 
@@ -262,6 +262,44 @@ fn clone_exec(w: &World) -> (String, String) {
     let mut found =
         execs.filter_map(|(h, spec, _)| Some((h.as_str().to_owned(), spec.argv.last()?.clone())));
     found.find(|(_, s)| s.contains("git clone")).unwrap()
+}
+
+#[test]
+fn a_box_with_the_git_preset_clones_through_its_mirror() {
+    let w = world(FakeDriver::new().cache_volumes());
+    started(&w);
+    let (_, script) = clone_exec(&w);
+    assert!(
+        script.contains("moor_mirror=\"$HOME\"/'.local/share/git-mirror/"),
+        "{script}"
+    );
+    assert!(
+        script.contains("--reference \"$moor_mirror\" --dissociate"),
+        "{script}"
+    );
+}
+
+#[test]
+fn a_box_that_drops_the_git_preset_clones_from_the_remote_alone() {
+    let w = world(FakeDriver::new().cache_volumes());
+    script_repo(&w, Some("cache: {presets: [git]}\n"));
+    run(&w.cx, &repo_req("demo")).unwrap();
+    assert!(!clone_exec(&w).1.contains("moor_mirror"));
+}
+
+#[test]
+fn a_clone_that_went_without_the_mirror_warns_why() {
+    let printed = "moor: git mirror skipped: git fetch failed\n";
+    let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
+    script_repo(&w, Some(YAML));
+    run(&w.cx, &repo_req("demo")).unwrap();
+    let warned: Vec<String> =
+        w.cx.take_warnings()
+            .into_iter()
+            .filter(|w| w.code == "git_mirror")
+            .map(|w| w.message)
+            .collect();
+    assert_eq!(warned, ["cloned without the git mirror: git fetch failed"]);
 }
 
 #[test]

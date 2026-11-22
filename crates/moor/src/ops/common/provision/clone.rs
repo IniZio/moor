@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, mirror_skipped, Checkout, CloneStep};
 use moor_core::boxscript::one_at_a_time;
 use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};
@@ -51,6 +51,8 @@ struct Plan {
     base: String,
     /// The Box branch.
     branch: String,
+    /// Shell text for the path of the repo's bare git mirror, when a cache volume holds it.
+    mirror: Option<String>,
 }
 
 impl Plan {
@@ -84,7 +86,7 @@ pub(super) fn clone_with_proxy(
     let kept = row.as_ref().map_or_else(CachePlan::none, |r| {
         cache::derived(cx, store, r, cfg, &ProviderId::new(target.provider))
     });
-    let plan = plan(row, target);
+    let plan = plan(row, target, &kept);
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
@@ -138,7 +140,7 @@ pub(super) fn clone_with_proxy(
 }
 
 /// What the Box clones: its repo at the Box's base and on its branch; none for a Box with no repo.
-fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>) -> Option<Plan> {
+fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
     Some(Plan {
@@ -147,6 +149,7 @@ fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>) -> Option<Plan> {
         branch: row
             .branch
             .unwrap_or_else(|| box_key::branch(row.id, &row.name)),
+        mirror: kept.git_mirror(&repo.repo),
     })
 }
 
@@ -218,7 +221,7 @@ fn clone(
     let mut script = job.restore.clone().unwrap_or_default();
     script.push_str(&identity.map(Identity::script).unwrap_or_default());
     if let Some(plan) = plan {
-        script.push_str(&clone_script(&plan.checkout()));
+        script.push_str(&clone_script(&plan.checkout(), plan.mirror.as_deref()));
     }
     let script = resources::after(&one_at_a_time(&script));
     let site = Site {
@@ -282,8 +285,8 @@ fn report_emptied(cx: &Cx, store: &Store, id: BoxId, text: &str) {
     }
 }
 
-/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key and a
-/// submodule left out. Returns what the exec told about the Box.
+/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, a submodule
+/// left out and a clone that went without the git mirror. Returns what the exec told about the Box.
 fn report(
     cx: &Cx,
     identity: Option<&Identity>,
@@ -295,6 +298,12 @@ fn report(
         identity.report(cx, text);
     }
     warn_left_out(cx, "", text.unwrap_or_default());
+    if let Some(why) = text.and_then(mirror_skipped) {
+        cx.warn(Warning {
+            code: "git_mirror".to_owned(),
+            message: format!("cloned without the git mirror: {why}"),
+        });
+    }
     Cloned {
         ms: plan.map(|_| ms),
         delivered: text.and_then(resources::parse),

@@ -6,6 +6,7 @@ use std::process::{Command, Output};
 use super::{clone_script, Checkout, CloneStep};
 use crate::boxscript::one_at_a_time;
 
+mod mirror;
 mod submodules;
 
 const BRANCH: &str = "moor/demo";
@@ -118,7 +119,7 @@ impl Remote {
     /// Runs the clone script for `c` in the Box workdir.
     fn run_with(&self, c: &Checkout<'_>) -> Output {
         Command::new("sh")
-            .args(["-c", &clone_script(c)])
+            .args(["-c", &clone_script(c, None)])
             .current_dir(self.path("box"))
             .env("HOME", self.dir.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -344,11 +345,14 @@ fn an_unreachable_url_stops_at_the_clone_step() {
 
 #[test]
 fn values_are_quoted() {
-    let script = clone_script(&Checkout {
-        url: "https://github.com/o/n.git",
-        base: "$(touch x)",
-        branch: "b'; rm -rf /; '",
-    });
+    let script = clone_script(
+        &Checkout {
+            url: "https://github.com/o/n.git",
+            base: "$(touch x)",
+            branch: "b'; rm -rf /; '",
+        },
+        None,
+    );
     assert!(script.contains("'$(touch x)'"), "{script}");
     assert!(script.contains(r"'b'\''; rm -rf /; '\'''"), "{script}");
 }
@@ -383,11 +387,14 @@ fn run_beside_another_clone(r: &Remote, race: bool) -> (Output, PathBuf) {
     );
     moor_testkit::write_executable(&bin.join("git"), fake).unwrap();
     let url = r.url();
-    let script = clone_script(&Checkout {
-        url: &url,
-        base: &r.base,
-        branch: BRANCH,
-    });
+    let script = clone_script(
+        &Checkout {
+            url: &url,
+            base: &r.base,
+            branch: BRANCH,
+        },
+        None,
+    );
     let out = Command::new("sh")
         .args(["-c", &script])
         .current_dir(r.path("box"))
@@ -451,11 +458,14 @@ fn slow_first_clone(home: &Path) -> PathBuf {
 fn a_rerun_while_an_earlier_run_still_clones_waits_for_it_and_both_pass() {
     let r = Remote::new("overlap");
     let url = r.url();
-    let script = one_at_a_time(&clone_script(&Checkout {
-        url: &url,
-        base: &r.base,
-        branch: BRANCH,
-    }));
+    let script = one_at_a_time(&clone_script(
+        &Checkout {
+            url: &url,
+            base: &r.base,
+            branch: BRANCH,
+        },
+        None,
+    ));
     let bin = slow_first_clone(r.dir.path());
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     let spawn = || {

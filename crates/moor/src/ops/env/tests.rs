@@ -257,6 +257,7 @@ fn cache_rows_show_names_and_paths_and_never_a_key() {
                 Layer::Default,
                 "~/.gradle/caches, ~/.gradle/wrapper"
             ),
+            ("git", Layer::Default, "~/.local/share/git-mirror"),
             ("sdk", Layer::Repo, "/opt/sdk"),
         ]
     );

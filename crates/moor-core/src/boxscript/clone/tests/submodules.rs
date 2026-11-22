@@ -93,7 +93,7 @@ fn clone(o: &Origin, base: &str) -> String {
         base,
         branch: BRANCH,
     };
-    run(o, &clone_script(&c), &[]).1
+    run(o, &clone_script(&c, None), &[]).1
 }
 
 fn read(o: &Origin, rel: &str) -> String {
@@ -255,7 +255,7 @@ fn a_repo_with_no_gitmodules_runs_no_submodule_command() {
         branch: BRANCH,
     };
 
-    run(&o, &clone_script(&c), &[("PATH", &path)]);
+    run(&o, &clone_script(&c, None), &[("PATH", &path)]);
 
     let calls = std::fs::read_to_string(log).unwrap();
     assert!(calls.contains("clone"), "the wrapper ran: {calls}");
@@ -277,7 +277,7 @@ fn a_submodule_past_the_budget_is_left_out_and_the_script_finishes() {
         branch: BRANCH,
     };
 
-    let (_, text) = run(&o, &script(&c, 2), &[("PATH", &path)]);
+    let (_, text) = run(&o, &script(&c, None, 2), &[("PATH", &path)]);
 
     assert_eq!(left_out_paths(&text), ["lib"], "{text}");
     assert!(text.contains("out of time"), "{text}");
@@ -324,7 +324,7 @@ fn a_fresh_clone_fetches_an_ssh_submodule_over_https_and_writes_no_config() {
             branch: BRANCH,
         };
 
-        let (_, text) = run(&o, &clone_script(&c), &borrowed(&vars));
+        let (_, text) = run(&o, &clone_script(&c, None), &borrowed(&vars));
 
         assert!(left_out_submodules(&text).is_empty(), "{text}");
         assert_eq!(read(&o, "lib/s.txt"), "native\n");

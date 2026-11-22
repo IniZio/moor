@@ -27,6 +27,7 @@ pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
 pub use restore::{emptied, Emptied, EMPTIED};
 
+use crate::boxscript::quote;
 use crate::name::ForgeRepo;
 use crate::user::UserId;
 
@@ -310,6 +311,20 @@ impl CachePlan {
     #[must_use]
     pub fn scope(&self) -> Option<&str> {
         self.scope.as_deref()
+    }
+
+    /// Shell text for the path of `repo`'s bare git mirror, when a volume of the plan holds
+    /// [`presets::GIT_MIRROR`]: `<dir>/<owner>/<name>.git`, lowercased as GitHub matches names.
+    #[must_use]
+    pub fn git_mirror(&self, repo: &ForgeRepo) -> Option<String> {
+        let dir = presets::GIT_MIRROR;
+        let kept = self
+            .volumes
+            .iter()
+            .any(|v| v.paths.iter().any(|p| p.as_str() == dir));
+        let rel = dir.strip_prefix("~/")?;
+        let (owner, name) = (repo.owner.to_lowercase(), repo.name.to_lowercase());
+        kept.then(|| format!("\"$HOME\"/{}", quote(&format!("{rel}/{owner}/{name}.git"))))
     }
 
     /// Declared volumes left out because they met a preset with restore steps.

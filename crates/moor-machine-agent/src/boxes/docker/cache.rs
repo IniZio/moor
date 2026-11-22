@@ -36,8 +36,9 @@ const MOST_MOUNTS: usize = 64;
 /// plugins install where Claude runs.
 const AGENT_PLACE: [&str; 3] = ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"];
 
-/// Paths of tools whose caches take concurrent writers; every other path is copied per Box.
-const SHARED: [&str; 17] = [
+/// Paths of tools whose caches take concurrent writers; every other path is copied per Box. The
+/// git mirrors take them because the clone script holds a `flock` while it writes one.
+const SHARED: [&str; 18] = [
     "~/.cache",
     "~/.local/share/pnpm/store",
     "~/.bun/install/cache",
@@ -55,6 +56,7 @@ const SHARED: [&str; 17] = [
     "~/.android/cache",
     "~/.android/build-cache",
     "/opt/android-sdk",
+    "~/.local/share/git-mirror",
 ];
 
 /// One cache volume mounted at one path.

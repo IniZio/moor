@@ -75,6 +75,15 @@ fn what_two_live_boxes_must_not_share_is_copied() {
 }
 
 #[test]
+fn the_git_mirrors_are_mounted_shared_by_the_repo_s_boxes() {
+    let c = cache(vec![vol(G, "git", &["~/.local/share/git-mirror"])]);
+    let m = mounts(&slug(), Some(&c)).unwrap();
+    assert_eq!(m[0].volume(), format!("moor-cache-{G}-git-0"));
+    assert_eq!(m[0].path, "/home/agent/.local/share/git-mirror");
+    assert!(m[0].private.is_none());
+}
+
+#[test]
 fn a_hex_group_ending_in_a_is_still_a_shared_package_cache() {
     let c = cache(vec![vol("0123456789abcdea", "go", &["~/go/pkg/mod"])]);
     assert!(mounts(&slug(), Some(&c)).unwrap()[0].private.is_none());
