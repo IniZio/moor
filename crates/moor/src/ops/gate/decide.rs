@@ -1,10 +1,11 @@
 //! Deciding the outcome: moor runs the checks of the outcomes due, in the order listed, and the
 //! first whose checks all pass is the run's. The agent never claims one.
 //!
-//! At the closing stage a result is always written: the outcome that held, or that none did,
-//! which fails the try and is steered to the agent. While the gate in hand has not passed only the
-//! `anytime` outcomes are tried, and when none holds the pass goes on as it would without them:
-//! it runs the gate's due check, or reminds the agent.
+//! At the closing stage every check that answers leads to a line: the outcome that held, or that
+//! none did, which fails the try and is steered to the agent. A check with no answer, lost or not
+//! run, writes nothing, and the next pass tries again. While the gate in hand has not passed
+//! only the `anytime` outcomes are tried, and when none holds the pass goes on as it would
+//! without them: it runs the gate's due check, or reminds the agent.
 
 use moor_core::gate::{DueOutcomes, GateLine, OutcomeName, Tried};
 use moor_core::workflow::StepId;
@@ -21,7 +22,7 @@ pub(super) struct Due {
     stage: StepId,
     /// The try.
     try_n: u8,
-    /// Whether this is the closing stage, where a result is always written.
+    /// Whether this is the closing stage, where none holding is written.
     closing: bool,
     /// Each outcome with its check commands, in order.
     outcomes: Vec<(OutcomeName, Vec<String>)>,
