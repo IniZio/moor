@@ -55,6 +55,15 @@ test('a row whose line already names its pull request does not name it again bes
 	expect(text.match(/PR #13/g)).toHaveLength(1);
 });
 
+test('a row that waits on a gate offers Review for a yes and Look for a stuck gate', () => {
+	const wait = { gate: 'review', kind: 'approve' as const, seq: 1, handed: [], missing: [] };
+	const yes = row('y', 'acme/web', { state: 'needs_you', needs: { id: 'a', kind: 'approve', question: 'q', picks: [], plan: false, gate: wait } });
+	const stuck = row('s', 'acme/web', { state: 'needs_you', needs: { id: 'b', kind: 'stuck', question: 'q', picks: [], plan: false, gate: { ...wait, kind: 'stuck' } } });
+	const text = rowsOf(HomeListView({ rows: [yes, stuck], now: NOW, hash: '#/' })).map(textOf);
+	expect(text[0]).toContain('Review');
+	expect(text[1]).toContain('Look');
+});
+
 test('a task on two repos shows the first with +1 and names both on hover', () => {
 	const first = rowsOf(HomeListView({ rows, now: NOW, hash: '#/' }))[0];
 	expect(textOf(first)).toContain('acme/web');

@@ -138,7 +138,7 @@ function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: num
 			</time>
 			{askable && (
 				<span class="t-peekbtn" role="button" tabIndex={-1} data-peekbtn={t.box} title="Answer here (Space)">
-					peek
+					{t.needs.gate.kind === 'approve' ? 'Review' : 'Look'}
 				</span>
 			)}
 		</a>
