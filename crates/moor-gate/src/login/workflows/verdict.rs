@@ -5,8 +5,7 @@ use moor_core::gate::{Verdict, CLOSING};
 use moor_core::view::workflow::LastRunView;
 use serde_json::Value;
 
-/// The outcome the run ended in, unless it is the implicit `done` of a workflow that names none,
-/// which a person reads as the run finishing.
+/// The outcome the run ended in, unless it is the implicit `done`.
 pub(super) fn named(run: &LastRunView) -> Option<&Verdict> {
     run.verdict.as_ref().filter(|v| !v.is_implicit())
 }
@@ -19,8 +18,7 @@ pub(super) fn label_of(run: &LastRunView) -> String {
     )
 }
 
-/// The word that ends a run's history, from its `ended` line: the outcome's name when it names one,
-/// else the run's own outcome.
+/// The word that ends a run's history: the outcome's name when it names one.
 pub(super) fn ended_word(entry: &Value) -> String {
     let ended = entry.get("outcome");
     let named = ended
@@ -36,8 +34,7 @@ pub(super) fn ended_word(entry: &Value) -> String {
     )
 }
 
-/// Whether the run found an outcome, so a gate that has not passed was never reached: an
-/// `anytime` outcome held before the run got to it.
+/// Whether an `anytime` outcome ended the run before this gate passed.
 pub(super) fn ended_early(run: &LastRunView, gate_lines: &[&Value]) -> bool {
     run.verdict.is_some()
         && !gate_lines

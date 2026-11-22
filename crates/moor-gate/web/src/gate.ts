@@ -3,10 +3,8 @@ import * as v from 'valibot';
 /** What an open gate waits for. */
 const NextSchema = v.picklist(['agent', 'run_checks', 'ask', 'decide']);
 
-/** How a person reads an outcome. */
 const ToneSchema = v.picklist(['good', 'bad', 'plain']);
 
-/** What a run ended in: the outcome moor found by running its checks. */
 export const VerdictSchema = v.object({ name: v.string(), tone: ToneSchema, says: v.nullish(v.string()) });
 
 /** The stage after the last gate, where moor decides the outcome. */
@@ -66,7 +64,6 @@ export const WaitSchema = v.object({
 /** A check as a gate is written: a bare command, or a command with the one sentence it stands for. */
 const CheckDocSchema = v.union([v.string(), v.object({ run: v.string(), says: v.string() })]);
 
-/** One outcome as the workflow keeps it. */
 export const OutcomeDocSchema = v.object({
 	name: v.string(),
 	says: v.nullish(v.string()),
