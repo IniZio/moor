@@ -28,7 +28,7 @@ use crate::ops::gate::decide::{self, Due};
 use crate::ops::gate::handoff::hand_over;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
-use crate::store::{BoxRow, RunOfBox, Store, StoreError};
+use crate::store::{Appended, BoxRow, RunOfBox, Store, StoreError};
 
 /// What to run in a Box, and the number of the line the result takes.
 pub(crate) struct Job {
@@ -255,10 +255,12 @@ fn tell_failure(
         .map(Some)
 }
 
-/// Whether the workflow run of Box `id` has ended, or cannot be read: a job's result is then
-/// dropped, with no line written and nobody told.
-pub(super) fn run_ended(store: &Store, id: BoxId) -> bool {
-    !matches!(store.run_of_box(id), Ok(RunOfBox::NoRun | RunOfBox::Open))
+/// What to log when a job's result is dropped because the run of Box `id` ended while it ran.
+pub(super) fn dropped(what: &str, id: BoxId) -> String {
+    format!(
+        "{what}: dropped the result for Box {}: its run has ended",
+        id.get()
+    )
 }
 
 /// Whether `e` says another line took the number.
@@ -299,9 +301,6 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
             id.get()
         ));
     }
-    if run_ended(store, id) {
-        return out;
-    }
     let gate = gate.clone();
     let line = match unanswered(ran.ended, ran.error) {
         Ok((exit, tail)) => GateLine::Checked {
@@ -318,8 +317,8 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
             why,
         },
     };
-    match store.append_gate_line(id, n, cx.clock().now(), &line) {
-        Ok(()) => {
+    match store.append_job_line(id, n, cx.clock().now(), &line) {
+        Ok(Appended::Written) => {
             if let Err(e) = tell(cx, store, id) {
                 out.push(format!(
                     "gate {name}: could not tell the agent: {}",
@@ -327,6 +326,7 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
                 ));
             }
         }
+        Ok(Appended::RunEnded) => out.push(dropped(&format!("gate {name}"), id)),
         Err(e) if taken(&e) => {}
         Err(e) => out.push(format!("gate {name}: {e}")),
     }

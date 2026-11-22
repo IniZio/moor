@@ -83,6 +83,7 @@ mod user_inbox;
 mod users;
 
 pub(crate) use agent::{Launch, LaunchEnd};
+pub(crate) use gate::Appended;
 pub(crate) use proxy::state::StoredCa;
 pub(crate) use proxy::ProxyRow;
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};

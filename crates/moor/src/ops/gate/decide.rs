@@ -12,10 +12,11 @@ use moor_core::gate::{CheckOf, DueOutcomes, GateLine, OutcomeName, Tried, Unansw
 use moor_core::workflow::StepId;
 use moor_core::BoxId;
 
-use super::checks::{run_check, run_ended, taken, tell, unanswered, GateCheck};
+use super::checks::{dropped, run_check, taken, tell, unanswered, GateCheck};
 use super::remind::remind;
 use crate::cx::Cx;
 use crate::ops::common::check::{execute, CHECK_LIMIT};
+use crate::store::{Appended, RunOfBox};
 
 /// The outcomes a job tries, with their commands, at a stage and try.
 pub(super) struct Due {
@@ -79,9 +80,6 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
     let Some(found) = find(cx, id, due, &mut out) else {
         return out;
     };
-    if run_ended(store, id) {
-        return out;
-    }
     let line = match found {
         Found::Held(outcome) => GateLine::Held {
             gate: due.stage.clone(),
@@ -104,18 +102,26 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
                 out.extend(run_check(cx, (id, n), check));
                 return out;
             }
-            if let Err(e) = remind_now(cx, id) {
-                out.push(format!("outcomes: could not remind the agent: {}", e.error));
+            // A reminder is a steer before any line, so the run is read first.
+            match store.run_of_box(id) {
+                Ok(RunOfBox::Ended(_)) => out.push(dropped("outcomes", id)),
+                Err(e) => out.push(format!("outcomes: could not read the run: {e}")),
+                Ok(RunOfBox::NoRun | RunOfBox::Open) => {
+                    if let Err(e) = remind_now(cx, id) {
+                        out.push(format!("outcomes: could not remind the agent: {}", e.error));
+                    }
+                }
             }
             return out;
         }
     };
-    match store.append_gate_line(id, n, cx.clock().now(), &line) {
-        Ok(()) => {
+    match store.append_job_line(id, n, cx.clock().now(), &line) {
+        Ok(Appended::Written) => {
             if let Err(e) = tell(cx, store, id) {
                 out.push(format!("outcomes: could not tell the agent: {}", e.error));
             }
         }
+        Ok(Appended::RunEnded) => out.push(dropped("outcomes", id)),
         Err(e) if taken(&e) => {}
         Err(e) => out.push(format!("outcomes: {e}")),
     }

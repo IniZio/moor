@@ -11,7 +11,17 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use crate::store::apply::insert_event;
 use crate::store::db::{DbExt as _, OptionalExtension};
-use crate::store::{Store, StoreError};
+use crate::store::users::workflow::run_of_box_in;
+use crate::store::{RunOfBox, Store, StoreError};
+
+/// What became of a job's line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Appended {
+    /// It was written.
+    Written,
+    /// The Box's workflow run had ended, so nothing was written.
+    RunEnded,
+}
 
 impl Store {
     /// Box `id`'s gates; `None` for a Box that has none.
@@ -72,8 +82,36 @@ impl Store {
         at: Ts,
         line: &GateLine,
     ) -> Result<(), StoreError> {
+        self.append_line(id, (n, at), line, false).map(drop)
+    }
+
+    /// Appends a line as [`Self::append_gate_line`] does, unless Box `id`'s workflow run has
+    /// ended. The run is read in the transaction that writes, which holds the store's write lock,
+    /// so a run that ends while a job runs is seen.
+    pub(crate) fn append_job_line(
+        &self,
+        id: BoxId,
+        n: i64,
+        at: Ts,
+        line: &GateLine,
+    ) -> Result<Appended, StoreError> {
+        self.append_line(id, (n, at), line, true)
+    }
+
+    /// Appends `line` as line `n` at `at`, writing nothing when `open_run` asks for an open run
+    /// and the Box's has ended.
+    fn append_line(
+        &self,
+        id: BoxId,
+        (n, at): (i64, Ts),
+        line: &GateLine,
+        open_run: bool,
+    ) -> Result<Appended, StoreError> {
         let mut writer = self.writer();
         let tx = writer.immediate()?;
+        if open_run && matches!(run_of_box_in(&tx, id)?, RunOfBox::Ended(_)) {
+            return Ok(Appended::RunEnded);
+        }
         tx.run(
             Query::insert()
                 .into_table(BoxGateLines::Table)
@@ -94,7 +132,7 @@ impl Store {
         history::note(&tx, id, at)?;
         tx.commit()?;
         drop(writer);
-        Ok(())
+        Ok(Appended::Written)
     }
 
     /// Writes the `gate_waiting` event of Box `id` when its gates wait for a person and the wait has

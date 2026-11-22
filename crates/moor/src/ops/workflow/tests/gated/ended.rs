@@ -150,7 +150,11 @@ fn ran_without_a_trace(r: &Hooked, old: BoxId, job: &Job) {
     let store = r.cx.store().unwrap();
     let lines = store.gate_lines(old).unwrap();
     let steered = store.newest_event_of(old, "steered").unwrap();
-    run(&r.cx, job);
+    let said = run(&r.cx, job);
+    assert!(
+        said.iter().any(|l| l.contains("its run has ended")),
+        "the drop is logged with its reason: {said:?}"
+    );
     assert_eq!(store.gate_lines(old).unwrap(), lines, "nothing is recorded");
     assert_eq!(
         store.newest_event_of(old, "steered").unwrap().map(|e| e.id),
