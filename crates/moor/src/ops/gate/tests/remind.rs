@@ -9,7 +9,7 @@ use moor_core::gate::{GateLine, GateNext, GateStatus};
 use moor_core::progress::Progress;
 use moor_core::workflow::{StepId, StepResult};
 
-use super::fx::{evidence_gate, fx};
+use super::fx::{done, evidence_gate, fx};
 
 fn id(name: &str) -> StepId {
     StepId::parse(name).unwrap()
@@ -64,7 +64,7 @@ fn a_report_after_the_reminder_ends_the_waiting() {
     assert!(!told.error, "{told:?}");
     f.quiet();
     f.pass();
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
     assert_eq!(f.told().len(), 1);
 }
 

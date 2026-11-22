@@ -16,15 +16,18 @@ fn doc(name: &str, evidence: &[&str], checks: &[&str], approval: Option<Approval
 }
 
 fn gates() -> Gates {
-    Gates::parse(&[
-        doc(
-            "proof",
-            &["proof.md", "shots-*"],
-            &["make test", "make lint"],
-            None,
-        ),
-        doc("tests", &[], &["make test"], Some(Approval::Owner)),
-    ])
+    Gates::parse(
+        &[
+            doc(
+                "proof",
+                &["proof.md", "shots-*"],
+                &["make test", "make lint"],
+                None,
+            ),
+            doc("tests", &[], &["make test"], Some(Approval::Owner)),
+        ],
+        &[],
+    )
     .unwrap()
 }
 

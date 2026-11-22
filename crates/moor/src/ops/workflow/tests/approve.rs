@@ -262,7 +262,7 @@ fn yes_goes_on_with_the_next_step_sent_to_the_sleeping_box_and_the_run_delivers(
     assert_eq!(told.reply, "Done.");
     assert!(matches!(
         ended(&r.first(wid)),
-        RunOutcome::Delivered { result } if result == "opened PR 3"
+        RunOutcome::Delivered { result, .. } if result == "opened PR 3"
     ));
 }
 

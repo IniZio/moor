@@ -50,6 +50,11 @@ impl StepId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// A stage name moor keeps for itself, which is a valid id and which no gate may take.
+    pub(crate) fn reserved(name: &'static str) -> Self {
+        Self(name.to_owned())
+    }
 }
 
 impl fmt::Display for StepId {

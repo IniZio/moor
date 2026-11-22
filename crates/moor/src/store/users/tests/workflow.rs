@@ -323,6 +323,7 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let at = Ts::from_millis(900);
     let done = RunOutcome::Delivered {
         result: "opened a pull request".to_owned(),
+        verdict: None,
     };
     let expired = RunOutcome::TimedOut {
         at: Plan::single_id(),
@@ -352,6 +353,7 @@ fn a_started_run_ends_once_as_finished_or_timed_out() {
     let missing = moor_core::workflow::RunId::new(9_999);
     let outcome = RunOutcome::Delivered {
         result: String::new(),
+        verdict: None,
     };
     assert!(!ends(&store, missing, (1, &outcome), at));
 }

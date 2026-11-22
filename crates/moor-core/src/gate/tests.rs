@@ -14,7 +14,7 @@ fn gate(name: &str) -> GateDoc {
 }
 
 fn refused(docs: &[GateDoc]) -> GateError {
-    Gates::parse(docs).unwrap_err()
+    Gates::parse(docs, &[]).unwrap_err()
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn one_gate_of_each_kind_parses() {
             ..gate("owner-ok")
         },
     ];
-    let gates = Gates::parse(&docs).unwrap();
+    let gates = Gates::parse(&docs, &[]).unwrap();
     let names: Vec<_> = gates.iter().map(|g| g.name.to_string()).collect();
     assert_eq!(names, ["proof", "tests", "owner-ok"]);
     let last = gates.get(2).unwrap();
@@ -50,7 +50,7 @@ fn a_gate_with_no_max_tries_gets_two_and_an_explicit_one_stays_one() {
         max_tries: Some(1),
         ..gate("once")
     };
-    let gates = Gates::parse(&[gate("twice"), one]).unwrap();
+    let gates = Gates::parse(&[gate("twice"), one], &[]).unwrap();
     let tries: Vec<_> = gates.iter().map(|g| g.max_tries.get()).collect();
     assert_eq!(tries, [2, 1]);
     let docs = gates.docs();
@@ -58,7 +58,7 @@ fn a_gate_with_no_max_tries_gets_two_and_an_explicit_one_stays_one() {
         docs.iter().map(|d| d.max_tries).collect::<Vec<_>>(),
         [None, Some(1)]
     );
-    assert_eq!(Gates::parse(&docs).unwrap(), gates);
+    assert_eq!(Gates::parse(&docs, &[]).unwrap(), gates);
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn no_gates_are_refused() {
 fn more_than_eight_gates_are_refused() {
     let nine: Vec<_> = (0..9).map(|i| gate(&format!("g{i}"))).collect();
     assert_eq!(refused(&nine), GateError::TooManyGates(9));
-    assert!(Gates::parse(nine.get(..8).unwrap()).is_ok());
+    assert!(Gates::parse(nine.get(..8).unwrap(), &[]).is_ok());
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn a_gate_with_no_evidence_no_checks_and_no_approval_is_refused() {
         approval: Some(Approval::Owner),
         ..gate("nothing")
     };
-    assert!(Gates::parse(&[owner]).is_ok());
+    assert!(Gates::parse(&[owner], &[]).is_ok());
 }
 
 fn evidence_gate(names: &[&str]) -> GateDoc {
@@ -125,7 +125,7 @@ fn a_bad_name_is_refused() {
 fn evidence_must_be_flat_names_or_prefixes_and_few() {
     let got = refused(&[evidence_gate(&["a/b"])]);
     assert!(matches!(got, GateError::BadEvidence { .. }), "{got:?}");
-    assert!(Gates::parse(&[evidence_gate(&["before-*", "after.png"])]).is_ok());
+    assert!(Gates::parse(&[evidence_gate(&["before-*", "after.png"])], &[]).is_ok());
     let many: Vec<String> = (0..33).map(|i| format!("f{i}")).collect();
     let names: Vec<&str> = many.iter().map(String::as_str).collect();
     let got = refused(&[evidence_gate(&names)]);
@@ -140,7 +140,7 @@ fn checks_must_be_few_filled_and_short() {
     assert!(matches!(long, GateError::CheckTooLong { .. }), "{long:?}");
     let many = refused(&[check_gate(vec!["true".into(); 9])]);
     assert!(matches!(many, GateError::TooManyChecks { .. }), "{many:?}");
-    assert!(Gates::parse(&[check_gate(vec!["true".into(); 8])]).is_ok());
+    assert!(Gates::parse(&[check_gate(vec!["true".into(); 8])], &[]).is_ok());
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn tries_must_be_one_to_five() {
             max_tries: Some(tries),
             ..gate("proof")
         };
-        assert!(Gates::parse(&[ok]).is_ok());
+        assert!(Gates::parse(&[ok], &[]).is_ok());
     }
 }
 
@@ -173,20 +173,24 @@ fn gates_survive_their_json_and_leave_out_what_is_default() {
             ..gate("tests")
         },
     ];
-    let json = serde_json::to_string(&Gates::parse(&docs).unwrap().docs()).unwrap();
+    let json = serde_json::to_string(&Gates::parse(&docs, &[]).unwrap().doc()).unwrap();
     assert_eq!(
         json,
-        r#"[{"name":"proof","evidence":["proof.md"]},{"name":"tests","checks":["make lint"],"approval":"owner","max_tries":3}]"#
+        r#"{"gates":[{"name":"proof","evidence":["proof.md"]},{"name":"tests","checks":["make lint"],"approval":"owner","max_tries":3}]}"#
     );
     assert_eq!(
         Gates::from_json(&json).unwrap(),
-        Gates::parse(&docs).unwrap()
+        Gates::parse(&docs, &[]).unwrap()
     );
 }
 
 #[test]
 fn json_that_is_not_gates_is_refused() {
-    for text in [r#"[{"name":"a","evidence":["x"],"bogus":1}]"#, "{}", "[]"] {
+    for text in [
+        r#"{"gates":[{"name":"a","evidence":["x"],"bogus":1}]}"#,
+        "{}",
+        r#"{"gates":[]}"#,
+    ] {
         assert!(Gates::from_json(text).is_err(), "{text}");
     }
 }

@@ -10,7 +10,7 @@ use moor_core::gate::{GateLine, GateNext, GateStatus};
 use moor_core::progress::Progress;
 use moor_core::workflow::{StepId, StepResult};
 
-use super::fx::{evidence_gate, fx, gate};
+use super::fx::{done, evidence_gate, fx, gate};
 
 fn id(name: &str) -> StepId {
     StepId::parse(name).unwrap()
@@ -72,7 +72,7 @@ fn a_report_with_every_named_file_passes_a_gate_that_needs_nothing_more() {
     assert!(!told.error, "{told:?}");
     assert!(told.reply.contains("passed"), "{told:?}");
     assert_eq!(kinds(&f.lines()), ["submitted"]);
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn a_report_that_is_in_order_moves_the_gate_on_to_its_checks_and_the_next_gate()
     f.leave(&[("shot.png", 3)]);
     let told = f.report("shots", StepResult::Ok, &["shot.png"]);
     assert!(!told.error, "{told:?}");
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
 }
 
 #[test]
@@ -209,5 +209,5 @@ fn a_failing_check_tells_the_agent_to_fix_and_report_again() {
     f.report("proof", StepResult::Ok, &["proof.md"]);
     f.quiet();
     f.pass();
-    assert_eq!(f.standing().0, GateStatus::Passed);
+    assert_eq!(f.standing().0, done());
 }

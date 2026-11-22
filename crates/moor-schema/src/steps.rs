@@ -57,6 +57,7 @@ mod workflow_plans;
 mod workflow_repo_set;
 mod workflow_run_pull;
 mod workflow_run_trigger;
+mod workflow_run_verdict;
 mod workflows;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
@@ -116,4 +117,5 @@ pub const STEPS: &[Step] = &[
     step("V96__workflow_optional_cron", workflow_optional_cron::write),
     step("V97__box_gates", box_gates::write),
     step("V98__workflow_gates", workflow_gates::write),
+    step("V99__workflow_run_verdict", workflow_run_verdict::write),
 ];

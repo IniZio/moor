@@ -57,22 +57,25 @@ mod tests {
 
     #[test]
     fn each_gate_is_a_step_named_for_it() {
-        let gates = Gates::parse(&[
-            GateDoc {
-                name: "proof".to_owned(),
-                evidence: vec!["pr-*".to_owned()],
-                checks: Vec::new(),
-                approval: None,
-                max_tries: None,
-            },
-            GateDoc {
-                name: "done".to_owned(),
-                evidence: vec!["posted.md".to_owned()],
-                checks: vec!["true".into()],
-                approval: Some(Approval::Owner),
-                max_tries: Some(1),
-            },
-        ])
+        let gates = Gates::parse(
+            &[
+                GateDoc {
+                    name: "proof".to_owned(),
+                    evidence: vec!["pr-*".to_owned()],
+                    checks: Vec::new(),
+                    approval: None,
+                    max_tries: None,
+                },
+                GateDoc {
+                    name: "done".to_owned(),
+                    evidence: vec!["posted.md".to_owned()],
+                    checks: vec!["true".into()],
+                    approval: Some(Approval::Owner),
+                    max_tries: Some(1),
+                },
+            ],
+            &[],
+        )
         .unwrap();
         let doc = gates.steps_doc();
         let steps = doc["steps"].as_array().unwrap();

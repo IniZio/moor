@@ -19,7 +19,18 @@ fn tries(n: u64, mut d: GateDoc) -> GateDoc {
 }
 
 fn gates(docs: &[GateDoc]) -> Gates {
-    Gates::parse(docs).unwrap()
+    Gates::parse(docs, &[]).unwrap()
+}
+
+/// Where a Box with no outcomes stands once every gate passed: at the implicit `done`.
+fn passed() -> GateStatus {
+    GateStatus::Passed {
+        outcome: Verdict {
+            name: OutcomeName("done".to_owned()),
+            tone: Tone::Good,
+            says: None,
+        },
+    }
 }
 
 fn id(s: &str) -> StepId {
@@ -141,7 +152,7 @@ fn a_gate_with_no_evidence_opens_on_its_checks_or_its_question() {
 #[test]
 fn an_accepted_report_passes_a_gate_that_asks_nothing_more() {
     let lines = [submitted("proof", 1)];
-    assert_eq!(status(&evidence_gate(), &lines), GateStatus::Passed);
+    assert_eq!(status(&evidence_gate(), &lines), passed());
 }
 
 #[test]
@@ -159,7 +170,7 @@ fn an_accepted_report_leads_to_the_checks_then_the_question_then_passes() {
     lines.push(checked("all", 1, 1, 0));
     assert_eq!(status(&g, &lines), open("all", 1, GateNext::Ask));
     lines.push(answered("all", 1, Answer::Yes));
-    assert_eq!(status(&g, &lines), GateStatus::Passed);
+    assert_eq!(status(&g, &lines), passed());
 }
 
 #[test]
@@ -185,7 +196,7 @@ fn one_refusal_keeps_the_try_and_a_second_fails_it() {
 #[test]
 fn a_refusal_then_an_accepted_report_passes() {
     let lines = [refused("proof", 1), submitted("proof", 1)];
-    assert_eq!(status(&evidence_gate(), &lines), GateStatus::Passed);
+    assert_eq!(status(&evidence_gate(), &lines), passed());
 }
 
 #[test]
@@ -222,7 +233,7 @@ fn quiet_without_a_reminder_first_changes_nothing() {
 #[test]
 fn a_reminded_agent_that_then_reports_passes() {
     let lines = [reminded("proof", 1), submitted("proof", 1)];
-    assert_eq!(status(&evidence_gate(), &lines), GateStatus::Passed);
+    assert_eq!(status(&evidence_gate(), &lines), passed());
 }
 
 #[test]
@@ -257,7 +268,7 @@ fn a_lost_stream_is_tried_again_and_two_count_as_a_failure() {
     let twice = [lost("tests", 1, 0), lost("tests", 1, 0)];
     assert_eq!(status(&g, &twice), open("tests", 2, GateNext::RunChecks));
     let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
-    assert_eq!(status(&g, &then_ok), GateStatus::Passed);
+    assert_eq!(status(&g, &then_ok), passed());
 }
 
 #[test]
@@ -276,7 +287,7 @@ fn an_owner_no_fails_the_try_and_a_yes_passes() {
         answered("ok", 1, Answer::No),
         answered("ok", 2, Answer::Yes),
     ];
-    assert_eq!(status(&g, &yes), GateStatus::Passed);
+    assert_eq!(status(&g, &yes), passed());
 }
 
 #[test]
@@ -357,7 +368,7 @@ fn gates_pass_one_after_another_and_the_last_one_passes_the_box() {
     let mut lines = vec![submitted("proof", 1)];
     assert_eq!(status(&g, &lines), open("tests", 1, GateNext::RunChecks));
     lines.push(checked("tests", 1, 0, 0));
-    assert_eq!(status(&g, &lines), GateStatus::Passed);
+    assert_eq!(status(&g, &lines), passed());
 }
 
 #[test]

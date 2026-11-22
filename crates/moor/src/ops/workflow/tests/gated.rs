@@ -61,7 +61,7 @@ impl Rig {
             (true, TimeoutMinutes::DEFAULT),
         )
         .unwrap();
-        def.gates = Some(Gates::parse(gates).unwrap());
+        def.gates = Some(Gates::parse(gates, &[]).unwrap());
         def.on_pull_request = on_pull_request;
         self.cx
             .store()
@@ -112,6 +112,16 @@ impl Rig {
             RunState::Done(RunEnd::Ended { outcome, .. }) => outcome,
             other => panic!("not ended: {other:?}"),
         }
+    }
+}
+
+/// A gated run delivered with `result`, in the implicit outcome `done`.
+fn delivered(result: &str) -> RunOutcome {
+    RunOutcome::Delivered {
+        result: result.to_owned(),
+        verdict: Some(
+            serde_json::from_value(serde_json::json!({"name": "done", "tone": "good"})).unwrap(),
+        ),
     }
 }
 
@@ -229,12 +239,7 @@ fn passed_gates_deliver_the_run_with_the_note_of_the_last_accepted_report() {
     let id = r.started_gated(&[proof()]);
     r.gate_line(id, &reported("proof", "all green"));
     r.pass();
-    assert_eq!(
-        r.outcome(id),
-        RunOutcome::Delivered {
-            result: "all green".to_owned()
-        }
-    );
+    assert_eq!(r.outcome(id), delivered("all green"));
     assert!(r.event(id, "run_failed").is_none());
 }
 
@@ -299,12 +304,7 @@ fn a_stuck_gate_sets_the_run_waiting_and_a_reopened_one_goes_on_to_delivery() {
 
     r.gate_line(id, &reported("proof", "fixed"));
     r.pass();
-    assert_eq!(
-        r.outcome(id),
-        RunOutcome::Delivered {
-            result: "fixed".to_owned()
-        }
-    );
+    assert_eq!(r.outcome(id), delivered("fixed"));
 }
 
 #[test]
@@ -341,12 +341,7 @@ fn a_gate_that_asks_sets_the_run_waiting_and_the_owners_yes_delivers_it() {
     };
     r.gate_line(id, &yes);
     r.pass();
-    assert_eq!(
-        r.outcome(id),
-        RunOutcome::Delivered {
-            result: "proof is in".to_owned()
-        }
-    );
+    assert_eq!(r.outcome(id), delivered("proof is in"));
     assert_eq!(
         r.told(id),
         [
@@ -358,6 +353,7 @@ fn a_gate_that_asks_sets_the_run_waiting_and_the_owners_yes_delivers_it() {
             "gate_waiting ship 1",
             "gate_answered ship 1",
             "gate_passed ship",
+            "outcome_reached",
             "ended",
         ]
     );

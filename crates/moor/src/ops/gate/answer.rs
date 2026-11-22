@@ -8,7 +8,7 @@
 
 use std::fmt::Write as _;
 
-use moor_core::gate::{status, wait, GateLine, GateNext, GateStatus, WaitKind};
+use moor_core::gate::{passed_gates, status, wait, GateLine, GateNext, GateStatus, WaitKind};
 use moor_core::progress::gate_ask_id;
 use moor_core::user::Viewer;
 use moor_core::view::gate::GateAnswerValue;
@@ -89,7 +89,8 @@ pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, Comma
             next: GateNext::Ask,
         } = status(&gates, &lines)
         else {
-            return Err(refused(nothing_asks(name, &status(&gates, &lines))));
+            let all = passed_gates(&gates, &lines) == gates.iter().count();
+            return Err(refused(nothing_asks(name, &status(&gates, &lines), all)));
         };
         let asked = wait(&gates, &lines).filter(|w| w.kind == WaitKind::Approve);
         if let (Some(ask), Some(asked)) = (&req.ask, &asked) {
@@ -121,9 +122,16 @@ pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, Comma
 }
 
 /// What the gates of Box `name` say when none of them asks for an answer.
-fn nothing_asks(name: &str, status: &GateStatus) -> String {
+fn nothing_asks(name: &str, status: &GateStatus, all: bool) -> String {
     match status {
-        GateStatus::Passed => format!("every gate of Box {name} has passed, so nothing asks you"),
+        GateStatus::Passed { outcome } if all => format!(
+            "every gate of Box {name} has passed and its run ended in “{}”, so nothing asks you",
+            outcome.name
+        ),
+        GateStatus::Passed { outcome } => format!(
+            "the run of Box {name} ended in “{}” before its last gate, so nothing asks you",
+            outcome.name
+        ),
         GateStatus::Failed { gate, why } => {
             format!("gate {gate} of Box {name} failed: {why}. Nothing asks you")
         }
@@ -136,6 +144,7 @@ fn nothing_asks(name: &str, status: &GateStatus) -> String {
                 GateNext::Agent => "the agent's evidence",
                 GateNext::RunChecks => "its checks",
                 GateNext::Ask => "your answer",
+                GateNext::Decide => "moor to decide the outcome",
             };
             format!("gate {gate} of Box {name} waits for {waits}, not for an answer from you")
         }
@@ -159,7 +168,12 @@ fn answered(
     };
     let now = status(gates, &lines);
     let mut outcome = match (&now, answer) {
-        (GateStatus::Passed, _) => format!("gate {gate} passed, and every gate has passed"),
+        (GateStatus::Passed { outcome }, _) => {
+            format!(
+                "gate {gate} passed, and every gate has passed: the run ended in “{}”",
+                outcome.name
+            )
+        }
         (GateStatus::Failed { why, .. }, _) => format!("gate {gate} failed: {why}"),
         (GateStatus::Open { gate: g, try_n, .. }, Answer::No) if g.as_str() == gate => {
             format!("gate {gate} failed this try; try {try_n} starts")

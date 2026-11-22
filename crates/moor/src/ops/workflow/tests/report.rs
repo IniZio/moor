@@ -283,7 +283,7 @@ fn a_deliver_report_ends_the_run_with_its_note_as_the_result() {
     let told = r.report(wid, ok("ship", "opened PR 12, same as last week"));
     assert_eq!(told.reply, "Done.");
     let RunState::Done(RunEnd::Ended {
-        outcome: RunOutcome::Delivered { result },
+        outcome: RunOutcome::Delivered { result, .. },
         ..
     }) = r.latest(wid).state
     else {

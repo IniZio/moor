@@ -334,6 +334,7 @@ pub(super) fn move_in(
         .value(WorkflowRuns::TryN, cols.try_n)
         .value(WorkflowRuns::WaitingSince, cols.waiting_since)
         .value(WorkflowRuns::EndedStep, cols.ended_step)
+        .value(WorkflowRuns::Verdict, cols.verdict)
         .value(WorkflowRuns::Seq, seq)
         .and_where(Expr::col(WorkflowRuns::Id).eq(run.get()))
         .and_where(Expr::col(WorkflowRuns::Outcome).eq(from.outcome()));

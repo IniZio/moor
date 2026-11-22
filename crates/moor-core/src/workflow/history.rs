@@ -89,6 +89,11 @@ pub enum HistoryEntry {
         /// The gate.
         step: StepId,
     },
+    /// moor found the outcome the run of a Box with gates ends in.
+    OutcomeReached {
+        /// The outcome.
+        outcome: crate::gate::Verdict,
+    },
     /// The run waits for a person at a gate: the owner is asked, or the gate is stuck.
     GateWaiting {
         /// The gate.

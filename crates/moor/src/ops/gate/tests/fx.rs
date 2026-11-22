@@ -9,7 +9,7 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::gate::{CheckDoc, GateDoc, GateLine, GateStatus};
+use moor_core::gate::{CheckDoc, GateDoc, GateLine, GateStatus, GatesDoc, OutcomeDoc};
 use moor_core::progress::Progress;
 use moor_core::request::StepReportReq;
 use moor_core::seam::clock::Ts;
@@ -57,6 +57,14 @@ pub(super) fn evidence_gate(name: &str, evidence: &[&str], checks: &[&str], trie
     }
 }
 
+/// Where a Box with no outcomes stands once every gate passed: at the implicit `done`.
+pub(super) fn done() -> GateStatus {
+    GateStatus::Passed {
+        outcome: serde_json::from_value(serde_json::json!({"name": "done", "tone": "good"}))
+            .unwrap(),
+    }
+}
+
 /// A Box `t` with `gates` and an agent that works, over a driver that probes it clean.
 pub(super) fn fx(gates: impl FnOnce(&std::path::Path) -> Vec<GateDoc>) -> Fx {
     fx_on(FakeDriver::new(), gates)
@@ -67,6 +75,24 @@ pub(super) fn fx_on(
     driver: FakeDriver,
     gates: impl FnOnce(&std::path::Path) -> Vec<GateDoc>,
 ) -> Fx {
+    fx_doc(driver, |dir| GatesDoc {
+        gates: gates(dir),
+        outcomes: Vec::new(),
+    })
+}
+
+/// [`fx`] with the gates and outcomes `doc` gives.
+pub(super) fn fx_outcomes(
+    doc: impl FnOnce(&std::path::Path) -> (Vec<GateDoc>, Vec<OutcomeDoc>),
+) -> Fx {
+    fx_doc(FakeDriver::new(), |dir| {
+        let (gates, outcomes) = doc(dir);
+        GatesDoc { gates, outcomes }
+    })
+}
+
+/// [`fx`] over `driver`, with the gates and outcomes `doc` gives.
+fn fx_doc(driver: FakeDriver, doc: impl FnOnce(&std::path::Path) -> GatesDoc) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let probe = BoxPath::under("/work/box-1", ".moor/boxwork").unwrap();
     let driver = Arc::new(driver.peek_text("box-1", &probe, "ahead=0 dirty=0"));
@@ -78,7 +104,7 @@ pub(super) fn fx_on(
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
     let cx = Cx::fake(dir.path(), driver.clone(), proc).with_engine(engine.clone());
-    let json = serde_json::to_string(&gates(dir.path())).unwrap();
+    let json = serde_json::to_string(&doc(dir.path())).unwrap();
     let id = ready_box(&cx, &driver, json);
     cx.store().unwrap().begin_launch(id, "agent-1").unwrap();
     Fx {

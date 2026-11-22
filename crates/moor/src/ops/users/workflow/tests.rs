@@ -412,6 +412,7 @@ fn a_run_shows_its_phase_its_step_its_result_and_its_history() {
 
     let delivered = RunOutcome::Delivered {
         result: "opened a pull request".to_owned(),
+        verdict: None,
     };
     store
         .end_workflow_run(

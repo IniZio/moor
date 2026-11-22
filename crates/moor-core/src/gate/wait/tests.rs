@@ -43,7 +43,7 @@ fn failed_check(try_n: u8) -> GateLine {
 
 #[test]
 fn an_open_question_carries_what_the_agent_handed_in() {
-    let g = Gates::parse(&[doc("proof", &["proof.md", "shot.png"], &[], 2)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &["proof.md", "shot.png"], &[], 2)], &[]).unwrap();
     assert_eq!(wait(&g, &[]), None);
     let lines = [submitted(1, "all green")];
     let w = wait(&g, &lines).unwrap();
@@ -58,7 +58,7 @@ fn an_open_question_carries_what_the_agent_handed_in() {
 
 #[test]
 fn a_stuck_gate_carries_why_and_the_command_that_failed() {
-    let g = Gates::parse(&[doc("proof", &[], &["cargo test --workspace"], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &[], &["cargo test --workspace"], 1)], &[]).unwrap();
     let lines = [failed_check(1)];
     let w = wait(&g, &lines).unwrap();
     assert_eq!(
@@ -76,7 +76,7 @@ fn a_stuck_gate_carries_why_and_the_command_that_failed() {
 
 #[test]
 fn a_stuck_gate_names_the_evidence_it_never_got() {
-    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)], &[]).unwrap();
     let refused = || GateLine::Refused {
         gate: id("proof"),
         try_n: 1,
@@ -90,7 +90,7 @@ fn a_stuck_gate_names_the_evidence_it_never_got() {
 
 #[test]
 fn a_quiet_agent_leaves_a_stuck_wait_with_only_a_reason() {
-    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)], &[]).unwrap();
     let lines = [
         GateLine::Reminded {
             gate: id("proof"),
@@ -108,7 +108,7 @@ fn a_quiet_agent_leaves_a_stuck_wait_with_only_a_reason() {
 
 #[test]
 fn no_wait_while_the_agent_or_moor_has_the_gate_or_after_a_no_ended_it() {
-    let g = Gates::parse(&[doc("proof", &[], &[], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &[], &[], 1)], &[]).unwrap();
     let no = GateLine::Answered {
         gate: id("proof"),
         try_n: 1,
@@ -117,13 +117,13 @@ fn no_wait_while_the_agent_or_moor_has_the_gate_or_after_a_no_ended_it() {
         note: String::new(),
     };
     assert_eq!(wait(&g, &[no]), None);
-    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &["proof.md"], &[], 1)], &[]).unwrap();
     assert_eq!(wait(&g, &[]), None);
 }
 
 #[test]
 fn a_reopened_gate_forgets_the_failure_before_the_reopening() {
-    let g = Gates::parse(&[doc("proof", &[], &["make"], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &[], &["make"], 1)], &[]).unwrap();
     let reopened = GateLine::Reopened {
         gate: id("proof"),
         by: "me".to_owned(),
@@ -136,7 +136,7 @@ fn a_reopened_gate_forgets_the_failure_before_the_reopening() {
 
 #[test]
 fn the_card_json_is_pinned() {
-    let g = Gates::parse(&[doc("proof", &[], &["make"], 1)]).unwrap();
+    let g = Gates::parse(&[doc("proof", &[], &["make"], 1)], &[]).unwrap();
     let json = serde_json::to_value(wait(&g, &[failed_check(1)]).unwrap()).unwrap();
     assert_eq!(
         json,

@@ -32,7 +32,7 @@ fn reminded(try_n: u8) -> GateLine {
 fn gates_are_stored_with_the_box_and_a_box_without_has_none() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let json = serde_json::to_string(&[proof()]).unwrap();
+    let json = serde_json::to_string(&Gates::parse(&[proof()], &[]).unwrap().doc()).unwrap();
     let with = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("a").unwrap(),
@@ -47,7 +47,7 @@ fn gates_are_stored_with_the_box_and_a_box_without_has_none() {
     let without = new_box(&store, "b");
     assert_eq!(
         store.box_gates(with).unwrap(),
-        Some(Gates::parse(&[proof()]).unwrap())
+        Some(Gates::parse(&[proof()], &[]).unwrap())
     );
     assert_eq!(store.box_gates(without).unwrap(), None);
 }

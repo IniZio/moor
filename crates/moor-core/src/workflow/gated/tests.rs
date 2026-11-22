@@ -77,7 +77,13 @@ fn passed_delivers_and_failed_fails_whatever_the_box_or_the_wait() {
                 box_open,
                 ..stands(&at, false)
             };
-            assert_eq!(gated_move(now, &GateStatus::Passed), GatedMove::Deliver);
+            let outcome: crate::gate::Verdict =
+                serde_json::from_value(serde_json::json!({"name": "done", "tone": "good"}))
+                    .unwrap();
+            let passed = GateStatus::Passed {
+                outcome: outcome.clone(),
+            };
+            assert_eq!(gated_move(now, &passed), GatedMove::Deliver { outcome });
             let failed = GateStatus::Failed {
                 gate: id("ship"),
                 why: "the owner said no".to_owned(),

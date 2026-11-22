@@ -352,7 +352,13 @@ fn apply(
         }
         Move::Delivered => {
             let result = note.trim().to_owned();
-            let done = moving.end(&lines, RunOutcome::Delivered { result })?;
+            let done = moving.end(
+                &lines,
+                RunOutcome::Delivered {
+                    result,
+                    verdict: None,
+                },
+            )?;
             Ok(done.then(|| said("Done.")))
         }
         Move::Fail {

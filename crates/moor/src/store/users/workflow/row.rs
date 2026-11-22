@@ -72,10 +72,12 @@ pub(super) struct RunRow {
     pull_number: Option<i64>,
     /// `head_sha`.
     head_sha: Option<String>,
+    /// `verdict`.
+    verdict: Option<String>,
 }
 
 /// The columns of a `workflow_runs` row, in the order [`read_run`] reads them.
-pub(super) const RUN_COLS: [WorkflowRuns; 15] = [
+pub(super) const RUN_COLS: [WorkflowRuns; 16] = [
     WorkflowRuns::Id,
     WorkflowRuns::Repo,
     WorkflowRuns::DueAt,
@@ -91,6 +93,7 @@ pub(super) const RUN_COLS: [WorkflowRuns; 15] = [
     WorkflowRuns::Trigger,
     WorkflowRuns::PullNumber,
     WorkflowRuns::HeadSha,
+    WorkflowRuns::Verdict,
 ];
 
 /// Reads one `workflow_runs` row whose columns start at `first`.
@@ -111,6 +114,7 @@ pub(super) fn read_run(r: &db::Row, first: usize) -> Result<RunRow, db::Error> {
         trigger: r.get(first + 12)?,
         pull_number: r.get(first + 13)?,
         head_sha: r.get(first + 14)?,
+        verdict: r.get(first + 15)?,
     })
 }
 
@@ -175,6 +179,12 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
         },
         FINISHED => ended(RunOutcome::Delivered {
             result: row.detail.clone().unwrap_or_default(),
+            verdict: row
+                .verdict
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|e| corrupt("run verdict", e))?,
         })?,
         FAILED => ended(RunOutcome::Failed {
             at: ended_step(row)?,
@@ -269,6 +279,8 @@ pub(super) struct StateCols {
     pub(super) waiting_since: Option<i64>,
     /// `ended_step`.
     pub(super) ended_step: Option<String>,
+    /// `verdict`: the outcome of a delivered run of a Box with gates, as JSON.
+    pub(super) verdict: Option<String>,
 }
 
 /// `state` as stored; its `outcome` is [`RunState::tag`].
@@ -281,6 +293,7 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
         try_n: None,
         waiting_since: None,
         ended_step: None,
+        verdict: None,
     };
     match state {
         RunState::Queued | RunState::Done(RunEnd::SkippedOverlap) => {}
@@ -305,8 +318,9 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
         }) => {
             cols.ended_at = Some(ended_at.as_millis());
             match outcome {
-                RunOutcome::Delivered { result } => {
+                RunOutcome::Delivered { result, verdict } => {
                     cols.detail = Some(result.clone()).filter(|r| !r.is_empty());
+                    cols.verdict = verdict.as_ref().and_then(|v| serde_json::to_string(v).ok());
                 }
                 RunOutcome::Failed { at, reason } => {
                     cols.detail = Some(reason.clone());

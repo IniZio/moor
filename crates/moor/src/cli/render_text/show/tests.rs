@@ -342,7 +342,7 @@ fn a_real_serialised_gate_and_progress_render_as_the_fronts_get_them() {
         approval: Some(moor_core::gate::Approval::Owner),
         max_tries: None,
     };
-    let gate = GateView::of(&Gates::parse(&[doc]).unwrap(), &[]);
+    let gate = GateView::of(&Gates::parse(&[doc], &[]).unwrap(), &[]);
     let progress = ProgressView {
         title: "t".to_owned(),
         state: Progress::NeedsYou,
@@ -368,7 +368,7 @@ fn a_real_serialised_gate_and_progress_render_as_the_fronts_get_them() {
 /// A stuck gate's card as the fronts get it: the `needs` of a progress whose gate waits for a steer.
 fn stuck_box(lines: &[moor_core::gate::GateLine], doc: moor_core::gate::GateDoc) -> Value {
     use moor_core::gate::{wait, Gates};
-    let gates = Gates::parse(&[doc]).unwrap();
+    let gates = Gates::parse(&[doc], &[]).unwrap();
     let waits = wait(&gates, lines).unwrap();
     let why = waits.why.clone().unwrap();
     let card = serde_json::to_value(waits).unwrap();

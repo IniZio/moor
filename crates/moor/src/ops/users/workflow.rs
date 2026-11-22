@@ -247,7 +247,7 @@ fn parse_gates(
     match req.gates.as_deref() {
         None => Ok(prior.and_then(|w| w.gates.clone())),
         Some([]) => Ok(None),
-        Some(docs) => Gates::parse(docs)
+        Some(docs) => Gates::parse(docs, &[])
             .map(Some)
             .map_err(|e| usage(e.to_string())),
     }

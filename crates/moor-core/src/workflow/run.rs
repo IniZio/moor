@@ -140,6 +140,9 @@ pub enum RunOutcome {
     Delivered {
         /// What the agent said it delivered; empty when it said nothing.
         result: String,
+        /// The outcome moor found for a run of a Box with gates; none for any other run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        verdict: Option<crate::gate::Verdict>,
     },
     /// A step failed with no `fail` edge, or its fail target was exhausted too.
     Failed {

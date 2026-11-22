@@ -35,7 +35,7 @@ fn told(state: &RunState) -> (Option<String>, Option<String>) {
         ),
         RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
             RunOutcome::Failed { reason, .. } => (Some(reason.clone()), None),
-            RunOutcome::Delivered { result } => {
+            RunOutcome::Delivered { result, .. } => {
                 (None, Some(result.clone()).filter(|r| !r.is_empty()))
             }
             RunOutcome::Incomplete { .. }

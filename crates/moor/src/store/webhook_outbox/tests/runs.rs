@@ -204,6 +204,7 @@ fn delivered_and_skipped_runs_send_nothing() {
     let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let ok = RunOutcome::Delivered {
         result: "done".to_owned(),
+        verdict: None,
     };
     let at = Ts::from_millis(900);
     let moved = w

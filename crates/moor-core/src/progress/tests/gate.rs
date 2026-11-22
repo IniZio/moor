@@ -19,13 +19,16 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
 
 #[test]
 fn a_gated_box_first_message_shows_the_persons_words_without_the_preamble() {
-    let gates = crate::gate::Gates::parse(&[crate::gate::GateDoc {
-        name: "proof".to_owned(),
-        evidence: vec!["proof.md".to_owned()],
-        checks: Vec::new(),
-        approval: None,
-        max_tries: None,
-    }])
+    let gates = crate::gate::Gates::parse(
+        &[crate::gate::GateDoc {
+            name: "proof".to_owned(),
+            evidence: vec!["proof.md".to_owned()],
+            checks: Vec::new(),
+            approval: None,
+            max_tries: None,
+        }],
+        &[],
+    )
     .unwrap();
     let start = gates.first_message("Fix the typo.");
     let events = [
@@ -67,7 +70,16 @@ fn open_gate_is_never_done() {
             let b = gated(BoxLifecycle::Ready, session, open(next));
             assert_eq!(derive(&b, &[], ten()).state, Progress::Working, "{next:?}");
         }
-        let passed = gated(BoxLifecycle::Ready, session, GateStatus::Passed);
+        let passed = gated(
+            BoxLifecycle::Ready,
+            session,
+            GateStatus::Passed {
+                outcome: serde_json::from_value(
+                    serde_json::json!({"name": "done", "tone": "good"}),
+                )
+                .unwrap(),
+            },
+        );
         assert_eq!(derive(&passed, &[], ten()).state, Progress::Done);
     }
 }
@@ -178,7 +190,7 @@ fn standing(
     d: &crate::gate::GateDoc,
     lines: &[crate::gate::GateLine],
 ) -> BoxView {
-    let gates = crate::gate::Gates::parse(std::slice::from_ref(d)).unwrap();
+    let gates = crate::gate::Gates::parse(std::slice::from_ref(d), &[]).unwrap();
     let mut b = row(lifecycle, SessionState::Idle);
     b.gate = Some(GateView::of(&gates, lines));
     b
@@ -384,7 +396,7 @@ fn the_needs_cards_json_is_pinned_for_both_kinds() {
 
 fn ask_id_of(lines: &[crate::gate::GateLine]) -> String {
     let d = doc(&["proof.md"], &[], true);
-    let gates = crate::gate::Gates::parse(std::slice::from_ref(&d)).unwrap();
+    let gates = crate::gate::Gates::parse(std::slice::from_ref(&d), &[]).unwrap();
     crate::progress::gate_ask_id(&crate::gate::wait(&gates, lines).unwrap())
 }
 

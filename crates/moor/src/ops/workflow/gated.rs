@@ -78,7 +78,10 @@ impl Held<'_> {
         let lines = self.store.gate_lines(self.box_id)?;
         let status = status(&gates, &lines);
         let row = self.store.box_row(self.box_id)?;
-        let over = matches!(status, GateStatus::Passed | GateStatus::Failed { .. });
+        let over = matches!(
+            status,
+            GateStatus::Passed { .. } | GateStatus::Failed { .. }
+        );
         if !over && self.cannot_go_on(row.as_ref())? {
             return Ok(());
         }
@@ -113,13 +116,14 @@ impl Held<'_> {
     ) -> Result<(), StoreError> {
         match m {
             GatedMove::Stay => Ok(()),
-            GatedMove::Deliver => self.end(RunOutcome::Delivered {
+            GatedMove::Deliver { outcome } => self.end(RunOutcome::Delivered {
                 result: lines
                     .iter()
                     .rev()
                     .find_map(GateLine::accepted_note)
                     .unwrap_or_default()
                     .to_owned(),
+                verdict: Some(outcome),
             }),
             GatedMove::Fail { gate, reason } => self.end(RunOutcome::Failed { at: gate, reason }),
             GatedMove::Incomplete => self.end(RunOutcome::Incomplete {

@@ -34,6 +34,7 @@ fn every_move_of_a_run_appends_one_line_to_its_history() {
         .unwrap());
     let outcome = RunOutcome::Delivered {
         result: "done".to_owned(),
+        verdict: None,
     };
     assert!(ends(&store, key, (4, &outcome), Ts::from_millis(900)));
     assert!(!ends(&store, key, (4, &outcome), Ts::from_millis(950)));

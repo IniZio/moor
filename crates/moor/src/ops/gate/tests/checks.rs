@@ -11,7 +11,7 @@ use moor_core::workflow::StepId;
 
 use moor_core::workflow::{StepReport, StepResult};
 
-use super::fx::{cut, evidence_gate, fx, fx_on, gate};
+use super::fx::{cut, done, evidence_gate, fx, fx_on, gate};
 use crate::testing::driver::FakeDriver;
 
 fn id(name: &str) -> StepId {
@@ -60,7 +60,7 @@ fn check_fails_then_passes() {
         [("tests".to_owned(), Some(1)), ("tests".to_owned(), Some(0))]
     );
     assert_eq!(f.told().len(), 1, "a pass is not told");
-    assert_eq!(f.standing(), (GateStatus::Passed, Progress::Done));
+    assert_eq!(f.standing(), (done(), Progress::Done));
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn the_second_gate_is_checked_only_after_the_first_passed() {
         ]
     );
     assert!(f.dir.path().join("second").exists());
-    assert_eq!(f.standing(), (GateStatus::Passed, Progress::Done));
+    assert_eq!(f.standing(), (done(), Progress::Done));
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn a_lost_stream_runs_the_check_again() {
         f.exits(),
         [("tests".to_owned(), None), ("tests".to_owned(), Some(0))]
     );
-    assert_eq!(f.standing(), (GateStatus::Passed, Progress::Done));
+    assert_eq!(f.standing(), (done(), Progress::Done));
     assert!(f.told().is_empty());
 }
 

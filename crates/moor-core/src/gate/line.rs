@@ -1,5 +1,6 @@
 //! The lines a Box's gates are read from: appended in order, never changed.
 
+use super::OutcomeName;
 use crate::workflow::{Answer, StepId, StepReport, StepResult};
 
 /// One thing that happened at a gate.
@@ -93,6 +94,38 @@ pub enum GateLine {
         /// Who.
         by: String,
     },
+    /// moor ran an outcome's checks and they all passed, which ends the run in it: at the
+    /// closing stage, or at the gate in hand for an `anytime` outcome.
+    Held {
+        /// The gate in hand, or the closing stage.
+        gate: StepId,
+        /// The try.
+        try_n: u8,
+        /// The outcome.
+        outcome: OutcomeName,
+    },
+    /// moor ran the outcomes' checks at the closing stage and none held, which fails the try.
+    NoneHeld {
+        /// The closing stage.
+        gate: StepId,
+        /// The try.
+        try_n: u8,
+        /// Each outcome tried, with the check that stopped it.
+        tried: Vec<Tried>,
+    },
+}
+
+/// One outcome that did not hold, and the check that stopped it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Tried {
+    /// The outcome.
+    pub outcome: OutcomeName,
+    /// The check's place among the outcome's checks, from 0.
+    pub check: u8,
+    /// Its exit code; none when its output stream was lost.
+    pub exit: Option<i32>,
+    /// The end of its output.
+    pub tail: String,
 }
 
 impl GateLine {
@@ -122,7 +155,9 @@ impl GateLine {
             | Self::Quiet { gate, .. }
             | Self::Answered { gate, .. }
             | Self::TryFailed { gate, .. }
-            | Self::Reopened { gate, .. } => gate,
+            | Self::Reopened { gate, .. }
+            | Self::Held { gate, .. }
+            | Self::NoneHeld { gate, .. } => gate,
         }
     }
 }

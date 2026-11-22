@@ -16,7 +16,7 @@ pub(super) fn check(req: &StartReq) -> Result<(), CommandError> {
     let Some(docs) = &req.gates else {
         return Ok(());
     };
-    Gates::parse(docs)
+    Gates::parse(docs, &[])
         .map(drop)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))
 }
@@ -33,7 +33,7 @@ pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
         return Ok(());
     };
     let usage = |why: String| CommandError::new(ErrorKind::Usage, why);
-    let gates = Gates::parse(docs).map_err(|e| usage(e.to_string()))?;
+    let gates = Gates::parse(docs, &[]).map_err(|e| usage(e.to_string()))?;
     if req.prompt.is_none() && req.issue.is_none() {
         return Err(usage(
             "a start with gates needs a prompt or an issue: the agent is told its gates in its \
@@ -54,7 +54,8 @@ pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
 pub(super) fn column(req: &StartReq) -> Option<String> {
     req.gates
         .as_ref()
-        .and_then(|docs| serde_json::to_string(docs).ok())
+        .and_then(|docs| Gates::parse(docs, &[]).ok())
+        .and_then(|gates| serde_json::to_string(&gates.doc()).ok())
 }
 
 /// Refuses a start of open Box `row` that asks for gates other than the Box's own, rather than
@@ -67,7 +68,7 @@ pub(super) fn check_kept(store: &Store, req: &StartReq, row: &BoxRow) -> Result<
         return Ok(());
     };
     let asked =
-        Gates::parse(docs).map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
+        Gates::parse(docs, &[]).map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     if store.box_gates(row.id)? == Some(asked) {
         return Ok(());
     }

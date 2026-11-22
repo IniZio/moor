@@ -66,21 +66,10 @@ impl Check {
                 len: run.len(),
             });
         }
-        if let Some(says) = says {
-            if says.is_empty() {
-                return Err(GateError::EmptySays { gate: gate() });
-            }
-            if says.contains('\n') {
-                return Err(GateError::SaysNotOneLine { gate: gate() });
-            }
-            let len = says.chars().count();
-            if len > SAYS_MAX {
-                return Err(GateError::SaysTooLong { gate: gate(), len });
-            }
-        }
+        let says = says.map(|s| said(s, &gate())).transpose()?;
         Ok(Self {
             run: run.clone(),
-            says: says.map(str::to_owned),
+            says,
         })
     }
 
@@ -114,6 +103,22 @@ impl Gate {
         let more = if run.chars().count() > 60 { "…" } else { "" };
         format!("`{cut}{more}`")
     }
+}
+
+/// `says`, trimmed, when it is one line of 1 to [`SAYS_MAX`] characters; errors name `gate`.
+pub(super) fn said(says: &str, gate: &str) -> Result<String, GateError> {
+    let gate = || gate.to_owned();
+    if says.is_empty() {
+        return Err(GateError::EmptySays { gate: gate() });
+    }
+    if says.contains('\n') {
+        return Err(GateError::SaysNotOneLine { gate: gate() });
+    }
+    let len = says.chars().count();
+    if len > SAYS_MAX {
+        return Err(GateError::SaysTooLong { gate: gate(), len });
+    }
+    Ok(says.to_owned())
 }
 
 /// Check `check`, from 0, of `gate` as a person reads it: its place, then its label.

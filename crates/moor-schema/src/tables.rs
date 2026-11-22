@@ -92,7 +92,8 @@ tables! {
         CreatedAt, UpdatedAt, OriginFront, OriginKey, Also, Config,
         Plan, Revision, OnPullRequest, Gates }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
-        RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger, PullNumber, HeadSha }
+        RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger, PullNumber, HeadSha,
+        Verdict }
     WorkflowRunHistory { Run, N, At, Entry }
     WorkflowSeq { Id, N }
     Repos { Repo, Config, Revision, EditedBy, EditedAt }

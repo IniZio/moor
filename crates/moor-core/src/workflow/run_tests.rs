@@ -71,6 +71,7 @@ fn a_run_state_keeps_its_phase_apart_from_its_outcome() {
     });
     let delivered = ended(RunOutcome::Delivered {
         result: "done".to_owned(),
+        verdict: None,
     });
     let timed_out = ended(RunOutcome::TimedOut { at: at.clone() });
     let skipped = RunState::Done(RunEnd::SkippedOverlap);
@@ -98,6 +99,7 @@ fn history_lines_are_tagged_json_and_say_where_the_run_was() {
     });
     let delivered = ended(RunOutcome::Delivered {
         result: "done".to_owned(),
+        verdict: None,
     });
     let lines = [
         (RunState::Queued, RunPhase::Queued, r#"{"kind":"queued"}"#),

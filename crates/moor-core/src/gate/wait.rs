@@ -134,13 +134,22 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             let hint = "Send the agent a message to reopen the gate with fresh tries.";
             let mut w = blank(&gate, WaitKind::Stuck, hint);
             w.why = Some(why);
-            if let Some(g) = gates.iter().find(|g| g.name == gate) {
-                stuck_by(&mut w, g, lines);
+            match gates.iter().find(|g| g.name == gate) {
+                Some(g) => stuck_by(&mut w, g, lines),
+                None => w.tail = none_held_by(gates, lines),
             }
             Some(w)
         }
-        GateStatus::Open { .. } | GateStatus::Failed { .. } | GateStatus::Passed => None,
+        GateStatus::Open { .. } | GateStatus::Failed { .. } | GateStatus::Passed { .. } => None,
     }
+}
+
+/// What the newest try of the closing stage found, when no outcome held in it.
+fn none_held_by(gates: &Gates, lines: &[GateLine]) -> Option<String> {
+    lines.iter().rev().find_map(|l| match l {
+        GateLine::NoneHeld { tried, .. } => Some(gates.tried_text(tried)),
+        _ => None,
+    })
 }
 
 /// Fills `w` from the newest line of `gate`, since it was last reopened, that failed a try.

@@ -88,6 +88,7 @@ fn the_history_of_a_gated_run_reads_in_the_order_the_lines_came() {
             "reported done 1",
             "checked done 1",
             "gate_passed done",
+            "outcome_reached",
             "ended",
         ]
     );

@@ -82,6 +82,12 @@ fn settle(
     let GateStatus::Open { gate, try_n, next } = status(gates, lines) else {
         return Ok(Some(closed(&status(gates, lines), report)));
     };
+    if next == GateNext::Decide {
+        return Ok(Some(refused(
+            "Every gate has passed, and moor is deciding the outcome by running its checks. \
+             Nothing is recorded. End your turn.",
+        )));
+    }
     let Some(current) = gates.iter().find(|g| g.name == gate) else {
         return Ok(Some(refused("The Box has no such gate.")));
     };
@@ -150,9 +156,9 @@ fn looked_in(
 /// The reply when no gate is open: they have all passed, or the one in hand is stuck or failed.
 fn closed(status: &GateStatus, report: &StepReport) -> StepReportValue {
     match status {
-        GateStatus::Passed => refused(format!(
-            "Every gate has passed, so there is nothing to report for `{}`.",
-            report.step
+        GateStatus::Passed { outcome } => refused(format!(
+            "The run ended in outcome “{}”, so there is nothing to report for `{}`.",
+            outcome.name, report.step
         )),
         GateStatus::Stuck { gate, why, .. } | GateStatus::Failed { gate, why } => refused(format!(
             "Gate `{gate}` is not open: {why}. A person has to take it up. Nothing is recorded."
@@ -253,7 +259,18 @@ fn submitted(
     now: GateStatus,
 ) -> StepReportValue {
     match now {
-        GateStatus::Passed => said("Recorded. Every gate has passed. There is nothing more to do."),
+        GateStatus::Passed { outcome } => said(format!(
+            "Recorded. Every gate has passed, and the run ended in “{}”. There is nothing more \
+             to do.",
+            outcome.name
+        )),
+        GateStatus::Open {
+            next: GateNext::Decide,
+            ..
+        } => said(
+            "Recorded. Every gate has passed. End your turn: moor runs the outcomes' checks to \
+             decide how the run ends.",
+        ),
         GateStatus::Open {
             gate: g,
             try_n: t,
@@ -282,6 +299,7 @@ fn submitted(
                 GateNext::Agent => "Do it, then call report_step.",
                 GateNext::RunChecks => "End your turn. moor runs the checks.",
                 GateNext::Ask => "End your turn. moor asks the owner.",
+                GateNext::Decide => "End your turn. moor decides the outcome.",
             };
             said(format!(
                 "Recorded. Gate `{gate}` has passed. Next: {brief} {go_on}"

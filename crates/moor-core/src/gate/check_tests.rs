@@ -20,13 +20,16 @@ fn said(run: &str, says: &str) -> CheckDoc {
 }
 
 fn gates(evidence: &[&str], checks: Vec<CheckDoc>) -> Gates {
-    Gates::parse(&[GateDoc {
-        name: "done".to_owned(),
-        evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
-        checks,
-        approval: None,
-        max_tries: Some(1),
-    }])
+    Gates::parse(
+        &[GateDoc {
+            name: "done".to_owned(),
+            evidence: evidence.iter().map(|s| (*s).to_owned()).collect(),
+            checks,
+            approval: None,
+            max_tries: Some(1),
+        }],
+        &[],
+    )
     .unwrap()
 }
 
@@ -42,8 +45,7 @@ fn failed(check: u8) -> GateLine {
 
 #[test]
 fn a_check_is_a_bare_command_or_a_command_with_its_sentence() {
-    let text =
-        json!([{"name": "done", "checks": ["true", {"run": "test -f never.txt", "says": SAYS}]}]);
+    let text = json!({"gates": [{"name": "done", "checks": ["true", {"run": "test -f never.txt", "says": SAYS}]}]});
     let parsed = Gates::from_json(&text.to_string()).unwrap();
     let checks = &parsed.get(0).unwrap().checks;
     assert_eq!(
@@ -54,7 +56,7 @@ fn a_check_is_a_bare_command_or_a_command_with_its_sentence() {
         (checks[1].run.as_str(), checks[1].says.as_deref()),
         ("test -f never.txt", Some(SAYS))
     );
-    let back = serde_json::to_value(parsed.docs()).unwrap();
+    let back = serde_json::to_value(parsed.doc()).unwrap();
     assert_eq!(
         back, text,
         "a bare command stays bare and a sentence stays beside its command"
@@ -62,7 +64,7 @@ fn a_check_is_a_bare_command_or_a_command_with_its_sentence() {
 }
 
 fn refused(c: CheckDoc) -> GateError {
-    Gates::parse(&[gate_with(c)]).unwrap_err()
+    Gates::parse(&[gate_with(c)], &[]).unwrap_err()
 }
 
 #[test]
@@ -76,19 +78,20 @@ fn a_blank_or_long_or_multi_line_sentence_is_refused() {
         matches!(got, GateError::SaysTooLong { len: 201, .. }),
         "{got:?}"
     );
-    assert!(Gates::parse(&[gate_with(said("true", &"x".repeat(SAYS_MAX)))]).is_ok());
+    assert!(Gates::parse(&[gate_with(said("true", &"x".repeat(SAYS_MAX)))], &[]).is_ok());
     let got = refused(said(" ", SAYS));
     assert!(matches!(got, GateError::EmptyCheck { .. }), "{got:?}");
 }
 
 #[test]
 fn an_unknown_field_or_a_missing_command_is_refused() {
-    let text = json!([{"name": "done", "checks": [{"run": "true", "says": SAYS, "extra": 1}]}]);
+    let text =
+        json!({"gates": [{"name": "done", "checks": [{"run": "true", "says": SAYS, "extra": 1}]}]});
     assert!(matches!(
         Gates::from_json(&text.to_string()),
         Err(GateError::Json(_))
     ));
-    let text = json!([{"name": "done", "checks": [{"says": SAYS}]}]);
+    let text = json!({"gates": [{"name": "done", "checks": [{"says": SAYS}]}]});
     assert!(Gates::from_json(&text.to_string()).is_err());
 }
 
