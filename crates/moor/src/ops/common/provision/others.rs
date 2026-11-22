@@ -153,7 +153,7 @@ fn prepare_clone(
     let script = format!(
         "mkdir -p -- {dir} && cd -- {dir} || exit {}\n{}",
         CloneStep::Clone as i32,
-        one_at_a_time(&clone_script(&checkout))
+        one_at_a_time(&clone_script(&checkout, None))
     );
     let site = Site {
         handle: at.handle,

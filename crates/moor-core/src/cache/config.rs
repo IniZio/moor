@@ -2,9 +2,10 @@
 
 use std::num::NonZeroU32;
 
-use serde::Deserialize;
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Deserializer};
 
-use super::{overlap, presets, CacheName, CachePath, Volume, WorkTree};
+use super::{overlap, presets, CacheName, CachePath, Volume};
 
 /// Most volumes one layer may declare.
 const MAX_VOLUMES: usize = 8;
@@ -59,8 +60,18 @@ pub struct CacheConfig {
     pub presets: Presets,
     /// Volumes this layer declares.
     pub volumes: Vec<VolumeDecl>,
-    /// Whether this layer keeps the repo's work tree, and its size.
-    pub work_tree: WorkTree,
+    /// `work_tree`.
+    pub work_tree: RetiredWorkTree,
+}
+
+/// `cache.work_tree`, which moor no longer reads; a layer that still sets it parses.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetiredWorkTree;
+
+impl<'de> Deserialize<'de> for RetiredWorkTree {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        IgnoredAny::deserialize(d).map(|_| Self)
+    }
 }
 
 impl CacheConfig {

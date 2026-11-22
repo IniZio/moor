@@ -168,7 +168,7 @@ fn plan(
     if let Some(why) = lacks {
         let kept = resolved.volumes.iter();
         let own = kept
-            .filter(|d| !matches!(d.origin, Origin::Preset | Origin::WorkTree | Origin::Agent))
+            .filter(|d| !matches!(d.origin, Origin::Preset | Origin::Agent))
             .count()
             + resolved.dropped.len();
         return Err(Cold::Off { why, own });

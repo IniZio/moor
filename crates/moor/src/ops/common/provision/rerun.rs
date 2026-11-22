@@ -108,7 +108,6 @@ pub(super) fn finish_steps(
     Ok(Provisioned {
         setup: SetupRun::Skipped,
         dotfiles: after.dotfiles,
-        work_tree: None,
         after_failed,
     })
 }

@@ -30,11 +30,15 @@ $su systemctl start docker.socket docker.service"#;
 /// `tools` is what the agent profile and its plugins install for the Box user: Bun and the
 /// `~/.local/bin` binaries its `setup.sh` downloads, and the plugin marketplaces and installs.
 ///
+/// `git` holds a bare mirror of each repo the Box clones, at `<owner>/<name>.git` below
+/// [`GIT_MIRROR`];
+/// the clone script fetches into it and clones from it.
+///
 /// `cache` is the XDG cache root, so npm, Yarn, Go's build cache, pip, ccache and every other
 /// tool that follows XDG live in it. Each preset below keeps only what a tool downloads or
 /// rebuilds. The tools' own config and keys sit beside it (`~/.m2/settings.xml`,
 /// `~/.android/adbkey`, `~/.bundle/config`) and stay out.
-const FIXED: [(&str, &[&str]); 15] = [
+const FIXED: [(&str, &[&str]); 16] = [
     ("cache", &["~/.cache"]),
     ("pnpm", &["~/.local/share/pnpm/store"]),
     ("bun", &["~/.bun/install/cache"]),
@@ -53,7 +57,11 @@ const FIXED: [(&str, &[&str]); 15] = [
         "tools",
         &["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
     ),
+    ("git", &[GIT_MIRROR]),
 ];
+
+/// The directory of the `git` preset.
+pub const GIT_MIRROR: &str = "~/.local/share/git-mirror";
 
 /// The environment a preset's tool needs to use its volume. pnpm keeps its store next to the
 /// project when the default store is on another mount, which a volume always is, unless the

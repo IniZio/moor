@@ -151,7 +151,6 @@ fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
         let name = view.get("name")?.as_str()?;
         let _ = writeln!(out, "see it with: moor show {name}");
     }
-    work_tree_line(value, &mut out);
     setup_output(value, &mut out);
     setup_failure_lines(value, &mut out);
     for w in value
@@ -164,24 +163,6 @@ fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
         let _ = writeln!(out, "warning: {w}");
     }
     Some(out)
-}
-
-/// Writes `work tree: refreshed`, `work tree: cold` or `work tree: cold after: <reason>` when the
-/// start says how the kept work tree started.
-fn work_tree_line(value: &Value, out: &mut String) {
-    let Some(tree) = value.get("work_tree") else {
-        return;
-    };
-    let how = match tree.get("state").and_then(Value::as_str) {
-        Some("refreshed") => "refreshed".to_owned(),
-        Some("cold") => "cold".to_owned(),
-        Some("cold_after") => tree
-            .get("reason")
-            .and_then(Value::as_str)
-            .map_or_else(|| "cold".to_owned(), |r| format!("cold after: {r}")),
-        _ => return,
-    };
-    let _ = writeln!(out, "work tree: {how}");
 }
 
 /// The tail of a passing setup's log, indented under a `setup:` line like `moor show`'s.

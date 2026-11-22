@@ -4,7 +4,6 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Effect, EffectChange, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::view::WorkTreeView;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
 use moor_core::{BoxHandle, Warning};
@@ -23,8 +22,6 @@ pub(crate) struct Provisioned {
     pub(crate) setup: SetupRun,
     /// How the dotfiles step went.
     pub(crate) dotfiles: DotfilesRun,
-    /// How the kept work tree started; none when the Box keeps none or already refreshed it.
-    pub(crate) work_tree: Option<WorkTreeView>,
     /// The step after the setup lines that failed, when every setup line passed.
     pub(crate) after_failed: Option<&'static str>,
 }
@@ -35,7 +32,6 @@ impl Provisioned {
         Self {
             setup: SetupRun::Skipped,
             dotfiles: DotfilesRun::Skipped,
-            work_tree: None,
             after_failed: None,
         }
     }

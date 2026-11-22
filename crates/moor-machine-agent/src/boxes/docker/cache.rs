@@ -3,8 +3,8 @@
 //! The controller's plan names each volume by a key that already holds the owner and the repo, so
 //! a canonical volume `moor-cache-<key>-<n>` (one per path) is kept for that owner and repo across
 //! Boxes and is never removed with a Box. A package cache is mounted from it directly, shared by the
-//! repo's Boxes that run at once. Anything two live Boxes must not share, such as the work tree, the
-//! container stores or a volume with restore steps, is copied: each Box gets a private volume filled
+//! repo's Boxes that run at once. Anything two live Boxes must not share, such as the container stores
+//! or a volume with restore steps, is copied: each Box gets a private volume filled
 //! from the canonical one on open, and saves it back there when it sleeps or closes.
 
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use moor_client::link::lease::{Cache, CacheVolume};
 use tokio::sync::RwLock;
 
-use super::args::{SLUG_LABEL, WORKDIR};
+use super::args::SLUG_LABEL;
 use super::cli::Cli;
 use crate::boxes::provider::{Notes, ProvideError};
 use crate::boxes::Slug;
@@ -26,8 +26,8 @@ pub(super) const KEY_LABEL: &str = "moor.cache";
 const COPY_LABEL: &str = "moor.cache.of";
 /// The label of the marker volume that says a private copy finished.
 const MARK_LABEL: &str = "moor.cache.mark";
-/// The length of a repo scope's hash; a group longer than it carries the suffix of a work tree, an agent
-/// directory or a volume with restore steps.
+/// The length of a repo scope's hash; a group longer than it carries the suffix of an agent directory or a
+/// volume with restore steps.
 const SCOPE_LEN: usize = 16;
 /// The most paths of one Box the agent mounts.
 const MOST_MOUNTS: usize = 64;
@@ -36,8 +36,9 @@ const MOST_MOUNTS: usize = 64;
 /// plugins install where Claude runs.
 const AGENT_PLACE: [&str; 3] = ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"];
 
-/// Paths of tools whose caches take concurrent writers; every other path is copied per Box.
-const SHARED: [&str; 17] = [
+/// Paths of tools whose caches take concurrent writers; every other path is copied per Box. The
+/// git mirrors take them because the clone script holds a `flock` while it writes one.
+const SHARED: [&str; 18] = [
     "~/.cache",
     "~/.local/share/pnpm/store",
     "~/.bun/install/cache",
@@ -55,6 +56,7 @@ const SHARED: [&str; 17] = [
     "~/.android/cache",
     "~/.android/build-cache",
     "/opt/android-sdk",
+    "~/.local/share/git-mirror",
 ];
 
 /// One cache volume mounted at one path.
@@ -76,15 +78,14 @@ impl Mount {
         self.private.as_deref().unwrap_or(&self.canonical)
     }
 
-    /// Whether both places mount it: what is below the work tree both places share, and what
-    /// the agent place uses.
-    fn both(&self) -> bool {
-        self.both || self.path.starts_with(&format!("{WORKDIR}/"))
+    /// Whether both places mount it: what the agent place uses.
+    const fn both(&self) -> bool {
+        self.both
     }
 }
 
 /// Whether a group's volumes may be mounted by live Boxes at once: a tool cache with no restore steps
-/// and none of the work tree, the agent or a container store.
+/// and none of the agent or a container store.
 fn shared(v: &CacheVolume) -> bool {
     let kept_apart = v.group.len() > SCOPE_LEN;
     !kept_apart && !v.paths.is_empty() && v.paths.iter().all(|p| SHARED.contains(&p.as_str()))
@@ -154,8 +155,8 @@ pub(super) fn mounts(slug: &Slug, cache: Option<&Cache>) -> Result<Vec<Mount>, P
     Ok(all)
 }
 
-/// The `docker run` arguments that mount `mounts` in the agent place (the shared work tree
-/// only) or the work place (all), and tell the work init which directories to hand to the Box user.
+/// The `docker run` arguments that mount `mounts` in the agent place (what it uses only) or the
+/// work place (all), and tell the work init which directories to hand to the Box user.
 pub(super) fn args(mounts: &[Mount], work: bool) -> Vec<String> {
     let mut a = Vec::new();
     let mut dirs = Vec::new();

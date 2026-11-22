@@ -62,7 +62,7 @@ fn cache_items(s: &BoxSettings, repo: Option<&ForgeRepo>) -> Vec<EnvItem> {
             .map(|d| {
                 let paths: Vec<&str> = d.volume.paths().iter().map(CachePath::as_str).collect();
                 let source = match d.origin {
-                    Origin::Preset | Origin::WorkTree => Layer::Default,
+                    Origin::Preset => Layer::Default,
                     Origin::Repo => Layer::Repo,
                     Origin::Operator => Layer::User,
                     Origin::Agent => Layer::Agent,

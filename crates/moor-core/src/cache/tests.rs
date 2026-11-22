@@ -2,9 +2,9 @@ use super::*;
 use crate::config::{parse_repo, parse_user};
 
 mod agent;
+mod git;
 mod restore;
 mod tools;
-mod work_tree;
 
 fn salt(b: u8) -> CacheSalt {
     CacheSalt::new([b; 64])
@@ -169,6 +169,7 @@ fn presets_expand_to_the_table() {
             "tools",
             vec!["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
         ),
+        ("git", vec!["~/.local/share/git-mirror"]),
     ];
     let want: Vec<(String, Vec<String>)> = want
         .into_iter()
@@ -258,15 +259,22 @@ fn a_volume_with_restore_steps_gets_a_group_of_its_own() {
 }
 
 #[test]
+fn a_layer_that_still_sets_the_retired_work_tree_parses() {
+    for yaml in [
+        "cache: {work_tree: false}",
+        "cache: {work_tree: true}",
+        "cache: {work_tree: {size_gb: 60}}",
+    ] {
+        let got = names(&plan(&layers(yaml, yaml)));
+        assert_eq!(got.first().map(String::as_str), Some("cache"), "{yaml}");
+        assert!(!got.iter().any(|n| n == "worktree"), "{yaml}: {got:?}");
+    }
+}
+
+#[test]
 fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
-    assert_eq!(
-        names(&plan(&layers("cache: {presets: false}", ""))),
-        ["worktree"]
-    );
-    assert_eq!(
-        names(&plan(&layers("", "cache: {presets: false}"))),
-        ["worktree"]
-    );
+    assert!(names(&plan(&layers("cache: {presets: false}", ""))).is_empty());
+    assert!(names(&plan(&layers("", "cache: {presets: false}"))).is_empty());
     let dropped = names(&plan(&layers(
         "cache: {presets: [docker, podman]}",
         "cache: {presets: [go]}",
@@ -286,7 +294,7 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
             "android",
             "android-sdk",
             "tools",
-            "worktree"
+            "git"
         ]
     );
     let err = parse_repo("repo config", "cache: {presets: [dockr]}").unwrap_err();

@@ -293,7 +293,6 @@ private copy of the newest save. Closing the Box saves its copy.
 ```yaml
 cache:
   presets: [docker]
-  work_tree: {size_gb: 60}
   volumes:
     - name: android-sdk
       path: /opt/android-sdk
@@ -305,7 +304,6 @@ cache:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `cache.presets` | `true` | `false` drops every preset. A list names the presets to drop. |
-| `cache.work_tree` | `true` | Keep the repo's work tree, so ignored build outputs survive. `{size_gb: N}` sizes it. |
 | `cache.volumes[].name` | required | `[a-z][a-z0-9-]{0,31}`, unique in the Box. |
 | `cache.volumes[].path` | required | `~/<dir>`, `/opt/<dir>`, `/var/cache/<dir>`, `/var/lib/containerd`, or `/var/lib/containers`. |
 | `cache.volumes[].size_gb` | provider's | A size hint. |
@@ -332,23 +330,23 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `android` | `~/.android/cache`, `~/.android/build-cache` |
 | `android-sdk` | `/opt/android-sdk` |
 | `tools` | `~/.bun/bin`, `~/.local/bin`, `~/.claude/plugins`: what the agent profile installs |
+| `git` | `~/.local/share/git-mirror`: a bare mirror of the repo, which the clone fetches into and clones from |
 
-A preset, the work tree, and a repo config volume are kept per user and repo.
+A preset and a repo config volume are kept per user and repo.
 A user config volume is kept per user. Another user's Box never sees a cache.
 
 On a Docker machine, a package store such as `pnpm` or `rust` is shared by the
 Boxes that run at once. The other volumes, `tools` and `docker` among them, are
 copied into each Box and saved back when it sleeps or closes. The last save wins.
 
+The `git` mirror is shared the same way. A Box locks it while it fetches the
+repo's new commits and clones from it. So two Boxes never write it at once. The Box's clone keeps no link to the mirror. When the mirror
+cannot be used, the Box clones from GitHub and the start warns why.
+
 A Docker machine deletes a repo's kept volumes once no Box has used them for 30 days.
 A Box's open and close count as use, and a volume a live or asleep Box holds is never
 deleted. The machine logs each deletion with its size. [`--cache-max-age`](cli.md) sets the
 age, and `0` turns this off.
-
-The kept work tree lives at `~/moor/repos/<repo name>` in every Box of the repo.
-On a new Box, moor fetches, checks out the Box branch, resets tracked files,
-and removes untracked ones. Ignored files stay. Any failure falls back to a
-fresh clone.
 
 ## Controller config
 

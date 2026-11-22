@@ -60,7 +60,6 @@ fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> Start
         attached: true,
         queued: row.lifecycle == BoxLifecycle::Pending,
         node: crate::ops::common::view::node_of(cx, row),
-        work_tree: p.work_tree.clone(),
         setup: p.setup.view(),
         dotfiles: p.dotfiles.view(),
         agent,
