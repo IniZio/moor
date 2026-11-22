@@ -127,19 +127,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
                 "Answer yes to pass the gate, or no to fail this try; a note goes to the agent.";
             let mut w = Wait::blank(&gate, (WaitKind::Approve, seq), hint);
             w.try_n = Some(u32::from(try_n));
-            for line in lines {
-                if let GateLine::Submitted {
-                    gate: g,
-                    try_n: t,
-                    report,
-                } = line
-                {
-                    if *g == gate && *t == try_n {
-                        w.handed.clone_from(&report.evidence);
-                        w.note = Some(report.note.clone()).filter(|n| !n.is_empty());
-                    }
-                }
-            }
+            handed_in(&mut w, lines, (&gate, try_n));
             Some(w)
         }
         GateStatus::Stuck {
@@ -160,12 +148,10 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
                 w.unanswered = Some(cause);
                 return Some(w);
             }
-            match gates.iter().find(|g| g.name == gate) {
-                Some(g) => stuck_by(&mut w, g, lines),
-                None => {
-                    w.tail = none_held_by(gates, lines);
-                    w.tried = tried_by(gates, lines);
-                }
+            if let Some(g) = gates.iter().find(|g| g.name == gate) {
+                stuck_by(&mut w, g, lines);
+            } else {
+                none_held_by(&mut w, gates, lines);
             }
             Some(w)
         }
@@ -195,15 +181,35 @@ impl Wait {
     }
 }
 
-/// Each outcome the newest try of the closing stage tried, when none held in it.
-fn tried_by(gates: &Gates, lines: &[GateLine]) -> Vec<WaitTried> {
-    let tried = lines.iter().rev().find_map(|l| match l {
+/// Fills `w` with what the agent handed in and wrote for `gate` in try `try_n`.
+fn handed_in(w: &mut Wait, lines: &[GateLine], (gate, try_n): (&StepId, u8)) {
+    for line in lines {
+        if let GateLine::Submitted {
+            gate: g,
+            try_n: t,
+            report,
+        } = line
+        {
+            if g == gate && *t == try_n {
+                w.handed.clone_from(&report.evidence);
+                w.note = Some(report.note.clone()).filter(|n| !n.is_empty());
+            }
+        }
+    }
+}
+
+/// Fills `w` from the newest try of the closing stage, when no outcome held in it: the text of
+/// what each outcome found, and each outcome tried as a record.
+fn none_held_by(w: &mut Wait, gates: &Gates, lines: &[GateLine]) {
+    let Some(tried) = lines.iter().rev().find_map(|l| match l {
         GateLine::NoneHeld { tried, .. } => Some(tried),
         _ => None,
-    });
-    tried
-        .into_iter()
-        .flatten()
+    }) else {
+        return;
+    };
+    w.tail = Some(gates.tried_text(tried));
+    w.tried = tried
+        .iter()
         .map(|t| {
             let outcome = gates.outcomes().iter().find(|o| o.name == t.outcome);
             WaitTried {
@@ -216,15 +222,7 @@ fn tried_by(gates: &Gates, lines: &[GateLine]) -> Vec<WaitTried> {
                 tail: t.tail.clone(),
             }
         })
-        .collect()
-}
-
-/// What the newest try of the closing stage found, when no outcome held in it.
-fn none_held_by(gates: &Gates, lines: &[GateLine]) -> Option<String> {
-    lines.iter().rev().find_map(|l| match l {
-        GateLine::NoneHeld { tried, .. } => Some(gates.tried_text(tried)),
-        _ => None,
-    })
+        .collect();
 }
 
 /// Fills `w` from the newest line of `gate`, since it was last reopened, that failed a try.

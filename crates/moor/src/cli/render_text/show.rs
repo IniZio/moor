@@ -147,26 +147,7 @@ fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
         .and_then(Value::as_array)
         .filter(|t| !t.is_empty());
     for t in tried.into_iter().flatten() {
-        let _ = writeln!(
-            out,
-            "{pad}not met: {}",
-            t.get("says")
-                .and_then(Value::as_str)
-                .unwrap_or_else(|| field(t, "outcome"))
-        );
-        if let Some(command) = t.get("command").and_then(Value::as_str) {
-            let _ = writeln!(out, "{pad}  command: {command}");
-        }
-        let exit = t.get("exit").and_then(Value::as_i64);
-        let exit = exit.map_or_else(|| "output lost".to_owned(), |c| c.to_string());
-        let _ = writeln!(out, "{pad}  exit: {exit}");
-        let tail = t.get("tail").and_then(Value::as_str).unwrap_or_default();
-        if !tail.trim().is_empty() {
-            let _ = writeln!(out, "{pad}  output:");
-            for line in tail.trim_end().lines() {
-                let _ = writeln!(out, "{pad}    {line}");
-            }
-        }
+        write_tried(out, t, &pad);
     }
     if let Some(says) = card.get("says").and_then(Value::as_str) {
         let _ = writeln!(out, "{pad}not yet true: {says}");
@@ -193,6 +174,28 @@ fn write_stuck(out: &mut String, progress: &Value, indent: &str) {
     }
     if let Some(hint) = card.get("hint").and_then(Value::as_str) {
         let _ = writeln!(out, "{pad}hint: {hint}");
+    }
+}
+
+/// One outcome the closing stage tried: what it says or its name, its command, exit and output.
+fn write_tried(out: &mut String, t: &Value, pad: &str) {
+    let name = t
+        .get("says")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| field(t, "outcome"));
+    let _ = writeln!(out, "{pad}not met: {name}");
+    if let Some(command) = t.get("command").and_then(Value::as_str) {
+        let _ = writeln!(out, "{pad}  command: {command}");
+    }
+    let exit = t.get("exit").and_then(Value::as_i64);
+    let exit = exit.map_or_else(|| "output lost".to_owned(), |c| c.to_string());
+    let _ = writeln!(out, "{pad}  exit: {exit}");
+    let tail = t.get("tail").and_then(Value::as_str).unwrap_or_default();
+    if !tail.trim().is_empty() {
+        let _ = writeln!(out, "{pad}  output:");
+        for line in tail.trim_end().lines() {
+            let _ = writeln!(out, "{pad}    {line}");
+        }
     }
 }
 

@@ -471,14 +471,18 @@ fn a_stuck_box_with_missing_evidence_names_it_under_the_reason() {
 }
 
 /// A Box whose gates are `names`, `passed` of which passed before the run ended in `outcome`.
-fn ended_box(names: &[&str], passed: usize, outcome: Value) -> Value {
+fn ended_box(names: &[&str], passed: usize, outcome: &Value) -> Value {
     let mut t = with_gate(
         row("alpha", true),
         json!({"state": "done", "line": "nothing to do"}),
         &json!({"state": "passed", "outcome": outcome}),
     );
-    t["gate"]["gates"] = json!(names);
-    t["gate"]["gates_passed"] = json!(passed);
+    let gate = t
+        .pointer_mut("/gate")
+        .and_then(Value::as_object_mut)
+        .unwrap();
+    gate.insert("gates".into(), json!(names));
+    gate.insert("gates_passed".into(), json!(passed));
     t
 }
 
@@ -487,7 +491,7 @@ fn an_anytime_outcome_that_ended_the_run_says_how_many_gates_passed_not_all_pass
     let t = ended_box(
         &["proof", "done"],
         0,
-        json!({"name": "nothing to do", "tone": "plain"}),
+        &json!({"name": "nothing to do", "tone": "plain"}),
     );
     let out = show(json!({"boxes": [t]}));
     assert!(
@@ -502,14 +506,14 @@ fn a_named_outcome_after_every_gate_says_so_and_the_implicit_done_reads_as_befor
     let named = ended_box(
         &["proof", "done"],
         2,
-        json!({"name": "check failed", "tone": "bad"}),
+        &json!({"name": "check failed", "tone": "bad"}),
     );
     let out = show(json!({"boxes": [named]}));
     assert!(
         out.contains("  gates: all passed, outcome: check failed\n"),
         "{out}"
     );
-    let implicit = ended_box(&["proof"], 1, json!({"name": "done", "tone": "good"}));
+    let implicit = ended_box(&["proof"], 1, &json!({"name": "done", "tone": "good"}));
     let out = show(json!({"boxes": [implicit]}));
     assert!(out.contains("  gates: all passed\n"), "{out}");
     assert!(!out.contains("outcome:"), "{out}");

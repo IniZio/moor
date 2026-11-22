@@ -70,7 +70,7 @@ fn a_wait_for_want_of_answers_passes_its_cause_to_the_page_and_others_have_none(
 }
 
 fn row(
-    history: serde_json::Value,
+    history: &serde_json::Value,
     verdict: &serde_json::Value,
 ) -> moor_core::view::workflow::RunRowView {
     serde_json::from_value(json!({
@@ -100,7 +100,7 @@ fn gates_an_anytime_outcome_ended_the_run_before_read_not_reached() {
     let verdict = json!({"name": "nothing to do", "tone": "plain"});
     let view = run_view(
         "evidence",
-        &row(serde_json::from_str(EARLY).unwrap(), &verdict),
+        &row(&serde_json::from_str(EARLY).unwrap(), &verdict),
     );
     assert_eq!(states(&view), ["pending", "pending"]);
     assert_eq!(view["label"], "nothing to do");
@@ -121,7 +121,7 @@ fn a_run_that_passed_every_gate_keeps_them_passed_and_names_its_outcome() {
         {"at": 5, "entry": {"kind": "outcome_reached", "outcome": {"name": "check failed", "tone": "bad"}}},
     ]);
     let verdict = json!({"name": "check failed", "tone": "bad", "says": "The check failed."});
-    let view = run_view("evidence", &row(history, &verdict));
+    let view = run_view("evidence", &row(&history, &verdict));
     assert_eq!(states(&view), ["passed", "passed"]);
     assert_eq!(view["verdict"]["says"], "The check failed.");
 }
@@ -133,7 +133,7 @@ fn a_run_without_a_named_outcome_reads_as_it_did() {
         {"at": 2, "entry": {"kind": "gate_passed", "step": "proof"}},
         {"at": 3, "entry": {"kind": "ended", "outcome": {"outcome": "delivered", "result": "ok"}}},
     ]);
-    let view = run_view("w", &row(history, &serde_json::Value::Null));
+    let view = run_view("w", &row(&history, &serde_json::Value::Null));
     assert_eq!(view["label"], "finished");
     assert_eq!(view["verdict"], serde_json::Value::Null);
     let lines = view["lines"].as_array().unwrap();
