@@ -41,7 +41,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const failed = detail.failed;
-	const flow = detail.workflow;
+	const flow = detail.run_again;
 	if (!failed && !flow) return null;
 	const act = async (go: () => Promise<void>) => {
 		if (busy) return;

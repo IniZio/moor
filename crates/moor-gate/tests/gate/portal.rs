@@ -24,7 +24,14 @@ fn row(name: &str, lifecycle: &str, state: &str, line: &str, pr: Value) -> Value
     } else {
         Value::Null
     };
-    json!({"gate": gate, "id": 1, "name": name, "repo": "acme/web", "issue": null, "prompt": "Fix the typo",
+    let (issue, ties) = match name {
+        "web/done" => (
+            json!("ACME-12"),
+            json!({"workflow": {"name": "review", "pull": "acme/web#65"}, "machine": "big"}),
+        ),
+        _ => (Value::Null, json!({})),
+    };
+    json!({"gate": gate, "id": 1, "name": name, "repo": "acme/web", "issue": issue, "ties": ties, "prompt": "Fix the typo",
         "lifecycle": lifecycle, "session_state": "working", "state_reason": null,
         "base": "main", "branch": "moor/1-fix", "driver": null, "agent": null, "run": null,
         "updated_at": "2026-11-18T10:00:00Z",
@@ -48,6 +55,7 @@ fn failed_box(name: &str) -> Response {
     let line = "failed: clone timed out";
     let mut boxed = row(name, "setup_failed", "failed", line, Value::Null);
     boxed["session_state"] = json!("starting");
+    boxed["ties"] = json!({"workflow": {"name": "nightly"}});
     let shown = json!({"box": boxed, "events": [], "timeline": [], "artifacts": []});
     Response::ok("x", Some(shown))
 }
@@ -319,6 +327,23 @@ fn a_box_with_gates_carries_them_to_the_list_and_its_page_as_show_sent_them() {
 }
 
 #[test]
+fn a_row_carries_its_issue_machine_and_the_workflow_run_for_a_pull_request_that_made_it() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-12");
+    let rows = json_of(&get(&w.addr, "/account/api/boxes", Some(&cookie)))["boxes"].clone();
+    let done = &rows[1];
+    assert_eq!(done["issue"], "ACME-12");
+    assert_eq!(done["machine"], "big");
+    assert_eq!(
+        done["workflow"],
+        json!({"name": "review", "pull": "acme/web#65"})
+    );
+    for key in ["issue", "machine", "workflow"] {
+        assert_eq!(rows[0][key], Value::Null, "a plain Box has no {key}");
+    }
+}
+
+#[test]
 fn a_box_whose_setup_failed_says_so_and_names_the_workflow_run_that_made_it() {
     let w = world(true, &[]);
     let cookie = user(&w, "portal-alice-8");
@@ -329,6 +354,7 @@ fn a_box_whose_setup_failed_says_so_and_names_the_workflow_run_that_made_it() {
     ));
     assert_eq!(failed["state"], "failed");
     assert_eq!(failed["retryable"], true);
+    assert_eq!(failed["run_again"], json!({"name": "nightly"}));
     assert_eq!(failed["workflow"], json!({"name": "nightly"}));
     let asking = json_of(&get(
         &w.addr,
@@ -337,7 +363,7 @@ fn a_box_whose_setup_failed_says_so_and_names_the_workflow_run_that_made_it() {
     ));
     assert_eq!(asking["retryable"], false);
     assert_eq!(
-        asking["workflow"],
+        asking["run_again"],
         Value::Null,
         "a Box still working is not run again"
     );

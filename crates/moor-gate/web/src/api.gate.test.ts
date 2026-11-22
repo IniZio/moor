@@ -118,6 +118,23 @@ test('a Box row carries the gate view when it has gates and none when it has not
 	expect(rows.map((r) => r.gate?.status.state)).toEqual(['open', 'failed', 'passed', undefined]);
 });
 
+test('a Box row and page carry the issue, machine and workflow run when they have them, and parse without them', async () => {
+	const tied = { issue: 'ACME-12', machine: 'big', workflow: { name: 'review', pull: 'acme/web#65' } };
+	reply = ok({ boxes: [box(tied), box({ workflow: { name: 'nightly' } }), box({}), box({ issue: null, machine: null, workflow: null })] });
+	const rows = await boxList();
+	expect(rows.map((r) => [r.issue, r.machine, r.workflow])).toEqual([
+		['ACME-12', 'big', { name: 'review', pull: 'acme/web#65' }],
+		[undefined, undefined, { name: 'nightly' }],
+		[undefined, undefined, undefined],
+		[null, null, null],
+	]);
+	reply = ok(box({ ...tied, run_again: { name: 'review', pull: 'acme/web#65' } }));
+	const page = await boxGet('web/gated');
+	expect([page.workflow, page.run_again]).toEqual([tied.workflow, tied.workflow]);
+	reply = ok(box({}));
+	expect((await boxGet('web/gated')).run_again).toBeUndefined();
+});
+
 test('an answer of yes sends the prompt it answers and no note', async () => {
 	reply = ok({ answered: true, outcome: 'gate review passed, and every gate has passed' });
 	const outcome = await gateAnswer('csrf-1', 'web/gated', 'review-4', true);
