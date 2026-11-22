@@ -184,7 +184,7 @@ A task or a workflow holds an ordered set of repos, all cloned into one Box.
 - The first repo is the starting point. The agent works there, and its branch and PR go there.
 - Each other repo is cloned beside it, as `also` does today. One the agent changed gets its own branch and PR.
 - A workflow run is one Box with all its repos. A workflow no longer starts one Box per repo.
-- To run the same schedule on separate projects, make one workflow per project. "Duplicate" on a workflow makes that one click.
+- To run the same schedule on separate repo lists, make one workflow per repo list. "Duplicate" on a workflow makes that one click.
 - The portal shows the set as one picker, first repo first. The words "also" and "beside" leave the portal.
 
 Why. Each pilot workflow names one repo, and one of them clones six more with `also`. Nobody used one Box per repo. People asked for a workflow over several repos and could not find how.
@@ -245,7 +245,7 @@ The [position spec](position.md) proposes a new model for moor. This table lists
 | Task, the right rail | The plan's steps | The gates in order, with the agent's own plan items between them | 1 and 2 |
 | Task, the waiting card | "Always" belongs in repo settings. | "Always" is a capability in the definition. | 4 |
 | Workflows | A list, with numbered steps to edit and "Edit as JSON" | Automations. Each shows its prompt with moor's reading marked on it. An edit to the prompt is a proposal that shows the plan it changes. | 3 |
-| Repos of a task | One workflow per project, with Duplicate | One automation lists several projects and starts a task for each. A project is still one repo set in one Box. | 3 |
+| Repos of a task | One workflow per repo list, with Duplicate | One automation names several repo lists and starts a task for each. A repo list is still one Box. | 3 |
 | Repos and account | Repo config is edited in place. | Repo config is files in the definition, with versions and proposals. | 3 |
 | Who | Developer, QA, PM, designer and operator | The same people. Clients stay out of scope. Handover between roles is reserved for later. | none |
 
