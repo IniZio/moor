@@ -33,7 +33,7 @@ function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => vo
 				<dd>
 					{w.last ? (
 						<>
-							<StatusIcon status={w.last.status} /> {w.last.label}
+							<StatusIcon status={w.last.status} verdict={w.last.verdict} /> {w.last.label}
 							{w.last.status === 'failure' && (
 								<>
 									{' '}

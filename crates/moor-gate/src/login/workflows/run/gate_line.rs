@@ -33,10 +33,7 @@ pub(super) fn sentence(kind: &str, entry: &Value, tries: &str) -> String {
         "outcome_reached" => entry
             .get("outcome")
             .and_then(|o| text(o, "name"))
-            .map_or_else(
-                || "Outcome reached".to_owned(),
-                |n| format!("Ended in “{n}”"),
-            ),
+            .map_or_else(|| "Outcome reached".to_owned(), |n| format!("Ended: {n}")),
         other => format!("{other}: {entry}"),
     }
 }

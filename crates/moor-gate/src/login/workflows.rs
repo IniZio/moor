@@ -19,6 +19,7 @@ mod now;
 mod run;
 mod save;
 mod schedule;
+mod verdict;
 
 pub(super) use download::artifact;
 pub(super) use form::{create, edit, remove, switch};
@@ -208,7 +209,8 @@ fn summary(w: &WorkflowView) -> Value {
         "plan_stale": w.plan_stale,
         "last": last.map(|r| json!({
             "status": status(&r.phase, &r.outcome),
-            "label": label(&r.phase, &r.outcome, r.step.as_deref()),
+            "label": verdict::label_of(r),
+            "verdict": verdict::named(r),
             "due_at": r.due_at,
         })),
     })
@@ -254,7 +256,8 @@ fn run_row(row: &RunRowView) -> Value {
         "started_at": started,
         "duration_ms": duration,
         "status": status(&run.phase, &run.outcome),
-        "label": label(&run.phase, &run.outcome, run.step.as_deref()),
+        "label": verdict::label_of(run),
+        "verdict": verdict::named(run),
         "result": run.result,
         "detail": run.detail,
     })

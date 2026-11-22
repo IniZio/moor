@@ -16,7 +16,7 @@ function Runs({ flow }: { flow: Workflow | null }) {
 					{flow.runs.map((r) => (
 						<li key={r.id} class={r.pull ? 'has-pr' : undefined}>
 							<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
-								<StatusIcon status={r.status} />
+								<StatusIcon status={r.status} verdict={r.verdict} />
 								<span class="grow">{r.trigger}</span>
 								<span class="muted">{when(r.due_at)}</span>
 								<span class="muted">{duration(r.duration_ms)}</span>

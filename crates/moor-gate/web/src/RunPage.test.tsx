@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
 
-import type { Step } from './api';
-import { StepItem } from './RunPage';
-import { all, textOf } from './testkit';
+import type { Run, Step } from './api';
+import type { Unanswered } from './gate';
+import { OutcomeItem, RunResult, StepItem } from './RunPage';
+import { all, LOST, NOT_RUN, textOf } from './testkit';
 
 const gate = (over: Partial<Step>): Step => ({
 	id: 'done',
@@ -36,16 +37,62 @@ test('each gate state reads as a person would say it', () => {
 });
 
 test('a gate check with a sentence shows it first and the command behind Show the check; one without keeps the command line', () => {
-	const row = StepItem({ step: gate({ state: 'waiting' }), number: 2 });
+	const row = StepItem({ step: gate({ state: 'waiting' }) });
 	const text = textOf(row);
 	expect(text.indexOf('The file never.txt exists.')).toBeLessThan(text.indexOf('Show the check'));
 	expect(all(row, 'code')).toHaveLength(0);
 	expect(textOf(all(row, 'pre')[0])).toBe('test -f never.txt');
-	const bare = StepItem({ step: gate({ checks: [{ run: 'test -f never.txt', says: null }] }), number: 2 });
+	const bare = StepItem({ step: gate({ checks: [{ run: 'test -f never.txt', says: null }] }) });
 	expect(all(bare, 'code').map(textOf)).toEqual(['test -f never.txt']);
 });
 
 test('a plan step keeps its words: a passed work step is done', () => {
 	const row = StepItem({ step: gate({ kind: 'work', title: 'Audit', checks: null }), number: 1 });
 	expect(textOf(all(row, 'summary')[0])).toBe('work1. Auditdone');
+});
+
+const run = (over: Partial<Run>): Run => ({ workflow: 'evidence', id: 3, due_at: 1, phase: 'done', status: 'success', label: 'finished', steps: [], lines: [], ...over });
+
+test('the outcome row after the gates shows the name and what it says', () => {
+	const found = OutcomeItem({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' } }) });
+	const [summary] = all(found, 'summary');
+	expect(textOf(summary)).toBe('outcomeOutcomecheck failed');
+	expect(textOf(found)).toContain('The pull request check failed.');
+	expect(all(summary, 'span').map((s) => s.props.class)).toContain('state failed');
+	const plain = OutcomeItem({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }) });
+	expect(textOf(all(plain, 'summary')[0])).toBe('outcomeOutcomenothing to do');
+});
+
+test('while moor decides the outcome row says so, and a run with no outcome has none', () => {
+	const deciding = OutcomeItem({ run: run({ phase: 'running', status: 'running', label: 'running', closing: 'deciding' }) });
+	expect(textOf(all(deciding, 'summary')[0])).toBe('outcomeOutcomemoor is checking which outcome holds');
+	const waiting = OutcomeItem({ run: run({ phase: 'waiting', status: 'waiting', closing: 'waiting' }) });
+	expect(textOf(all(waiting, 'summary')[0])).toContain('waiting for you');
+	expect(OutcomeItem({ run: run({}) })).toBeNull();
+});
+
+test('a waiting outcome row says no outcome holds, or that moor got no answer from its checks when its wait line says so', () => {
+	const waits = (unanswered?: Unanswered) => run({ phase: 'waiting', status: 'waiting', closing: 'waiting', lines: [{ at: 2, kind: 'gate_waiting', text: 'Waiting for a person (try 2): w', evidence: [], unanswered }] });
+	expect(textOf(OutcomeItem({ run: waits() }))).toContain('No outcome holds. Steer the agent');
+	for (const cause of [NOT_RUN, LOST]) {
+		const text = textOf(OutcomeItem({ run: waits(cause) }));
+		expect(text).toContain('moor got no answer from its checks. Steer the agent');
+		expect(text).not.toContain('No outcome holds');
+	}
+});
+
+test('a run with a named outcome shows it as the result, and the agent\'s note beneath as the agent\'s', () => {
+	const found = RunResult({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The check failed.' }, result: 'check passed' }) });
+	const [head, ...rest] = all(found, 'p');
+	expect(textOf(head)).toBe('check failed · The check failed.');
+	expect(head?.props.class).toBe('notice danger');
+	expect(rest.map(textOf)).toEqual(["The agent's note", 'check passed']);
+	expect(all(RunResult({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }) }), 'p').map(textOf)).toEqual(['nothing to do']);
+});
+
+test('a run without a named outcome keeps its result as it was', () => {
+	const [only] = all(RunResult({ run: run({ result: 'ok' }) }), 'p');
+	expect(textOf(only)).toBe('ok');
+	expect(only?.props.class).toBe('notice ok');
+	expect(RunResult({ run: run({}) })).toBeNull();
 });

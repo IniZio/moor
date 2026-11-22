@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 
-import { boxGet, boxList, gateAnswer } from './api';
+import { boxGet, boxList, gateAnswer, runGet, workflowGet, workflowList } from './api';
+import { LOST, NOT_RUN } from './testkit';
 
 type Call = { url: string; init?: RequestInit };
 let calls: Call[] = [];
@@ -72,6 +73,18 @@ test('the card of a stuck gate parses, with its command, output and missing evid
 	expect(got.gate?.status.state).toBe('stuck');
 });
 
+test('a stage moor got no answer from carries its cause on the card, the status and the run page line', async () => {
+	const stuck = { gate: 'tests', kind: 'stuck', seq: 7, try_n: 1, why: 'w', handed: [], note: null, command: 'make', tail: null, missing: [], unanswered: NOT_RUN, hint: 'h' };
+	const needs = { id: 'tests-7', kind: 'stuck', question: 'Gate tests is stuck', detail: null, picks: [], other: null, approve: null, plan: false, gate: stuck };
+	reply = ok(box({ needs, gate: { gates: ['tests'], status: { state: 'stuck', gate: 'tests', why: 'w', unanswered: NOT_RUN } } }));
+	const got = await boxGet('web/gated');
+	expect(got.needs?.gate?.unanswered).toEqual(NOT_RUN);
+	expect(got.gate?.status).toMatchObject({ unanswered: NOT_RUN });
+	const line = { at: 2, kind: 'gate_waiting', text: 'Waiting for a person: w', evidence: [], unanswered: LOST };
+	reply = ok({ workflow: 'evidence', id: 3, due_at: 1, phase: 'waiting', status: 'waiting', label: 'waiting', steps: [], lines: [line] });
+	expect((await runGet('evidence', 3)).lines[0]?.unanswered).toEqual(LOST);
+});
+
 test('the gate view carries the note of the last accepted report, or none', async () => {
 	const status = { state: 'passed' };
 	reply = ok({ boxes: [box({ gate: { gates: ['a'], status, note: 'Typo fixed.' } }), box({ gate: { gates: ['a'], status, note: null } }), box({ gate: { gates: ['a'], status } })] });
@@ -139,4 +152,23 @@ test("a timeline entry of class moor parses, with the owner's quote when moor ca
 	const got = await boxGet('web/gated');
 	expect(got.timeline.map((e) => e.class)).toEqual(['you', 'moor']);
 	expect(got.timeline[1]?.quote).toBe('blue header');
+});
+
+const verdict = { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' };
+
+test('the list row, the run row and the run page keep the outcome the server named', async () => {
+	const flow = { name: 'evidence', repos: ['acme/web'], enabled: true, has_plan: false, plan_stale: false };
+	reply = ok({ workflows: [{ ...flow, last: { status: 'success', label: 'check failed', verdict, due_at: 1 } }] });
+	expect((await workflowList())[0]?.last?.verdict).toEqual(verdict);
+	const outcomes = [{ name: 'nothing to do', tone: 'plain', anytime: true, checks: ['true'] }, { name: 'done' }];
+	const row = { id: 3, due_at: 1, trigger: 'manual', status: 'success', label: 'check failed', verdict };
+	reply = ok({ ...flow, timeout_minutes: 90, prompt: 'p', plan_edited: false, revision: 1, outcomes, runs: [row] });
+	const page = await workflowGet('evidence');
+	expect(page.runs[0]?.verdict?.name).toBe('check failed');
+	expect(page.outcomes?.map((o) => o.name)).toEqual(['nothing to do', 'done']);
+	reply = ok({ workflow: 'evidence', id: 3, due_at: 1, phase: 'running', status: 'running', label: 'running', closing: 'deciding', steps: [], lines: [] });
+	expect((await runGet('evidence', 3)).closing).toBe('deciding');
+	reply = ok({ workflow: 'evidence', id: 3, due_at: 1, phase: 'done', status: 'success', label: 'check failed', verdict, steps: [], lines: [] });
+	const run = await runGet('evidence', 3);
+	expect([run.verdict?.tone, run.closing ?? null]).toEqual(['bad', null]);
 });

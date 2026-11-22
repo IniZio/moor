@@ -280,7 +280,9 @@ impl Tools {
     #[tool(
         description = "Read what your workflow runs did, oldest change first: each entry is a \
                        run (due time, outcome, refusal detail, Box). A run appears again each time it \
-                       moves on, from started to finished or timed out. Pass the previous \
+                       moves on, from started to finished or timed out. For a run of a Box \
+                       with gates, `verdict` names what it found, such as `check failed`, while \
+                       `outcome` stays `finished`. Pass the previous \
                        `next` as `after` to get only newer changes, and `workflow` to read one \
                        workflow's changes only. Needs the moor:read scope."
     )]

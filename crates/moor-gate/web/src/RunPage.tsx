@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { failure, type Line, type Run, runAnswer, runGet, type Step, toError } from './api';
+import { closingWaitWords, outcomeLine } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
@@ -55,6 +56,49 @@ function GateChecks({ checks }: { checks: NonNullable<Step['checks']> }) {
 				</li>
 			))}
 		</ul>
+	);
+}
+
+const OUTCOME_STATE = { good: 'passed', bad: 'failed', plain: 'ended' } as const;
+
+/** The closing row of a run: what moor found, or that it is still checking which outcome holds. */
+export function OutcomeItem({ run }: { run: Run }) {
+	const found = run.verdict;
+	if (!found && !run.closing) return null;
+	const waiting = run.closing === 'waiting';
+	const word = found ? found.name : waiting ? 'waiting for you' : 'moor is checking which outcome holds';
+	const state = found ? OUTCOME_STATE[found.tone] : waiting ? 'waiting' : 'running';
+	return (
+		<li>
+			<details open>
+				<summary>
+					<span class="kind outcome">outcome</span>
+					<span class="grow">Outcome</span>
+					<span class={`state ${state}`}>{word}</span>
+				</summary>
+				{found?.says && <p class="muted">{found.says}</p>}
+				{waiting && <p class="muted">{closingWaitWords(run.lines)} Steer the agent from its Box to try again.</p>}
+			</details>
+		</li>
+	);
+}
+
+const RESULT_TONE = { good: 'ok', bad: 'danger', plain: '' } as const;
+
+/** What a run came to: the outcome moor found when it names one, with the agent's own note beneath, since the two can disagree. */
+export function RunResult({ run }: { run: Run }) {
+	const found = run.verdict;
+	if (!found) return run.result ? <p class="notice ok">{run.result}</p> : null;
+	return (
+		<>
+			<p class={`notice ${RESULT_TONE[found.tone]}`}>{outcomeLine(found)}</p>
+			{run.result && (
+				<div class="run-note">
+					<p class="muted">The agent's note</p>
+					<p>{run.result}</p>
+				</div>
+			)}
+		</>
 	);
 }
 
@@ -126,7 +170,7 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 				<>
 					<div class="row-head">
 						<h2 class="run-title">
-							<StatusIcon status={run.status} /> Run {run.id}
+							<StatusIcon status={run.status} verdict={run.verdict} /> Run {run.id}
 						</h2>
 						<span class="pill">{run.label}</span>
 						{run.status === 'failure' && (
@@ -141,10 +185,13 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 						{run.duration_ms != null && `, took ${duration(run.duration_ms)}`}
 						{run.box && `, Box ${run.box}`}
 					</p>
-					{run.result && <p class="notice ok">{run.result}</p>}
+					<RunResult run={run} />
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
-					<ol class="steps">{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}</ol>
+					<ol class="steps">
+						{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}
+						<OutcomeItem run={run} />
+					</ol>
 					{run.lines.length > 0 && <ul class="history">{run.lines.map((l) => <LineItem key={`${l.at}${l.kind}`} line={l} />)}</ul>}
 					<div class="actions"><button class="quiet" onClick={reload}>Refresh</button></div>
 				</>

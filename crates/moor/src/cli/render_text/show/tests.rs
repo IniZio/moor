@@ -469,3 +469,100 @@ fn a_stuck_box_with_missing_evidence_names_it_under_the_reason() {
         "{out}"
     );
 }
+
+/// A Box whose gates are `names`, `passed` of which passed before the run ended in `outcome`.
+fn ended_box(names: &[&str], passed: usize, outcome: &Value) -> Value {
+    let mut t = with_gate(
+        row("alpha", true),
+        json!({"state": "done", "line": "nothing to do"}),
+        &json!({"state": "passed", "outcome": outcome}),
+    );
+    let gate = t
+        .pointer_mut("/gate")
+        .and_then(Value::as_object_mut)
+        .unwrap();
+    gate.insert("gates".into(), json!(names));
+    gate.insert("gates_passed".into(), json!(passed));
+    t
+}
+
+#[test]
+fn an_anytime_outcome_that_ended_the_run_says_how_many_gates_passed_not_all_passed() {
+    let t = ended_box(
+        &["proof", "done"],
+        0,
+        &json!({"name": "nothing to do", "tone": "plain"}),
+    );
+    let out = show(json!({"boxes": [t]}));
+    assert!(
+        out.contains("  outcome: nothing to do, 0 of 2 gates passed\n"),
+        "{out}"
+    );
+    assert!(!out.contains("all passed"), "{out}");
+}
+
+#[test]
+fn a_named_outcome_after_every_gate_says_so_and_the_implicit_done_reads_as_before() {
+    let named = ended_box(
+        &["proof", "done"],
+        2,
+        &json!({"name": "check failed", "tone": "bad"}),
+    );
+    let out = show(json!({"boxes": [named]}));
+    assert!(
+        out.contains("  gates: all passed, outcome: check failed\n"),
+        "{out}"
+    );
+    let implicit = ended_box(&["proof"], 1, &json!({"name": "done", "tone": "good"}));
+    let out = show(json!({"boxes": [implicit]}));
+    assert!(out.contains("  gates: all passed\n"), "{out}");
+    assert!(!out.contains("outcome:"), "{out}");
+}
+
+#[test]
+fn a_box_stuck_at_the_closing_stage_lists_each_outcome_tried() {
+    let card = json!({
+        "gate": "outcome", "kind": "stuck", "seq": 1, "why": "out of tries: no outcome held",
+        "tail": "one blob of everything", "hint": "Send the agent a message to reopen the gate.",
+        "tried": [
+            {"outcome": "check passed", "says": "The newest status is success.", "command": "test \"$s\" = success", "exit": 1, "tail": "status is none\n"},
+            {"outcome": "check failed", "command": "false", "exit": null, "tail": ""},
+        ],
+    });
+    let t = with_gate(
+        row("alpha", true),
+        json!({
+            "state": "needs_you", "line": "gate outcome is stuck: out of tries: no outcome held",
+            "needs": {"kind": "stuck", "gate": card},
+        }),
+        &json!({"state": "stuck", "gate": "outcome", "why": "out of tries: no outcome held"}),
+    );
+    let out = show(json!({"boxes": [t]}));
+    assert!(
+        out.contains(
+            "    not met: The newest status is success.\n      command: test \"$s\" = success\n      exit: 1\n      output:\n        status is none\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains("    not met: check failed\n      command: false\n      exit: output lost\n"),
+        "{out}"
+    );
+    assert!(!out.contains("one blob"), "{out}");
+    assert!(out.contains("    hint: Send the agent a message"), "{out}");
+}
+
+#[test]
+fn a_box_deciding_its_outcome_does_not_wait_for_an_approval() {
+    let t = with_gate(
+        row("alpha", true),
+        json!({"state": "working", "line": "deciding the outcome: running its checks"}),
+        &json!({"state": "open", "gate": "outcome", "try_n": 2, "next": "decide"}),
+    );
+    let out = show(json!({"boxes": [t]}));
+    assert!(
+        out.contains("  outcome, try 2: moor is checking which outcome holds\n"),
+        "{out}"
+    );
+    assert!(!out.contains("approval"), "{out}");
+}

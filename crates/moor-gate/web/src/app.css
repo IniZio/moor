@@ -129,7 +129,8 @@ main.wide { max-width: 64rem; }
 
 .status { display: inline-block; width: 1.25rem; text-align: center; font-weight: var(--moor-weight-strong); }
 .status.success { color: var(--moor-color-success); }
-.status.failure { color: var(--moor-color-danger); }
+.status.failure, .status.bad { color: var(--moor-color-danger); }
+.status.plain { color: var(--moor-color-text-muted); }
 .status.waiting, .status.running { color: var(--moor-color-warning); }
 .status.queued, .status.skipped, .status.stopped { color: var(--moor-color-text-muted); }
 

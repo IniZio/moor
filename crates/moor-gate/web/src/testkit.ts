@@ -1,6 +1,8 @@
 import { type ComponentChild, isValidElement, type VNode } from 'preact';
 import * as v from 'valibot';
 
+import type { Unanswered } from './gate';
+
 /** The props a test reads off an element. */
 type Props = { children?: ComponentChild; href?: string; value?: string; onClick?: () => void };
 
@@ -41,6 +43,10 @@ export function all(node: ComponentChild, tag: string): El[] {
 	});
 	return found;
 }
+
+/** The two causes the core gives for a stage moor got no answer from, as its tests write them. */
+export const NOT_RUN = { check: { gate: { check: 0 } }, command: 'make', reason: { kind: 'not_run', reason: 'Box 3 is busy with another command' } } satisfies Unanswered;
+export const LOST = { check: { outcome: { outcome: 'merged', check: 0 } }, command: 'gh pr view', says: 'The pull request is merged.', reason: { kind: 'lost' } } satisfies Unanswered;
 
 /** The button of a rendered tree whose label is `label`. */
 export function button(node: ComponentChild, label: string): El | undefined {

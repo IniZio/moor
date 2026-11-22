@@ -1,6 +1,6 @@
 //! A Box's gates as `show` reports them.
 
-use crate::gate::{status, wait, GateLine, GateStatus, Gates, Wait};
+use crate::gate::{passed_gates, status, wait, GateLine, GateStatus, Gates, Wait};
 
 /// The gates of a Box and where it stands against them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -9,6 +9,8 @@ pub struct GateView {
     pub gates: Vec<String>,
     /// Where the Box stands.
     pub status: GateStatus,
+    /// How many gates passed: fewer than `gates` when an `anytime` outcome ended the run first.
+    pub gates_passed: usize,
     /// What a person is asked, when the gate waits for one.
     pub wait: Option<Wait>,
     /// What the agent wrote with its newest accepted report that had a note.
@@ -38,6 +40,7 @@ impl GateView {
         Self {
             gates: gates.iter().map(|g| g.name.to_string()).collect(),
             status: status(gates, lines),
+            gates_passed: passed_gates(gates, lines),
             wait: wait(gates, lines),
             note: lines
                 .iter()

@@ -10,6 +10,7 @@ fn gated(lifecycle: BoxLifecycle, session: SessionState, status: GateStatus) -> 
     b.gate = Some(GateView {
         gates: vec!["proof".to_owned()],
         status,
+        gates_passed: 0,
         wait: None,
         note: None,
         run_ended: None,
@@ -450,5 +451,53 @@ fn a_done_gated_box_without_a_report_note_keeps_the_agents_line() {
     assert_eq!(
         (p.state, p.line.as_str()),
         (Progress::Done, "Finished the change.")
+    );
+}
+
+fn passed_as(name: &str, tone: &str) -> GateStatus {
+    GateStatus::Passed {
+        outcome: serde_json::from_value(json!({"name": name, "tone": tone})).unwrap(),
+    }
+}
+
+#[test]
+fn a_finished_box_says_the_outcome_it_ended_in_unless_that_is_the_implicit_done() {
+    for (name, tone) in [("check failed", "bad"), ("nothing to do", "plain")] {
+        let mut b = gated(
+            BoxLifecycle::Ready,
+            SessionState::Idle,
+            passed_as(name, tone),
+        );
+        b.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
+        let p = derive(&b, &[], ten());
+        assert_eq!((p.state, p.line.as_str()), (Progress::Done, name));
+    }
+    let mut plain = gated(
+        BoxLifecycle::Ready,
+        SessionState::Idle,
+        passed_as("done", "good"),
+    );
+    assert_eq!(derive(&plain, &[], ten()).line, "done");
+    plain.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
+    assert_eq!(derive(&plain, &[], ten()).line, "PR #7 was checked.");
+}
+
+#[test]
+fn a_finished_box_with_a_pull_request_names_the_outcome_and_the_pull_request() {
+    let b = gated(
+        BoxLifecycle::Ready,
+        SessionState::Idle,
+        passed_as("check failed", "bad"),
+    );
+    let said = ev(
+        1,
+        "agent_said",
+        "2026-11-18T09:58:00Z",
+        json!({"text": "Checked https://github.com/acme/web/pull/12."}),
+    );
+    let p = derive(&b, &[said], ten());
+    assert_eq!(
+        (p.state, p.line.as_str()),
+        (Progress::Done, "check failed · PR #12")
     );
 }

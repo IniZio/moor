@@ -152,8 +152,9 @@ without `gates` keeps them, and `gates: []` removes them.
 
 The gates, not the agent going quiet, decide how the run ends.
 
-- Every gate passed. The run is `finished`, and its result is the note of the
-  agent's last accepted report.
+- Every gate passed, or an `anytime` outcome held first. The run is `finished`
+  in the outcome moor found. Its result is the note of the agent's last accepted
+  report.
 - A gate failed for good, as when the owner says no on its last try. The run
   `failed` with the gate's reason.
 - moor got no answer from its checks twice in a row, of the gate or of an
@@ -176,6 +177,72 @@ includes the `MOOR_PULL_*` variables and the Proxy.
 
 A newer head of a pull request cancels the older head's run, and a cancelled
 run's Box gets no more reminders or checks.
+
+## Name how a run ends with outcomes
+
+Gates say when a run is done. Outcomes say what it found. A run of a Box with
+gates always ends in exactly one outcome. Name the outcomes with `outcomes`
+beside `gates`. Left out, a run ends in `done`.
+
+```json
+{
+  "name": "pr-evidence",
+  "repos": ["acme/web"],
+  "on_pull_request": true,
+  "prompt": "Collect evidence for the pull request in MOOR_PULL_NUMBER, then comment on it.",
+  "gates": [
+    {"name": "proof", "evidence": ["pr-*"]},
+    {"name": "done", "evidence": ["posted.md"]}
+  ],
+  "outcomes": [
+    {
+      "name": "nothing to do",
+      "says": "The pull request is closed, moved on, or not named.",
+      "tone": "plain",
+      "anytime": true,
+      "checks": [{"run": "[ -z \"$MOOR_PULL_NUMBER\" ]", "says": "No pull request is named in the env."}]
+    },
+    {
+      "name": "check failed",
+      "says": "The pull request's check failed.",
+      "tone": "bad",
+      "checks": [{"run": "test \"$(cat .moor/artifacts/status)\" = failure", "says": "The status is failure."}]
+    },
+    {
+      "name": "check passed",
+      "says": "The pull request's check passed.",
+      "checks": [{"run": "test \"$(cat .moor/artifacts/status)\" = success", "says": "The status is success."}]
+    }
+  ]
+}
+```
+
+An outcome has a `name` and any of these.
+
+| Field | What it says |
+| --- | --- |
+| `says` | One plain sentence of what the outcome means, up to 200 characters. |
+| `tone` | `good` when left out, `bad` for bad news such as a failed check, or `plain` for neither. |
+| `checks` | What moor runs in the Box, written as a gate's checks. The outcome holds when all exit 0. |
+| `anytime` | `true` to also try it each time the agent goes quiet before the gate in hand passes. It needs a check. |
+
+moor decides the outcome itself, and the agent never claims one. Once every gate
+has passed, moor tries the outcomes in order. The first whose checks all exit 0
+is the run's outcome. An outcome with no checks always holds, so it goes last.
+
+An `anytime` outcome that holds ends the run at once. On the run page and the
+Box page, the gate in hand reads `ended` and the gates after it read `not
+reached`. `moor show` says how many gates passed.
+
+When no outcome holds, moor steers the agent once and tries again. When none
+holds again, the run waits as for a stuck gate. The Box card lists each outcome
+tried with its command, exit code and output. A message to the Box reopens it.
+
+A bad outcome is still a run that did its job. The run list, the run page, the
+Box page and `moor show` name what the run found, such as `check failed`. They
+never show the bare word `finished` for it. `list_workflow_runs` keeps
+`outcome: "finished"` and adds a `verdict` with `name`, `tone` and `says`. A
+run with no named outcomes still reads `finished`.
 
 ## Run now
 
@@ -364,7 +431,8 @@ Other tools:
 - `list_workflows` shows each workflow, its next due time, its plan and its
   latest run. `list_workflow_runs` lists each change oldest first, with an
   outcome and a `trigger` of `cron`, `manual` or `pull_request`. A run for a
-  pull request also shows its `pull` and `head_sha`.
+  pull request also shows its `pull` and `head_sha`. A run of a Box with gates
+  adds a `verdict` that names what it found.
 - `set_workflow_enabled` and `remove_workflow` pause and remove.
 
 A cron run's Box is named `<workflow>/w<id>-<due time>`, and a run by hand

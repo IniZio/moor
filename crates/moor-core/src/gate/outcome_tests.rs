@@ -358,3 +358,5 @@ fn no_gate_may_take_the_closing_stage_name() {
     let got = Gates::parse(&[gate(CLOSING, "x", &[])], &[]).unwrap_err();
     assert_eq!(got, GateError::ReservedName(CLOSING.to_owned()));
 }
+
+mod view;
