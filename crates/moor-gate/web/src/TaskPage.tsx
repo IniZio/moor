@@ -229,7 +229,7 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 	return (
 		<div class="t-box">
 			<TaskHead t={detail} now={now} actions={<HeaderActions detail={detail} csrf={csrf} onDone={reload} />} />
-			<PrHeader box={box} named={detail.pr} />
+			<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{detail.state === 'needs_you' &&
 				!inStory &&

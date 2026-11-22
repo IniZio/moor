@@ -51,7 +51,7 @@ export function TaskHead({ t, now, actions }: { t: HeadFields; now: number; acti
 				{flow && (
 					<span>
 						started by <a href={`#/workflows/${encodeURIComponent(flow.name)}`}>{flow.name}</a>
-						{pull && ` · PR #${pull}`}
+						{pull && pull !== String(t.pr?.number) && ` · PR #${pull}`}
 					</span>
 				)}
 				{at && <span>last event <time dateTime={at}>{exactTime(at, now)}</time></span>}
