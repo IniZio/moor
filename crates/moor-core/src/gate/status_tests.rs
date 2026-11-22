@@ -1,5 +1,6 @@
 //! The state machine of a Box's gates, driven by the lines written for it.
 
+use super::outcome_tests::passed;
 use super::*;
 use crate::workflow::{Answer, StepReport, StepResult};
 
@@ -20,17 +21,6 @@ fn tries(n: u64, mut d: GateDoc) -> GateDoc {
 
 fn gates(docs: &[GateDoc]) -> Gates {
     Gates::parse(docs, &[]).unwrap()
-}
-
-/// Where a Box with no outcomes stands once every gate passed: at the implicit `done`.
-fn passed() -> GateStatus {
-    GateStatus::Passed {
-        outcome: Verdict {
-            name: OutcomeName("done".to_owned()),
-            tone: Tone::Good,
-            says: None,
-        },
-    }
 }
 
 fn id(s: &str) -> StepId {

@@ -111,9 +111,11 @@ pub struct DueOutcomes<'a> {
     pub outcomes: Vec<&'a Outcome>,
 }
 
-/// The outcomes due from `gates` and the `lines` written for them: every outcome when the status
-/// is open at `Decide`, and the `anytime` ones, if any, when a gate waits for the agent, which
-/// moor tries once the agent is quiet before it reminds it. None otherwise.
+/// The outcomes due from `gates` and the `lines` written for them.
+///
+/// Every outcome when the status is open at `Decide`, and the `anytime` ones, if any, when a gate
+/// waits for the agent, which moor tries once the agent is quiet before it reminds it. None
+/// otherwise.
 #[must_use]
 pub fn due_outcomes<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueOutcomes<'a>> {
     let GateStatus::Open { gate, try_n, next } = status(gates, lines) else {

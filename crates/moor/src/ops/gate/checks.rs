@@ -110,25 +110,8 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     let n = i64::try_from(lines.len())
         .unwrap_or(i64::MAX)
         .saturating_add(1);
-    let work = if let Some(due) = due_check(&gates, &lines) {
-        let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
-            return Ok(());
-        };
-        Work::Check {
-            gate: due.gate.name.clone(),
-            try_n: due.try_n,
-            check: due.check,
-            command: command.run.clone(),
-        }
-    } else {
-        ask(cx, store, row, (&gates, &lines))?;
-        if hand_over(cx, store, row, (&gates, &lines))? {
-            return Ok(());
-        }
-        let Some(due) = due_outcomes(&gates, &lines) else {
-            return remind(cx, store, row, (&gates, &lines));
-        };
-        Work::Outcomes(Due::of(&due))
+    let Some(work) = due_work(cx, store, row, (&gates, &lines))? else {
+        return Ok(());
     };
     if !settled(cx, store, row)? {
         return Ok(());
@@ -140,6 +123,38 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
         _flight: flight,
     });
     Ok(())
+}
+
+/// What the pass runs next in Box `row`: the check that is due, else the outcomes that are due once
+/// the owner is asked and the agent told of a hand-over. None when nothing is to run, after the
+/// agent is reminded if it waits for one.
+fn due_work(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    (gates, lines): (&Gates, &[GateLine]),
+) -> Result<Option<Work>, CommandError> {
+    if let Some(due) = due_check(gates, lines) {
+        return Ok(due
+            .gate
+            .checks
+            .get(usize::from(due.check))
+            .map(|command| Work::Check {
+                gate: due.gate.name.clone(),
+                try_n: due.try_n,
+                check: due.check,
+                command: command.run.clone(),
+            }));
+    }
+    ask(cx, store, row, (gates, lines))?;
+    if hand_over(cx, store, row, (gates, lines))? {
+        return Ok(None);
+    }
+    let Some(due) = due_outcomes(gates, lines) else {
+        remind(cx, store, row, (gates, lines))?;
+        return Ok(None);
+    };
+    Ok(Some(Work::Outcomes(Due::of(&due))))
 }
 
 /// Whether `line` is one the agent's own doings wrote in try `try_n`, which a failure that ended

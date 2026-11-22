@@ -73,7 +73,11 @@ pub struct WorkflowAddReq {
     /// The outcomes a run may end in, sent with `gates` and kept with them; left out, a run
     /// ends in `done` once every gate passes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outcomes: Option<Vec<crate::gate::OutcomeDoc>>,
+    #[allow(
+        clippy::box_collection,
+        reason = "keeps `Request` and the CLI enums that hold it under the large-variant size"
+    )]
+    pub outcomes: Option<Box<Vec<crate::gate::OutcomeDoc>>>,
 }
 
 /// Arguments of `workflow-remove`.

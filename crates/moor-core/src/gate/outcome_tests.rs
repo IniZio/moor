@@ -1,7 +1,19 @@
 //! Outcomes: what parses, and how the fold ends a run in exactly one.
+#![allow(
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "a test fails loudly on a status it did not expect, and indexes what it just built"
+)]
 
 use super::*;
 use crate::workflow::{StepReport, StepResult};
+
+/// Where a Box with no outcomes stands once every gate passed: at the implicit `done`.
+pub(super) fn passed() -> GateStatus {
+    GateStatus::Passed {
+        outcome: Outcome::implicit().verdict(),
+    }
+}
 
 fn id(s: &str) -> StepId {
     StepId::parse(s).unwrap()
@@ -104,7 +116,7 @@ fn deciding(try_n: u8) -> GateStatus {
     }
 }
 
-fn passed(name: &str) -> Verdict {
+fn won(name: &str) -> Verdict {
     match status(
         &fixture(),
         &[through_gates(), vec![held(CLOSING, 1, name)]].concat(),
@@ -131,7 +143,7 @@ fn once_every_gate_passed_moor_decides_and_check_passed_holds() {
         names(&due),
         ["nothing to do", "check failed", "check passed"]
     );
-    let won = passed("check passed");
+    let won = won("check passed");
     assert_eq!((won.name.as_str(), won.tone), ("check passed", Tone::Good));
     let ended = [lines, vec![held(CLOSING, 1, "check passed")]].concat();
     assert_eq!(passed_gates(&g, &ended), 2);
@@ -140,7 +152,7 @@ fn once_every_gate_passed_moor_decides_and_check_passed_holds() {
 
 #[test]
 fn a_failed_pull_request_check_is_a_bad_outcome_that_still_passes() {
-    let won = passed("check failed");
+    let won = won("check failed");
     assert_eq!((won.name.as_str(), won.tone), ("check failed", Tone::Bad));
 }
 

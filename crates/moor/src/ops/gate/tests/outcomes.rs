@@ -2,7 +2,9 @@
 //! gate passed, and for an `anytime` outcome when a gate waits for a quiet agent.
 #![allow(
     clippy::indexing_slicing,
-    reason = "test assertions index what they just counted"
+    clippy::cognitive_complexity,
+    clippy::panic,
+    reason = "test assertions index what they just counted, and one test walks a whole story"
 )]
 
 use std::path::Path;

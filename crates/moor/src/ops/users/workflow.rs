@@ -244,7 +244,7 @@ fn parse_gates(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,
 ) -> Result<Option<Gates>, CommandError> {
-    let outcomes = req.outcomes.as_deref();
+    let outcomes = req.outcomes.as_deref().map(Vec::as_slice);
     match req.gates.as_deref() {
         None if outcomes.is_some() => Err(usage(
             "send outcomes with the gates they end, so nothing was saved".to_owned(),

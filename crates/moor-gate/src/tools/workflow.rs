@@ -132,7 +132,7 @@ impl Tools {
             enabled: args.enabled,
             on_pull_request: args.on_pull_request,
             gates: args.gates,
-            outcomes: args.outcomes,
+            outcomes: args.outcomes.map(Box::new),
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

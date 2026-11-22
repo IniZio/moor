@@ -95,10 +95,10 @@ impl Walk<'_> {
                 outcome: o.verdict(),
             };
         }
-        let (name, next) = match self.gates.get(self.at) {
-            Some(g) => (g.name.clone(), self.tries.next(g)),
-            None => (closing(), Some(GateNext::Decide)),
-        };
+        let (name, next) = self.gates.get(self.at).map_or_else(
+            || (closing(), Some(GateNext::Decide)),
+            |g| (g.name.clone(), self.tries.next(g)),
+        );
         match &self.end {
             Some(End::Stuck(why, try_n)) => GateStatus::Stuck {
                 gate: name,

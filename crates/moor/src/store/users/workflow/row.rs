@@ -1,5 +1,6 @@
 //! How a `workflow_runs` row reads as a [`WorkflowRun`] and a [`RunState`] is stored as columns.
 
+use moor_core::gate::Verdict;
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
@@ -118,6 +119,15 @@ pub(super) fn read_run(r: &db::Row, first: usize) -> Result<RunRow, db::Error> {
     })
 }
 
+/// The outcome a delivered run of a Box with gates keeps; none for any other run.
+fn verdict_of(row: &RunRow) -> Result<Option<Verdict>, StoreError> {
+    row.verdict
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|e| corrupt("run verdict", e))
+}
+
 /// The step stored in `col`; a run from before plans reads at the only step of
 /// [`Plan::single`].
 fn step_of(step: Option<String>) -> Result<StepId, StoreError> {
@@ -179,12 +189,7 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
         },
         FINISHED => ended(RunOutcome::Delivered {
             result: row.detail.clone().unwrap_or_default(),
-            verdict: row
-                .verdict
-                .as_deref()
-                .map(serde_json::from_str)
-                .transpose()
-                .map_err(|e| corrupt("run verdict", e))?,
+            verdict: verdict_of(row)?,
         })?,
         FAILED => ended(RunOutcome::Failed {
             at: ended_step(row)?,

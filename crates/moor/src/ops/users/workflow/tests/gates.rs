@@ -137,7 +137,7 @@ fn outcomes_are_saved_with_their_gates_and_listed_beside_them() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let mut req = gated(vec![proof()]);
-    req.outcomes = Some(outcomes());
+    req.outcomes = Some(Box::new(outcomes()));
     ok(&f, &who, add(req, None));
     let got = stored(&f, &who);
     assert_eq!(
@@ -155,12 +155,13 @@ fn outcomes_without_gates_or_that_could_skip_them_are_refused() {
     let f = fixture();
     let who = me(&f, "local:2000");
     let mut req = add_req("daily", "0 9 * * *", "UTC");
-    req.outcomes = Some(outcomes());
+    req.outcomes = Some(Box::new(outcomes()));
     let why = refusal(&f, &who, add(req, None));
     assert!(why.contains("outcomes with the gates"), "{why}");
     let mut req = gated(vec![proof()]);
-    req.outcomes =
-        Some(serde_json::from_value(json!([{"name": "skip", "anytime": true}])).unwrap());
+    req.outcomes = Some(Box::new(
+        serde_json::from_value(json!([{"name": "skip", "anytime": true}])).unwrap(),
+    ));
     let why = refusal(&f, &who, add(req, None));
     assert!(why.contains("anytime and needs a check"), "{why}");
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
