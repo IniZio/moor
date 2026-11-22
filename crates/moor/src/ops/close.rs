@@ -40,6 +40,23 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     run_with_reason(cx, req, None)
 }
 
+/// [`run`] for a close a person asks for. Once the Box is closed its workflow run ends as the next
+/// tick would end it, so nobody sees the run wait on a Box that is gone. moor's own closes decide
+/// their run's end themselves.
+pub(crate) fn requested(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
+    let view = run(cx, req)?;
+    if view.boxed.lifecycle == BoxLifecycle::Closed {
+        let id = moor_core::BoxId::new(view.boxed.id);
+        if let Err(e) = crate::ops::workflow::settle_closed_box(cx, cx.store()?, id) {
+            cx.warn(Warning {
+                code: "workflow_run_not_settled".to_owned(),
+                message: format!("{e}; the next workflow pass settles the Box's run"),
+            });
+        }
+    }
+    Ok(view)
+}
+
 /// [`run`] for a close moor starts itself; `reason` lands on the `closed` event.
 pub(crate) fn run_with_reason(
     cx: &Cx,
@@ -150,14 +167,6 @@ fn close_held(
         && closed.hands.as_ref().map(|b| b.state) != Some(HandsState::ReleaseFailed)
     {
         store.drop_box_leases(closed.id)?;
-    }
-    if closed.lifecycle == BoxLifecycle::Closed {
-        if let Err(e) = crate::ops::workflow::settle_closed_box(cx, store, closed.id) {
-            cx.warn(Warning {
-                code: "workflow_run_not_settled".to_owned(),
-                message: format!("{e}; the next workflow pass settles the Box's run"),
-            });
-        }
     }
     Ok(CloseView {
         boxed: box_view(&closed, cx.config()),

@@ -13,14 +13,14 @@ use super::{delivered, gone_quiet, proof, reported, ship, step, MIN};
 use crate::ops::gate::checks::{pass, run};
 use crate::testing::cx::REQUESTER_USER;
 
-/// Closes Box `id` as `r`'s cx does; the rig's Boxes answer no probe, so with force.
+/// Closes Box `id` as a person acting through `cx` does; the rig's Boxes answer no probe, so with force.
 fn close_as(r: &Rig, cx: &crate::cx::Cx, id: BoxId) {
     let name = r.cx.store().unwrap().box_row(id).unwrap().unwrap().name;
     let req = CloseReq {
         target: name.into(),
         force: true,
     };
-    crate::ops::close::run(cx, &req).unwrap();
+    crate::ops::close::requested(cx, &req).unwrap();
 }
 
 /// Fires the workflow by hand, as its owner, and says whether a run started.
