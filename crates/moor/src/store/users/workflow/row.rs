@@ -5,7 +5,7 @@ use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
     CancelCause, CommitSha, Plan, PullRef, RunCause, RunEnd, RunId, RunOutcome, RunState,
-    RunTrigger, StepId, WorkflowId, WorkflowRun,
+    RunTrigger, StepId, Unfinished, WorkflowId, WorkflowRun,
 };
 use moor_core::BoxId;
 use moor_schema::tables::WorkflowRuns;
@@ -40,6 +40,8 @@ pub(super) const REFUSED: &str = "refused";
 const CANCELLED: &str = "cancelled";
 /// The `detail` of a run cancelled by its pull request's close; a newer head stores its SHA.
 const CLOSED: &str = "closed";
+/// The `detail` of a run left incomplete because its Box was closed.
+const BOX_CLOSED: &str = "box_closed";
 
 /// A `workflow_runs` row as read.
 pub(super) struct RunRow {
@@ -195,9 +197,7 @@ fn state_of(row: &RunRow) -> Result<RunState, StoreError> {
             at: ended_step(row)?,
             reason: row.detail.clone().unwrap_or_default(),
         })?,
-        INCOMPLETE => ended(RunOutcome::Incomplete {
-            at: ended_step(row)?,
-        })?,
+        INCOMPLETE => ended(incomplete_of(row)?)?,
         DECLINED => ended(RunOutcome::Declined {
             at: ended_step(row)?,
         })?,
@@ -231,6 +231,19 @@ fn cancel_of(detail: &str) -> Option<CancelCause> {
     CommitSha::parse(detail)
         .ok()
         .map(|sha| CancelCause::NewerHead { sha })
+}
+
+/// The outcome of an incomplete run's row; a `detail` no cause is stored as is corrupt.
+fn incomplete_of(row: &RunRow) -> Result<RunOutcome, StoreError> {
+    let why = match row.detail.as_deref() {
+        None => Unfinished::Unreported,
+        Some(BOX_CLOSED) => Unfinished::BoxClosed,
+        Some(other) => return Err(corrupt("incomplete run detail", other)),
+    };
+    Ok(RunOutcome::Incomplete {
+        at: step_of(row.ended_step.clone())?,
+        why,
+    })
 }
 
 /// The `detail` a cancel cause is stored as: `closed`, or the newer head's SHA.
@@ -331,9 +344,13 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
                     cols.detail = Some(reason.clone());
                     cols.ended_step = Some(at.to_string());
                 }
-                RunOutcome::Incomplete { at }
-                | RunOutcome::Declined { at }
-                | RunOutcome::TimedOut { at } => cols.ended_step = Some(at.to_string()),
+                RunOutcome::Incomplete { at, why } => {
+                    cols.detail = (why == &Unfinished::BoxClosed).then(|| BOX_CLOSED.to_owned());
+                    cols.ended_step = Some(at.to_string());
+                }
+                RunOutcome::Declined { at } | RunOutcome::TimedOut { at } => {
+                    cols.ended_step = Some(at.to_string());
+                }
                 RunOutcome::Cancelled { at, cause } => {
                     cols.detail = Some(cancel_detail(cause));
                     cols.ended_step = Some(at.to_string());

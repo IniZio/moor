@@ -23,6 +23,7 @@ use crate::ops::start;
 use crate::store::{Store, StoreError};
 use advance::finish_runs;
 pub(crate) use answer::run as answer_run;
+pub(crate) use box_closed::settle_closed_box;
 pub(crate) use check::{run_check, CheckJob};
 use facts::history;
 pub(crate) use now::{run as run_now, spawn_start};
@@ -379,6 +380,7 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
 
 mod advance;
 mod answer;
+mod box_closed;
 pub(super) mod cancel;
 mod check;
 mod eligible;

@@ -151,6 +151,14 @@ fn close_held(
     {
         store.drop_box_leases(closed.id)?;
     }
+    if closed.lifecycle == BoxLifecycle::Closed {
+        if let Err(e) = crate::ops::workflow::settle_closed_box(cx, store, closed.id) {
+            cx.warn(Warning {
+                code: "workflow_run_not_settled".to_owned(),
+                message: format!("{e}; the next workflow pass settles the Box's run"),
+            });
+        }
+    }
     Ok(CloseView {
         boxed: box_view(&closed, cx.config()),
         box_deleted,

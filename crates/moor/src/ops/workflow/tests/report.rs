@@ -368,7 +368,11 @@ fn a_quiet_agent_with_no_report_is_reminded_once_across_a_restart_and_then_incom
     again.pause(3 * 60_000);
     assert!(again.pass().is_empty());
     let RunState::Done(RunEnd::Ended {
-        outcome: RunOutcome::Incomplete { at },
+        outcome:
+            RunOutcome::Incomplete {
+                at,
+                why: moor_core::workflow::Unfinished::Unreported,
+            },
         ..
     }) = again.latest(wid).state
     else {
@@ -459,7 +463,10 @@ fn a_tick_that_ends_the_run_between_a_reports_read_and_move_leaves_no_report_beh
     let key = r.latest(wid).id;
     let box_id = r.latest_box(wid);
     super::super::report::tests_hook::once_after_standing(move |cx| {
-        let outcome = RunOutcome::Incomplete { at: id("ship") };
+        let outcome = RunOutcome::Incomplete {
+            at: id("ship"),
+            why: moor_core::workflow::Unfinished::Unreported,
+        };
         let ended = cx
             .store()
             .unwrap()

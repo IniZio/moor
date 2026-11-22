@@ -133,7 +133,10 @@ fn an_incomplete_run_gets_exactly_one_delivery_however_often_the_move_repeats() 
     let key = crate::testing::runs::run_at(&w.store, (id, &repo(), Ts::from_millis(100)));
     let on = Plan::single_id();
     let end = || {
-        let outcome = RunOutcome::Incomplete { at: on.clone() };
+        let outcome = RunOutcome::Incomplete {
+            at: on.clone(),
+            why: moor_core::workflow::Unfinished::Unreported,
+        };
         let to = (boxed, outcome);
         let at = Ts::from_millis(900);
         w.store

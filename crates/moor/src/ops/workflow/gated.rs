@@ -11,7 +11,8 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::gate::{status, GateLine, GateNext, GateStatus, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    gated_move, GatedMove, HistoryEntry, RunOutcome, RunState, Standing, StepId, WorkflowRun,
+    gated_move, GatedMove, HistoryEntry, RunOutcome, RunState, Standing, StepId, Unfinished,
+    WorkflowRun,
 };
 use moor_core::{BoxId, ErrorKind};
 
@@ -128,6 +129,7 @@ impl Held<'_> {
             GatedMove::Fail { gate, reason } => self.end(RunOutcome::Failed { at: gate, reason }),
             GatedMove::Incomplete => self.end(RunOutcome::Incomplete {
                 at: self.at.0.clone(),
+                why: Unfinished::BoxClosed,
             }),
             // The line that put the gate in hand wrote its history, so the move writes none.
             GatedMove::Enter { gate, try_n } => self

@@ -22,8 +22,8 @@ const DEFAULT_RUN_LIST: u32 = 30;
 /// Most changes `workflow-runs` returns at once.
 const MAX_LIMIT: u32 = 200;
 
-/// The detail and result a run in `state` shows: a refusal's or failure's reason, a delivery's
-/// result.
+/// The detail and result a run in `state` shows: a refusal's, failure's or incomplete run's
+/// reason, a delivery's result.
 fn told(state: &RunState) -> (Option<String>, Option<String>) {
     match state {
         RunState::Done(RunEnd::Refused { detail }) => (Some(detail.clone()), None),
@@ -35,11 +35,11 @@ fn told(state: &RunState) -> (Option<String>, Option<String>) {
         ),
         RunState::Done(RunEnd::Ended { outcome, .. }) => match outcome {
             RunOutcome::Failed { reason, .. } => (Some(reason.clone()), None),
+            RunOutcome::Incomplete { at, why } => (Some(why.says(at)), None),
             RunOutcome::Delivered { result, .. } => {
                 (None, Some(result.clone()).filter(|r| !r.is_empty()))
             }
-            RunOutcome::Incomplete { .. }
-            | RunOutcome::Declined { .. }
+            RunOutcome::Declined { .. }
             | RunOutcome::TimedOut { .. }
             | RunOutcome::Cancelled { .. } => (None, None),
         },

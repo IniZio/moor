@@ -409,7 +409,7 @@ fn an_ended_agent_on_a_work_step_is_sent_the_step_again_and_a_second_end_is_inco
     r.pause(3 * 60_000);
     r.pass();
     let RunState::Done(RunEnd::Ended {
-        outcome: RunOutcome::Incomplete { at },
+        outcome: RunOutcome::Incomplete { at, .. },
         ..
     }) = r.latest(id).state
     else {

@@ -151,10 +151,13 @@ pub enum RunOutcome {
         /// Why.
         reason: String,
     },
-    /// The agent stopped without reporting step `at`, after one reminder.
+    /// The run stopped short at step `at`, for the reason `why` names.
     Incomplete {
         /// The step.
         at: StepId,
+        /// What stopped it.
+        #[serde(default, skip_serializing_if = "Unfinished::is_unreported")]
+        why: Unfinished,
     },
     /// The owner said no at an approve step with no `fail` edge.
     Declined {
@@ -173,6 +176,36 @@ pub enum RunOutcome {
         /// What ended it.
         cause: CancelCause,
     },
+}
+
+/// What stopped a run short of its end.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unfinished {
+    /// The agent stopped without reporting its step, even after a reminder.
+    #[default]
+    Unreported,
+    /// The run's Box was closed, or is gone, before the run ended.
+    BoxClosed,
+}
+
+impl Unfinished {
+    /// Whether the agent stopped without reporting.
+    #[must_use]
+    pub const fn is_unreported(&self) -> bool {
+        matches!(self, Self::Unreported)
+    }
+
+    /// Why a run that stopped at `at` is incomplete, in a sentence.
+    #[must_use]
+    pub fn says(self, at: &StepId) -> String {
+        match self {
+            Self::Unreported => {
+                "the agent stopped without reporting the step, even after a reminder".to_owned()
+            }
+            Self::BoxClosed => format!("its Box was closed while the run was at {at}"),
+        }
+    }
 }
 
 /// What cancelled a pull request run.
@@ -258,7 +291,7 @@ impl RunState {
             Self::Running { at, .. } | Self::Waiting { at, .. } => Some(at),
             Self::Done(RunEnd::Ended { outcome, .. }) => match outcome {
                 RunOutcome::Failed { at, .. }
-                | RunOutcome::Incomplete { at }
+                | RunOutcome::Incomplete { at, .. }
                 | RunOutcome::Declined { at }
                 | RunOutcome::TimedOut { at }
                 | RunOutcome::Cancelled { at, .. } => Some(at),

@@ -191,7 +191,10 @@ fn a_run_ends_only_from_exactly_the_step_and_try_it_was_read_at_with_its_lines()
             note: String::new(),
         },
     }];
-    let outcome = RunOutcome::Incomplete { at: first.clone() };
+    let outcome = RunOutcome::Incomplete {
+        at: first.clone(),
+        why: moor_core::workflow::Unfinished::Unreported,
+    };
     let end = |on: (&StepId, u8), lines: &[HistoryEntry]| {
         store
             .end_workflow_run(

@@ -9,21 +9,20 @@ use moor_core::decide::workflow::{
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::session_state::SessionState;
-use moor_core::request::BoxTarget;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
-    CheckSays, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Workflow,
-    WorkflowRun,
+    CheckSays, HistoryEntry, Plan, RunOutcome, RunState, Step, StepId, StepKind, Unfinished,
+    Workflow, WorkflowRun,
 };
-use moor_core::{BoxId, SteerReq};
+use moor_core::BoxId;
 
+use super::answer::send;
 use super::check::CheckJob;
 use super::facts::history_of;
 use super::settle::{broken_detail, fail_death_capped};
 use crate::cx::Cx;
 use crate::ops::common::check::{Claim, Flight, CHECK_LIMIT};
 use crate::ops::common::quiet::{box_facts, quiet_for_check};
-use crate::ops::steer;
 use crate::store::{BoxRow, Store, StoreError};
 
 /// Settles each started run of `w` whose Box is over or quiet: sent on to its next step,
@@ -38,64 +37,73 @@ pub(super) fn finish_runs(
     (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
 ) -> Result<(), StoreError> {
     for run in store.open_workflow_runs(w.id)? {
-        if super::gated::settle_held(cx, store, &run, now)? {
-            continue;
-        }
-        let RunState::Running {
+        settle_run(cx, store, (w, &run), now, (checks, &mut *out))?;
+    }
+    Ok(())
+}
+
+/// Settles `run` of `w` as [`finish_runs`] does.
+pub(super) fn settle_run(
+    cx: &Cx,
+    store: &Store,
+    (w, run): (&Workflow, &WorkflowRun),
+    now: Ts,
+    (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
+) -> Result<(), StoreError> {
+    if super::gated::settle_held(cx, store, run, now)? {
+        return Ok(());
+    }
+    let RunState::Running {
+        box_id,
+        ref at,
+        try_n,
+    } = run.state
+    else {
+        if let RunState::Waiting {
             box_id,
             ref at,
             try_n,
+            ..
         } = run.state
-        else {
-            if let RunState::Waiting {
-                box_id,
-                ref at,
-                try_n,
-                ..
-            } = run.state
-            {
-                super::wait::lose_waiting(store, &run, (box_id, at, try_n), now)?;
-            }
-            continue;
-        };
-        let row = store.box_row(box_id)?;
-        let facts = row.as_ref().map(|r| box_facts(store, r)).transpose()?;
-        let verdict = run_verdict(facts.as_ref(), now);
-        if verdict == RunVerdict::Broken {
-            if let Some(row) = &row {
-                let key = run.id;
-                store.refuse_run(key, (&broken_detail(store, row), false), now)?;
-            }
-            continue;
+        {
+            super::wait::lose_waiting(store, run, (box_id, at, try_n), now)?;
         }
-        if verdict == RunVerdict::DeathCapped {
-            fail_death_capped(store, &run, (box_id, at, try_n), now)?;
-            continue;
+        return Ok(());
+    };
+    let row = store.box_row(box_id)?;
+    let facts = row.as_ref().map(|r| box_facts(store, r)).transpose()?;
+    let verdict = run_verdict(facts.as_ref(), now);
+    if verdict == RunVerdict::Broken {
+        if let Some(row) = &row {
+            store.refuse_run(run.id, (&broken_detail(store, row), false), now)?;
         }
-        let plan = store.run_plan(run.id, &w.prompt)?;
-        let at_check = matches!(plan.step(at).map(|s| &s.kind), Some(StepKind::Check { .. }));
-        // A check runs as soon as the agent is idle, so an agent that only just stopped is
-        // quiet enough for it. An approve step is the owner's to answer, so the run waits at
-        // once. A step the agent works on waits for the longer quiet.
-        let at_approve = matches!(
-            plan.step(at).map(|s| &s.kind),
-            Some(StepKind::Approve { .. })
-        );
-        if verdict == RunVerdict::Running && !at_check && !at_approve {
-            continue;
-        }
-        let q = Quiet {
-            cx,
-            store,
-            w,
-            run: &run,
-            row: row.as_ref(),
-            at: (at, try_n),
-            now,
-        };
-        q.settle(&plan, box_id, (checks, out))?;
+        return Ok(());
     }
-    Ok(())
+    if verdict == RunVerdict::DeathCapped {
+        return fail_death_capped(store, run, (box_id, at, try_n), now);
+    }
+    let plan = store.run_plan(run.id, &w.prompt)?;
+    let at_check = matches!(plan.step(at).map(|s| &s.kind), Some(StepKind::Check { .. }));
+    // A check runs as soon as the agent is idle, so an agent that only just stopped is
+    // quiet enough for it. An approve step is the owner's to answer, so the run waits at
+    // once. A step the agent works on waits for the longer quiet.
+    let at_approve = matches!(
+        plan.step(at).map(|s| &s.kind),
+        Some(StepKind::Approve { .. })
+    );
+    if verdict == RunVerdict::Running && !at_check && !at_approve {
+        return Ok(());
+    }
+    let q = Quiet {
+        cx,
+        store,
+        w,
+        run,
+        row: row.as_ref(),
+        at: (at, try_n),
+        now,
+    };
+    q.settle(&plan, box_id, (checks, out))
 }
 
 /// A check of the run is already running.
@@ -192,9 +200,13 @@ impl Quiet<'_> {
             {
                 end(RunOutcome::Incomplete {
                     at: self.at.0.clone(),
+                    why: Unfinished::BoxClosed,
                 })
             }
-            Move::Incomplete { at } => end(RunOutcome::Incomplete { at }),
+            Move::Incomplete { at } => end(RunOutcome::Incomplete {
+                at,
+                why: Unfinished::Unreported,
+            }),
             Move::Fail { at, reason, .. } => end(RunOutcome::Failed { at, reason }),
             Move::RunCheck => flight.map_or(Ok(()), |flight| {
                 self.start_check(plan, box_id, (checks, flight))
@@ -370,20 +382,6 @@ impl Quiet<'_> {
             .step_workflow_run(key, (at, at), (lines, self.now))
             .map(|_| ())
     }
-}
-
-/// Steers the agent of `row` with `text`, as its owner does.
-pub(super) fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
-    let req = SteerReq {
-        target: BoxTarget::Id(row.id),
-        text: Some(text.to_owned()),
-        menu: None,
-        interrupt: false,
-        ask: None,
-    };
-    cx.for_box(row.user, || steer::run(cx, &req))
-        .map(|_| ())
-        .map_err(|e| e.error.to_string())
 }
 
 #[cfg(test)]
