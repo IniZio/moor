@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { type BoxDetail, boxGet, type BoxRow, type Evidence } from './api';
 import { type ApproveProps, ApproveView, StuckView, useApproval } from './Gates';
 import { gateLine, type Peekable, peekable } from './gate';
-import { exactTime, RepoName, reposOf } from './HomeList';
+import { exactTime, issueKey, RepoName, reposOf } from './HomeList';
 import { peekOf, setPeek } from './hashQuery';
 import { useLoad } from './useLoad';
 import './peek.css';
@@ -17,10 +17,10 @@ export function handedImages(names: readonly string[], detail: Pick<BoxDetail, '
 	return [...newest.values()];
 }
 
-/** The panel's content without its hooks: where the task is and what it says, the thumbnails, then the same approval or stuck card the task page shows. */
-export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; now: number; detail: Pick<BoxDetail, 'artifacts'> | null; approve: ApproveProps; onClose: () => void }) {
+/** The panel's content without its hooks: where the task is and what it says, then the same approval or stuck card the task page shows. */
+export function PeekView({ t, now, approve, onClose }: { t: Peekable; now: number; approve: ApproveProps; onClose: () => void }) {
 	const wait = t.needs.gate;
-	const images = handedImages(wait.handed, detail);
+	const key = t.issue ? (issueKey(t.issue) ?? t.issue) : null;
 	return (
 		<aside class={`t-peek${wait.kind === 'approve' ? '' : ' t-peek-stuck'}`} aria-label="Peek">
 			<div class="t-peek-head">
@@ -31,11 +31,7 @@ export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; no
 						</span>
 					))}
 				</span>
-				{t.pr && (
-					<a class="t-peek-pr" href={t.pr.url} target="_blank" rel="noopener">
-						PR #{t.pr.number}
-					</a>
-				)}
+				{key && <span class="t-rkey t-rkey-issue">{key}</span>}
 				<span class="grow" />
 				<a class="btn" href={`#/box/${encodeURIComponent(t.box)}`}>
 					Open task
@@ -48,17 +44,7 @@ export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; no
 			<p class="t-peek-line">
 				<span class="t-peek-now">{gateLine(t.gate) ?? t.line}</span> · <time dateTime={t.last_event_at ?? t.updated_at}>{exactTime(t.last_event_at ?? t.updated_at, now)}</time>
 			</p>
-			{images.length > 0 && (
-				<div class="t-peek-thumbs">
-					{images.map((a) => (
-						<a href={a.href} target="_blank" rel="noopener" title={a.name} key={a.name}>
-							<img src={a.href} alt={a.name} loading="lazy" />
-							<span class="t-peek-cap">{a.name}</span>
-						</a>
-					))}
-				</div>
-			)}
-			{wait.kind === 'approve' ? <ApproveView {...approve} /> : <StuckView wait={wait} />}
+			{wait.kind === 'approve' ? <ApproveView {...approve} /> : <StuckView wait={wait} inPeek />}
 			<p class="muted t-peek-hint">Esc closes · j and k move through the list</p>
 		</aside>
 	);
@@ -67,8 +53,8 @@ export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; no
 /** One open panel. The detail is read once it opens, only for the thumbnails; the card itself comes from the row. */
 function PeekPanel({ t, now, csrf, onSent, onClose }: { t: Peekable; now: number; csrf: string; onSent: () => void; onClose: () => void }) {
 	const { value } = useLoad(() => boxGet(t.box), t.box);
-	const approve = useApproval(t.box, t.needs, t.needs.gate, csrf, onSent);
-	return <PeekView t={t} now={now} detail={value} approve={approve} onClose={onClose} />;
+	const approve = useApproval(t.box, t.needs, t.needs.gate, csrf, onSent, handedImages(t.needs.gate.handed, value), t.pr?.number ?? null);
+	return <PeekView t={t} now={now} approve={approve} onClose={onClose} />;
 }
 
 const typing = (el: Element | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));

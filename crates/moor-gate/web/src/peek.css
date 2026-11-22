@@ -6,14 +6,9 @@
 .t-peek-repo .t-mono { font-size: 0.8125rem; color: var(--moor-color-text); }
 .t-peek-head .btn { padding: 3px 10px; font-size: 0.8125rem; }
 .t-peek-head .btn.ghost { padding: 2px 8px; font-size: 1rem; }
-.t-peek-pr { font-family: var(--moor-font-mono); font-size: 0.75rem; color: var(--moor-color-text-muted); white-space: nowrap; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
+.t-peek-head .t-rkey { font-size: 0.75rem; }
 .t-peek-title { margin: 10px 0 2px; font-size: 1.15rem; overflow-wrap: anywhere; }
 .t-peek-line { margin: 0 0 14px; font-size: 0.8125rem; color: var(--moor-color-text-muted); font-variant-numeric: tabular-nums; }
 .t-peek-now { color: var(--moor-color-accent-strong); }
-.t-peek-thumbs { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
-.t-peek-thumbs a { display: grid; gap: 4px; justify-items: center; color: inherit; text-decoration: none; }
-.t-peek-thumbs img { display: block; width: 66px; height: 110px; object-fit: cover; border: 1px solid var(--moor-color-border-strong); border-radius: 9px; background: var(--moor-color-bg); }
-.t-peek-cap { font-family: var(--moor-font-mono); font-size: 0.7rem; color: var(--moor-color-text-muted); }
-.t-peek .t-wait { margin-bottom: 12px; padding: 12px 14px; background: var(--moor-color-bg-raised); }
-.t-peek-stuck .t-wait { border-color: var(--moor-color-danger); }
+.t-peek .t-ncard { box-shadow: none; margin-bottom: 12px; padding: 12px 14px; }
 .t-peek-hint { margin: 6px 0 0; font-size: 0.8125rem; }

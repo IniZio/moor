@@ -1,8 +1,8 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
-import { failure, gateAnswer, type Needs, toError } from './api';
-import { checkRun, checkWords, type GateDoc, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
+import { type Evidence, failure, gateAnswer, type Needs, toError } from './api';
+import { checkRun, checkWords, CLOSING, type GateDoc, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
 
@@ -29,93 +29,79 @@ export type ApproveProps = {
 	box: string;
 	wait: Wait;
 	busy: boolean;
-	/** Whether the person pressed No and is writing the note that goes with it. */
-	refusing: boolean;
 	note: string;
 	error: string;
+	/** The images among what the agent handed in, to show as thumbnails. */
+	images: readonly Evidence[];
+	/** The pull request the task opened, named after what the agent wrote. */
+	pr: number | null;
 	onYes: () => void;
 	onNo: () => void;
-	onSendNo: () => void;
-	onBack: () => void;
 	onNote: (text: string) => void;
 };
 
-/** What a gate that asks its owner shows: what is asked, what the agent handed in and wrote, and Yes or No. */
-export function ApproveView({ box, wait, busy, refusing, note, error, onYes, onNo, onSendNo, onBack, onNote }: ApproveProps) {
+/** One thing the agent handed in: its picture when it is an image, else its name, either opening it in Evidence. */
+function Handed({ box, name, image }: { box: string; name: string; image?: Evidence }) {
 	return (
-		<div class="t-wait" role="region" aria-label="Your approval is needed">
-			<div class="t-wait-h">Your approval is needed</div>
-			<p class="t-wait-q">The agent asks you to approve {quoted(wait.gate)}.</p>
-			{wait.handed.length > 0 && (
-				<p class="t-gate-handed">
-					<span class="t-gate-label">The agent handed in</span>
-					{wait.handed.map((name) => (
-						<a class="t-mono" href={evidenceHref(box)} key={name} title="Open it in Evidence">
-							{name}
-						</a>
-					))}
-				</p>
-			)}
-			{wait.note && (
+		<figure>
+			<a href={image ? image.href : evidenceHref(box)} target={image ? '_blank' : undefined} rel={image ? 'noopener' : undefined} title={name}>
+				{image ? <img class="t-thumb" src={image.href} alt={name} loading="lazy" /> : <span class="t-thumb t-thumb-file" aria-hidden="true" />}
+			</a>
+			<figcaption>{name}</figcaption>
+		</figure>
+	);
+}
+
+/** What a gate that asks its owner shows: what the agent handed in and wrote, a note for the agent, and yes or no. */
+export function ApproveView({ box, wait, busy, note, error, images, pr, onYes, onNo, onNote }: ApproveProps) {
+	return (
+		<section class="t-ncard" aria-label="Needs you">
+			<h2>Waiting for your yes on {quoted(wait.gate)}</h2>
+			{(wait.handed.length > 0 || wait.note) && (
 				<>
-					<p class="t-gate-label">The agent wrote</p>
-					<blockquote class="t-gate-note">{wait.note}</blockquote>
+					{wait.handed.length > 0 && <p>The agent handed in:</p>}
+					<div class="t-thumbs">
+						{wait.handed.map((name) => (
+							<Handed box={box} name={name} image={images.find((a) => a.name === name)} key={name} />
+						))}
+						{wait.note && (
+							<blockquote class="t-anote">
+								{wait.note}
+								{pr !== null && ` PR #${pr} is open.`}
+							</blockquote>
+						)}
+					</div>
 				</>
 			)}
-			<p class="muted t-wait-note">Yes lets the task go on. No sends the agent back to try again, with your note.</p>
-			{refusing ? (
-				<form
-					class="t-wait-own"
-					onSubmit={(e) => {
-						e.preventDefault();
-						onSendNo();
-					}}
-				>
-					<input
-						value={note}
-						onInput={(e) => onNote(e.currentTarget.value)}
-						placeholder="Tell the agent what to change (a short note)"
-						aria-label="Note for the agent"
-						disabled={busy}
-					/>
-					<button type="submit" class="t-btn t-btn-deny" disabled={busy}>
-						Send No
-					</button>
-					<button type="button" class="t-btn t-btn-once" disabled={busy} onClick={onBack}>
-						Back
-					</button>
-				</form>
-			) : (
-				<div class="t-wait-btns">
-					<button type="button" class="t-btn" disabled={busy} onClick={onYes}>
-						Yes
-					</button>
-					<button type="button" class="t-btn t-btn-deny" disabled={busy} onClick={onNo}>
-						No
-					</button>
-				</div>
-			)}
+			<textarea class="t-ynote" rows={1} value={note} placeholder="Add a note for the agent (optional)" aria-label="Note for the agent" disabled={busy} onInput={(e) => onNote(e.currentTarget.value)} />
+			<div class="t-actions">
+				<button type="button" class="btn primary" disabled={busy} onClick={onYes}>
+					Yes, it’s done
+				</button>
+				<button type="button" class="btn" disabled={busy} onClick={onNo}>
+					No, send it back
+				</button>
+			</div>
 			{error && (
 				<p class="notice danger" role="alert">
 					{error}
 				</p>
 			)}
-		</div>
+		</section>
 	);
 }
 
 /** The state and handlers of the card for a gate that asks its owner: Yes passes it, No fails the try and the note goes to the agent. The task page and the peek panel share it. */
-export function useApproval(box: string, needs: Needs, wait: Wait, csrf: string, onSent: () => void): ApproveProps {
+export function useApproval(box: string, needs: Needs, wait: Wait, csrf: string, onSent: () => void, images: readonly Evidence[], pr: number | null): ApproveProps {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
-	const [refusing, setRefusing] = useState(false);
 	const [note, setNote, dropNote] = useDraft(`gate:${box}:${needs.id}`);
 	const send = async (yes: boolean) => {
 		if (busy) return;
 		setBusy(true);
 		setError('');
 		try {
-			await gateAnswer(csrf, box, needs.id, yes, yes ? undefined : note);
+			await gateAnswer(csrf, box, needs.id, yes, note.trim() || undefined);
 			dropNote();
 			onSent();
 		} catch (e) {
@@ -129,19 +115,20 @@ export function useApproval(box: string, needs: Needs, wait: Wait, csrf: string,
 		box,
 		wait,
 		busy,
-		refusing,
 		note,
 		error,
+		images,
+		pr,
 		onYes: () => void send(true),
-		onNo: () => setRefusing(true),
-		onSendNo: () => void send(false),
-		onBack: () => setRefusing(false),
+		onNo: () => void send(false),
 		onNote: setNote,
 	};
 }
 
-function ApproveCard({ box, needs, wait, csrf, onSent }: { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void }) {
-	return <ApproveView {...useApproval(box, needs, wait, csrf, onSent)} />;
+type CardProps = { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void; images?: readonly Evidence[]; pr?: number | null; inPeek?: boolean };
+
+function ApproveCard({ box, needs, wait, csrf, onSent, images = [], pr = null }: CardProps) {
+	return <ApproveView {...useApproval(box, needs, wait, csrf, onSent, images, pr)} />;
 }
 
 /** The outcomes moor tried at the closing stage, each with what it says, how its check ended, what it printed and the command behind a click. */
@@ -170,74 +157,76 @@ function TriedList({ tried }: { tried: readonly Tried[] }) {
 	);
 }
 
-/** The frame of a card for a stuck gate: what is wrong first, then the body, then what the person can do. */
-function StuckFrame({ head, note, children }: { head: string; note: string; children: ComponentChildren }) {
+/** The frame of a card for a stuck gate: what is wrong as its heading, then the body, then what the person can do. */
+function StuckFrame({ head, tone, note, children }: { head: string; tone: 'stuck' | 'trouble'; note: string; children: ComponentChildren }) {
 	return (
-		<div class="t-wait" role="region" aria-label="This gate is stuck">
-			<div class="t-wait-h">Stuck, and needs you</div>
-			<p class="t-wait-q">{head}</p>
+		<section class={`t-ncard t-ncard-${tone}`} aria-label="Needs you">
+			<h2>{head}</h2>
 			{children}
-			<p class="muted t-wait-note">{note}</p>
-		</div>
+			<p>{note}</p>
+		</section>
 	);
 }
 
-const REOPEN = 'What you can do: write to the agent below. Your message reopens this gate with fresh tries.';
+/** What the person can do about a stuck gate: the message box is on the task page, below the card there and a click away in the peek panel. */
+const reopen = (inPeek?: boolean) => `You can write to the agent${inPeek ? ' on the task page' : ' below'}, or open the terminal and fix it yourself.`;
+
+const TRIES = ['no', 'one', 'two', 'three', 'four', 'five'];
 
 /** A check moor got no answer from: moor's trouble, not the agent's, with the check, why, and what the person can do. */
-function NoAnswerView({ cause, hint }: { cause: Unanswered; hint: string | null | undefined }) {
+function NoAnswerView({ gate, cause, hint }: { gate: string; cause: Unanswered; hint: string | null | undefined }) {
 	return (
-		<StuckFrame head={UNANSWERED_HEAD} note={hint ?? REOPEN_UNANSWERED}>
+		<StuckFrame head={gate === CLOSING ? UNANSWERED_HEAD : `moor could not run ${quoted(gate)}`} tone="trouble" note={hint ?? REOPEN_UNANSWERED}>
+			<p>This is moor’s trouble, not the agent’s. moor tried twice. {unansweredWhy(cause)}</p>
 			{cause.says ? <p class="t-gate-says">{cause.says}</p> : cause.command && <pre class="t-quote">{cause.command}</pre>}
-			<p class="t-gate-why">{unansweredWhy(cause)}</p>
 			{cause.says && cause.command && (
 				<details class="t-gate-cmd">
 					<summary>Show the check</summary>
 					<pre class="t-quote">{cause.command}</pre>
 				</details>
 			)}
+			<p class="muted">The agent is waiting. Nothing it did is lost.</p>
 		</StuckFrame>
 	);
 }
 
-/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own, below. */
-export function StuckView({ wait }: { wait: Wait }) {
-	if (wait.unanswered) return <NoAnswerView cause={wait.unanswered} hint={wait.hint} />;
+/** The sentence that says what the gate holds the agent to and what moor ran. */
+function Ran({ wait }: { wait: Wait }) {
+	const tries = wait.try_n && wait.try_n > 1 ? ` after each of the agent’s ${TRIES[wait.try_n] ?? wait.try_n} tries` : '';
+	if (!wait.says && !wait.command) return null;
+	return (
+		<p>
+			{wait.says && (
+				<>
+					What must be true: <b>{/[.!?]$/.test(wait.says) ? wait.says : `${wait.says}.`}</b>{' '}
+				</>
+			)}
+			{wait.command && (
+				<>
+					moor ran <code>{wait.command}</code>
+					{tries}.
+				</>
+			)}
+		</p>
+	);
+}
+
+/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own. */
+export function StuckView({ wait, inPeek }: { wait: Wait; inPeek?: boolean }) {
+	if (wait.unanswered) return <NoAnswerView gate={wait.gate} cause={wait.unanswered} hint={wait.hint} />;
 	if (wait.tried?.length) {
 		return (
-			<StuckFrame head="No outcome holds." note={REOPEN}>
+			<StuckFrame head="No outcome holds." tone="stuck" note={reopen(inPeek)}>
 				<p class="t-gate-why">moor tried each outcome twice.</p>
 				<TriedList tried={wait.tried} />
 			</StuckFrame>
 		);
 	}
 	return (
-		<StuckFrame head={`${quoted(wait.gate)} is stuck.`} note={REOPEN}>
-			{wait.says && (
-				<>
-					<p class="t-gate-label">Not yet true</p>
-					<p class="t-gate-says">{wait.says}</p>
-				</>
-			)}
-			<p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on', wait.says)}</p>
-			{wait.command && !wait.says && (
-				<>
-					<p class="t-gate-label">The check that failed</p>
-					<pre class="t-quote">{wait.command}</pre>
-				</>
-			)}
-			{wait.tail && (
-				<>
-					<p class="t-gate-label">What it printed</p>
-					<Tail text={wait.tail} />
-				</>
-			)}
-			{wait.command && wait.says && (
-				<details class="t-gate-cmd">
-					<summary>Show the check</summary>
-					<pre class="t-quote">{wait.command}</pre>
-				</details>
-			)}
+		<StuckFrame head={`Stuck on ${quoted(wait.gate)}`} tone="stuck" note={reopen(inPeek)}>
+			<Ran wait={wait} />
+			<p class="t-exit">{whyWords(wait.why ?? 'it cannot go on', wait.says).replace(/\.$/, '')}</p>
+			{wait.tail && <Tail text={wait.tail} />}
 			{wait.missing.length > 0 && (
 				<>
 					<p class="t-gate-label">The agent did not hand in</p>
@@ -253,8 +242,8 @@ export function StuckView({ wait }: { wait: Wait }) {
 }
 
 /** The card for a gate that waits for a person. */
-export function GateCard({ box, needs, wait, csrf, onSent }: { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void }) {
-	return wait.kind === 'approve' ? <ApproveCard box={box} needs={needs} wait={wait} csrf={csrf} onSent={onSent} /> : <StuckView wait={wait} />;
+export function GateCard(p: CardProps) {
+	return p.wait.kind === 'approve' ? <ApproveCard {...p} /> : <StuckView wait={p.wait} inPeek={p.inPeek} />;
 }
 
 export type RulesProps = { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; asJson: boolean; onToggle: () => void };

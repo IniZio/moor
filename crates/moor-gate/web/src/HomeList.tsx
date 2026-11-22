@@ -91,7 +91,7 @@ export function RepoCell({ repos, only }: { repos: string[]; only: string }) {
 }
 
 /** The tracker key in an issue as the person wrote it, such as WEB-142 in a link or a bare key. */
-function issueKey(issue: string): string | null {
+export function issueKey(issue: string): string | null {
 	return issue.match(/(?:^|[\s/])([A-Z]{2,6}-\d{1,5})(?:$|[\s/?#])/)?.[1] ?? null;
 }
 
