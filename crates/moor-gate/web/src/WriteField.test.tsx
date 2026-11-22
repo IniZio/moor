@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 import type { Node } from './api';
-import { type FieldActs, type FieldState, MachineMenuView, TargetSentence, WriteFieldView } from './WriteField';
+import { blocker, EXAMPLES, type FieldActs, type FieldState, MachineMenuView, TargetSentence, WriteFieldView } from './WriteField';
 import { all, button, textOf } from './testkit';
 
 const node = (name: string, scope: Node['scope'], over: Partial<Node> = {}): Node => ({
@@ -38,7 +38,7 @@ const state = (over: Partial<FieldState> = {}): FieldState => ({
 function acts() {
 	const calls: string[] = [];
 	const a = Object.fromEntries(
-		['open', 'close', 'typed', 'prompt', 'repos', 'base', 'node', 'plan', 'menu', 'start', 'settle'].map((k) => [k, (...x: unknown[]) => calls.push(`${k}:${x.join(',')}`)]),
+		['open', 'example', 'close', 'typed', 'prompt', 'repos', 'base', 'node', 'plan', 'menu', 'start', 'settle'].map((k) => [k, (...x: unknown[]) => calls.push(`${k}:${x.join(',')}`)]),
 	) as FieldActs;
 	return { a, calls };
 }
@@ -48,24 +48,32 @@ test('closed, the field is one line that opens as soon as it is focused', () => 
 	const view = WriteFieldView({ s: state({ open: false }), act: a });
 	const line = all(view, 'input');
 	expect(line).toHaveLength(1);
-	expect(line[0].props.placeholder).toBe('Write a task…');
+	expect(line[0].props.placeholder).toBe('Write a task, or paste an issue…');
 	expect(all(view, 'textarea')).toHaveLength(0);
 	expect(button(view, 'Start')).toBeUndefined();
 	line[0].props.onFocus?.();
 	expect(calls).toEqual(['open:']);
 });
 
-test('open, it is the task form: editor, sentence and Start, which waits for a prompt and a repo', () => {
+test('open, it is the task form: editor, sentence and Start, which says what is missing instead of greying out', () => {
 	const { a } = acts();
 	const empty = WriteFieldView({ s: state(), act: a });
 	expect(all(empty, 'textarea')).toHaveLength(1);
 	expect(textOf(empty)).toContain('in acme/web');
 	const start = (v: ReturnType<typeof WriteFieldView>) => all(v, 'button').find((b) => b.props.type === 'submit');
-	expect(start(empty)?.props.disabled).toBe(true);
-	const filled = WriteFieldView({ s: state({ prompt: 'Fix the bug' }), act: a });
-	expect(start(filled)?.props.disabled).toBe(false);
-	const bare = WriteFieldView({ s: state({ prompt: 'Fix the bug', repos: [] }), act: a });
-	expect(start(bare)?.props.disabled).toBe(true);
+	expect(start(empty)?.props.disabled).toBe(false);
+	expect(blocker({ prompt: ' ', repos: ['acme/web'] })).toBe('Write what the agent should do first.');
+	expect(blocker({ prompt: 'Fix the bug', repos: [] })).toBe('Pick a repo first.');
+	expect(blocker({ prompt: 'Fix the bug', repos: ['acme/web'] })).toBeNull();
+	expect(start(WriteFieldView({ s: state({ busy: true }), act: a }))?.props.disabled).toBe(true);
+});
+
+test('an example link fills the editor with that example', () => {
+	const { a, calls } = acts();
+	const view = WriteFieldView({ s: state(), act: a });
+	expect(textOf(view)).toContain('Try an example:');
+	button(view, EXAMPLES.pr.label)?.props.onClick?.();
+	expect(calls).toEqual(['example:pr']);
 });
 
 test('the sentence names one repo, the base and the machine, with no note', () => {

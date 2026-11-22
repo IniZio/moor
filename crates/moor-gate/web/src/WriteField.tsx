@@ -4,6 +4,7 @@ import * as v from 'valibot';
 import { type Account, type BoxRow, boxStart, failure, type Node, repoList, toError } from './api';
 import { exactTime } from './HomeList';
 import { RepoPanel, RepoSlot, refocus, useDismiss } from './RepoMenu';
+import { recentRepos } from './repoSets';
 import { takeAgain } from './Retry';
 import { useDraft } from './session';
 
@@ -41,6 +42,7 @@ export type FieldState = {
 /** What a person can do in it. */
 export type FieldActs = {
 	open: () => void;
+	example: (key: keyof typeof EXAMPLES) => void;
 	close: () => void;
 	typed: (text: string) => void;
 	prompt: (text: string) => void;
@@ -53,7 +55,23 @@ export type FieldActs = {
 	settle: () => void;
 };
 
-const ready = (s: FieldState) => s.prompt.trim() !== '' && s.repos.length > 0 && !s.busy;
+/** Prompts a person can start from, as the mock writes them; {repo} becomes the first repo picked. */
+export const EXAMPLES = {
+	bug: {
+		label: 'bug fix with screenshots',
+		text: 'Fix the cropped avatar on the profile page\nOn the profile page the avatar is cut off at the top on phones. Make the whole picture show, on phones and on desktop.\nTake a screenshot of the profile page before and after, named before.png and after.png, at 390 wide.\nMake sure the tests still pass.\nOpen one pull request on {repo} and check with me.\nIf the avatar already shows in full, stop and say so.\nKeep the fix small. Don’t change the avatar upload code.',
+	},
+	pr: {
+		label: 'pull request evidence',
+		text: 'Check the evidence on pull request #12\nRead what pull request #12 on {repo} says it fixes. Run the end-to-end tests on main and on its branch. Save both results as e2e-main.txt and e2e-branch.txt.\nCompare them test by test and say whether the branch is worse.\nPost one comment on the pull request with what you found.\nIf the pull request is closed or still a draft, there is nothing to do. Do not push anything.',
+	},
+};
+
+/** What stops a start, in the words the field shows; none when it can start. */
+export function blocker(s: Pick<FieldState, 'prompt' | 'repos'>): string | null {
+	if (!s.prompt.trim()) return 'Write what the agent should do first.';
+	return s.repos.length ? null : 'Pick a repo first.';
+}
 
 /** The machine a person may pick and what to say beside it. */
 function machineNote(n: Node, now: number): string {
@@ -158,7 +176,7 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 	if (!s.open) {
 		return (
 			<div class="t-write">
-				<input id="t-writeline" class="t-writeline" placeholder="Write a task…" aria-label="Write a task" autocomplete="off" value="" onFocus={act.open} onInput={(e) => act.typed(e.currentTarget.value)} />
+				<input id="t-writeline" class="t-writeline" placeholder="Write a task, or paste an issue…" aria-label="Write a task, or paste an issue" autocomplete="off" value="" onFocus={act.open} onInput={(e) => act.typed(e.currentTarget.value)} />
 			</div>
 		);
 	}
@@ -170,7 +188,7 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 				aria-label="New task"
 				onSubmit={(e) => {
 					e.preventDefault();
-					if (ready(s)) act.start();
+					act.start();
 				}}
 				onKeyDown={(e) => {
 					if (e.key !== 'Escape') return;
@@ -182,17 +200,28 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 					if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) act.settle();
 				}}
 			>
+				<div class="t-whead">
+					<span class="grow" />
+					<span class="muted t-small">Try an example:</span>{' '}
+					<button type="button" class="t-lnk" onClick={() => act.example('bug')}>
+						{EXAMPLES.bug.label}
+					</button>{' '}
+					·{' '}
+					<button type="button" class="t-lnk" onClick={() => act.example('pr')}>
+						{EXAMPLES.pr.label}
+					</button>
+				</div>
 				<label class="t-sr" for="t-prompt">
 					What should the agent do?
 				</label>
 				<textarea
 					id="t-prompt"
-					rows={5}
-					placeholder="What should the agent do?"
+					rows={1}
+					placeholder="What should the agent do? The first line is the title."
 					value={s.prompt}
 					onInput={(e) => act.prompt(e.currentTarget.value)}
 					onKeyDown={(e) => {
-						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && ready(s)) act.start();
+						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') act.start();
 					}}
 				/>
 				{s.repos.length > 1 && (
@@ -202,15 +231,15 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 				)}
 				<TargetSentence s={s} act={act} />
 				<div class="t-wact">
+					<button class="btn primary" type="submit" disabled={s.busy}>
+						{s.busy ? 'Starting…' : 'Start'}
+					</button>
 					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
 						<input type="checkbox" class="pf-check" checked={s.planFirst} onChange={(e) => act.plan(e.currentTarget.checked)} />
 						Plan first
 					</label>
 					<span class="grow" />
-					<span class="muted">Esc closes</span>
-					<button class="btn primary" type="submit" disabled={!ready(s)}>
-						{s.busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
-					</button>
+					<span class="muted t-wesc">{s.prompt.trim() ? 'Esc keeps the draft' : 'Esc to close'}</span>
 				</div>
 				{s.error && (
 					<p class="notice danger" role="alert">
@@ -250,6 +279,12 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 	useEffect(() => {
 		repoList().then(setKnown, () => setKnown([]));
 	}, []);
+	const chosen = useRef(repos.length > 0);
+	useEffect(() => {
+		if (chosen.current) return;
+		const last = recentRepos(rows, [])[0];
+		if (last) setRepos([last]);
+	}, [rows]);
 	const openUp = () => {
 		wantFocus.current = true;
 		setOpen(true);
@@ -302,6 +337,12 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 		}, 0);
 	const start = async () => {
 		if (busy) return;
+		const stop = blocker({ prompt, repos });
+		if (stop) {
+			setError(stop);
+			document.getElementById('t-prompt')?.focus();
+			return;
+		}
 		setBusy(true);
 		setError('');
 		try {
@@ -318,13 +359,21 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 	};
 	const act: FieldActs = {
 		open: openUp,
+		example: (key) => {
+			setPrompt(EXAMPLES[key].text.replaceAll('{repo}', repos[0] ?? 'the repo'));
+			setError('');
+			document.getElementById('t-prompt')?.focus();
+		},
 		close,
 		typed: (text) => {
 			if (!prompt) setPrompt(text);
 			openUp();
 		},
 		prompt: setPrompt,
-		repos: setRepos,
+		repos: (next) => {
+			chosen.current = true;
+			setRepos(next);
+		},
 		base: setBase,
 		node: setNode,
 		plan: setPlanFirst,

@@ -355,22 +355,30 @@ a.t-path:hover { text-decoration: underline; }
 .t-clip-note { margin: 0.25rem 0 0; font-size: 0.75rem; color: var(--moor-color-text-muted); }
 
 /* The write field: one line closed, the task form open. Menus open under their word in the sentence. */
-.t-write { margin: 0 0 var(--moor-space-5); }
-.t-writeline { display: block; width: 100%; margin: 0; font: inherit; font-size: 1.0625rem; padding: 0.6rem 0.9rem; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); color: inherit; }
-.t-writeline::placeholder { color: var(--moor-color-text-muted); }
-.t-wform { padding: 0.6rem 1.1rem 0.8rem; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-sm); }
-.t-wform:focus-within { border-color: var(--moor-color-focus); }
-.t-wform textarea { display: block; margin: 0; width: 100%; min-height: 6.5rem; padding: 0.3rem 0 0.6rem; border: 0; background: none; box-shadow: none; font: inherit; font-size: 1.0625rem; line-height: 1.6; outline: none; resize: vertical; }
-.t-target { margin: 0.2rem 0 0; color: var(--moor-color-text-muted); }
-.t-tnote { margin: 0.15rem 0 0; }
-.t-wact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-3); margin-top: 0.75rem; }
+.t-write { --prose: Charter, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'DejaVu Serif', serif; margin: 0 0 var(--moor-space-5); }
+.t-writeline { display: block; width: 100%; margin: 0; font: inherit; font-family: var(--prose); font-size: 1.15rem; padding: 12px 16px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); color: inherit; }
+.t-writeline::placeholder, .t-wform textarea::placeholder { color: var(--moor-color-text-muted); }
+.t-wform { padding: 12px 20px 14px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-sm); }
+.t-wform textarea::placeholder { font-family: var(--moor-font-heading); font-weight: var(--moor-weight-heading); font-size: 1.35em; }
+.t-wform textarea { field-sizing: content; display: block; margin: 0; width: 100%; min-height: 110px; padding: 6px 0 10px; border: 0; background: none; box-shadow: none; font: inherit; font-family: var(--prose); font-size: 1.1875rem; line-height: 1.75; outline: none; resize: none; }
+.t-target { margin: 6px 0 0; color: var(--moor-color-text-muted); }
+.t-target .t-tw { font-family: var(--moor-font-mono); font-size: 0.85rem; }
+.t-tnote { margin: 2px 0 0; font-size: var(--app-text-sm); }
+.t-whead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 2px; }
+.t-whead .grow { flex: 1 1 auto; }
+.t-small { font-size: 0.8125rem; }
+.t-lnk { font: inherit; background: none; border: 0; padding: 0; color: var(--moor-color-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; cursor: pointer; }
+.t-lnk:hover { text-decoration-color: var(--moor-color-text); }
+.t-wact { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.t-wact .t-chip { display: inline-flex; align-items: center; gap: 6px; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
+.t-wesc { white-space: nowrap; font-size: var(--app-text-sm); }
 .t-tw { font: inherit; font-size: var(--app-text-sm); background: none; border: 0; padding: 0; color: var(--moor-color-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; text-decoration-thickness: 1.5px; cursor: pointer; }
 .t-tw:hover, .t-tw[aria-expanded="true"] { text-decoration-color: var(--moor-color-text); }
 input.t-base { width: auto; max-width: 14rem; margin: 0; padding: 0; border: 0; border-bottom: 1.5px solid var(--moor-color-border-strong); border-radius: 0; background: none; font-family: var(--moor-font-mono); cursor: text; outline-offset: 2px; }
 input.t-base:focus { border-bottom-color: var(--moor-color-text); }
 .t-twwrap { position: relative; display: inline-block; }
-.t-pm { position: absolute; top: calc(100% + 6px); left: 0; z-index: 25; display: flex; flex-direction: column; gap: 1px; min-width: 15rem; padding: 6px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-lg); font-family: var(--moor-font-body); font-size: 0.875rem; font-style: normal; line-height: 1.4; color: var(--moor-color-text); }
-.t-repomenu { min-width: 25rem; }
+.t-pm { position: absolute; top: calc(100% + 6px); left: 0; z-index: 25; display: flex; flex-direction: column; min-width: 15rem; padding: 4px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-lg); font-family: var(--moor-font-body); font-size: 0.875rem; font-style: normal; line-height: 1.4; color: var(--moor-color-text); }
+.t-repomenu { min-width: 25rem; padding: 6px; gap: 1px; color: var(--moor-color-text-muted); }
 .t-pm button:not(.btn) { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; text-align: left; border: 0; background: none; padding: 5px 10px; border-radius: var(--moor-radius-sm); font: inherit; color: var(--moor-color-text); white-space: nowrap; cursor: pointer; }
 .t-pm button:hover:not(:disabled), .t-pm button[data-active="true"] { background: var(--moor-color-accent-soft); }
 .t-pm button:disabled { color: var(--moor-color-text-muted); cursor: not-allowed; }
@@ -378,20 +386,26 @@ input.t-base:focus { border-bottom-color: var(--moor-color-text); }
 .t-mitem[aria-checked="true"] { font-weight: var(--moor-weight-strong); }
 .t-mitem[aria-checked="true"] > span:first-child::before { content: '✓ '; }
 .t-msub { color: var(--moor-color-text-muted); font-size: 0.78rem; font-weight: 400; }
-.t-mhd { padding: 6px 10px 2px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--moor-color-text-muted); }
+.t-mhd { padding: 6px 10px 2px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--moor-color-text-muted); font-weight: var(--moor-weight-strong); }
 .t-pm-find { margin: 2px 2px 6px; padding: 5px 8px; font: inherit; font-size: 0.875rem; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg); color: var(--moor-color-text); }
 .t-rch { display: flex; align-items: center; gap: 10px; padding: 4px 10px; }
-.t-rch .t-mono { flex: 1 1 auto; }
+.t-rname { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.t-rname .t-mono { font-size: 0.8125rem; }
+.t-rch .t-rname { flex: 1 1 auto; }
+.t-rcheck .t-rname { flex: 1 1 auto; }
 .t-pm .t-rch button { padding: 1px 6px; }
 .t-pm .t-lnk { font-size: 0.78rem; color: var(--moor-color-text-muted); }
-.t-pm .t-rx { color: var(--moor-color-text-muted); font-size: 1rem; line-height: 1; }
-.t-pm .t-rx:hover { color: var(--moor-color-danger); }
+.t-pm button.t-rx { color: var(--moor-color-text-muted); font-size: 1rem; line-height: 1; }
+.t-pm button.t-rx:hover { color: var(--moor-color-danger); }
 .t-pm button.t-rcheck { justify-content: flex-start; gap: 10px; }
 .t-rcheck .t-msub, .t-rcombo .t-msub { margin-left: auto; padding-left: 16px; }
+.t-rcombo .t-mono { font-size: 0.8125rem; }
 .t-rbox { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.05em; height: 1.05em; border: 1px solid var(--moor-color-border-strong); border-radius: 3px; font-size: 0.75rem; line-height: 1; }
 .t-rcheck[aria-checked="true"] .t-rbox { background: var(--moor-color-text); border-color: var(--moor-color-text); color: var(--moor-color-bg); }
-.t-rnone { padding: 4px 10px; }
+.t-rnone { padding: 4px 10px; font-size: var(--app-text-sm); }
 .t-pm-done { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; padding: 6px 4px 2px 10px; border-top: 1px solid var(--moor-color-border); white-space: normal; }
+.t-pm-done .muted { font-size: 0.8125rem; }
+.t-pm-done .btn { justify-content: center; height: auto; padding: 3px 10px; border: 0; font-size: 0.8125rem; }
 @media (max-width: 40rem) {
 	.bar { padding: 8px 12px; gap: 4px 12px; }
 	.find { width: auto; flex: 0 1 auto; min-width: 0; padding-right: 10px; }
