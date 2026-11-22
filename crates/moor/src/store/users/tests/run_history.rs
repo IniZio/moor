@@ -103,7 +103,18 @@ fn a_run_reads_back_with_its_step_result_and_reason() {
         RunState::Done(RunEnd::Ended {
             box_id: BoxId::new(1),
             ended_at: Ts::from_millis(9),
-            outcome: RunOutcome::Incomplete { at: at.clone() },
+            outcome: RunOutcome::Incomplete {
+                at: at.clone(),
+                why: moor_core::workflow::Unfinished::Unreported,
+            },
+        }),
+        RunState::Done(RunEnd::Ended {
+            box_id: BoxId::new(1),
+            ended_at: Ts::from_millis(9),
+            outcome: RunOutcome::Incomplete {
+                at: at.clone(),
+                why: moor_core::workflow::Unfinished::BoxClosed,
+            },
         }),
         RunState::Done(RunEnd::Ended {
             box_id: BoxId::new(1),

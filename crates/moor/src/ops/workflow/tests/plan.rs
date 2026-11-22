@@ -247,7 +247,11 @@ fn a_box_that_is_gone_before_the_last_step_ends_the_run_incomplete() {
         .unwrap();
     r.pass();
     let RunState::Done(RunEnd::Ended {
-        outcome: RunOutcome::Incomplete { at },
+        outcome:
+            RunOutcome::Incomplete {
+                at,
+                why: moor_core::workflow::Unfinished::BoxClosed,
+            },
         ..
     }) = r.latest(id).state
     else {

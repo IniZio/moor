@@ -7,6 +7,7 @@
 //! reminds the agent of it. A steer to an asleep Box wakes it.
 
 use moor_core::decide::workflow::{answer_move, Move};
+use moor_core::request::BoxTarget;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowAnswerValue;
@@ -14,12 +15,12 @@ use moor_core::workflow::{
     Answer, HistoryEntry, Plan, PullTarget, RunId, RunOutcome, RunState, Step, StepId, StepKind,
     WorkflowName, WorkflowRun, NOTE_MAX,
 };
-use moor_core::{BoxId, ErrorKind};
+use moor_core::{BoxId, ErrorKind, SteerReq};
 
-use super::advance::send;
 use super::facts::history_of;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::steer;
 use crate::store::{BoxRow, Store};
 
 /// A refusal the caller can act on.
@@ -336,6 +337,20 @@ fn live(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
 }
 
 /// A test seam between an answer's reading of the run and its move.
+/// Steers the agent of `row` with `text`, as its owner does.
+pub(super) fn send(cx: &Cx, row: &BoxRow, text: &str) -> Result<(), String> {
+    let req = SteerReq {
+        target: BoxTarget::Id(row.id),
+        text: Some(text.to_owned()),
+        menu: None,
+        interrupt: false,
+        ask: None,
+    };
+    cx.for_box(row.user, || steer::run(cx, &req))
+        .map(|_| ())
+        .map_err(|e| e.error.to_string())
+}
+
 #[cfg(test)]
 pub(super) mod tests_hook {
     use std::cell::RefCell;

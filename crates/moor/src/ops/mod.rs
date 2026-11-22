@@ -151,7 +151,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::NodeSettingsGet(r) => to_value(&node_settings::get(cx, &r)?),
         Request::NodeSettingsSet(r) => to_value(&node_settings::set(cx, &r)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
-        Request::Close(r) => to_value(&close::run(cx, &r)?),
+        Request::Close(r) => to_value(&close::requested(cx, &r)?),
         Request::ForwardOpen(r) => to_value(&forward::open(cx, &r)?),
         Request::ForwardClose(r) => to_value(&forward::close(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),

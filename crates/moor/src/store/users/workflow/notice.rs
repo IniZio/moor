@@ -124,12 +124,7 @@ fn failure(end: &RunEnd, held: &Held) -> Option<(i64, &'static str, Option<Strin
         } => {
             let (kind, at, reason) = match outcome {
                 RunOutcome::Failed { at, reason } => ("failed", at, reason.clone()),
-                RunOutcome::Incomplete { at } => (
-                    "incomplete",
-                    at,
-                    "the agent stopped without reporting the step, even after a reminder"
-                        .to_owned(),
-                ),
+                RunOutcome::Incomplete { at, why } => ("incomplete", at, why.says(at)),
                 RunOutcome::TimedOut { at } => (
                     "timed_out",
                     at,

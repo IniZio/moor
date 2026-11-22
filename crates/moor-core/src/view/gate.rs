@@ -50,4 +50,15 @@ impl GateView {
             run_ended: None,
         }
     }
+
+    /// This view for a Box whose run ended short of delivering as `ended` names, when it did:
+    /// nothing moves its gates any more, so an open or stuck gate waits for nobody.
+    #[must_use]
+    pub fn ended(mut self, ended: Option<String>) -> Self {
+        if ended.is_some() && self.status.can_move() {
+            self.wait = None;
+        }
+        self.run_ended = ended;
+        self
+    }
 }

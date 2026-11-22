@@ -3,7 +3,7 @@
 use moor_core::decide::workflow::{run_verdict, RunVerdict};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
-use moor_core::workflow::{RunOutcome, StepId, WorkflowRun};
+use moor_core::workflow::{RunOutcome, StepId, Unfinished, WorkflowRun};
 use moor_core::BoxId;
 
 use super::settle::broken_detail;
@@ -31,7 +31,10 @@ pub(super) fn lose_waiting(
     if row.is_some_and(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)) {
         return Ok(());
     }
-    let outcome = RunOutcome::Incomplete { at: at.clone() };
+    let outcome = RunOutcome::Incomplete {
+        at: at.clone(),
+        why: Unfinished::BoxClosed,
+    };
     store
         .end_waiting_run(key, (at, try_n), (box_id, outcome), (&[], now))
         .map(|_| ())

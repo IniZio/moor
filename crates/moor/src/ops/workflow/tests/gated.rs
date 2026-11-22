@@ -489,6 +489,7 @@ impl Rig {
     }
 }
 
+mod closed;
 mod ended;
 mod history;
 mod outcomes;

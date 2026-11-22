@@ -31,6 +31,8 @@ export const GateViewSchema = v.object({
 	gates_passed: v.optional(v.number()),
 	/** What the agent wrote with the last report moor accepted; none when it wrote nothing. */
 	note: v.nullish(v.string()),
+	/** How the Box's run ended short of delivering, such as `incomplete` or `cancelled`; nothing moves its gates then. */
+	run_ended: v.nullish(v.string()),
 });
 
 /** One outcome moor tried at the closing stage that did not hold, with the check that stopped it. */
@@ -129,9 +131,16 @@ function atGate(name: string, status: Exclude<GateView['status'], { state: 'pass
 	}
 }
 
+/** The run's end, in words, when it ended short of delivering while a gate was still in hand: that gate waits for nobody. */
+function stopped(view: GateView): string | null {
+	const held = view.status.state === 'open' || view.status.state === 'stuck';
+	return held && view.run_ended ? `run ${view.run_ended.replace(/_/g, ' ')}` : null;
+}
+
 /** Each gate by name with its state, in the order they pass. */
 export function gateRows(view: GateView): GateRow[] {
 	const { status } = view;
+	const ended = stopped(view);
 	if (status.state === 'passed') {
 		const reached = view.gates_passed ?? view.gates.length;
 		return view.gates.map((name, i): GateRow => (i < reached ? { name, state: 'passed', words: 'passed' } : { name, state: 'later', words: i === reached ? 'ended' : 'not reached' }));
@@ -139,7 +148,13 @@ export function gateRows(view: GateView): GateRow[] {
 	const named = view.gates.indexOf(status.gate);
 	const at = named === -1 ? view.gates.length : named;
 	return view.gates.map((name, i) =>
-		i < at ? { name, state: 'passed', words: 'passed' } : i === at ? atGate(name, status) : { name, state: 'later', words: 'not started' },
+		i < at
+			? { name, state: 'passed', words: 'passed' }
+			: i === at
+				? ended
+					? { name, state: 'later', words: ended }
+					: atGate(name, status)
+				: { name, state: 'later', words: 'not started' },
 	);
 }
 
@@ -154,6 +169,7 @@ const isImplicit = (o: Verdict) => o.name === 'done' && o.tone === 'good' && !o.
 /** The row after the gates where moor decides how the run ends; none while a gate is in hand, and none for the implicit outcome. */
 export function closingRow(view: GateView): GateRow | null {
 	const { status } = view;
+	if (stopped(view)) return null;
 	if (status.state === 'passed') {
 		const o = status.outcome;
 		if (!o || isImplicit(o)) return null;
@@ -201,7 +217,7 @@ export function closingWaitWords(lines: readonly { kind: string; unanswered?: Un
 
 /** The one line a list row or a card says about its gates when a person has something to do or it failed; none otherwise. */
 export function gateLine(view: GateView | null | undefined): string | null {
-	const status = view?.status;
+	const status = view && !stopped(view) ? view.status : undefined;
 	switch (status?.state) {
 		case 'stuck':
 			if (status.unanswered) return UNANSWERED_HEAD;

@@ -285,7 +285,8 @@ pub use report::{
     Answer, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,
 };
 pub use run::{
-    CancelCause, NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, WorkflowRun,
+    CancelCause, NewRun, RunEnd, RunId, RunOutcome, RunPhase, RunState, RunTrigger, Unfinished,
+    WorkflowRun,
 };
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};
 
