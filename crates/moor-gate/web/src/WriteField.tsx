@@ -195,12 +195,12 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && ready(s)) act.start();
 					}}
 				/>
-				<TargetSentence s={s} act={act} />
 				{s.repos.length > 1 && (
 					<p class="t-tnote muted">
 						The agent starts in <span class="t-mono">{s.repos[0]}</span>. The others are cloned beside it.
 					</p>
 				)}
+				<TargetSentence s={s} act={act} />
 				<div class="t-wact">
 					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
 						<input type="checkbox" class="pf-check" checked={s.planFirst} onChange={(e) => act.plan(e.currentTarget.checked)} />
