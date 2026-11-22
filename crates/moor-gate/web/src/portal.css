@@ -223,6 +223,7 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-ncard-stuck { border-color: var(--moor-color-danger); }
 .t-ncard-trouble { border-color: var(--moor-color-warning); }
 .t-ncard .t-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; }
+.t-ncard .t-ynote + .t-actions { margin-top: 18px; }
 .t-ncard .t-exit { font-weight: 640; color: var(--moor-color-danger); }
 .t-ncard .t-gate-tail .t-quote { margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-sunken); font: 0.8125rem/1.5 var(--moor-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .t-ncard code { font-family: var(--moor-font-mono); font-size: 0.8125rem; }

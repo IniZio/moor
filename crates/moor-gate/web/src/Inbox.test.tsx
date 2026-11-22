@@ -40,6 +40,11 @@ test('it offers Mark all read while something is unread, and no way to remove an
 	expect(textOf(view({ items: [], unread: 0 }))).toContain('Nothing has needed you yet.');
 });
 
+test('an item whose task waits at a gate says what the Tasks home says of it', () => {
+	const task = { box: 'web/4', repo: 'acme/web', other_repos: [], state: 'needs_you', gate: { gates: ['review'], status: { state: 'open', gate: 'review', try_n: 1, next: 'ask' } } } as unknown as BoxRow;
+	expect(textOf(all(view({ rows: [task] }), 'a')[0])).toContain('Waiting for your yes on “review”');
+});
+
 test('opening an item reports which one', () => {
 	const opened: number[] = [];
 	all(view({ onOpen: (i) => opened.push(i.id) }), 'a')[1]?.props.onClick?.();

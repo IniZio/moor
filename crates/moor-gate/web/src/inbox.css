@@ -1,8 +1,8 @@
 /* The inbox dropdown. Own classes (inbox-), no inline styles (the page's CSP forbids them). */
-.pop.inbox { position: fixed; position-area: none; inset: auto; margin: 0; top: 49px; right: anchor(right, 7.5rem); width: 540px; max-width: calc(100vw - 20px); z-index: 31; border-color: var(--moor-color-border-strong); padding: 6px; }
+.pop.inbox { position: fixed; position-area: none; inset: auto; margin: 0; top: 48px; right: anchor(right, 7.375rem); width: 540px; max-width: calc(100vw - 20px); z-index: 31; border-color: var(--moor-color-border-strong); padding: 6px; }
 .pop.inbox:popover-open { display: block; }
-.pop-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 4px 8px 6px; border-bottom: 1px solid var(--moor-color-border); font-size: 0.875rem; font-weight: var(--moor-weight-strong); justify-content: flex-start; }
-.pop-h > :first-child { flex: 1 1 auto; }
+.pop-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 4px 8px 6px; border-bottom: 1px solid var(--moor-color-border); font-size: 0.875rem; justify-content: flex-start; }
+.pop-h > :first-child { flex: 1 1 auto; font-weight: 700; }
 .inbox-all { font: inherit; font-size: 0.875rem; font-weight: var(--moor-weight-body); padding: 0; border: 0; background: none; color: var(--moor-color-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; cursor: pointer; }
 span.inbox-all { text-decoration: none; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
 .inbox-item { display: grid; grid-template-columns: 1.1em 8.4rem minmax(0, 1fr) auto; grid-template-areas: "mark repo title time" ". . now now"; column-gap: 10px; padding: 6px 2.4rem 6px 8px; border-radius: var(--moor-radius-sm); text-decoration: none; color: inherit; font-size: 0.875rem; line-height: 1.5; }

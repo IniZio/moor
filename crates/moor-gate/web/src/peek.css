@@ -1,5 +1,5 @@
 /* The peek panel at the right of the Tasks home. Own classes (t-), no inline styles (the page's CSP forbids them). */
-.t-peek { position: fixed; top: 49px; right: 0; bottom: 0; z-index: 30; width: min(460px, 100vw); overflow: auto; padding: 14px 18px 18px; background: var(--moor-color-bg-raised); border-left: 1px solid var(--moor-color-border-strong); box-shadow: var(--moor-shadow-lg); }
+.t-peek { position: fixed; top: 50px; right: 0; bottom: 0; z-index: 30; width: min(460px, 100vw); overflow: auto; padding: 14px 18px 18px; background: var(--moor-color-bg-raised); border-left: 1px solid var(--moor-color-border-strong); box-shadow: var(--moor-shadow-lg); }
 .t-peek-head { display: flex; align-items: center; gap: 8px; }
 .t-peek-head .btn { padding: 3px 10px; font-size: 0.8125rem; }
 .t-peek-head .btn.ghost { padding: 2px 8px; font-size: 0.9375rem; line-height: 1.5; }
