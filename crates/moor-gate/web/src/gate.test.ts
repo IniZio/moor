@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 
 import * as v from 'valibot';
 
+import { LOST, NOT_RUN } from './testkit';
 import { closingRow, type GateView, GateViewSchema, gateLine, gateRows, outcomeLine, plain, ruleSentence, tailView, whyWords } from './gate';
 
 const gates = ['plan', 'tests', 'review'];
@@ -128,13 +129,12 @@ test('the rail line for a stuck closing stage speaks of the outcome, not a gate 
 	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 exited 2' }))).toContain('“tests” is stuck');
 });
 
-test('the rail line for an outcome check moor could not run says so, with no word of an outcome holding', () => {
-	const why = 'moor, not the agent, could not run outcome `merged` check 1 (`gh pr view --json state`) twice: Box 3 is busy with another command';
-	expect(gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why } })).toBe(
-		'moor, not the agent, could not run outcome merged check 1 twice: Box 3 is busy with another command.',
-	);
-	const own = gateLine(view({ state: 'stuck', gate: 'tests', why: 'moor, not the agent, could not run check 1 (`make`) twice: its output stream was lost' }));
-	expect(own).toBe('“tests” is stuck: moor, not the agent, could not run check 1 twice: its output stream was lost.');
+test('the rail line for a stage moor got no answer from says so for either reason, with no word of an outcome holding', () => {
+	const why = 'moor, not the agent, got no answer from its checks twice in a row; the last was check 1';
+	for (const unanswered of [NOT_RUN, LOST]) {
+		expect(gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why, unanswered } })).toBe('moor got no answer from its checks.');
+		expect(gateLine(view({ state: 'stuck', gate: 'tests', why, unanswered }))).toBe('moor got no answer from its checks.');
+	}
 });
 
 test('an outcome is one line of its name and what it says', () => {

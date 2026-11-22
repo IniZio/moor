@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 
-import { GateDocSchema, GateViewSchema, OutcomeDocSchema, plain, VerdictSchema, WaitSchema } from './gate';
+import { GateDocSchema, GateViewSchema, OutcomeDocSchema, plain, UnansweredSchema, VerdictSchema, WaitSchema } from './gate';
 import { announceSignedOut } from './session';
 
 const SecretSchema = v.object({ name: v.string(), linked: v.boolean() });
@@ -219,6 +219,7 @@ const LineSchema = v.object({
 	kind: v.string(),
 	text: v.string(),
 	evidence: v.array(v.object({ name: v.string(), href: v.nullish(v.string()) })),
+	unanswered: v.nullish(UnansweredSchema),
 });
 
 const StepSchema = v.object({

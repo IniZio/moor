@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { ApproveView, type ApproveProps, GateList, RulesView, StuckView } from './Gates';
 import type { GateDoc, OutcomeDoc, Wait } from './gate';
-import { all, button, textOf } from './testkit';
+import { all, button, LOST, NOT_RUN, textOf } from './testkit';
 
 const base: Wait = { gate: 'review', kind: 'approve', seq: 4, try_n: 1, why: null, handed: ['plan.md', 'after.png'], note: 'Ready for you.', command: null, tail: null, missing: [], hint: null };
 
@@ -223,26 +223,19 @@ test('the JSON behind the toggle holds the outcomes beside the gates', () => {
 	expect(JSON.parse(String(box?.props.value))).toEqual({ gates, outcomes });
 });
 
-const BUSY = 'moor, not the agent, could not run check 1 (`make`) twice: Box 3 is busy with another command';
-const OUTCOME_BUSY = 'moor, not the agent, could not run outcome `merged` check 1 (`gh pr view --json state`) twice: Box 3 is busy with another command';
-const HINT = 'moor, not the agent, could not run this check. Send the agent a message to reopen the gate and run it again, or close the Box.';
+const WHY = 'moor, not the agent, got no answer from its checks twice in a row; the last was check 1 (`make`): Box 3 is busy with another command';
+const HINT = 'moor, not the agent, got no answer from its checks. Send the agent a message to reopen the gate and run them again, or close the Box.';
 
-test('a check moor could not run reads as moor\'s trouble, at a gate and at the closing stage', () => {
-	const cases: Wait[] = [
-		{ ...stuck, gate: 'tests', why: BUSY, says: 'The tests pass.', command: 'make', tail: null, hint: HINT },
-		{ ...stuck, gate: 'outcome', why: OUTCOME_BUSY, says: null, command: 'gh pr view --json state', tail: null, hint: HINT },
-	];
-	for (const wait of cases) {
-		const card = StuckView({ wait });
-		const text = textOf(card);
-		expect(text).toContain('moor could not run a check.Box 3 is busy with another command.');
-		expect(text).not.toContain('No outcome holds');
-		expect(text).not.toContain('is stuck');
-		expect(text).not.toContain('Not yet true');
-		expect(text).not.toContain('The check that failed');
-		expect(text).not.toContain('What you can do');
-		expect(text).toContain(HINT);
-		expect(all(card, 'pre').map(textOf)).toContain(wait.command ?? '');
-	}
-	expect(textOf(StuckView({ wait: cases[0] as Wait }))).toContain('The tests pass.');
+test('a check moor got no answer from reads as moor\'s trouble: the heading, the check, why, then what to do', () => {
+	const busy = StuckView({ wait: { ...stuck, gate: 'tests', why: WHY, says: null, tail: null, hint: HINT, unanswered: NOT_RUN } });
+	expect(textOf(busy)).toBe(`Stuck, and needs youmoor got no answer from its checks.makeBox 3 is busy with another command.${HINT}`);
+	const lost = StuckView({ wait: { ...stuck, gate: 'outcome', why: WHY, tail: null, hint: HINT, unanswered: LOST } });
+	expect(textOf(lost)).toBe(`Stuck, and needs youmoor got no answer from its checks.The pull request is merged.The check's output was lost.Show the checkgh pr view${HINT}`);
+});
+
+test('a card stuck for want of answers with no hint says that sending reruns the checks, not that it gives fresh tries', () => {
+	const text = textOf(StuckView({ wait: { ...stuck, hint: null, unanswered: LOST } }));
+	expect(text).toContain('Sending reopens the gate and moor runs its checks again.');
+	expect(text).not.toContain('fresh tries');
+	expect(text).not.toContain('No outcome holds');
 });

@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
 
 import type { Run, Step } from './api';
-import { OutcomeItem, StepItem } from './RunPage';
-import { all, textOf } from './testkit';
+import type { Unanswered } from './gate';
+import { OutcomeItem, RunResult, StepItem } from './RunPage';
+import { all, LOST, NOT_RUN, textOf } from './testkit';
 
 const gate = (over: Partial<Step>): Step => ({
 	id: 'done',
@@ -70,10 +71,28 @@ test('while moor decides the outcome row says so, and a run with no outcome has 
 	expect(OutcomeItem({ run: run({}) })).toBeNull();
 });
 
-test('a waiting outcome row says no outcome holds, or that moor could not run a check when that is why', () => {
-	const waits = (why: string) => run({ phase: 'waiting', status: 'waiting', closing: 'waiting', lines: [{ at: 2, kind: 'gate_waiting', text: `Waiting for a person (try 2): ${why}`, evidence: [] }] });
-	expect(textOf(OutcomeItem({ run: waits('out of tries: no outcome held') }))).toContain('No outcome holds. Steer the agent');
-	const unrun = textOf(OutcomeItem({ run: waits('moor, not the agent, could not run outcome `merged` check 1 (`gh pr view`) twice: Box 3 is busy') }));
-	expect(unrun).toContain('moor could not run a check. Steer the agent');
-	expect(unrun).not.toContain('No outcome holds');
+test('a waiting outcome row says no outcome holds, or that moor got no answer from its checks when its wait line says so', () => {
+	const waits = (unanswered?: Unanswered) => run({ phase: 'waiting', status: 'waiting', closing: 'waiting', lines: [{ at: 2, kind: 'gate_waiting', text: 'Waiting for a person (try 2): w', evidence: [], unanswered }] });
+	expect(textOf(OutcomeItem({ run: waits() }))).toContain('No outcome holds. Steer the agent');
+	for (const cause of [NOT_RUN, LOST]) {
+		const text = textOf(OutcomeItem({ run: waits(cause) }));
+		expect(text).toContain('moor got no answer from its checks. Steer the agent');
+		expect(text).not.toContain('No outcome holds');
+	}
+});
+
+test('a run with a named outcome shows it as the result, and the agent\'s note beneath as the agent\'s', () => {
+	const found = RunResult({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The check failed.' }, result: 'check passed' }) });
+	const [head, ...rest] = all(found, 'p');
+	expect(textOf(head)).toBe('check failed · The check failed.');
+	expect(head?.props.class).toBe('notice danger');
+	expect(rest.map(textOf)).toEqual(["The agent's note", 'check passed']);
+	expect(all(RunResult({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }) }), 'p').map(textOf)).toEqual(['nothing to do']);
+});
+
+test('a run without a named outcome keeps its result as it was', () => {
+	const [only] = all(RunResult({ run: run({ result: 'ok' }) }), 'p');
+	expect(textOf(only)).toBe('ok');
+	expect(only?.props.class).toBe('notice ok');
+	expect(RunResult({ run: run({}) })).toBeNull();
 });

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { failure, type Line, type Run, runAnswer, runGet, type Step, toError } from './api';
-import { closingWaitWords } from './gate';
+import { closingWaitWords, outcomeLine } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
@@ -80,6 +80,25 @@ export function OutcomeItem({ run }: { run: Run }) {
 				{waiting && <p class="muted">{closingWaitWords(run.lines)} Steer the agent from its Box to try again.</p>}
 			</details>
 		</li>
+	);
+}
+
+const RESULT_TONE = { good: 'ok', bad: 'danger', plain: '' } as const;
+
+/** What a run came to: the outcome moor found when it names one, with the agent's own note beneath, since the two can disagree. */
+export function RunResult({ run }: { run: Run }) {
+	const found = run.verdict;
+	if (!found) return run.result ? <p class="notice ok">{run.result}</p> : null;
+	return (
+		<>
+			<p class={`notice ${RESULT_TONE[found.tone]}`}>{outcomeLine(found)}</p>
+			{run.result && (
+				<div class="run-note">
+					<p class="muted">The agent's note</p>
+					<p>{run.result}</p>
+				</div>
+			)}
+		</>
 	);
 }
 
@@ -166,7 +185,7 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 						{run.duration_ms != null && `, took ${duration(run.duration_ms)}`}
 						{run.box && `, Box ${run.box}`}
 					</p>
-					{run.result && <p class="notice ok">{run.result}</p>}
+					<RunResult run={run} />
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
 					<ol class="steps">

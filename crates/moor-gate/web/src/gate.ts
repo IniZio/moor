@@ -10,10 +10,15 @@ export const VerdictSchema = v.object({ name: v.string(), tone: ToneSchema, says
 /** The stage after the last gate, where moor decides the outcome. */
 export const CLOSING = 'outcome';
 
+const NoAnswerReasonSchema = v.variant('kind', [v.object({ kind: v.literal('not_run'), reason: v.string() }), v.object({ kind: v.literal('lost') })]);
+
+/** The check moor last got no answer from, when that and not the agent is why a stage waits for a person. */
+export const UnansweredSchema = v.object({ check: v.unknown(), command: v.nullish(v.string()), says: v.nullish(v.string()), reason: NoAnswerReasonSchema });
+
 /** Where a Box stands against its gates, as moor derives it. */
 const GateStatusSchema = v.variant('state', [
 	v.object({ state: v.literal('open'), gate: v.string(), try_n: v.number(), next: NextSchema }),
-	v.object({ state: v.literal('stuck'), gate: v.string(), why: v.string() }),
+	v.object({ state: v.literal('stuck'), gate: v.string(), why: v.string(), unanswered: v.nullish(UnansweredSchema) }),
 	v.object({ state: v.literal('failed'), gate: v.string(), why: v.string() }),
 	v.object({ state: v.literal('passed'), outcome: v.optional(VerdictSchema) }),
 ]);
@@ -58,6 +63,7 @@ export const WaitSchema = v.object({
 	missing: v.optional(v.array(v.string()), []),
 	/** For the closing stage: each outcome tried and the check that stopped it. */
 	tried: v.nullish(v.array(TriedSchema)),
+	unanswered: v.nullish(UnansweredSchema),
 	hint: v.nullish(v.string()),
 });
 
@@ -88,6 +94,7 @@ export type Tried = v.InferOutput<typeof TriedSchema>;
 export type CheckDoc = v.InferOutput<typeof CheckDocSchema>;
 export type GateView = v.InferOutput<typeof GateViewSchema>;
 export type Wait = v.InferOutput<typeof WaitSchema>;
+export type Unanswered = v.InferOutput<typeof UnansweredSchema>;
 
 export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | 'later' | 'bad' | 'plain';
 
@@ -178,22 +185,18 @@ export function whyWords(why: string, says?: string | null): string {
 	return spent ? `${sentence} No tries left.` : sentence;
 }
 
-const NO_ANSWER = /^moor, not the agent, could not run .*? twice: /;
+/** What a stage stuck for want of answers says first: moor's trouble, not the agent's. */
+export const UNANSWERED_HEAD = 'moor got no answer from its checks.';
 
-/** Whether moor, not the agent, is why the gate is stuck: it could not run a check twice. */
-export function isNoAnswer(why: string | null | undefined): boolean {
-	return NO_ANSWER.test(why?.trim() ?? '');
+export const REOPEN_UNANSWERED = 'Sending reopens the gate and moor runs its checks again.';
+
+export function unansweredWhy(cause: Unanswered): string {
+	return cause.reason.kind === 'lost' ? "The check's output was lost." : whyWords(cause.reason.reason);
 }
 
 /** The words for the closing row of a run that waits for a person: whose trouble it is, read from the last wait line the run wrote. */
-export function closingWaitWords(lines: readonly { text: string }[]): string {
-	const waited = lines.flatMap((l) => /^Waiting for a person(?: \(try \d+\))?: (.*)$/s.exec(l.text)?.slice(1) ?? []).at(-1);
-	return isNoAnswer(waited) ? 'moor could not run a check.' : 'No outcome holds.';
-}
-
-/** Why moor could not run the check, as a sentence: the part of the reason after the check it names. */
-export function noAnswerReason(why: string): string {
-	return whyWords(why.trim().replace(NO_ANSWER, ''));
+export function closingWaitWords(lines: readonly { kind: string; unanswered?: Unanswered | null }[]): string {
+	return lines.filter((l) => l.kind === 'gate_waiting').at(-1)?.unanswered ? UNANSWERED_HEAD : 'No outcome holds.';
 }
 
 /** The one line a list row or a card says about its gates when a person has something to do or it failed; none otherwise. */
@@ -201,8 +204,9 @@ export function gateLine(view: GateView | null | undefined): string | null {
 	const status = view?.status;
 	switch (status?.state) {
 		case 'stuck':
+			if (status.unanswered) return UNANSWERED_HEAD;
 			if (status.gate !== CLOSING) return `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
-			return isNoAnswer(status.why) ? whyWords(status.why) : 'No outcome holds. moor tried each outcome twice.';
+			return 'No outcome holds. moor tried each outcome twice.';
 		case 'failed':
 			return `Failed at ${quoted(status.gate)}: ${whyWords(status.why)}`;
 		case 'open':

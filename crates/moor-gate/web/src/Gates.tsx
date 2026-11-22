@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { failure, gateAnswer, type Needs, toError } from './api';
-import { checkRun, checkWords, closingRow, GATE_LOOK, type GateDoc, type GateView, gateRows, isNoAnswer, noAnswerReason, type OutcomeDoc, quoted, ruleSentence, tailView, type Tried, type Wait, whyWords } from './gate';
+import { checkRun, checkWords, closingRow, GATE_LOOK, type GateDoc, type GateView, gateRows, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
 
@@ -182,16 +182,16 @@ function StuckFrame({ head, note, children }: { head: string; note: string; chil
 
 const REOPEN = 'What you can do: write to the agent below. Your message reopens this gate with fresh tries.';
 
-/** A check moor could not run twice: moor's trouble, not the agent's, with the check and what the person can do. */
-function NoAnswerView({ wait }: { wait: Wait }) {
+/** A check moor got no answer from: moor's trouble, not the agent's, with the check, why, and what the person can do. */
+function NoAnswerView({ cause, hint }: { cause: Unanswered; hint: string | null | undefined }) {
 	return (
-		<StuckFrame head="moor could not run a check." note={wait.hint ?? REOPEN}>
-			<p class="t-gate-why">{noAnswerReason(wait.why ?? '')}</p>
-			{wait.says && <p class="t-gate-says">{wait.says}</p>}
-			{wait.command && (
+		<StuckFrame head={UNANSWERED_HEAD} note={hint ?? REOPEN_UNANSWERED}>
+			{cause.says ? <p class="t-gate-says">{cause.says}</p> : cause.command && <pre class="t-quote">{cause.command}</pre>}
+			<p class="t-gate-why">{unansweredWhy(cause)}</p>
+			{cause.says && cause.command && (
 				<details class="t-gate-cmd">
 					<summary>Show the check</summary>
-					<pre class="t-quote">{wait.command}</pre>
+					<pre class="t-quote">{cause.command}</pre>
 				</details>
 			)}
 		</StuckFrame>
@@ -200,7 +200,7 @@ function NoAnswerView({ wait }: { wait: Wait }) {
 
 /** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own, below. */
 export function StuckView({ wait }: { wait: Wait }) {
-	if (isNoAnswer(wait.why)) return <NoAnswerView wait={wait} />;
+	if (wait.unanswered) return <NoAnswerView cause={wait.unanswered} hint={wait.hint} />;
 	if (wait.tried?.length) {
 		return (
 			<StuckFrame head="No outcome holds." note={REOPEN}>
