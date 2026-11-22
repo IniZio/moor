@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `wait` |
+| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `gates`, `wait` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |

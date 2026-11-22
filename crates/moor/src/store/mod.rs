@@ -67,6 +67,7 @@ pub(crate) use open::Database;
 mod pressure;
 pub(crate) use pressure::SuspendCheck;
 mod box_config;
+mod gate;
 mod proxy;
 pub(super) mod reads;
 mod repo;

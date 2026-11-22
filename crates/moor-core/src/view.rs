@@ -8,6 +8,7 @@ pub mod close_failed;
 pub mod detail;
 pub mod env;
 pub mod forward;
+pub mod gate;
 pub mod inspect;
 pub mod machine;
 pub mod node;
@@ -21,9 +22,7 @@ pub mod steer;
 pub mod stuck;
 pub mod user;
 pub mod workflow;
-use crate::domain::box_state::BoxLifecycle;
-use crate::domain::hands::HandsState;
-use crate::domain::session_state::SessionState;
+use crate::domain::{box_state::BoxLifecycle, hands::HandsState, session_state::SessionState};
 pub use attach::{AttachEnd, AttachView, ExecView};
 pub use attention::AttentionView;
 pub use detail::{ApprovalView, SaidView};
@@ -179,6 +178,9 @@ pub struct BoxView {
     /// The approve step of a workflow run that waits in this Box, on `show`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approval: Option<ApprovalView>,
+    /// The gates the Box must pass before it counts as done, and where it stands; set by `show`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate: Option<gate::GateView>,
 }
 
 /// Outcome of the setup script.

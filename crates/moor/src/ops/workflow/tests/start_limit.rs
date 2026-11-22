@@ -222,6 +222,7 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
     crate::ops::start::run(
         &r.cx,
         &StartReq {
+            gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,
@@ -288,6 +289,7 @@ fn a_box_still_setting_up_past_the_limit_is_closed_and_its_run_refused() {
     let id = r.put(10);
     let job = claim_only(&r).remove(0);
     let req = StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,
@@ -328,6 +330,7 @@ fn a_claim_settled_at_boot_keeps_its_claim_time_and_counts_the_run_from_its_agen
     let made = crate::ops::start::run(
         &r.cx,
         &StartReq {
+            gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,

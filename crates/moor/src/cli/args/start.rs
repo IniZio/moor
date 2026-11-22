@@ -59,6 +59,7 @@ impl From<StartArgs> for StartReq {
         let repo = repos.next();
         let also: Vec<_> = repos.collect();
         Self {
+            gates: None,
             cold: false,
             placement: Placement::FirstOnly,
             name: a.name,

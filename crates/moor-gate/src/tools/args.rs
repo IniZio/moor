@@ -23,6 +23,10 @@ pub(super) struct StartArgs {
     /// `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default Proxy
     /// rule for this Box only.
     pub(super) config: Option<String>,
+    /// Gates the Box must pass before it counts as done, in the order they pass: each is
+    /// evidence files the agent leaves, checks moor runs in the Box, and an owner approval. A Box
+    /// with an open gate shows as working, never as done. Written once, at start.
+    pub(super) gates: Option<Vec<moor_core::gate::GateDoc>>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.
     pub(super) wait: Option<bool>,

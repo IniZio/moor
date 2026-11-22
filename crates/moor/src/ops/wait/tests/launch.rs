@@ -243,6 +243,7 @@ fn an_agentless_start_of_a_box_left_launching_ends_the_launch() {
 /// An agentless start of Box `demo`.
 fn agentless_start() -> StartReq {
     StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: None,

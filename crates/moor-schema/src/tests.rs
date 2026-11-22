@@ -10,6 +10,7 @@ use moor_migrate::{render, Backend};
 use crate::STEPS;
 
 mod box_deaths;
+mod box_gates;
 mod box_hands;
 mod box_inbox;
 mod box_state;
@@ -129,7 +130,7 @@ fn plain_default(raw: &str) -> String {
 #[test]
 fn sqlite_reads_back_every_table_with_its_keys() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
-    assert_eq!(schema.tables.len(), 40, "{:?}", schema.tables.keys());
+    assert_eq!(schema.tables.len(), 41, "{:?}", schema.tables.keys());
     let sessions = schema.tables.get("sessions").unwrap();
     assert_eq!(sessions.primary_key, ["id"]);
     assert!(sessions.indexes.contains(&Index {

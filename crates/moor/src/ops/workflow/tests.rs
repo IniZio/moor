@@ -6,9 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::UserConfig;
-use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::{box_state::BoxLifecycleInput, decision::Decision};
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{
@@ -234,6 +233,7 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
     let started = crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
+            gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,
@@ -270,6 +270,7 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
     let started = crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
+            gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
             config: None,

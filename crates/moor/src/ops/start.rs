@@ -32,6 +32,7 @@ use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
 
 mod asleep;
+mod gates;
 mod launch;
 mod needs;
 mod preflight;
@@ -77,6 +78,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
     super::box_config::check(req.config.as_deref())?;
+    gates::check(req)?;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
@@ -206,6 +208,7 @@ fn attach(
     preflight::check_owner(row, user)?;
     repo::check_kept(req, row)?;
     super::box_config::check_kept(cx, req, row)?;
+    gates::check_kept(store, req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     reconcile::one(cx, store, row);
@@ -359,6 +362,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
             branch: None,
             labels,
             config: override_text(req.config.clone()),
+            gates: gates::column(req),
         },
     }
 }

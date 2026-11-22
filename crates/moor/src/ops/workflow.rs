@@ -293,6 +293,7 @@ fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
         Err(e) => return refused(e.to_string()),
     }
     let req = StartReq {
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnline,
         cold: false,
         config: job.config.clone(),
