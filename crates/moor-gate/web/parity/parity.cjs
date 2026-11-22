@@ -111,10 +111,11 @@ async function settle(page) {
     globalThis.Date = Fixed;
   }, { now: NOW });
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text() + (m.location().url ? ' ' + m.location().url : '')); });
   const data = await fixtures(page, args.mock, HIDE_MOCK, TZ);
   const missing = [];
-  await page.route('**/account/api/**', (route) => {
+  // A predicate, not a glob: '**/account/api/**' misses the account call itself, GET /account/api.
+  await page.route((u) => u.pathname === '/account/api' || u.pathname.startsWith('/account/api/'), (route) => {
     const u = new URL(route.request().url());
     const key = u.pathname + u.search;
     if (u.pathname.startsWith('/account/api/box/evidence/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(data.png, 'base64') });
