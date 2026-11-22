@@ -93,7 +93,6 @@ function atGate(name: string, status: Exclude<GateView['status'], { state: 'pass
 export function gateRows(view: GateView): GateRow[] {
 	const { status } = view;
 	if (status.state === 'passed') return view.gates.map((name) => ({ name, state: 'passed', words: 'passed' }));
-	// The stage moor decides the outcome at comes after every gate, so it is no gate of the list.
 	const named = view.gates.indexOf(status.gate);
 	const at = named === -1 ? view.gates.length : named;
 	return view.gates.map((name, i) =>
