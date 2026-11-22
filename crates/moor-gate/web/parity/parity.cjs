@@ -72,6 +72,7 @@ async function settle(page) {
   await page.route('**/account/api/**', (route) => {
     const u = new URL(route.request().url());
     const key = u.pathname + u.search;
+    if (u.pathname.startsWith('/account/api/box/evidence/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(data.png, 'base64') });
     const body = data.api[key] ?? data.api[u.pathname];
     if (body === undefined) { missing.push(route.request().method() + ' ' + key); return route.abort(); }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
