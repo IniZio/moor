@@ -186,7 +186,7 @@ export function gateLine(view: GateView | null | undefined): string | null {
 	const status = view?.status;
 	switch (status?.state) {
 		case 'stuck':
-			return `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
+			return status.gate === CLOSING ? `No outcome holds yet: ${whyWords(status.why)}` : `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
 		case 'failed':
 			return `Failed at ${quoted(status.gate)}: ${whyWords(status.why)}`;
 		case 'open':
