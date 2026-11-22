@@ -1,8 +1,6 @@
 #!/bin/sh
 # Install moor binaries from a GitHub release. Needs curl, tar and sha256sum or shasum.
 #   sh install.sh [--nightly] [binary...]     default: every binary in bins below
-#   sh install.sh [--nightly] --server URL [--token TOKEN] [--name NAME]
-#     installs moor-machine-agent, then runs moor-machine-agent up with those flags
 # MOOR_VERSION pins a tag, MOOR_CHANNEL=nightly takes the newest prerelease,
 # MOOR_INSTALL_DIR sets the target directory (default ~/.local/bin).
 set -eu
