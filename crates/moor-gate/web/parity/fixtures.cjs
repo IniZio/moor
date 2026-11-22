@@ -23,7 +23,7 @@ async function fixtures(page, mockDir, hide, tz) {
     repo: t.repos[0],
     other_repos: t.repos.slice(1),
     branch: null, base: 'main', prompt: t.title,
-    issue: t.key, machine: null, workflow: null,
+    issue: t.key, machine: null, workflow: t.kind === 'pr' ? { name: 'evidence', pull: t.repos[0] + '#' + t.pr } : null,
     title: t.title,
     state: t.settled ? 'closed' : SCENE_STATE[t.scene],
     stale: false,
@@ -40,11 +40,16 @@ async function fixtures(page, mockDir, hide, tz) {
     44: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'agent' } },
     58: { gates: ['evidence', 'tests', 'comment'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' } },
     40: { gates: ['proof', 'tests', 'review'], status: { state: 'passed', outcome: { name: 'fixed', tone: 'good', says: null } } },
+    56: { gates: ['evidence', 'tests', 'comment'], status: { state: 'passed', outcome: { name: 'check failed', tone: 'bad', says: null } } },
+    55: { gates: ['evidence', 'tests', 'comment'], status: { state: 'passed', outcome: { name: 'check passed', tone: 'good', says: null } } },
+    54: { gates: ['evidence', 'tests', 'comment'], gates_passed: 0, status: { state: 'passed', outcome: { name: 'nothing to do', tone: 'plain', says: null } } },
+    39: { gates: ['proof', 'tests', 'review'], gates_passed: 0, status: { state: 'passed', outcome: { name: 'nothing to fix', tone: 'plain', says: null } } },
   };
   const withGate = (r, t) => {
     const g = GATES[t.id];
     if (!g) return r;
     r.gate = { gates: g.gates, status: g.status };
+    if (g.gates_passed !== undefined) r.gate.gates_passed = g.gates_passed;
     if (g.wait) r.needs = { id: 'ask-' + t.id, kind: g.wait.kind, question: t.line, detail: null, picks: [], other: null, approve: null, plan: false, gate: g.wait };
     return r;
   };
