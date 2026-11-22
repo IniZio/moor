@@ -9,7 +9,9 @@ use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::gate::{CheckDoc, CheckOf, GateDoc, GateLine, GateStatus, GatesDoc, OutcomeDoc};
+use moor_core::gate::{
+    CheckDoc, CheckOf, GateDoc, GateLine, GateStatus, GatesDoc, OutcomeDoc, Unanswered,
+};
 use moor_core::progress::Progress;
 use moor_core::request::StepReportReq;
 use moor_core::seam::clock::Ts;
@@ -278,6 +280,7 @@ impl Fx {
                 GateLine::NoAnswer {
                     gate,
                     check: CheckOf::Gate { .. },
+                    why: Unanswered::Lost,
                     ..
                 } => Some((gate.to_string(), None)),
                 _ => None,

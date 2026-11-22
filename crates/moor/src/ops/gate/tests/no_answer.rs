@@ -8,7 +8,7 @@
 use moor_core::gate::{closing, CheckDoc, GateLine, GateStatus, OutcomeDoc, Wait};
 use moor_core::progress::Progress;
 
-use super::fx::{busy, cut, evidence_gate, fx_on, fx_outcomes_on, gate, Fx};
+use super::fx::{busy, evidence_gate, fx_on, fx_outcomes_on, gate, Fx};
 use crate::testing::driver::FakeDriver;
 
 /// An outcome whose one check is `run`.
@@ -76,8 +76,8 @@ fn a_gates_check_moor_cannot_run_twice_waits_for_a_person() {
 }
 
 #[test]
-fn a_lost_stream_twice_at_the_closing_stage_waits_for_a_person() {
-    let f = fx_outcomes_on(FakeDriver::new().exec_fails_when("merged", cut()), |_| {
+fn a_busy_box_twice_at_the_closing_stage_waits_for_a_person() {
+    let f = fx_outcomes_on(FakeDriver::new().exec_fails_when("merged", busy()), |_| {
         let outcomes = vec![
             outcome("merged", "echo merged", false),
             outcome("open", "true", false),

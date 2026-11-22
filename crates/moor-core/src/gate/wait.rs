@@ -45,9 +45,9 @@ pub struct Wait {
     pub handed: Vec<String>,
     /// What the agent wrote with its report.
     pub note: Option<String>,
-    /// The check that failed, as written in the gate.
+    /// The check that failed, or that moor could not run, as written.
     pub command: Option<String>,
-    /// What the failed check says must be true, when its author wrote it.
+    /// What that check says must be true, when its author wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub says: Option<String>,
     /// The end of the failed check's output.

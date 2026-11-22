@@ -305,10 +305,7 @@ fn a_check_that_did_not_run_is_written_as_no_answer_and_runs_on_the_next_pass() 
     );
     assert_eq!(f.standing().0, open("tests", 1));
     f.pass();
-    assert_eq!(
-        f.exits(),
-        [("tests".to_owned(), None), ("tests".to_owned(), Some(0))]
-    );
+    assert_eq!(f.exits(), [("tests".to_owned(), Some(0))]);
     assert_eq!(f.standing(), (done(), Progress::Done));
     assert!(f.told().is_empty());
 }
