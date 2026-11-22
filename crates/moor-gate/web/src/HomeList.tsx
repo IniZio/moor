@@ -108,7 +108,7 @@ export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr'> }) 
 
 function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: number; only: string; everyone: boolean; settled?: boolean; peeking?: boolean }) {
 	const s = STATES[t.state];
-	const gated = t.state === 'needs_you' || t.failed ? gateLine(t.gate) : null;
+	const gated = t.state === 'needs_you' || t.state === 'working' || t.failed ? gateLine(t.gate) : null;
 	const askable = !t.owner && peekable(t);
 	const outcome = outcomeTone(t);
 	const tone = t.state === 'needs_you' ? ' t-n-needs' : t.state === 'working' || t.state === 'setting_up' ? ' t-n-working' : isWarn(t.state, outcome) ? ' t-n-warn' : '';

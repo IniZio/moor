@@ -140,7 +140,7 @@ details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-sep { display: none; }
 .t-grp .t-empty { padding: 6px; font-size: 0.8125rem; }
 .t-grp-repo { margin-top: 12px; }
-.t-grp-repo h2, .t-repohead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 4px; padding: 0 6px; font-family: var(--moor-font-body); font-weight: 560; line-height: 1.2; text-transform: none; letter-spacing: 0; color: var(--moor-color-text); }
+.t-grp-repo h2, .t-repohead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 4px; padding: 0 6px; font-family: var(--moor-font-body); font-size: 0.9375rem; font-weight: 560; line-height: 1.5; text-transform: none; letter-spacing: 0; color: var(--moor-color-text); }
 .t-repohead { margin-top: 22px; }
 .t-repohead .t-rname .t-mono, .t-grp-repo h2 .t-rname .t-mono { font-size: 0.9rem; }
 .t-rname { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
