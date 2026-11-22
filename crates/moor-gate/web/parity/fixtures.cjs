@@ -49,6 +49,10 @@ async function fixtures(page, mockDir, hide, tz) {
     const g = GATES[t.id];
     if (!g) return r;
     r.gate = { gates: g.gates, status: g.status };
+    // The line the gate writes for a gated row, so a page that shows the mock's words has made them itself.
+    const s = g.status;
+    if (s.state === 'open') r.line = s.next === 'ask' ? `gate ${s.gate}: waiting for your approval` : 'reading the code';
+    if (s.state === 'stuck') r.line = `gate ${s.gate} is stuck: ${s.why}`;
     if (g.gates_passed !== undefined) r.gate.gates_passed = g.gates_passed;
     if (g.wait) r.needs = { id: 'ask-' + t.id, kind: g.wait.kind, question: t.line, detail: null, picks: [], other: null, approve: null, plan: false, gate: g.wait };
     return r;
