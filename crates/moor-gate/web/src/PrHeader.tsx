@@ -47,7 +47,7 @@ function State({ p, listed }: { p: RepoPull; listed: number | null }) {
 	);
 }
 
-/** Where the Box's pull request stands on GitHub, and a link to its next step. Other repos are listed below the first. The task head already shows the number `listed`, so this line does not repeat it. */
+/** Where the Box's pull request stands on GitHub, inline in the task head after its PR link, and a link to its next step unless that link is the head's own. Other repos follow the first. The task head already shows the number `listed`, so this does not repeat it. */
 export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail['pr']; listed: number | null }) {
 	const [pulls, setPulls] = useState<RepoPull[] | null>(null);
 	const [error, setError] = useState('');
@@ -69,51 +69,40 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 	const silent = !error && (!first || (!first.url && !first.unread && (first.state === 'none' || first.state === 'unpushed') && !named));
 	if (silent) return null;
 	if (!first) {
-		return (
-			<p class="t-prline pr-line">
-				<span class="pr-label">PR</span>
-				{named && named.number !== listed ? (
-					<a class="t-mono" href={named.url} rel="noopener">
-						#{named.number}
-					</a>
-				) : (
-					<span class="muted">{error}</span>
-				)}
-			</p>
-		);
+		if (named && named.number !== listed) {
+			return (
+				<a class="t-mono" href={named.url} rel="noopener">
+					#{named.number}
+				</a>
+			);
+		}
+		return error ? <span class="pr-inline muted">{error}</span> : null;
 	}
+	const own = named !== null && first.number === named.number && first.state !== 'none' && first.state !== 'unpushed';
 	return (
-		<div class="pr-head">
-			<p class="t-prline pr-line">
-				<span class="pr-label">PR</span>
-				{first.unread ? <span class="muted">GitHub could not be read: {first.unread}</span> : <State p={first} listed={listed} />}
-				{(first.state === 'none' || first.state === 'unpushed') && named && (
-					<a class="t-mono" href={named.url} rel="noopener" title="The agent named this PR, but none on GitHub is from this task's branch">
-						{named.number === listed ? 'named by the agent' : `#${named.number} named by the agent`}
-					</a>
-				)}
-				<span class="grow" />
-				{first.url && (
-					<a class={`btn${first.state === 'none' ? ' primary' : ''}${first.state === 'merged' ? ' pr-done' : ''}`} href={first.url} target="_blank" rel="noopener">
-						{step(first)} ↗
-					</a>
-				)}
-			</p>
-			{rest.length > 0 && (
-				<ul class="pr-others">
-					{rest.map((p) => (
-						<li key={p.repo}>
-							<span class="t-mono muted">{p.repo}</span>
-							{p.unread ? <span class="muted">GitHub could not be read</span> : <State p={p} listed={null} />}
-							{p.url && (
-								<a href={p.url} target="_blank" rel="noopener">
-									{step(p)} ↗
-								</a>
-							)}
-						</li>
-					))}
-				</ul>
+		<span class="pr-inline">
+			{first.unread ? <span class="muted">GitHub could not be read: {first.unread}</span> : <State p={first} listed={listed} />}
+			{(first.state === 'none' || first.state === 'unpushed') && named && (
+				<a class="t-mono" href={named.url} rel="noopener" title="The agent named this PR, but none on GitHub is from this task's branch">
+					{named.number === listed ? 'named by the agent' : `#${named.number} named by the agent`}
+				</a>
 			)}
-		</div>
+			{first.url && !own && (
+				<a class={`pr-step${first.state === 'merged' ? ' pr-done' : ''}`} href={first.url} target="_blank" rel="noopener">
+					{step(first)} ↗
+				</a>
+			)}
+			{rest.map((p) => (
+				<span class="pr-other" key={p.repo}>
+					<span class="t-mono muted">{p.repo}</span>
+					{p.unread ? <span class="muted">GitHub could not be read</span> : <State p={p} listed={null} />}
+					{p.url && (
+						<a class="pr-step" href={p.url} target="_blank" rel="noopener">
+							{step(p)} ↗
+						</a>
+					)}
+				</span>
+			))}
+		</span>
 	);
 }

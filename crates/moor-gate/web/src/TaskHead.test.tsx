@@ -33,7 +33,7 @@ test('a one-repo task names the repo first, then the title with its state and th
 	expect(textOf(all(view, 'div')[0])).toBe(' acme/web');
 	expect(text).not.toContain('starts here');
 	expect(textOf(all(view, 'h1')[0])).toBe('Fix the avatar crop');
-	expect(text).toContain('◐ working');
+	expect(textOf(all(view, 'span').find((s) => s.props.class?.includes('t-pill')))).toBe('working');
 	expect(all(view, 'button').map(textOf)).toEqual(['Stop']);
 	const meta = textOf(all(view, 'p')[0]);
 	expect(meta).toBe('moor/fix-avatarlast event 14:46');
@@ -62,4 +62,19 @@ test('a task without gates keeps the line saying what it is doing', () => {
 	expect(textOf(head())).toContain('Running the tests');
 	const gated = textOf(head({ gate: { gates: ['proof'], status: { state: 'open', gate: 'proof', try_n: 1, next: 'agent' } } }));
 	expect(gated).not.toContain('Running the tests');
+});
+
+test('a one-off task says who asked and when, from the prompt in its timeline; a workflow run keeps its last event', () => {
+	const asked = new Date(2026, 10, 22, 14, 14).toISOString();
+	const own = TaskHead({ t: task({ machine: 'my-laptop' }), now: NOW, actions: null, asked });
+	expect(textOf(all(own, 'p')[0])).toBe('moor/fix-avataron my-laptopasked by you at 14:14');
+	const theirs = TaskHead({ t: task({ owner: 'ana@example.com' }), now: NOW, actions: null, asked });
+	expect(textOf(all(theirs, 'p')[0])).toBe('moor/fix-avatarasked by ana@example.com at 14:14');
+	const flow = TaskHead({ t: task({ workflow: { name: 'nightly' } }), now: NOW, actions: null, asked });
+	expect(textOf(all(flow, 'p')[0])).toBe('moor/fix-avatarstarted by nightlylast event 14:46');
+});
+
+test('where the pull request stands sits in the first row, after its link', () => {
+	const view = TaskHead({ t: task({ pr: { repo: 'acme/web', number: 7, url: 'https://example.test/pr/7' } }), now: NOW, actions: null, pr: <span>● open</span> });
+	expect(textOf(all(view, 'div')[0])).toBe(' acme/webPR #7● open');
 });

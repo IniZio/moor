@@ -29,6 +29,7 @@ function hint(mode: Mode, state: Progress, needs: Needs | null | undefined, over
 	if (over && needs?.kind === 'permission') return 'Sending denies the request above and passes your message on to the agent.';
 	if (over) return 'Sending answers the question above in your own words.';
 	if (state === 'asleep') return 'This Box is asleep. Sending wakes it, and the agent reads your message once it is up.';
+	if (state === 'done') return 'Writing picks the task up again.';
 	return mode === 'interrupt'
 		? 'The agent stops its turn now and reads your message.'
 		: 'It reaches the agent after its current step.';

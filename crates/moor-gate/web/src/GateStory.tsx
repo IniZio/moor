@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 
 import type { Workflow } from './api';
-import { closingRow, GATE_LOOK, type GateRow, type GateView, gateRows, ruleSentence } from './gate';
+import { closingRow, GATE_LOOK, type GateRow, type GateView, gateRows, ruleSentence, type Wait } from './gate';
 import './story.css';
 
 /** The states in which a gate is in hand. */
@@ -50,14 +50,20 @@ function outcomeRow(gate: GateView, docs: Docs | null): { look: GateRow['state']
 	}
 	const closing = closingRow(gate);
 	if (closing) return { look: closing.state, hand: IN_HAND.has(closing.state), open: IN_HAND.has(closing.state), line: <><span class="t-sg-name">outcome</span><span class="t-sg-state">{closing.words}</span></> };
-	const names = (docs?.outcomes ?? []).map((o) => o.name);
+	const names = (docs?.outcomes ?? []).map((o) => (o.anytime ? `${o.name} (at any point)` : o.name));
 	if (names.length === 0 || gate.run_ended) return null;
-	return { look: 'later', hand: false, open: false, line: <span>ends as one of: {names.join(', ')}</span> };
+	return { look: 'later', hand: false, open: false, line: <span>ends as: {names.join(' · ')}</span> };
 }
 
-/** One row per gate with its mark, number, name and state; the gate in hand is open, with what must be true and the card in place. Ends with the outcome. */
-export function GateStory({ gate, docs, card }: { gate: GateView; docs: Docs | null; card: ComponentChildren }) {
-	const rows = gateRows(gate);
+/** What a gate that waits for a person holds the agent to, read off the wait when no workflow describes the gate. */
+function waitRule(wait: Wait | null | undefined): string {
+	if (wait?.kind === 'approve') return 'needs your yes before it counts as done';
+	return wait?.says ? `moor checks: ${wait.says.replace(/\.$/, '')}` : '';
+}
+
+/** One row per gate with its mark, number, name and state; the gate in hand is open, with what must be true and the card in place. Ends with the outcome. `wait` is the gate's wait when it waits for a person. */
+export function GateStory({ gate, docs, card, wait }: { gate: GateView; docs: Docs | null; card: ComponentChildren; wait?: Wait | null }) {
+	const rows = gateRows(gate, wait?.try_n);
 	const hand = rows.findIndex((r) => IN_HAND.has(r.state));
 	const end = outcomeRow(gate, docs);
 	const cardAtEnd = hand === -1 && !!end?.hand;
@@ -67,12 +73,12 @@ export function GateStory({ gate, docs, card }: { gate: GateView; docs: Docs | n
 			<ol class="t-sg-list">
 				{rows.map((r, i) => {
 					const doc = docs?.gates?.find((g) => g.name === r.name);
-					const rule = doc ? ruleSentence(doc) : '';
 					const open = i === hand;
+					const rule = doc ? sentence(ruleSentence(doc)) : open && wait?.gate === r.name ? waitRule(wait) : '';
 					const body =
 						rule || (open && card) ? (
 							<>
-								{rule && <p class="t-sg-rule">{sentence(rule)}</p>}
+								{rule && <p class="t-sg-rule">{rule}</p>}
 								{open && card}
 							</>
 						) : null;
@@ -105,7 +111,7 @@ export function PromptFold({ prompt }: { prompt: string | null | undefined }) {
 	if (!prompt?.trim()) return null;
 	return (
 		<details class="t-prompt">
-			<summary>The prompt</summary>
+			<summary>Show the whole prompt</summary>
 			<pre>{prompt}</pre>
 		</details>
 	);

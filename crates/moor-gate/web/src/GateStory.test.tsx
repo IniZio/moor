@@ -23,8 +23,8 @@ const waiting: GateView = { gates: ['proof', 'tests', 'review'], status: { state
 test('a gate that waits for a yes is the open row, with its card in place and what must be true above it; the others stay shut', () => {
 	const view = GateStory({ gate: waiting, docs, card });
 	expect(rows(view)[0]).toBe('✓1proofpassedThe agent must hand in before.png and after.png.');
-	expect(rows(view)[2]).toContain('●3reviewwaiting for you');
-	expect(openRows(view)).toEqual(['●3reviewwaiting for you']);
+	expect(rows(view)[2]).toContain('●3reviewwaiting for your yes');
+	expect(openRows(view)).toEqual(['●3reviewwaiting for your yes']);
 	const open = all(view, 'details').find((d) => d.props.open);
 	expect(textOf(open)).toContain("The workflow's owner must say yes. One try.");
 	expect(textOf(open)).toContain('The card');
@@ -33,7 +33,7 @@ test('a gate that waits for a yes is the open row, with its card in place and wh
 
 test('a stuck gate holds the stuck card', () => {
 	const view = GateStory({ gate: { gates: ['proof', 'tests'], status: { state: 'stuck', gate: 'tests', why: 'out of tries' } }, docs, card });
-	expect(openRows(view)).toEqual(['●2testsstuck · needs you']);
+	expect(openRows(view)).toEqual(['✗2testsstuck']);
 	expect(textOf(all(view, 'details').find((d) => d.props.open))).toContain('moor checks: All tests pass. Two tries.');
 	expect(cardCount(view)).toBe(1);
 });
@@ -52,20 +52,20 @@ test('when every gate passed and an outcome was reached, the last row says how i
 
 test('a task a workflow made lists its possible endings by name before it ends', () => {
 	const view = GateStory({ gate: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' } }, docs, card: null });
-	expect(rows(view).at(-1)).toBe('○ends as one of: fixed, nothing to fix');
-	expect(rows(view)[1]).toContain('◐2testsin progress · moor is running its checks');
+	expect(rows(view).at(-1)).toBe('○ends as: fixed · nothing to fix');
+	expect(rows(view)[1]).toContain('◐2testsin hand, moor is checking');
 	expect(openRows(view)).toHaveLength(1);
 });
 
 test('a one-off task has names and states only, and no endings to list', () => {
 	const view = GateStory({ gate: { gates: ['tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 2, next: 'agent' } }, docs: null, card: null });
-	expect(rows(view)).toEqual(["✓1testsin progress · waiting for the agent's evidence · try 2".replace('✓', '◐'), '○2reviewnot started']);
+	expect(rows(view)).toEqual(['◐1teststhe agent is working toward it · try 2', '○2reviewlater']);
 	expect(all(view, 'details')).toHaveLength(0);
 });
 
 test('a card for the closing stage sits in the outcome row', () => {
 	const view = GateStory({ gate: { gates: ['proof'], status: { state: 'stuck', gate: 'outcome', why: 'no outcome holds' } }, docs: null, card });
-	expect(rows(view).at(-1)).toContain('●outcome');
+	expect(rows(view).at(-1)).toContain('✗outcome');
 	expect(cardCount(view)).toBe(1);
 	expect(openRows(view)).toHaveLength(1);
 });
@@ -77,8 +77,22 @@ test('a card that matches no row still shows once, above the list', () => {
 
 test('the prompt is plain text behind a click, and absent when there is none', () => {
 	const view = PromptFold({ prompt: 'Fix the **avatar** crop.\nKeep it small.' });
-	expect(textOf(all(view, 'summary')[0])).toBe('The prompt');
+	expect(textOf(all(view, 'summary')[0])).toBe('Show the whole prompt');
 	expect(textOf(all(view, 'pre')[0])).toBe('Fix the **avatar** crop.\nKeep it small.');
 	expect(all(view, 'details')[0]?.props.open).toBeUndefined();
 	expect(PromptFold({ prompt: '  ' })).toBeNull();
+});
+
+test('an outcome that can end the run at any point says so among the endings', () => {
+	const anytime = { ...docs, outcomes: [{ name: 'fixed' }, { name: 'nothing to fix', anytime: true }] };
+	const view = GateStory({ gate: waiting, docs: anytime, card: null });
+	expect(rows(view).at(-1)).toBe('○ends as: fixed · nothing to fix (at any point)');
+});
+
+test('a one-off gate that waits for a person reads what it holds the agent to off its wait, and says how many tries it took', () => {
+	const stuckWait = { gate: 'tests', kind: 'stuck' as const, seq: 1, try_n: 2, why: 'exited with code 1', handed: [], note: null, command: 'make test', says: 'all tests pass', tail: null, missing: [], hint: null };
+	const stuck = GateStory({ gate: { gates: ['proof', 'tests', 'review'], status: { state: 'stuck', gate: 'tests', why: 'exited with code 1' } }, docs: null, card: null, wait: stuckWait });
+	expect(rows(stuck)).toEqual(['✓1proofpassed', '✗2testsstuck, tried twicemoor checks: all tests pass', '○3reviewlater']);
+	const yes = GateStory({ gate: waiting, docs: null, card: null, wait: { ...stuckWait, gate: 'review', kind: 'approve', try_n: 1, says: null } });
+	expect(rows(yes)[2]).toBe('●3reviewwaiting for your yesneeds your yes before it counts as done');
 });

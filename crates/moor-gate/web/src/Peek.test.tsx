@@ -64,7 +64,7 @@ test('the peek of a stuck gate holds the stuck card, which sends the person to t
 	const t = asking('web/stuck', stuck);
 	const text = textOf(PeekView({ t, now: NOW, approve: props(t), onClose: () => {} }));
 	expect(text).toContain('Stuck on “review”');
-	expect(text).toContain('You can write to the agent on the task page, or open the terminal and fix it yourself.');
+	expect(text).toContain('You can write to the agent on the task page, open the terminal and fix it yourself, or give it one more try.');
 	expect(text).toContain('after.png');
 	expect(text).not.toContain('Yes');
 });

@@ -8,22 +8,22 @@ import { closingRow, type GateView, GateViewSchema, gateLine, gateRows, outcomeL
 const gates = ['plan', 'tests', 'review'];
 const view = (status: GateView['status']): GateView => ({ gates, status });
 
-test('gates before the one in hand passed and the ones after it have not started', () => {
+test('gates before the one in hand passed and the ones after it come later', () => {
 	const rows = gateRows(view({ state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' }));
 	expect(rows.map((r) => [r.name, r.state])).toEqual([
 		['plan', 'passed'],
 		['tests', 'working'],
 		['review', 'later'],
 	]);
-	expect(rows[1]?.words).toBe('in progress · moor is running its checks');
-	expect(rows[2]?.words).toBe('not started');
+	expect(rows[1]?.words).toBe('in hand, moor is checking');
+	expect(rows[2]?.words).toBe('later');
 });
 
 test('an open gate says what moor waits for and which try it is on', () => {
 	const at = (next: 'agent' | 'run_checks' | 'ask', try_n: number) => gateRows(view({ state: 'open', gate: 'plan', try_n, next }))[0];
-	expect(at('agent', 1)?.words).toBe("in progress · waiting for the agent's evidence");
-	expect(at('ask', 1)).toMatchObject({ state: 'asking', words: 'waiting for you' });
-	expect(at('run_checks', 2)?.words).toBe('in progress · moor is running its checks · try 2');
+	expect(at('agent', 1)?.words).toBe('the agent is working toward it');
+	expect(at('ask', 1)).toMatchObject({ state: 'asking', words: 'waiting for your yes' });
+	expect(at('run_checks', 2)?.words).toBe('in hand, moor is checking · try 2');
 });
 
 test('a stuck gate needs the person, a failed one failed, and a passed Box has every gate passed', () => {

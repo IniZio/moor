@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
-import type { Entry } from './api';
-import { Line } from './Portal';
+import type { BoxDetail, Entry } from './api';
+import { Line, Timeline } from './Portal';
 import { all, textOf } from './testkit';
 
 const entry = (over: Partial<Entry>): Entry => ({ id: 1, at: '2026-11-21T10:00:00Z', kind: 'steered', class: 'you', text: 'x', ...over });
@@ -39,4 +39,29 @@ test('a message the person typed still shows as You, as they wrote it', () => {
 	expect(textOf(all(line, 'span')[0])).toBe('You');
 	expect(textOf(line)).toContain('Use the `blue` header');
 	expect(String(all(line, 'div')[0]?.props.class)).toContain('t-you');
+});
+
+test('setup lines fold as setting up the Box on its machine; other routine lines fold as a count', () => {
+	const detail = (machine: string | null, kinds: string[]): BoxDetail => ({
+		box: 'web/a',
+		repo: 'acme/web',
+		other_repos: [],
+		title: 'Task',
+		state: 'working',
+		stale: false,
+		line: '',
+		updated_at: '2026-11-21T10:00:00Z',
+		pr: null,
+		failed: false,
+		retryable: false,
+		plan_first: false,
+		from_workflow: false,
+		artifacts: [],
+		machine,
+		timeline: kinds.map((kind, i) => entry({ id: i + 1, kind, class: 'routine', text: kind })),
+	});
+	const summary = (d: BoxDetail) => textOf(all(Timeline({ detail: d }), 'summary')[0]);
+	expect(summary(detail('my-laptop', ['setup_line_finished', 'cloned']))).toBe('▸ Set up the Box on my-laptop');
+	expect(summary(detail(null, ['setup_line_finished']))).toBe('▸ 1 setup note');
+	expect(summary(detail('my-laptop', ['setup_line_finished', 'session_ended']))).toBe('▸ 2 setup notes');
 });
