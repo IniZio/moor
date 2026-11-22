@@ -95,15 +95,16 @@ function issueKey(issue: string): string | null {
 	return issue.match(/(?:^|[\s/])([A-Z]{2,6}-\d{1,5})(?:$|[\s/?#])/)?.[1] ?? null;
 }
 
-/** Where a task came from: its issue key, or the workflow and pull request of the run that made it. */
-export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr'> }) {
+/** Where a task came from: its issue key, or the workflow and pull request of the run that made it; else its pull request, unless its line already names it. */
+export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr' | 'line'> }) {
 	if (t.workflow) {
 		const number = t.workflow.pull?.split('#').pop() ?? t.pr?.number;
 		return <span class="t-rkey">{number ? `${t.workflow.name} · PR #${number}` : t.workflow.name}</span>;
 	}
 	const key = t.issue ? (issueKey(t.issue) ?? t.issue) : '';
 	if (key) return <span class="t-rkey t-rkey-issue">{key}</span>;
-	return <span class="t-rkey">{t.pr ? `PR #${t.pr.number}` : ''}</span>;
+	const pr = t.pr ? `PR #${t.pr.number}` : '';
+	return <span class="t-rkey">{pr && !t.line.includes(pr) ? pr : ''}</span>;
 }
 
 function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: number; only: string; everyone: boolean; settled?: boolean; peeking?: boolean }) {
