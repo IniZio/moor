@@ -27,11 +27,14 @@ $su systemctl start docker.socket docker.service"#;
 
 /// Presets whose paths are the tools' own defaults, in `~/` form.
 ///
+/// `tools` is what the agent profile and its plugins install for the Box user: Bun and the
+/// `~/.local/bin` binaries its `setup.sh` downloads, and the plugin marketplaces and installs.
+///
 /// `cache` is the XDG cache root, so npm, Yarn, Go's build cache, pip, ccache and every other
 /// tool that follows XDG live in it. Each preset below keeps only what a tool downloads or
 /// rebuilds. The tools' own config and keys sit beside it (`~/.m2/settings.xml`,
 /// `~/.android/adbkey`, `~/.bundle/config`) and stay out.
-const FIXED: [(&str, &[&str]); 14] = [
+const FIXED: [(&str, &[&str]); 15] = [
     ("cache", &["~/.cache"]),
     ("pnpm", &["~/.local/share/pnpm/store"]),
     ("bun", &["~/.bun/install/cache"]),
@@ -46,7 +49,29 @@ const FIXED: [(&str, &[&str]); 14] = [
     ("bundler", &["~/.bundle/cache", "~/.local/share/gem"]),
     ("android", &["~/.android/cache", "~/.android/build-cache"]),
     ("android-sdk", &["/opt/android-sdk"]),
+    (
+        "tools",
+        &["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
+    ),
 ];
+
+/// The environment a preset's tool needs to use its volume. pnpm keeps its store next to the
+/// project when the default store is on another mount, which a volume always is, unless the
+/// store is named; pnpm 10 reads the `npm_config_` name and pnpm 11 and later the `pnpm_config_` one.
+const ENV: [(&str, &[(&str, &str)]); 1] = [(
+    "pnpm",
+    &[
+        ("npm_config_store_dir", "~/.local/share/pnpm/store"),
+        ("pnpm_config_store_dir", "~/.local/share/pnpm/store"),
+    ],
+)];
+
+/// The environment preset `name` needs; none for most.
+pub(super) fn env(name: &str) -> &'static [(&'static str, &'static str)] {
+    ENV.iter()
+        .find(|(n, _)| *n == name)
+        .map_or(&[], |(_, vars)| *vars)
+}
 
 /// Size hints of the presets that grow large. Every preset without restore steps shares one disk, whose size
 /// is the sum of the hints up to the provider's 40 GB cap, so `cache` and `android-sdk` together ask for all

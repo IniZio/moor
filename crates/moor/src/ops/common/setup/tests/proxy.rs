@@ -44,6 +44,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
             hosts: Vec::new(),
         },
         rule_env: Vec::new(),
+        cache_env: Vec::new(),
     };
     let _ = run_setup_with(
         &r.cx,
@@ -106,6 +107,7 @@ fn proxy() -> BoxProxy {
             hosts: Vec::new(),
         },
         rule_env: Vec::new(),
+        cache_env: Vec::new(),
     }
 }
 

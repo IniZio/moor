@@ -41,6 +41,7 @@ RUN apt-get update \
  && groupadd --gid 1000 agent \
  && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent \
  && install -d -o agent -g agent /home/agent/moor /run/moor /home/agent/.agents /home/agent/.claude /home/agent/.claude/skills \
+      /home/agent/.local /home/agent/.bun \
  && chmod 1777 /tmp
 
 RUN case "$(uname -m)" in \

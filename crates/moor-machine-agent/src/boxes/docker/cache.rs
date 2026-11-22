@@ -5,7 +5,7 @@
 //! Boxes and is never removed with a Box. A package cache is mounted from it directly, shared by the
 //! repo's Boxes that run at once. Anything two live Boxes must not share, such as the work tree, the
 //! container stores or a volume with restore steps, is copied: each Box gets a private volume filled
-//! from the canonical one on open, and saves it back there when it closes.
+//! from the canonical one on open, and saves it back there when it sleeps or closes.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -31,6 +31,10 @@ const MARK_LABEL: &str = "moor.cache.mark";
 const SCOPE_LEN: usize = 16;
 /// The most paths of one Box the agent mounts.
 const MOST_MOUNTS: usize = 64;
+
+/// Paths the agent place uses too: the agent profile's `setup.sh` runs in both places, and the
+/// plugins install where Claude runs.
+const AGENT_PLACE: [&str; 3] = ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"];
 
 /// Paths of tools whose caches take concurrent writers; every other path is copied per Box.
 const SHARED: [&str; 17] = [
@@ -62,6 +66,8 @@ pub(super) struct Mount {
     pub(super) private: Option<String>,
     /// The absolute path in the Box.
     pub(super) path: String,
+    /// Whether the agent place mounts it too.
+    both: bool,
 }
 
 impl Mount {
@@ -70,9 +76,10 @@ impl Mount {
         self.private.as_deref().unwrap_or(&self.canonical)
     }
 
-    /// Whether both places mount it: what is below the work tree both places share.
+    /// Whether both places mount it: what is below the work tree both places share, and what
+    /// the agent place uses.
     fn both(&self) -> bool {
-        self.path.starts_with(&format!("{WORKDIR}/"))
+        self.both || self.path.starts_with(&format!("{WORKDIR}/"))
     }
 }
 
@@ -132,6 +139,7 @@ pub(super) fn mounts(slug: &Slug, cache: Option<&Cache>) -> Result<Vec<Mount>, P
                 canonical: format!("moor-cache-{}-{n}", v.key),
                 private: copy.then(|| format!("{}-cache-{}-{n}", slug.as_str(), v.name)),
                 path: absolute(path)?,
+                both: AGENT_PLACE.contains(&path.as_str()),
             });
         }
     }
@@ -239,28 +247,26 @@ async fn settle(private: &str, mark: &str) -> Result<bool, ProvideError> {
     }
 }
 
-/// Makes one mount's volumes ready; whether it holds a save from an earlier Box.
+/// Makes one mount's volumes ready.
 async fn prepare_one(
     locks: &Caches,
     image: &str,
     slug: &Slug,
     m: &Mount,
-) -> Result<bool, ProvideError> {
+) -> Result<(), ProvideError> {
     let key = format!("{KEY_LABEL}={}", key_of(&m.canonical));
     let had = Cli::passes(["volume", "inspect", &m.canonical]).await;
     let Some(private) = &m.private else {
-        create(&m.canonical, &[key]).await?;
-        return Ok(had);
+        return create(&m.canonical, &[key]).await;
     };
     let mark = marker(private);
     if settle(private, &mark).await? {
-        return Ok(true);
+        return Ok(());
     }
     fill(locks, image, slug, m, private, had).await
 }
 
-/// Makes the private volume and fills it from the canonical one, then marks it finished. Whether it
-/// holds a save.
+/// Makes the private volume and fills it from the canonical one, then marks it finished.
 async fn fill(
     locks: &Caches,
     image: &str,
@@ -268,7 +274,7 @@ async fn fill(
     m: &Mount,
     private: &str,
     had: bool,
-) -> Result<bool, ProvideError> {
+) -> Result<(), ProvideError> {
     let key = format!("{KEY_LABEL}={}", key_of(&m.canonical));
     let mark = marker(private);
     let labels = [
@@ -283,16 +289,12 @@ async fn fill(
         format!("{MARK_LABEL}=1"),
     ];
     if !had {
-        create(&mark, &marks).await?;
-        return Ok(false);
+        return create(&mark, &marks).await;
     }
     let lock = locks.of(&m.canonical);
     let _read = lock.read().await;
     match copy(image, &m.canonical, private, COPY_IN).await {
-        Ok(said) => {
-            create(&mark, &marks).await?;
-            Ok(said.ends_with("copied"))
-        }
+        Ok(_) => create(&mark, &marks).await,
         Err(e) => {
             drop(Cli::ok(["volume", "rm", "-f", private]).await);
             Err(e)
@@ -312,17 +314,11 @@ pub(super) async fn prepare(
     locks
         .uses
         .touch(mounts.iter().map(|m| m.canonical.as_str()));
-    let mut warm = 0;
     for m in mounts {
-        if prepare_one(locks, image, slug, m).await? {
-            warm += 1;
-        }
+        prepare_one(locks, image, slug, m).await?;
     }
     if !mounts.is_empty() {
-        note.say(&format!(
-            "cache volumes: {warm} warm, {} cold",
-            mounts.len() - warm
-        ));
+        note.say(&warmth(image, mounts).await);
     }
     Ok(())
 }
@@ -393,7 +389,9 @@ pub use expire::parse_age;
 pub(super) use expire::{pass as expire, DEFAULT_MAX_AGE};
 mod marker;
 mod uses;
+mod warmth;
 use marker::{marker, standing, Private};
+use warmth::warmth;
 
 #[cfg(test)]
 mod tests;

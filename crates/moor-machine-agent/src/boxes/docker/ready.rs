@@ -56,13 +56,17 @@ impl Docker {
         ))
     }
 
-    /// Stops the work place so nothing writes while its private cache volumes are read, then saves
-    /// them to the canonical ones. A save that fails is said and never keeps a Box open.
+    /// Stops both places so nothing writes while the Box's private cache volumes are read, then
+    /// saves them to the canonical ones, so a later Box of the same owner and repo starts from
+    /// them whether this one sleeps or closes. A save that fails is said and never keeps a Box
+    /// open or awake.
     #[allow(clippy::print_stderr, reason = "the agent has no log but its stderr")]
     pub(super) async fn keep_caches(&self, slug: &Slug, names: &Names) -> Result<(), ProvideError> {
         self.touch_mounted(&names.work).await;
-        if Cli::state(&names.work).await? == Some(State::Running) {
-            Cli::ok(["stop", "-t", STOP_SECONDS, &names.work]).await?;
+        for place in [&names.work, &names.agent] {
+            if Cli::state(place).await? == Some(State::Running) {
+                Cli::ok(["stop", "-t", STOP_SECONDS, place]).await?;
+            }
         }
         if let Err(e) = cache::save(&self.caches, &self.settings.agent_image, slug).await {
             eprintln!(

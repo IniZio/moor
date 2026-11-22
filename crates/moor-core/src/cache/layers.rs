@@ -129,6 +129,22 @@ impl CacheLayers {
         Ok(Resolved { volumes, dropped })
     }
 
+    /// The environment the presets a Box of `forge` keeps need, so each tool finds its volume; none
+    /// when the layers do not check.
+    #[must_use]
+    pub fn env(&self, forge: Option<&ForgeRepo>) -> Vec<(String, String)> {
+        let Ok(resolved) = self.resolve(forge) else {
+            return Vec::new();
+        };
+        resolved
+            .volumes
+            .iter()
+            .filter(|d| d.origin == Origin::Preset)
+            .flat_map(|d| presets::env(d.volume.name.as_str()))
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
     /// The agent's install directory, unless it is not a cache path or a declared volume takes
     /// its name or a directory of it, to which it yields as a preset without restore steps would.
     fn agent_volume(&self, declared: &[Declared]) -> Option<Declared> {
