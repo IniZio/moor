@@ -22,7 +22,7 @@ export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; no
 	const wait = t.needs.gate;
 	const images = handedImages(wait.handed, detail);
 	return (
-		<aside class="t-peek" aria-label="Peek">
+		<aside class={`t-peek${wait.kind === 'approve' ? '' : ' t-peek-stuck'}`} aria-label="Peek">
 			<div class="t-peek-head">
 				<span class="t-peek-repos">
 					{reposOf(t).map((r) => (
@@ -46,13 +46,14 @@ export function PeekView({ t, now, detail, approve, onClose }: { t: Peekable; no
 			</div>
 			<h2 class="t-peek-title">{t.title}</h2>
 			<p class="t-peek-line">
-				{gateLine(t.gate) ?? t.line} · <time dateTime={t.last_event_at ?? t.updated_at}>{exactTime(t.last_event_at ?? t.updated_at, now)}</time>
+				<span class="t-peek-now">{gateLine(t.gate) ?? t.line}</span> · <time dateTime={t.last_event_at ?? t.updated_at}>{exactTime(t.last_event_at ?? t.updated_at, now)}</time>
 			</p>
 			{images.length > 0 && (
 				<div class="t-peek-thumbs">
 					{images.map((a) => (
 						<a href={a.href} target="_blank" rel="noopener" title={a.name} key={a.name}>
 							<img src={a.href} alt={a.name} loading="lazy" />
+							<span class="t-peek-cap">{a.name}</span>
 						</a>
 					))}
 				</div>

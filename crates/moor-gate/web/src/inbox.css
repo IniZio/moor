@@ -1,0 +1,19 @@
+/* The inbox dropdown. Own classes (inbox-), no inline styles (the page's CSP forbids them). */
+.pop.inbox { position: fixed; position-area: none; inset: auto; margin: 0; top: 49px; right: anchor(right, 7.5rem); width: 540px; max-width: calc(100vw - 20px); z-index: 31; border-color: var(--moor-color-border-strong); padding: 6px; }
+.pop.inbox:popover-open { display: block; }
+.pop-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding: 4px 8px 6px; border-bottom: 1px solid var(--moor-color-border); font-size: 0.875rem; font-weight: var(--moor-weight-strong); justify-content: flex-start; }
+.pop-h > :first-child { flex: 1 1 auto; }
+.inbox-all { font: inherit; font-size: 0.875rem; font-weight: var(--moor-weight-body); padding: 0; border: 0; background: none; color: var(--moor-color-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; cursor: pointer; }
+span.inbox-all { text-decoration: none; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.inbox-item { display: grid; grid-template-columns: 1.1em 8.4rem minmax(0, 1fr) auto; grid-template-areas: "mark repo title time" ". . now now"; column-gap: 10px; padding: 6px 2.4rem 6px 8px; border-radius: var(--moor-radius-sm); text-decoration: none; color: inherit; font-size: 0.875rem; line-height: 1.5; }
+.inbox-item > .t-glyph { grid-area: mark; font-size: 0.95em; font-weight: var(--moor-weight-strong); }
+.inbox-item > .t-rrepo { grid-area: repo; }
+.inbox-item .t-rrepo .t-mono { font-size: 0.78rem; }
+.inbox-item:hover, .inbox-item:focus-visible { background: var(--moor-color-bg-sunken); }
+.inbox-title { grid-area: title; font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-now { grid-area: now; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--moor-color-accent-strong); font-size: 0.8125rem; }
+.inbox-time { grid-area: time; color: var(--moor-color-text-muted); font-size: 0.8125rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inbox-read, .inbox-resolved { opacity: 0.6; }
+.inbox-read .inbox-title, .inbox-resolved .inbox-title { font-weight: var(--moor-weight-body); }
+.inbox-read .inbox-now, .inbox-resolved .inbox-now { color: var(--moor-color-text-muted); }
+.pop.inbox .t-empty { margin: 0; padding: 8px 8px 4px; color: var(--moor-color-text-muted); }

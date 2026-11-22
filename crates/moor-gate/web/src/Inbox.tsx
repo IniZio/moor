@@ -1,4 +1,5 @@
 import type { BoxRow, InboxItem } from './api';
+import './inbox.css';
 import { exactTime, RepoCell, reposOf } from './HomeList';
 
 /** What the inbox shows beside an item's wording: its mark, by state and kind. */
