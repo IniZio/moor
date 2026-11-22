@@ -349,7 +349,8 @@ a.t-path:hover { text-decoration: underline; }
 .t-wact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-3); margin-top: 0.75rem; }
 .t-tw { font: inherit; font-size: var(--app-text-sm); background: none; border: 0; padding: 0; color: var(--moor-color-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; text-decoration-thickness: 1.5px; cursor: pointer; }
 .t-tw:hover, .t-tw[aria-expanded="true"] { text-decoration-color: var(--moor-color-text); }
-input.t-base { width: auto; max-width: 14rem; cursor: text; outline-offset: 2px; }
+input.t-base { width: auto; max-width: 14rem; margin: 0; padding: 0; border: 0; border-bottom: 1.5px solid var(--moor-color-border-strong); border-radius: 0; background: none; font-family: var(--moor-font-mono); cursor: text; outline-offset: 2px; }
+input.t-base:focus { border-bottom-color: var(--moor-color-text); }
 .t-twwrap { position: relative; display: inline-block; }
 .t-pm { position: absolute; top: calc(100% + 6px); left: 0; z-index: 25; display: flex; flex-direction: column; gap: 1px; min-width: 15rem; padding: 6px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-lg); font-family: var(--moor-font-body); font-size: 0.875rem; font-style: normal; line-height: 1.4; color: var(--moor-color-text); }
 .t-repomenu { min-width: 25rem; }
