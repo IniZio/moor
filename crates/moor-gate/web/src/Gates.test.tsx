@@ -177,7 +177,7 @@ const none: Wait = {
 	tail: 'every outcome, as one blob',
 	tried: [
 		{ outcome: 'check passed', says: 'The newest status is success.', command: 'test "$s" = success', exit: 1, tail: 'the newest status is none' },
-		{ outcome: 'check failed', says: null, command: 'false', exit: null, tail: '' },
+		{ outcome: 'check failed', says: null, command: 'false', exit: 2, tail: '' },
 	],
 };
 
@@ -194,7 +194,7 @@ test('the stuck card of the closing stage lists each outcome tried with its sent
 	expect(items[0]).toContain('Exited with code 1.');
 	expect(items[0]).toContain('the newest status is none');
 	expect(items[1]).toContain('check failed');
-	expect(items[1]).toContain('Its output was lost.');
+	expect(items[1]).toContain('Exited with code 2.');
 	expect(all(card, 'details')).toHaveLength(2);
 	expect(all(card, 'pre').map(textOf)).toEqual(expect.arrayContaining(['test "$s" = success', 'false']));
 });

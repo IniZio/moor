@@ -124,7 +124,7 @@ test('the closing row names what moor found with its sentence, says moor is chec
 
 test('the rail line for a stuck closing stage speaks of the outcome, not a gate named outcome', () => {
 	const line = gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why: 'out of tries: no outcome held' } });
-	expect(line).toBe('No outcome holds yet: No outcome held. No tries left.');
+	expect(line).toBe('No outcome holds. moor tried each outcome twice.');
 	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 exited 2' }))).toContain('“tests” is stuck');
 });
 

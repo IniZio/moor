@@ -149,7 +149,7 @@ function TriedList({ tried }: { tried: readonly Tried[] }) {
 			{tried.map((t) => (
 				<li key={t.outcome}>
 					<p class="t-gate-says">{t.says ?? t.outcome}</p>
-					<p class="t-gate-why">{t.exit == null ? 'Its output was lost.' : `Exited with code ${t.exit}.`}</p>
+					<p class="t-gate-why">{`Exited with code ${t.exit}.`}</p>
 					{t.tail.trim() !== '' && (
 						<>
 							<p class="t-gate-label">What it printed</p>

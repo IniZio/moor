@@ -33,7 +33,7 @@ const TriedSchema = v.object({
 	outcome: v.string(),
 	says: v.nullish(v.string()),
 	command: v.nullish(v.string()),
-	exit: v.nullish(v.number()),
+	exit: v.number(),
 	tail: v.string(),
 });
 
@@ -185,6 +185,12 @@ export function isNoAnswer(why: string | null | undefined): boolean {
 	return NO_ANSWER.test(why?.trim() ?? '');
 }
 
+/** The words for the closing row of a run that waits for a person: whose trouble it is, read from the last wait line the run wrote. */
+export function closingWaitWords(lines: readonly { text: string }[]): string {
+	const waited = lines.flatMap((l) => /^Waiting for a person(?: \(try \d+\))?: (.*)$/s.exec(l.text)?.slice(1) ?? []).at(-1);
+	return isNoAnswer(waited) ? 'moor could not run a check.' : 'No outcome holds.';
+}
+
 /** Why moor could not run the check, as a sentence: the part of the reason after the check it names. */
 export function noAnswerReason(why: string): string {
 	return whyWords(why.trim().replace(NO_ANSWER, ''));
@@ -196,7 +202,7 @@ export function gateLine(view: GateView | null | undefined): string | null {
 	switch (status?.state) {
 		case 'stuck':
 			if (status.gate !== CLOSING) return `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
-			return isNoAnswer(status.why) ? whyWords(status.why) : `No outcome holds yet: ${whyWords(status.why)}`;
+			return isNoAnswer(status.why) ? whyWords(status.why) : 'No outcome holds. moor tried each outcome twice.';
 		case 'failed':
 			return `Failed at ${quoted(status.gate)}: ${whyWords(status.why)}`;
 		case 'open':

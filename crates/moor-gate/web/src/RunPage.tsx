@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { failure, type Line, type Run, runAnswer, runGet, type Step, toError } from './api';
+import { closingWaitWords } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
@@ -76,7 +77,7 @@ export function OutcomeItem({ run }: { run: Run }) {
 					<span class={`state ${state}`}>{word}</span>
 				</summary>
 				{found?.says && <p class="muted">{found.says}</p>}
-				{waiting && <p class="muted">No outcome holds yet. Steer the agent from its Box to try again.</p>}
+				{waiting && <p class="muted">{closingWaitWords(run.lines)} Steer the agent from its Box to try again.</p>}
 			</details>
 		</li>
 	);

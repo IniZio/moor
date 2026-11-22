@@ -69,3 +69,11 @@ test('while moor decides the outcome row says so, and a run with no outcome has 
 	expect(textOf(all(waiting, 'summary')[0])).toContain('waiting for you');
 	expect(OutcomeItem({ run: run({}) })).toBeNull();
 });
+
+test('a waiting outcome row says no outcome holds, or that moor could not run a check when that is why', () => {
+	const waits = (why: string) => run({ phase: 'waiting', status: 'waiting', closing: 'waiting', lines: [{ at: 2, kind: 'gate_waiting', text: `Waiting for a person (try 2): ${why}`, evidence: [] }] });
+	expect(textOf(OutcomeItem({ run: waits('out of tries: no outcome held') }))).toContain('No outcome holds. Steer the agent');
+	const unrun = textOf(OutcomeItem({ run: waits('moor, not the agent, could not run outcome `merged` check 1 (`gh pr view`) twice: Box 3 is busy') }));
+	expect(unrun).toContain('moor could not run a check. Steer the agent');
+	expect(unrun).not.toContain('No outcome holds');
+});
