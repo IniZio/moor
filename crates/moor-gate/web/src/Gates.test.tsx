@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { ApproveView, type ApproveProps, RulesView, StuckView } from './Gates';
+import { ApproveView, type ApproveProps, retryGate, RulesView, StuckView } from './Gates';
 import type { GateDoc, OutcomeDoc, Wait } from './gate';
 import { all, button, LOST, NOT_RUN, textOf } from './testkit';
 
@@ -63,7 +63,7 @@ test('the stuck card says which gate, why, the failing command and its output, a
 	expect(text).toContain('Check 1 exited with code 3. No tries left');
 	expect(textOf(all(card, 'code')[0])).toBe("sh -c 'echo boom; exit 3'");
 	expect(text).toContain('boom');
-	expect(text).toContain('You can write to the agent below, or open the terminal and fix it yourself.');
+	expect(text).toContain('You can write to the agent below, open the terminal and fix it yourself, or give it one more try.');
 	expect(text).not.toContain('`');
 	expect(all(card, 'details')).toHaveLength(0);
 	expect(all(card, 'pre').length).toBe(1);
@@ -199,4 +199,35 @@ test('a card stuck for want of answers with no hint says that sending reruns the
 	expect(text).toContain('Sending reopens the gate and moor runs its checks again.');
 	expect(text).not.toContain('fresh tries');
 	expect(text).not.toContain('No outcome holds');
+});
+
+test('a stuck gate offers one more try and, on the task page, the terminal; the peek leaves the terminal out', () => {
+	const tried: string[] = [];
+	const retry = { busy: false, error: '', onRetry: () => tried.push('retry') };
+	const card = StuckView({ wait: stuck, retry, terminal: '#/box/web%2Fgated/terminal' });
+	button(card, 'Give it one more try')?.props.onClick?.();
+	expect(tried).toEqual(['retry']);
+	expect(all(card, 'a').find((a) => textOf(a) === 'Open the terminal')?.props.href).toBe('#/box/web%2Fgated/terminal');
+	const peek = StuckView({ wait: stuck, inPeek: true, retry });
+	expect(button(peek, 'Give it one more try')).toBeDefined();
+	expect(all(peek, 'a').some((a) => textOf(a) === 'Open the terminal')).toBe(false);
+	expect(textOf(StuckView({ wait: stuck, retry: { ...retry, error: 'the Box is asleep' } }))).toContain('the Box is asleep');
+});
+
+test('one more try is a steer to the agent, which reopens the gate', async () => {
+	const calls: { url: string; body: unknown }[] = [];
+	const real = globalThis.fetch;
+	globalThis.fetch = Object.assign(
+		async (url: string, init?: RequestInit) => {
+			calls.push({ url, body: JSON.parse(String(init?.body)) });
+			return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+		},
+		{ preconnect: () => {} },
+	);
+	try {
+		await retryGate('csrf', 'web/stuck', 'tests');
+	} finally {
+		globalThis.fetch = real;
+	}
+	expect(calls).toEqual([{ url: '/account/api/box/steer', body: { box: 'web/stuck', text: 'Give “tests” one more try.', interrupt: false } }]);
 });

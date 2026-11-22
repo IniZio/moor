@@ -105,10 +105,20 @@ function clock(iso: string): string {
 	return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-function Fold({ entries }: { entries: Entry[] }) {
+/** The lines that only setting a Box up writes. */
+const SETUP = new Set(['setting_up', 'box_requested', 'box_ready', 'cloned']);
+
+/** Whether a fold of lines is the Box being set up: routine lines only, with one that only setup writes. */
+const isSetup = (entries: Entry[]) => entries.every((e) => e.class === 'routine') && entries.some((e) => SETUP.has(e.kind) || e.kind.startsWith('setup'));
+
+/** Folded routine lines; the fold that sets the Box up reads as setting it up on `machine`. */
+function Fold({ entries, machine }: { entries: Entry[]; machine: string | null | undefined }) {
 	const steps = entries.filter((e) => e.class === 'step').length;
 	const notes = entries.length - steps;
-	const said = [steps && `${steps} tool call${steps === 1 ? '' : 's'}`, notes && `${notes} setup note${notes === 1 ? '' : 's'}`].filter(Boolean).join(', ');
+	const said =
+		machine && isSetup(entries)
+			? `Set up the Box on ${machine}`
+			: [steps && `${steps} tool call${steps === 1 ? '' : 's'}`, notes && `${notes} setup note${notes === 1 ? '' : 's'}`].filter(Boolean).join(', ');
 	return (
 		<details class="t-fold">
 			<summary>
@@ -184,7 +194,7 @@ export function Timeline({ detail }: { detail: BoxDetail }) {
 		<div class="t-events">
 			{blocks(detail.timeline).map((b) =>
 				b.kind === 'fold' ? (
-					<Fold entries={b.entries} key={b.entries[0]?.id} />
+					<Fold entries={b.entries} machine={detail.machine} key={b.entries[0]?.id} />
 				) : b.kind === 'tools' ? (
 					<ToolFold entries={b.entries} when={clock} key={b.entries[0]?.key ?? b.entries[0]?.id} />
 				) : b.entry.tool ? (

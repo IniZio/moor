@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 
 import { type BoxDetail, boxGet, type BoxRow, type Evidence } from './api';
-import { type ApproveProps, ApproveView, StuckView, useApproval } from './Gates';
+import { type ApproveProps, ApproveView, type Retry, StuckView, useApproval, useRetry } from './Gates';
 import { gateLine, type Peekable, peekable } from './gate';
 import { exactTime, RepoCell, reposOf, Source } from './HomeList';
 import { peekOf, setPeek } from './hashQuery';
@@ -18,7 +18,7 @@ export function handedImages(names: readonly string[], detail: Pick<BoxDetail, '
 }
 
 /** The panel's content without its hooks: where the task is and what it says, then the same approval or stuck card the task page shows. */
-export function PeekView({ t, now, approve, onClose }: { t: Peekable; now: number; approve: ApproveProps; onClose: () => void }) {
+export function PeekView({ t, now, approve, retry, onClose }: { t: Peekable; now: number; approve: ApproveProps; retry?: Retry; onClose: () => void }) {
 	const wait = t.needs.gate;
 	return (
 		<aside class={`t-peek${wait.kind === 'approve' ? '' : ' t-peek-stuck'}`} aria-label="Peek">
@@ -37,7 +37,7 @@ export function PeekView({ t, now, approve, onClose }: { t: Peekable; now: numbe
 			<p class="t-peek-line">
 				<span class="t-peek-now">{gateLine(t.gate) ?? t.line}</span> · <time dateTime={t.last_event_at ?? t.updated_at}>{exactTime(t.last_event_at ?? t.updated_at, now)}</time>
 			</p>
-			{wait.kind === 'approve' ? <ApproveView {...approve} /> : <StuckView wait={wait} inPeek />}
+			{wait.kind === 'approve' ? <ApproveView {...approve} /> : <StuckView wait={wait} inPeek retry={retry} />}
 			<p class="muted t-peek-hint">Esc closes · j and k move through the list</p>
 		</aside>
 	);
@@ -47,7 +47,8 @@ export function PeekView({ t, now, approve, onClose }: { t: Peekable; now: numbe
 function PeekPanel({ t, now, csrf, onSent, onClose }: { t: Peekable; now: number; csrf: string; onSent: () => void; onClose: () => void }) {
 	const { value } = useLoad(() => boxGet(t.box), t.box);
 	const approve = useApproval(t.box, t.needs, t.needs.gate, csrf, onSent, handedImages(t.needs.gate.handed, value), t.pr?.number ?? null);
-	return <PeekView t={t} now={now} approve={approve} onClose={onClose} />;
+	const retry = useRetry(t.box, t.needs.gate, csrf, onSent);
+	return <PeekView t={t} now={now} approve={approve} retry={retry} onClose={onClose} />;
 }
 
 const typing = (el: Element | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));

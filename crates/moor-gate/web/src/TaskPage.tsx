@@ -7,6 +7,7 @@ import { HeaderActions } from './Ending';
 import { GateCard } from './Gates';
 import { GateStory, PromptFold } from './GateStory';
 import { PlanCard, PlanRail } from './PlanCard';
+import { handedImages } from './Peek';
 import { PrHeader } from './PrHeader';
 import { Timeline, usePoll } from './Portal';
 import { FailedCard } from './Retry';
@@ -75,9 +76,10 @@ export function buttonsOf(needs: Needs): { pick: Pick; word: string; tone: strin
 }
 
 /** The card for an agent that asks; the controller wrote what it says, the page only sends the pick. */
-function NeedsCard({ box, needs, csrf, onSent }: { box: string; needs: Needs; csrf: string; onSent: () => void }) {
+function NeedsCard({ detail, needs, csrf, onSent }: { detail: BoxDetail; needs: Needs; csrf: string; onSent: () => void }) {
+	const box = detail.box;
 	return needs.gate ? (
-		<GateCard box={box} needs={needs} wait={needs.gate} csrf={csrf} onSent={onSent} />
+		<GateCard box={box} needs={needs} wait={needs.gate} csrf={csrf} onSent={onSent} images={handedImages(needs.gate.handed, detail)} pr={detail.pr?.number ?? null} />
 	) : needs.kind === 'approve' && needs.approve ? (
 		<ApproveCard needs={needs} run={needs.approve} csrf={csrf} onSent={onSent} />
 	) : (
@@ -237,17 +239,23 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 		),
 	};
 	const { needs, owner } = detail;
+	const asked = detail.timeline.find((e) => e.class === 'you')?.at;
 	if (owner) return <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
 	return (
 		<div class="t-box">
-			<TaskHead t={detail} now={now} actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />} />
-			<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />
+			<TaskHead
+				t={detail}
+				now={now}
+				asked={asked}
+				actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />}
+				pr={<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />}
+			/>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{detail.state === 'needs_you' &&
 				(needs?.plan ? (
 					<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
 				) : needs ? (
-					<NeedsCard box={box} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
+					<NeedsCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
 				) : (
 					<div class="t-wait" role="region" aria-label="Your input is needed">
 						<div class="t-wait-h">Your input is needed</div>
@@ -257,9 +265,7 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 				))}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			{detail.stale && <p class="t-stalebar">No event for over 30 minutes. {detail.line}</p>}
-			{detail.gate?.gates.length ? (
-				<GateStory gate={detail.gate} docs={docs} card={null} />
-			) : null}
+			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} wait={detail.state === 'needs_you' ? needs?.gate : null} /> : null}
 			<PromptFold prompt={detail.prompt} />
 			<nav class="t-tabs" role="tablist">
 				{SHOWN_TABS.map((t) => (
@@ -313,7 +319,7 @@ function ReadOnlyTask({
 	const shown = READ_TABS.includes(tab) ? tab : 'timeline';
 	return (
 		<div class="t-box">
-			<TaskHead t={detail} now={now} actions={<span class="t-readonly">{owner}'s task</span>} />
+			<TaskHead t={detail} now={now} asked={detail.timeline.find((e) => e.class === 'you')?.at} actions={<span class="t-readonly">{owner}'s task</span>} />
 			<p class="t-readonly-note muted">You can read this task. Only {owner} can answer, steer or close it.</p>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} /> : null}

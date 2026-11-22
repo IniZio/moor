@@ -100,7 +100,7 @@ export type GateView = v.InferOutput<typeof GateViewSchema>;
 export type Wait = v.InferOutput<typeof WaitSchema>;
 export type Unanswered = v.InferOutput<typeof UnansweredSchema>;
 
-export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'failed' | 'later' | 'bad' | 'plain';
+export type GateState = 'passed' | 'working' | 'asking' | 'stuck' | 'nocheck' | 'failed' | 'later' | 'bad' | 'plain';
 
 /** One line of the gate list. */
 export type GateRow = { name: string; state: GateState; words: string };
@@ -110,25 +110,29 @@ export const GATE_LOOK: Record<GateState, { glyph: string; tone: string }> = {
 	passed: { glyph: '✓', tone: 'done' },
 	working: { glyph: '◐', tone: 'working' },
 	asking: { glyph: '●', tone: 'needs' },
-	stuck: { glyph: '●', tone: 'needs' },
+	stuck: { glyph: '✗', tone: 'failed' },
+	nocheck: { glyph: '!', tone: 'warn' },
 	failed: { glyph: '✕', tone: 'failed' },
 	later: { glyph: '○', tone: 'quiet' },
 	bad: { glyph: '!', tone: 'failed' },
 	plain: { glyph: '✓', tone: 'quiet' },
 };
 
-/** The state of the gate the Box is at. Gates are passed in order, so the ones before it passed and the ones after it have not started. */
-function atGate(name: string, status: Exclude<GateView['status'], { state: 'passed' }>): GateRow {
+const TRIED = ['', 'once', 'twice'];
+
+/** The state of the gate the Box is at, with how many tries it took when it is stuck and the wait says. Gates are passed in order, so the ones before it passed and the ones after it come later. */
+function atGate(name: string, status: Exclude<GateView['status'], { state: 'passed' }>, tries?: number | null): GateRow {
 	switch (status.state) {
 		case 'stuck':
-			return { name, state: 'stuck', words: 'stuck · needs you' };
+			if (status.unanswered) return { name, state: 'nocheck', words: 'moor could not run it' };
+			return { name, state: 'stuck', words: tries ? `stuck, tried ${TRIED[tries] ?? `${tries} times`}` : 'stuck' };
 		case 'failed':
 			return { name, state: 'failed', words: 'failed' };
 		case 'open': {
 			const again = status.try_n > 1 ? ` · try ${status.try_n}` : '';
-			if (status.next === 'ask') return { name, state: 'asking', words: `waiting for you${again}` };
-			const waits = status.next === 'agent' ? "waiting for the agent's evidence" : 'moor is running its checks';
-			return { name, state: 'working', words: `in progress · ${waits}${again}` };
+			if (status.next === 'ask') return { name, state: 'asking', words: `waiting for your yes${again}` };
+			const words = status.next === 'agent' ? 'the agent is working toward it' : 'in hand, moor is checking';
+			return { name, state: 'working', words: `${words}${again}` };
 		}
 	}
 }
@@ -139,8 +143,8 @@ function stopped(view: GateView): string | null {
 	return held && view.run_ended ? `run ${view.run_ended.replace(/_/g, ' ')}` : null;
 }
 
-/** Each gate by name with its state, in the order they pass. */
-export function gateRows(view: GateView): GateRow[] {
+/** Each gate by name with its state, in the order they pass; `tries` is how many tries the gate in hand took, from its wait. */
+export function gateRows(view: GateView, tries?: number | null): GateRow[] {
 	const { status } = view;
 	const ended = stopped(view);
 	if (status.state === 'passed') {
@@ -155,8 +159,8 @@ export function gateRows(view: GateView): GateRow[] {
 			: i === at
 				? ended
 					? { name, state: 'later', words: ended }
-					: atGate(name, status)
-				: { name, state: 'later', words: 'not started' },
+					: atGate(name, status, tries)
+				: { name, state: 'later', words: 'later' },
 	);
 }
 
@@ -178,7 +182,7 @@ export function closingRow(view: GateView): GateRow | null {
 		return { name: 'Outcome', state: o.tone === 'good' ? 'passed' : o.tone, words: outcomeLine(o) };
 	}
 	if (status.state === 'open' && status.next === 'decide') return { name: 'Outcome', state: 'working', words: 'moor is checking which outcome holds' };
-	if (status.state === 'stuck' && status.gate === CLOSING) return { name: 'Outcome', state: 'stuck', words: 'stuck · needs you' };
+	if (status.state === 'stuck' && status.gate === CLOSING) return status.unanswered ? { name: 'Outcome', state: 'nocheck', words: 'moor could not run its checks' } : { name: 'Outcome', state: 'stuck', words: 'stuck' };
 	return null;
 }
 

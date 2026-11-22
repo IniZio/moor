@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { type Evidence, failure, gateAnswer, type Needs, toError } from './api';
+import { boxSteer } from './steerApi';
 import { checkRun, checkWords, CLOSING, type GateDoc, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
@@ -127,6 +128,11 @@ export function useApproval(box: string, needs: Needs, wait: Wait, csrf: string,
 
 type CardProps = { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void; images?: readonly Evidence[]; pr?: number | null; inPeek?: boolean };
 
+/** The card for a stuck gate, with one more try and the terminal a click away. */
+function StuckCard({ box, wait, csrf, onSent, inPeek }: CardProps) {
+	return <StuckView wait={wait} inPeek={inPeek} retry={useRetry(box, wait, csrf, onSent)} terminal={inPeek ? undefined : `#/box/${encodeURIComponent(box)}/terminal`} />;
+}
+
 function ApproveCard({ box, needs, wait, csrf, onSent, images = [], pr = null }: CardProps) {
 	return <ApproveView {...useApproval(box, needs, wait, csrf, onSent, images, pr)} />;
 }
@@ -158,18 +164,47 @@ function TriedList({ tried }: { tried: readonly Tried[] }) {
 }
 
 /** The frame of a card for a stuck gate: what is wrong as its heading, then the body, then what the person can do. */
-function StuckFrame({ head, tone, note, children }: { head: string; tone: 'stuck' | 'trouble'; note: string; children: ComponentChildren }) {
+function StuckFrame({ head, tone, note, children, actions }: { head: string; tone: 'stuck' | 'trouble'; note: string; children: ComponentChildren; actions?: ComponentChildren }) {
 	return (
 		<section class={`t-ncard t-ncard-${tone}`} aria-label="Needs you">
 			<h2>{head}</h2>
 			{children}
 			<p>{note}</p>
+			{actions}
 		</section>
 	);
 }
 
 /** What the person can do about a stuck gate: the message box is on the task page, below the card there and a click away in the peek panel. */
-const reopen = (inPeek?: boolean) => `You can write to the agent${inPeek ? ' on the task page' : ' below'}, or open the terminal and fix it yourself.`;
+const reopen = (inPeek?: boolean) => `You can write to the agent${inPeek ? ' on the task page' : ' below'}, open the terminal and fix it yourself, or give it one more try.`;
+
+/** One more try for a stuck gate: a steer reopens it with fresh tries, as a message from the box below would. */
+export type Retry = { busy: boolean; error: string; onRetry: () => void };
+
+/** Gives a stuck gate one more try: a steer to the agent, which reopens the gate with fresh tries. */
+export function retryGate(csrf: string, box: string, gate: string) {
+	return boxSteer(csrf, box, `Give ${quoted(gate)} one more try.`, false);
+}
+
+/** The state and handler of "Give it one more try". */
+export function useRetry(box: string, wait: Wait, csrf: string, onSent: () => void): Retry {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState('');
+	const onRetry = async () => {
+		if (busy) return;
+		setBusy(true);
+		setError('');
+		try {
+			await retryGate(csrf, box, wait.gate);
+		} catch (e) {
+			setError(failure(toError(e)));
+		} finally {
+			setBusy(false);
+			onSent();
+		}
+	};
+	return { busy, error, onRetry: () => void onRetry() };
+}
 
 const TRIES = ['no', 'one', 'two', 'three', 'four', 'five'];
 
@@ -211,8 +246,8 @@ function Ran({ wait }: { wait: Wait }) {
 	);
 }
 
-/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own. */
-export function StuckView({ wait, inPeek }: { wait: Wait; inPeek?: boolean }) {
+/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do: one more try, and on the task page the terminal. The message box is the page's own. */
+export function StuckView({ wait, inPeek, retry, terminal }: { wait: Wait; inPeek?: boolean; retry?: Retry; terminal?: string }) {
 	if (wait.unanswered) return <NoAnswerView gate={wait.gate} cause={wait.unanswered} hint={wait.hint} />;
 	if (wait.tried?.length) {
 		return (
@@ -223,7 +258,34 @@ export function StuckView({ wait, inPeek }: { wait: Wait; inPeek?: boolean }) {
 		);
 	}
 	return (
-		<StuckFrame head={`Stuck on ${quoted(wait.gate)}`} tone="stuck" note={reopen(inPeek)}>
+		<StuckFrame
+			head={`Stuck on ${quoted(wait.gate)}`}
+			tone="stuck"
+			note={reopen(inPeek)}
+			actions={
+				(retry || terminal) && (
+					<>
+						<div class="t-actions">
+							{retry && (
+								<button type="button" class="btn primary" disabled={retry.busy} onClick={retry.onRetry}>
+									Give it one more try
+								</button>
+							)}
+							{terminal && (
+								<a class="btn" href={terminal}>
+									Open the terminal
+								</a>
+							)}
+						</div>
+						{retry?.error && (
+							<p class="notice danger" role="alert">
+								{retry.error}
+							</p>
+						)}
+					</>
+				)
+			}
+		>
 			<Ran wait={wait} />
 			<p class="t-exit">{whyWords(wait.why ?? 'it cannot go on', wait.says).replace(/\.$/, '')}</p>
 			{wait.tail && <Tail text={wait.tail} />}
@@ -243,7 +305,7 @@ export function StuckView({ wait, inPeek }: { wait: Wait; inPeek?: boolean }) {
 
 /** The card for a gate that waits for a person. */
 export function GateCard(p: CardProps) {
-	return p.wait.kind === 'approve' ? <ApproveCard {...p} /> : <StuckView wait={p.wait} inPeek={p.inPeek} />;
+	return p.wait.kind === 'approve' ? <ApproveCard {...p} /> : <StuckCard {...p} />;
 }
 
 export type RulesProps = { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; asJson: boolean; onToggle: () => void };
