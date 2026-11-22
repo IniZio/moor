@@ -171,16 +171,6 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-settled-row { opacity: 0.75; }
 
-.t-thead { padding: var(--moor-space-1) 0 var(--moor-space-2); }
-.t-crumbs { display: flex; align-items: center; gap: var(--moor-space-2); flex-wrap: nowrap; min-width: 0; }
-.t-crumbs > * { flex: none; }
-/* A long title is cut, so the state stays on the title row. */
-.t-crumbs > b, .t-crumbs > .t-mono { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-crumbs > b { flex-shrink: 1; }
-.t-crumbs > .grow { flex: 1 0 0; }
-.t-crumbs a { color: var(--moor-color-text-muted); text-decoration: none; }
-.t-crumbs b { font: var(--moor-weight-heading) 1.05rem var(--moor-font-heading); }
-.t-sep { color: var(--moor-color-border-strong); }
 .t-pill { font-weight: 650; padding: 0.15rem 0.6rem; border-radius: var(--moor-radius-pill); border: 1px solid currentColor; color: var(--t-tone); font-size: 0.8125rem; }
 .t-pill.t-needs { background: var(--moor-color-accent-soft); }
 .t-pill.t-stale { color: var(--moor-color-warning); }
@@ -215,10 +205,7 @@ a.t-tab:hover { color: var(--moor-color-text); }
 .t-term-ended { color: var(--moor-color-text-muted); }
 .t-term-screen { height: min(70vh, 40rem); background: var(--moor-peat-950); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); overflow: hidden; }
 .t-term-screen .xterm { padding: 0.5rem; }
-.t-body { display: grid; grid-template-columns: minmax(0, 1fr) 14rem; gap: var(--moor-space-8); }
-@media (max-width: 48rem) { .t-body { grid-template-columns: 1fr; } }
 .t-rail h3 { font: 650 0.75rem/1 var(--moor-font-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--moor-color-text-muted); margin: 0.4rem 0 0.6rem; }
-.t-railline { margin: 0 0 var(--moor-space-2); overflow-wrap: anywhere; }
 
 .t-wait { border: 1.5px solid var(--moor-color-accent); background: var(--moor-color-accent-soft); border-radius: var(--moor-radius-md); padding: 0.85rem 1rem; margin-bottom: var(--moor-space-4); }
 .t-wait-h { font-weight: 650; color: var(--moor-color-accent); font-size: 0.8125rem; }

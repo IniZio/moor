@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { failure, gateAnswer, type Needs, toError } from './api';
-import { checkRun, checkWords, closingRow, GATE_LOOK, type GateDoc, type GateView, gateRows, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
+import { checkRun, checkWords, type GateDoc, UNANSWERED_HEAD, type OutcomeDoc, quoted, ruleSentence, tailView, REOPEN_UNANSWERED, type Tried, type Unanswered, unansweredWhy, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
 
@@ -255,28 +255,6 @@ export function StuckView({ wait }: { wait: Wait }) {
 /** The card for a gate that waits for a person. */
 export function GateCard({ box, needs, wait, csrf, onSent }: { box: string; needs: Needs; wait: Wait; csrf: string; onSent: () => void }) {
 	return wait.kind === 'approve' ? <ApproveCard box={box} needs={needs} wait={wait} csrf={csrf} onSent={onSent} /> : <StuckView wait={wait} />;
-}
-
-/** The gates of a Box by name, each with where it stands. */
-export function GateList({ gate }: { gate: GateView | null | undefined }) {
-	if (!gate || gate.gates.length === 0) return null;
-	const rows = [...gateRows(gate), ...[closingRow(gate)].filter((r) => r !== null)];
-	return (
-		<>
-			<h3>Gates</h3>
-			<ol class="t-gates">
-				{rows.map((r) => (
-					<li class={`t-gate t-${GATE_LOOK[r.state].tone}`} key={r.name}>
-						<span class="t-gate-glyph" aria-hidden="true">
-							{GATE_LOOK[r.state].glyph}
-						</span>
-						<span class="t-gate-name t-mono">{r.name}</span>
-						<span class="t-gate-words">{r.words}</span>
-					</li>
-				))}
-			</ol>
-		</>
-	);
 }
 
 export type RulesProps = { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; asJson: boolean; onToggle: () => void };

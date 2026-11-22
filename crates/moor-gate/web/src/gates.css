@@ -1,4 +1,4 @@
-/* The gate cards and list on the Box page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
+/* The gate cards on the Box page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
 .t-gate-label { margin: 0.5rem 0 0.2rem; font-size: 0.8125rem; font-weight: 650; color: var(--moor-color-text-muted); }
 .t-gate-handed { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--moor-space-1) var(--moor-space-3); margin: 0.5rem 0 0; }
 .t-gate-handed .t-gate-label { margin: 0; }
@@ -9,11 +9,6 @@
 .t-gate-tail .t-quote { margin-bottom: 0.3rem; }
 .t-gate-missing { margin: 0 0 0.6rem; padding-left: 1.2rem; }
 .t-wait-note { margin: 0.6rem 0 0.4rem; font-size: 0.8125rem; }
-.t-gates { list-style: none; margin: 0 0 var(--moor-space-3); padding: 0; display: grid; gap: var(--moor-space-2); }
-.t-gate { display: grid; grid-template-columns: 1rem minmax(0, 1fr); column-gap: var(--moor-space-2); align-items: baseline; }
-.t-gate-glyph { color: var(--t-tone); text-align: center; }
-.t-gate-name { overflow-wrap: anywhere; }
-.t-gate-words { grid-column: 2; font-size: 0.8125rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
 .t-refused .t-what, .t-moor .t-what { white-space: normal; }
 /* moor's own message to the agent: a system note, quieter than a person's message and with no accent speaker. */
 .t-moor .t-who, .t-moor .t-what { color: var(--moor-color-text-muted); }
@@ -27,7 +22,6 @@
 .t-refused-why { margin: 0.15rem 0 0.3rem; }
 .t-refused-sent summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
 .t-refused-sent .t-quote { margin: 0.3rem 0 0; }
-.t-gate.t-needs .t-gate-words, .t-gate.t-failed .t-gate-words { color: var(--t-tone); font-weight: 600; }
 .t-gate-tried { list-style: none; margin: 0 0 var(--moor-space-3); padding: 0; display: grid; gap: var(--moor-space-3); }
 .t-gate-says { margin: 0 0 0.4rem; font-weight: 650; overflow-wrap: anywhere; }
 .t-gate-cmd { margin: 0.4rem 0 0.6rem; }

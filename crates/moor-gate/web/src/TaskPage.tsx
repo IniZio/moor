@@ -1,41 +1,21 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
-import { type BoxDetail, boxAnswer, boxGet, type Needs, type Pick, runAnswer, failure, toError } from './api';
+import { type BoxDetail, boxAnswer, boxGet, type Needs, type Pick, runAnswer, failure, toError, workflowGet } from './api';
 import { ChangesTab, changesLabel } from './Changes';
 import { HeaderActions } from './Ending';
-import { GateCard, GateList } from './Gates';
-import { STATES } from './Glyph';
-import { gateLine } from './gate';
+import { GateCard } from './Gates';
+import { GateStory, PromptFold } from './GateStory';
 import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
-import { age, Timeline, usePoll } from './Portal';
+import { Timeline, usePoll } from './Portal';
 import { FailedCard } from './Retry';
 import { useDraft } from './session';
 import { Composer } from './Steer';
 import { MakeRecurring } from './MakeRecurring';
+import { TaskHead } from './TaskHead';
 import { TerminalTab } from './Terminal';
-
-/** The repos cloned beside the first: each one up to two, else a count with the names on hover. */
-function OtherRepos({ repos }: { repos: string[] }) {
-	if (repos.length === 0) return null;
-	if (repos.length > 2) {
-		return (
-			<span class="t-more t-mono" title={repos.join(', ')}>
-				+{repos.length} more
-			</span>
-		);
-	}
-	return (
-		<>
-			{repos.map((r) => (
-				<span key={r} class="t-more t-mono" title="Cloned beside the first repo">
-					+ {r}
-				</span>
-			))}
-		</>
-	);
-}
+import { useLoad } from './useLoad';
 
 function EvidenceTab({ detail }: { detail: BoxDetail }) {
 	if (!detail.artifacts.length) {
@@ -225,34 +205,55 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 			</div>
 		);
 	}
-	const s = STATES[value.state];
+	return <TaskPage detail={value} error={error} now={now} tab={tab} csrf={csrf} reload={reload} />;
+}
+
+/** The plain sentence per gate lives in the workflow that made the Box; a one-off has none, and a workflow that cannot be read leaves the story to names and states. */
+function useWorkflowDocs(name: string | undefined) {
+	return useLoad(() => (name ? workflowGet(name).catch(() => null) : Promise.resolve(null)), `flow:${name ?? ''}`).value;
+}
+
+function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail; error: string; now: number; tab: Tab; csrf: string; reload: () => void }) {
+	const docs = useWorkflowDocs(detail.workflow?.name);
+	const box = detail.box;
 	const base = `#/box/${encodeURIComponent(box)}`;
 	const label: Record<Tab, ComponentChildren> = {
 		timeline: 'Timeline',
 		terminal: 'Terminal',
-		changes: changesLabel(value.timeline),
-		evidence: `Evidence ${value.artifacts.length}`,
+		changes: changesLabel(detail.timeline),
+		evidence: `Evidence ${detail.artifacts.length}`,
 	};
+	const { needs } = detail;
+	const asking = detail.state === 'needs_you' && !needs?.plan ? needs : null;
+	const inStory = !!asking?.gate && !!detail.gate?.gates.length;
 	return (
 		<div class="t-box">
-			<div class="t-thead">
-				<div class="t-crumbs">
-					<a class="t-mono" href="#/">{value.repo ?? 'tasks'}</a>
-					<OtherRepos repos={value.other_repos} />
-					<span class="t-sep">▸</span>
-					<b>{value.title}</b>
-					<span class="t-sep">▸</span>
-					<span class="t-mono muted">{value.branch ?? value.box}</span>
-					<span class="grow" />
-					<span class={`t-pill t-${s.tone}${value.stale ? ' t-stale' : ''}`}>
-						{s.glyph} {s.word}
-						{value.stale && ' · stale'}
-					</span>
-					<HeaderActions detail={value} csrf={csrf} onDone={reload} />
-				</div>
-				<PrHeader box={box} named={value.pr} />
-			</div>
+			<TaskHead t={detail} now={now} actions={<HeaderActions detail={detail} csrf={csrf} onDone={reload} />} />
+			<PrHeader box={box} named={detail.pr} />
 			{error && <p class="notice danger" role="alert">{error}</p>}
+			{detail.state === 'needs_you' &&
+				!inStory &&
+				(needs?.plan ? (
+					<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
+				) : needs ? (
+					<NeedsCard box={box} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
+				) : (
+					<div class="t-wait" role="region" aria-label="Your input is needed">
+						<div class="t-wait-h">Your input is needed</div>
+						<p class="t-wait-q">{detail.line}</p>
+						<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
+					</div>
+				))}
+			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
+			{detail.stale && <p class="t-stalebar">No event for over 30 minutes. {detail.line}</p>}
+			{detail.gate?.gates.length ? (
+				<GateStory
+					gate={detail.gate}
+					docs={docs}
+					card={inStory && asking?.gate ? <GateCard box={box} needs={asking} wait={asking.gate} csrf={csrf} onSent={reload} key={asking.id} /> : null}
+				/>
+			) : null}
+			<PromptFold prompt={detail.prompt} />
 			<nav class="t-tabs" role="tablist">
 				{TABS.map((t) => (
 					<a class="t-tab" role="tab" aria-selected={tab === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>
@@ -260,44 +261,22 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 					</a>
 				))}
 			</nav>
-			<div class="t-body">
-				<section>
-					{value.state === 'needs_you' &&
-						(value.needs?.plan ? (
-							<PlanCard detail={value} needs={value.needs} csrf={csrf} onSent={reload} key={value.needs.id} />
-						) : value.needs ? (
-							<NeedsCard box={box} needs={value.needs} csrf={csrf} onSent={reload} key={value.needs.id} />
-						) : (
-							<div class="t-wait" role="region" aria-label="Your input is needed">
-								<div class="t-wait-h">Your input is needed</div>
-								<p class="t-wait-q">{value.line}</p>
-								<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
-							</div>
-						))}
-					<FailedCard detail={value} csrf={csrf} onDone={reload} />
-					{value.stale && (
-						<p class="t-stalebar">No event for over 30 minutes. {value.line}</p>
-					)}
-					{tab === 'evidence' ? (
-						<EvidenceTab detail={value} />
-					) : tab === 'terminal' ? (
-						<TerminalTab box={box} csrf={csrf} />
-					) : tab === 'changes' ? (
-						<ChangesTab box={box} seen={value.last_event_at ?? value.updated_at} />
-					) : (
-						<Timeline detail={value} />
-					)}
-				</section>
-				<aside class="t-rail">
-					<h3>Now</h3>
-					<p class="t-railline">{(value.state === 'needs_you' || value.failed ? gateLine(value.gate) : null) ?? value.line}</p>
-					<p class="muted">Last event {age(value.last_event_at ?? value.updated_at, now)}</p>
-					<GateList gate={value.gate} />
-					<PlanRail detail={value} />
-					<MakeRecurring detail={value} />
-				</aside>
+			<section>
+				{tab === 'evidence' ? (
+					<EvidenceTab detail={detail} />
+				) : tab === 'terminal' ? (
+					<TerminalTab box={box} csrf={csrf} />
+				) : tab === 'changes' ? (
+					<ChangesTab box={box} seen={detail.last_event_at ?? detail.updated_at} />
+				) : (
+					<Timeline detail={detail} />
+				)}
+			</section>
+			<div class="t-rail">
+				<PlanRail detail={detail} />
+				<MakeRecurring detail={detail} />
 			</div>
-			<Composer detail={value} csrf={csrf} onSent={reload} />
+			<Composer detail={detail} csrf={csrf} onSent={reload} />
 		</div>
 	);
 }

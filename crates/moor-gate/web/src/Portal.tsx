@@ -10,15 +10,6 @@ import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
 const POLL_MS = 4000;
 
 
-export function age(iso: string | null | undefined, now: number): string {
-	const at = iso ? Date.parse(iso) : NaN;
-	if (Number.isNaN(at)) return '';
-	const s = Math.max(0, Math.round((now - at) / 1000));
-	if (s < 60) return 'now';
-	if (s < 3600) return `${Math.floor(s / 60)}m`;
-	if (s < 86400) return `${Math.floor(s / 3600)}h`;
-	return `${Math.floor(s / 86400)}d`;
-}
 /** Loads on mount and every few seconds while the page is open; keeps the last answer on a failed poll. */
 export function usePoll<T>(load: () => Promise<T>, key: string) {
 	const [value, setValue] = useState<T | null>(null);

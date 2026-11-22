@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { ApproveView, type ApproveProps, GateList, RulesView, StuckView } from './Gates';
+import { ApproveView, type ApproveProps, RulesView, StuckView } from './Gates';
 import type { GateDoc, OutcomeDoc, Wait } from './gate';
 import { all, button, LOST, NOT_RUN, textOf } from './testkit';
 
@@ -89,19 +89,6 @@ test('a stuck card with missing evidence names what was not handed in, and has n
 	expect(text).not.toContain('The check that failed');
 });
 
-test('the gate list names each gate with where it stands, and is absent for a task without gates', () => {
-	const list = GateList({ gate: { gates: ['plan', 'tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' } } });
-	expect(all(list, 'li').map(textOf)).toEqual([
-		'✓planpassed',
-		'◐testsin progress · moor is running its checks',
-		'○reviewnot started',
-	]);
-	expect(GateList({ gate: null })).toBeNull();
-	expect(GateList({ gate: { gates: [], status: { state: 'passed' } } })).toBeNull();
-	const done = GateList({ gate: { gates: ['plan', 'review'], status: { state: 'passed' } } });
-	expect(all(done, 'li').every((li) => textOf(li).endsWith('passed'))).toBe(true);
-});
-
 const SAYS = 'The pull request has exactly one evidence comment for this commit, and a moor/evidence status on it.';
 const LONG = 'sha=$MOOR_PULL_HEAD_SHA; echo "<!-- moor-evidence sha=$sha -->" | grep -c . || { echo "no comment"; exit 1; }';
 const said: Wait = { ...stuck, gate: 'done', says: SAYS, command: LONG, why: 'out of tries: check 1 (“' + SAYS + '”) exited 1', tail: 'want 1 moor-evidence comment, found 0' };
@@ -149,24 +136,6 @@ test('the gates JSON sits behind the toggle, read-only', () => {
 	expect(box?.props.readOnly).toBe(true);
 	expect(JSON.parse(String(box?.props.value))).toEqual(gates);
 	expect(all(view, 'ol')).toHaveLength(0);
-});
-
-test('the gate list ends with the outcome row, and gates never reached read not reached', () => {
-	const rows = (gate: Parameters<typeof GateList>[0]['gate']) => all(GateList({ gate }), 'li').map(textOf);
-	const early = { name: 'nothing to do', tone: 'plain', says: 'The pull request is closed.' } as const;
-	expect(rows({ gates: ['proof', 'done'], gates_passed: 1, status: { state: 'passed', outcome: early } })).toEqual([
-		'✓proofpassed',
-		'○doneended',
-		'✓Outcomenothing to do · The pull request is closed.',
-	]);
-	const bad = { name: 'check failed', tone: 'bad' } as const;
-	expect(rows({ gates: ['proof'], gates_passed: 1, status: { state: 'passed', outcome: bad } })).toEqual(['✓proofpassed', '!Outcomecheck failed']);
-	expect(rows({ gates: ['proof'], status: { state: 'open', gate: 'outcome', try_n: 1, next: 'decide' } })).toEqual([
-		'✓proofpassed',
-		'◐Outcomemoor is checking which outcome holds',
-	]);
-	const implicit = { name: 'done', tone: 'good' } as const;
-	expect(rows({ gates: ['proof'], gates_passed: 1, status: { state: 'passed', outcome: implicit } })).toEqual(['✓proofpassed']);
 });
 
 const none: Wait = {
