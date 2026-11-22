@@ -120,7 +120,7 @@ A second set of workflows collects evidence on pull requests. The runs work repo
 - **The step split made failures readable.** One run failed at its deliver step with the exact refusal, and kept the evidence from the step before.
 - **The plan is copied per repo.** Five workflows hold the same three steps. Only one paragraph about checks differs. A change to the shared policy means five hand edits.
 - **The steps enforced nothing.** The hard rules held because the agent obeyed them. The one real gate was a hook outside the plan.
-- **Many repos do not fit.** A pull request trigger fires only on a workflow's first repo. A seven-repo project waits on a redesign.
+- **Many repos do not fit.** A pull request trigger fires only on a workflow's first repo. A task with seven repos waits on a redesign.
 
 The need behind the plan is real. The step graph is not the only way to meet it.
 
@@ -149,7 +149,7 @@ moor takes Warp's shape and keeps its own proof.
 
 ### The definition
 
-It lives in moor itself. No project repo is touched and no extra repo is created. moor keeps every version. A change is a proposal with a diff. It applies when a person accepts it in the portal. A revert rolls it back.
+It lives in moor itself. None of the team's repos is touched and no extra repo is created. moor keeps every version. A change is a proposal with a diff. It applies when a person accepts it in the portal. A revert rolls it back.
 
 Each file is rows in moor's store, one per revision, as repo config is today. A proposal is a revision that waits for a yes. A revert writes an old revision as the new one. No git repository is involved, so the store needs no volume.
 
@@ -158,7 +158,7 @@ definition/
   defaults.md                      the lead prose, and gates for a one-off task
   automations/deps-check.md        one recurring job, whole
   skills/deps-check/SKILL.md       how to check dependencies
-  repos/acme-web.yaml              setup, egress and checks for one repo
+  repos/acme-web.md                the team's note on one repo
 ```
 
 One unit is one file, and the file has two parts. The lower part is the prompt, in the words a person or an orchestrating agent wrote. It is the source. The upper part is the plan moor read from that prompt. Nobody writes the upper part by hand.
@@ -168,7 +168,7 @@ One unit is one file, and the file has two parts. The lower part is the prompt, 
 triggers:
   - schedule: "0 9 * * 1-5"
     timezone: Europe/London
-projects:
+repos:
   - [acme/web]
   - [acme/api]
   - [acme/ios, acme/ios-fastlane]
@@ -197,9 +197,11 @@ Run the repo's live test on the base and on your branch.
 Open a draft pull request with the proof.
 ```
 
-Three names in this file point elsewhere. They are the repos, the skill, and the check named `ci`, which each repo file defines.
+Three names in this file point elsewhere. They are the repos, the skill, and the check named `ci`, which each repo's note defines.
 
-A project is the ordered set of repos that one task clones into its Box, as the [experience spec](end-user-experience.md) defines it. The automation starts one task per project.
+Each entry under `repos` is one repo list, as the [experience spec](end-user-experience.md#repos-of-a-task) defines it. The agent starts in the first repo, and the others are cloned beside it. The automation starts one task per repo list.
+
+A repo's note is plain words. It says how to install the repo and names its checks. It also says what network it needs, what to keep and what an agent should know first. The team shares one note per repo. A task with several repos uses each repo's note.
 
 ### From prompt to plan
 
@@ -242,9 +244,9 @@ A second run asked two of the models again, as one call each with no tools. Both
 
 This is a first look, not a measure of reliability.
 
-A reading needs no files, no shell and no browser. So it runs in a Box with no project, no setup and no capabilities. A bare Box container started in about half a second on a host that already held the image. The reading itself took 20 seconds on one model and 50 on another. The pilot's Boxes took 6 to 17 minutes to reach their first step. The full path for a Box with no project is not built or timed yet.
+A reading needs no files, no shell and no browser. So it runs in a Box with no repos, no setup and no capabilities. A bare Box container started in about half a second on a host that already held the image. The reading itself took 20 seconds on one model and 50 on another. The pilot's Boxes took 6 to 17 minutes to reach their first step. The full path for a Box with no repos is not built or timed yet.
 
-Hopper goes further. Its agent loop runs outside the sandbox, and a sandbox starts only when a task needs one. This proposal keeps one kind of agent, in a Box, and makes the project optional. An orchestrator would be the same Box with a capability to start other Boxes. That is reserved, not scheduled.
+Hopper goes further. Its agent loop runs outside the sandbox, and a sandbox starts only when a task needs one. This proposal keeps one kind of agent, in a Box, and makes the repos optional. An orchestrator would be the same Box with a capability to start other Boxes. That is reserved, not scheduled.
 
 moor compiles a prompt into a plan today, in the runs spec. There the author's own agent does it, and the target is steps. Here the target is gates and capabilities.
 
@@ -294,7 +296,8 @@ Proposal 41 by the observer agent, from tasks 812, 815 and 820
 
 ~ skills/deps-check/SKILL.md     prose, 6 lines changed
   used by  automations/deps-check
-  affects  3 projects, next run Monday 09:00
+  affects  [acme/web], [acme/api], [acme/ios, acme/ios-fastlane]
+           next run Monday 09:00
 
 Gates and capabilities: no change
 Replay on the fixture repo: passed
@@ -304,9 +307,9 @@ A scheduled task acts as the person named in the automation. It uses that person
 
 An automation is a shared file, so its ask is work done under one person's tokens. Any change to it needs a yes from that person. A task started by an event acts as the person who caused the event. It is refused when that person has linked no tokens.
 
-A trigger covers every project the automation lists. Shared policy is written once, in the skill and the automation. A repo's own checks live in its repo file.
+A trigger covers every repo list the automation names. Shared policy is written once, in the skill and the automation. A repo's own checks live in its note.
 
-The experience spec says to make one workflow per project today, with a Duplicate button. The runs work found that this copies the same plan into five workflows. A project list keeps one copy of the gates and capabilities.
+The experience spec says to make one workflow per repo list today, with a Duplicate button. The runs work found that this copies the same plan into five workflows. One automation that names its repo lists keeps one copy of the gates and capabilities.
 
 The defaults file holds the lead prose, which is the shape of work. It says when to plan, when to ask and when to stop. A team that wants triage or a spec first writes that there.
 
@@ -370,7 +373,7 @@ Secrets never enter the definition. A capability names a permission, not a token
 
 ### The three cases again
 
-- **A.** One automation file replaces four workflows. Each agent writes a plan that fits its project. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
+- **A.** One automation file replaces four workflows. Each agent writes a plan that fits its repos. A person reads "no worse than main" from the before and after evidence in the pull request, as today.
 - **B.** The PM types the ask. The plan appears in plain words. The default gates ask for a screenshot and passing checks. The PM sees needs you only if a gate waits.
 - **C.** The second person's message carries their identity. From then on the Proxy adds their tokens. It refuses when it cannot tell who is steering.
 
@@ -387,7 +390,7 @@ flowchart LR
 
 - **Scores come free.** A task records done-gate failures, steers that corrected the agent, review comments, and whether the pull request merged.
 - **An observer proposes.** It is an ordinary task, started by an automation. It reads settled tasks and opens a proposal on the definition.
-- **The observer cannot edit its grader.** Its proposal may change the words of a prompt or a skill. moor reads the new words again. The proposal is refused when the plan that comes out differs in any gate or capability. That covers gates, repo files, and every frontmatter field of an automation.
+- **The observer cannot edit its grader.** Its proposal may change the words of a prompt or a skill. moor reads the new words again. The proposal is refused when the plan that comes out differs in any gate or capability. That covers gates, repo notes, and every frontmatter field of an automation.
 - **A person accepts.** The portal shows the diff, the tasks that led to it, and the replay result.
 - **The fixture repo is the benchmark.** A proposed change replays there before anyone is asked to accept it.
 - **Every edit is a version.** A person's edit in the portal is a proposal too. The author of a change to a skill or to the lead prose may accept it. A change to a gate or a capability needs a person with push access to every repo it covers. Any change to an automation also needs the person it acts as.
@@ -509,7 +512,7 @@ Each step ends in a check someone can rerun. The pull request evidence flow come
 | --- | --- | --- |
 | 1 | The gate mechanism, for one-off tasks. | A task on the fixture repo with a failing test never shows as done. |
 | 2 | The agent's plan on the Task page, and a gate that needs a yes. | Two repos given the same ask show different plans. A waiting plan shows needs you. |
-| 3 | The definition. Defaults, skills, automations and repo files are versioned in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation file. A proposal shows its plan. A revert restores the old behaviour. The step plan code is deleted. |
+| 3 | The definition. Defaults, skills, automations and repo notes are versioned in moor, changed by proposal. | The dependency check runs on the fixture repo from one automation file. A proposal shows its plan. A revert restores the old behaviour. The step plan code is deleted. |
 | 4 | Capabilities per automation, and tokens that follow the steerer. | A task without the comment capability is refused when it comments. A capability set to need a yes waits for one. After a second person steers, no token of the first is used. |
 | 5 | The task keeps its pull request. | A seeded CI failure on the fixture PR gets a fix commit with no person involved. |
 | 6 | The observer. | A steer that corrects the agent leads to a proposal on the definition. A proposal from the observer that changes a gate is refused. |
@@ -555,17 +558,18 @@ The owner decided these from 2026-11-20 to 2026-11-22.
 - Gates are an ordered list, with nesting for branches, as in Authgear's authentication flows. Decided on 2026-11-21.
 - The person who asked approves the plan when its gate needs a yes. Decided on 2026-11-21.
 - A task acts as the person steering it, from that steer on. Decided on 2026-11-21.
-- One automation lists several projects and starts one task for each. A project is the repo set of one task. Decided on 2026-11-21.
+- One automation names several repo lists and starts one task for each. A repo list is the repos of one task. Decided on 2026-11-21.
 - moor is designed for the team. People outside it, such as clients, are out of scope. Decided on 2026-11-21.
 - The story underlines what moor enforces as solid and what the prose asks as dashed. Decided on 2026-11-21.
 - Repo config becomes files in the definition, with the same versions and proposals. Decided on 2026-11-21.
+- moor has no project concept for now. Everything keys on a task's repo list, and each repo has one plain-words note. The owner's reason is that a project might use a different repo combination for different tasks. Decided on 2026-11-22.
 - Capabilities replace action rules and grants. Each automation lists what its tasks may do, in plain words, and everything else is refused. Decided on 2026-11-21.
 - Roles cooperate by handover between small automations, each with its own Box, person and gates. The first version does not build this. The spec reserves it. Decided on 2026-11-21.
 - moor's reading is told as a story for now, for the definition, a running task and a proposal. It is plain paragraphs, not cards. Every underlined fact opens its detail. Decided on 2026-11-21.
 - The definition is Markdown prompts and YAML plans, not TypeScript. Decided on 2026-11-21.
 - A gate starts with evidence, checks and approval only. A judge model is deferred. Decided on 2026-11-21.
 - A scheduled task acts as the person named in its automation. A task started by an event acts as the person who caused it. Decided on 2026-11-21.
-- A reading runs in a Box with no project, no setup and no capabilities. An orchestrator is reserved as the same Box with a capability to start Boxes. Decided on 2026-11-21.
+- A reading runs in a Box with no repos, no setup and no capabilities. An orchestrator is reserved as the same Box with a capability to start Boxes. Decided on 2026-11-21.
 - A run ends in exactly one named outcome. moor picks it by running each outcome's checks, and the agent never claims one. No gate is special. Decided on 2026-11-22.
 - An outcome marked anytime can end a run at any open gate. A run with nothing to do ends that way. Decided on 2026-11-22.
 - The step walker is deleted in its own pull request, once the gated evidence flow is proven on the nightly controller. Decided on 2026-11-22.
