@@ -12,7 +12,7 @@ type Docs = Pick<Workflow, 'gates' | 'outcomes'>;
 /** A gate's rule starts a sentence, except where it starts with the name moor. */
 const sentence = (rule: string) => (rule.startsWith('moor') ? rule : rule.charAt(0).toUpperCase() + rule.slice(1));
 
-function Row({ look, hand, open, body, summary }: { look: GateRow['state']; hand: boolean; open: boolean; body: ComponentChildren; summary: ComponentChildren }) {
+function Row({ look, hand, open, body, summary, end }: { look: GateRow['state']; hand: boolean; open: boolean; body: ComponentChildren; summary: ComponentChildren; end?: boolean }) {
 	const { glyph, tone } = GATE_LOOK[look];
 	const head = (
 		<>
@@ -23,7 +23,7 @@ function Row({ look, hand, open, body, summary }: { look: GateRow['state']; hand
 		</>
 	);
 	return (
-		<li class={`t-sg t-${tone}${hand ? ' t-sg-hand' : ''}`}>
+		<li class={`t-sg t-${tone}${hand ? ' t-sg-hand' : ''}${end ? ' t-sg-end' : ''}`}>
 			{body ? (
 				<details open={open}>
 					<summary class="t-sg-row">{head}</summary>
@@ -42,13 +42,17 @@ function outcomeRow(gate: GateView, docs: Docs | null): { look: GateRow['state']
 	if (status.state === 'passed') {
 		const o = status.outcome;
 		if (!o) return null;
-		return { look: o.tone === 'good' ? 'passed' : o.tone, hand: false, open: true, line: <>ended as: <b>{o.name}</b></>, says: o.says };
+		return { look: o.tone === 'good' ? 'passed' : o.tone, hand: false, open: true, line: (
+			<span>
+				ended as: <b>{o.name}</b>
+			</span>
+		), says: o.says };
 	}
 	const closing = closingRow(gate);
 	if (closing) return { look: closing.state, hand: IN_HAND.has(closing.state), open: IN_HAND.has(closing.state), line: <><span class="t-sg-name">outcome</span><span class="t-sg-state">{closing.words}</span></> };
 	const names = (docs?.outcomes ?? []).map((o) => o.name);
 	if (names.length === 0 || gate.run_ended) return null;
-	return { look: 'later', hand: false, open: false, line: <>ends as one of: {names.join(', ')}</> };
+	return { look: 'later', hand: false, open: false, line: <span>ends as one of: {names.join(', ')}</span> };
 }
 
 /** One row per gate with its mark, number, name and state; the gate in hand is open, with what must be true and the card in place. Ends with the outcome. */
@@ -76,6 +80,7 @@ export function GateStory({ gate, docs, card }: { gate: GateView; docs: Docs | n
 				})}
 				{end && (
 					<Row
+						end
 						look={end.look}
 						hand={end.hand}
 						open={end.open}

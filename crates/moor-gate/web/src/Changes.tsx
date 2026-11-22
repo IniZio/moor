@@ -62,7 +62,10 @@ export function changesLabel(entries: Entry[]) {
 	if (!last || !last.total.files) return 'Changes';
 	return (
 		<>
-			Changes <Counts added={last.total.added} removed={last.total.removed} />
+			Changes{' '}
+			<span class="t-cnt">
+				<Counts added={last.total.added} removed={last.total.removed} />
+			</span>
 		</>
 	);
 }

@@ -152,8 +152,6 @@ export function ToolFold({ entries, when }: { entries: Entry[]; when: (iso: stri
 	return (
 		<details class="t-tool t-tool-fold">
 			<summary>
-				<span class="t-who">Agent</span>
-				<span class="t-when">{when(entries[0]?.at ?? '')}</span>
 				<span class="t-tool-title">
 					<span class="t-chev">▸</span> {foldWords(entries)}
 				</span>

@@ -66,6 +66,8 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 		};
 	}, [box]);
 	const [first, ...rest] = pulls ?? [];
+	const silent = !error && (!first || (!first.url && !first.unread && (first.state === 'none' || first.state === 'unpushed') && !named));
+	if (silent) return null;
 	if (!first) {
 		return (
 			<p class="t-prline pr-line">
@@ -75,7 +77,7 @@ export function PrHeader({ box, named, listed }: { box: string; named: BoxDetail
 						#{named.number}
 					</a>
 				) : (
-					<span class="muted">{error || (pulls ? 'none: this task has no repo' : 'reading GitHub…')}</span>
+					<span class="muted">{error}</span>
 				)}
 			</p>
 		);

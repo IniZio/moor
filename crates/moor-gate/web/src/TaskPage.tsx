@@ -16,6 +16,7 @@ import { MakeRecurring } from './MakeRecurring';
 import { TaskHead } from './TaskHead';
 import { TerminalTab } from './Terminal';
 import { useLoad } from './useLoad';
+import './story.css';
 
 function EvidenceTab({ detail }: { detail: BoxDetail }) {
 	if (!detail.artifacts.length) {
@@ -46,8 +47,11 @@ function EvidenceTab({ detail }: { detail: BoxDetail }) {
 	);
 }
 
-const TABS = ['timeline', 'terminal', 'changes', 'evidence'] as const;
+const TABS = ['timeline', 'evidence', 'changes', 'terminal'] as const;
 export type Tab = (typeof TABS)[number];
+
+/** The tabs the row shows: the terminal sits under the more menu, beside Close. */
+const SHOWN_TABS: readonly Tab[] = ['timeline', 'evidence', 'changes'];
 
 /** The tabs a reader of another person's task gets: the terminal writes and the changes are read live in the owner's Box. */
 const READ_TABS: readonly Tab[] = ['timeline', 'evidence'];
@@ -224,19 +228,22 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 		timeline: 'Timeline',
 		terminal: 'Terminal',
 		changes: changesLabel(detail.timeline),
-		evidence: `Evidence ${detail.artifacts.length}`,
+		evidence: detail.artifacts.length ? (
+			<>
+				Evidence <span class="t-cnt">{detail.artifacts.length}</span>
+			</>
+		) : (
+			'Evidence'
+		),
 	};
 	const { needs, owner } = detail;
 	if (owner) return <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
-	const asking = detail.state === 'needs_you' && !needs?.plan ? needs : null;
-	const inStory = !!asking?.gate && !!detail.gate?.gates.length;
 	return (
 		<div class="t-box">
-			<TaskHead t={detail} now={now} actions={<HeaderActions detail={detail} csrf={csrf} onDone={reload} />} />
+			<TaskHead t={detail} now={now} actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />} />
 			<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{detail.state === 'needs_you' &&
-				!inStory &&
 				(needs?.plan ? (
 					<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
 				) : needs ? (
@@ -251,19 +258,17 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			{detail.stale && <p class="t-stalebar">No event for over 30 minutes. {detail.line}</p>}
 			{detail.gate?.gates.length ? (
-				<GateStory
-					gate={detail.gate}
-					docs={docs}
-					card={inStory && asking?.gate ? <GateCard box={box} needs={asking} wait={asking.gate} csrf={csrf} onSent={reload} key={asking.id} /> : null}
-				/>
+				<GateStory gate={detail.gate} docs={docs} card={null} />
 			) : null}
 			<PromptFold prompt={detail.prompt} />
 			<nav class="t-tabs" role="tablist">
-				{TABS.map((t) => (
+				{SHOWN_TABS.map((t) => (
 					<a class="t-tab" role="tab" aria-selected={tab === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>
 						{label[t]}
 					</a>
 				))}
+				<span class="grow" />
+				<HeaderActions part="more" detail={detail} csrf={csrf} onDone={reload} />
 			</nav>
 			<section>
 				{tab === 'evidence' ? (
