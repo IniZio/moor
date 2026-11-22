@@ -123,3 +123,13 @@ fn the_lines_of_a_box_go_with_the_box() {
     assert_eq!(store.gate_lines(gone).unwrap(), []);
     assert_eq!(store.gate_lines(kept).unwrap(), [reminded(1)]);
 }
+
+#[test]
+fn a_job_line_of_a_box_no_run_used_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_box(&store, "a");
+    let wrote = store.append_job_line(id, 1, Ts::from_millis(5), &reminded(1));
+    assert_eq!(wrote.unwrap(), crate::store::Appended::Written);
+    assert_eq!(store.gate_lines(id).unwrap(), [reminded(1)]);
+}

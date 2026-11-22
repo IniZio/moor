@@ -98,19 +98,18 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
             tried,
         },
         Found::None(_) => {
-            if let Some(check) = &due.then {
-                out.extend(run_check(cx, (id, n), check));
-                return out;
-            }
-            // A reminder is a steer before any line, so the run is read first.
+            // What comes next runs a command or steers before any line, so the run is read first.
             match store.run_of_box(id) {
                 Ok(RunOfBox::Ended(_)) => out.push(dropped("outcomes", id)),
                 Err(e) => out.push(format!("outcomes: could not read the run: {e}")),
-                Ok(RunOfBox::NoRun | RunOfBox::Open) => {
-                    if let Err(e) = remind_now(cx, id) {
-                        out.push(format!("outcomes: could not remind the agent: {}", e.error));
+                Ok(RunOfBox::NoRun | RunOfBox::Open) => match &due.then {
+                    Some(check) => out.extend(run_check(cx, (id, n), check)),
+                    None => {
+                        if let Err(e) = remind_now(cx, id) {
+                            out.push(format!("outcomes: could not remind the agent: {}", e.error));
+                        }
                     }
-                }
+                },
             }
             return out;
         }

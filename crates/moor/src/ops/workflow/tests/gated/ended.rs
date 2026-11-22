@@ -197,3 +197,25 @@ fn a_reminder_due_after_its_run_was_cancelled_is_not_sent() {
     let (r, old, job) = cancelled_with_a_job_due(&[proof()], &[anytime, done]);
     ran_without_a_trace(&r, old, &job);
 }
+
+#[test]
+fn a_job_line_for_the_box_of_an_ended_run_is_not_written() {
+    let tests = moor_core::gate::GateDoc {
+        name: "tests".to_owned(),
+        evidence: Vec::new(),
+        checks: vec!["false".into()],
+        approval: None,
+        max_tries: Some(2),
+    };
+    let (r, old, _job) = cancelled_with_a_job_due(&[tests], &[]);
+    let store = r.cx.store().unwrap();
+    let lines = store.gate_lines(old).unwrap();
+    let line = moor_core::gate::GateLine::Reminded {
+        gate: step("tests"),
+        try_n: 1,
+    };
+    let n = i64::try_from(lines.len()).unwrap() + 1;
+    let wrote = store.append_job_line(old, n, r.cx.clock().now(), &line);
+    assert_eq!(wrote.unwrap(), crate::store::Appended::RunEnded);
+    assert_eq!(store.gate_lines(old).unwrap(), lines);
+}
