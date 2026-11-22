@@ -141,3 +141,19 @@ test('an outcome is one line of its name and what it says', () => {
 	expect(outcomeLine({ name: 'check failed', says: 'It failed.' })).toBe('check failed · It failed.');
 	expect(outcomeLine({ name: 'nothing to do' })).toBe('nothing to do');
 });
+
+test('a gate in hand when the run ended waits for nobody: its row says how the run ended and no line asks the person', () => {
+	const asked = { gates, status: { state: 'open', gate: 'review', try_n: 1, next: 'ask' }, run_ended: 'incomplete' } as const;
+	expect(gateRows(asked).map((r) => [r.state, r.words])).toEqual([
+		['passed', 'passed'],
+		['passed', 'passed'],
+		['later', 'run incomplete'],
+	]);
+	expect(gateLine(asked)).toBeNull();
+	const stuck = { gates, status: { state: 'stuck', gate: 'outcome', why: 'no outcome held' }, run_ended: 'timed_out' } as const;
+	expect(closingRow(stuck)).toBeNull();
+	expect(gateLine(stuck)).toBeNull();
+	const failed = { gates, status: { state: 'failed', gate: 'plan', why: 'the owner said no' }, run_ended: 'failed' } as const;
+	expect(gateLine(failed)).toBe('Failed at “plan”: The owner said no.');
+	expect(v.parse(GateViewSchema, asked).run_ended).toBe('incomplete');
+});
