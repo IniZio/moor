@@ -1,4 +1,5 @@
-//! The gate pass: checks run once the agent is quiet, in order, and a failure goes back to it.
+//! The gate pass: checks run once the agent's report is accepted, or once the agent is quiet for a
+//! gate that takes no report, in order, and a failure goes back to it.
 #![allow(
     clippy::indexing_slicing,
     clippy::cognitive_complexity,
@@ -191,16 +192,26 @@ fn a_check_does_not_run_while_the_agent_works() {
 fn a_check_after_an_accepted_report_runs_while_the_agent_still_works() {
     let f = fx(|_| vec![evidence_gate("proof", &["proof.md"], &["true"], 1)]);
     let now = f.cx.clock().now();
-    f.engine
-        .set_probes("agent-1", agent::waiting(&[".scratch/live/run.sh"], true, now));
+    f.engine.set_probes(
+        "agent-1",
+        agent::waiting(&[".scratch/live/run.sh"], true, now),
+    );
     f.leave(&[("proof.md", 5)]);
     let told = f.report("proof", StepResult::Ok, &["proof.md"]);
     assert!(!told.error, "{told:?}");
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    assert_eq!(row.session, SessionState::Working, "the agent has not gone quiet");
+    assert_eq!(
+        row.session,
+        SessionState::Working,
+        "the agent has not gone quiet"
+    );
     assert!(f.pass().is_empty());
     assert_eq!(f.exits(), [("proof".to_owned(), Some(0))]);
-    assert_eq!(f.standing(), (done(), Progress::Done));
+    assert_eq!(
+        f.standing(),
+        (done(), Progress::Working),
+        "passed, while the agent still works"
+    );
 }
 
 #[test]

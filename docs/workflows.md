@@ -131,7 +131,7 @@ A gate has a `name` and any of these.
 | Field | What it asks |
 | --- | --- |
 | `evidence` | Files the agent leaves in `.moor/artifacts/` and names in `report_step`: flat names or a prefix such as `pr-*`. |
-| `checks` | What moor runs in the Box once the agent is quiet. Each is a command, or `{"run": "...", "says": "..."}`. Exit 0 passes, and the first failure fails the try. |
+| `checks` | What moor runs in the Box once the agent's report is accepted, or once the agent is quiet for a gate with no `evidence`. Each is a command, or `{"run": "...", "says": "..."}`. Exit 0 passes, and the first failure fails the try. |
 | `approval` | `owner` asks the workflow's owner to say yes or no after the checks. |
 | `max_tries` | How often the gate may be tried, 1 to 5; 2 when left out, so a failed check or an owner's no leaves the agent a chance to fix it. Write 1 for a gate with one try. |
 

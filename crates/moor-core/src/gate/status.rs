@@ -84,6 +84,16 @@ pub struct DueCheck<'a> {
     pub check: u8,
 }
 
+impl DueCheck<'_> {
+    /// Whether the check follows the agent's accepted report. The report says the work is handed
+    /// in, so the check needs nothing more of the agent. A gate with no evidence has no report,
+    /// and only the agent going quiet says its work is done.
+    #[must_use]
+    pub const fn follows_report(&self) -> bool {
+        self.gate.evidence.is_some()
+    }
+}
+
 /// The check due from `gates` and the `lines` written for them; none unless the status is open at
 /// `RunChecks`.
 #[must_use]
