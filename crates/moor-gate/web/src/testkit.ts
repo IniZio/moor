@@ -4,7 +4,20 @@ import * as v from 'valibot';
 import type { Unanswered } from './gate';
 
 /** The props a test reads off an element. */
-type Props = { children?: ComponentChild; href?: string; value?: string; onClick?: () => void };
+type Keys = { key: string; preventDefault: () => void; stopPropagation: () => void };
+type Props = {
+	children?: ComponentChild;
+	href?: string;
+	value?: string;
+	role?: string;
+	type?: string;
+	placeholder?: string;
+	disabled?: boolean;
+	'aria-checked'?: boolean;
+	onClick?: () => void;
+	onFocus?: () => void;
+	onKeyDown?: (e: Keys) => void;
+};
 
 /** A rendered element. */
 export type El = VNode<Props>;

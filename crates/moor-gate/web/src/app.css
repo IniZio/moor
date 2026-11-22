@@ -178,7 +178,7 @@ main.wide { max-width: 64rem; }
 .wf-when input.t-mono { min-width: 18rem; }
 select { font: inherit; font-size: var(--moor-text-sm); color: var(--moor-color-text); background: var(--moor-color-bg-raised); border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); padding: var(--moor-space-1) var(--moor-space-2); }
 .wf-zone { max-width: 20rem; }
-.wf-repos { display: flex; flex-wrap: wrap; gap: var(--moor-space-2); font-weight: normal; }
+.wf-repos { position: relative; font-weight: normal; }
 .wf-next { font-weight: normal; }
 .wf-next ol { margin: var(--moor-space-1) 0 0; padding-left: var(--moor-space-6); font-family: var(--moor-font-mono); font-size: var(--moor-text-xs); }
 .wf-form details summary { cursor: pointer; font-size: var(--moor-text-sm); color: var(--moor-color-accent); }

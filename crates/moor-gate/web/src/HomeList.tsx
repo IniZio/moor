@@ -53,7 +53,7 @@ function dotOf(repo: string): number {
 }
 
 /** The repos a Box works on, the one it starts in first. */
-function reposOf(t: BoxRow): string[] {
+export function reposOf(t: BoxRow): string[] {
 	return [t.repo, ...t.other_repos].filter((r): r is string => !!r);
 }
 

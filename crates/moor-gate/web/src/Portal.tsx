@@ -1,18 +1,14 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import * as v from 'valibot';
 
 import {
-	type Account,
 	type BoxDetail,
 	boxAnswer,
 	boxGet,
 	boxList,
-	boxStart,
 	type Entry,
 	type Needs,
 	type Pick,
-	repoList,
 	runAnswer,
 	failure,
 	toError,
@@ -26,8 +22,7 @@ import { HomeListView, useMenuDismiss } from './HomeList';
 import { PlanCard, PlanRail } from './PlanCard';
 import { PrHeader } from './PrHeader';
 import { Markdown } from './Markdown';
-import { RepoPicker } from './RepoPicker';
-import { FailedCard, takeAgain } from './Retry';
+import { FailedCard } from './Retry';
 import { useDraft } from './session';
 import { Composer } from './Steer';
 import { MakeRecurring } from './MakeRecurring';
@@ -525,112 +520,6 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 				</aside>
 			</div>
 			<Composer detail={value} csrf={csrf} onSent={reload} />
-		</div>
-	);
-}
-
-/** Where the last start went, so the next one starts there. */
-const LAST_REPOS = 'moor.lastRepos';
-
-/** The repos the last start used, first one first. */
-function lastRepos(): string[] {
-	try {
-		const read = v.safeParse(v.array(v.string()), JSON.parse(localStorage.getItem(LAST_REPOS) ?? '[]'));
-		return read.success ? read.output : [];
-	} catch {
-		return [];
-	}
-}
-
-/** The composer that starts a Box: the footer names the target before anything is sent. */
-export function NewBox({ account }: { account: Account }) {
-	const [again] = useState(takeAgain);
-	const [prompt, setPrompt, dropPrompt] = useDraft('new-task', again?.prompt);
-	const [chosen, setChosen] = useState<string[]>(() => (again?.repos.length ? again.repos : lastRepos()));
-	const [base, setBase] = useState(again?.base ?? '');
-	const [node, setNode] = useState('');
-	const [planFirst, setPlanFirst] = useState(false);
-	const [repos, setRepos] = useState<string[]>([]);
-	const [busy, setBusy] = useState(false);
-	const [error, setError] = useState('');
-	useEffect(() => {
-		repoList().then(setRepos, () => setRepos([]));
-	}, []);
-	const machines = account.machines.nodes.filter((n) => n.online);
-	const send = async () => {
-		if (busy) return;
-		setBusy(true);
-		setError('');
-		try {
-			const name = await boxStart(account.csrf, { repos: chosen, prompt, base, node, plan_first: planFirst });
-			localStorage.setItem(LAST_REPOS, JSON.stringify(chosen));
-			dropPrompt();
-			location.hash = `#/box/${encodeURIComponent(name)}`;
-		} catch (e) {
-			setError(failure(toError(e)));
-			setBusy(false);
-		}
-	};
-	const ready = prompt.trim() !== '' && chosen.length > 0 && !busy;
-	return (
-		<div class="t-new">
-			<h1>New task</h1>
-			<form
-				class="t-composer"
-				onSubmit={(e) => {
-					e.preventDefault();
-					if (ready) void send();
-				}}
-			>
-				<label class="t-sr" for="t-prompt">What should the agent do?</label>
-				<textarea
-					id="t-prompt"
-					rows={6}
-					placeholder="What should the agent do?"
-					value={prompt}
-					onInput={(e) => setPrompt(e.currentTarget.value)}
-					onKeyDown={(e) => {
-						if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && ready) void send();
-					}}
-				/>
-				<div class="t-target">
-					<RepoPicker repos={chosen} known={repos} onChange={setChosen} />
-					<label class="t-chip">
-						<span class="muted">from</span>
-						<input
-							class="t-mono"
-							placeholder="default branch"
-							value={base}
-							onInput={(e) => setBase(e.currentTarget.value)}
-							aria-label="Branch to start from"
-						/>
-					</label>
-					<label class="t-chip">
-						<span class="muted">on</span>
-						<select value={node} onChange={(e) => setNode(e.currentTarget.value)} aria-label="Machine">
-							<option value="">any free machine</option>
-							{machines.map((n) => (
-								<option value={n.name} key={n.name}>
-									{n.name}
-									{n.max_boxes != null ? ` (${Math.max(0, n.max_boxes - n.used)} free)` : ''}
-								</option>
-							))}
-						</select>
-					</label>
-					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
-						<input type="checkbox" class="pf-check" checked={planFirst} onChange={(e) => setPlanFirst(e.currentTarget.checked)} />
-						Plan first
-					</label>
-					<span class="grow" />
-					<button class="btn primary" type="submit" disabled={!ready}>
-						{busy ? 'Starting…' : 'Start'} <kbd>{'⌘↵'}</kbd>
-					</button>
-				</div>
-			</form>
-			{error && <p class="notice danger" role="alert">{error}</p>}
-			<p class="muted t-foot">
-				The agent works on a new branch in the first repo. The others are cloned with it. You can watch it from the task page.
-			</p>
 		</div>
 	);
 }
