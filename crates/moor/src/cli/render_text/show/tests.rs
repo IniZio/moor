@@ -551,3 +551,18 @@ fn a_box_stuck_at_the_closing_stage_lists_each_outcome_tried() {
     assert!(!out.contains("one blob"), "{out}");
     assert!(out.contains("    hint: Send the agent a message"), "{out}");
 }
+
+#[test]
+fn a_box_deciding_its_outcome_does_not_wait_for_an_approval() {
+    let t = with_gate(
+        row("alpha", true),
+        json!({"state": "working", "line": "deciding the outcome: running its checks"}),
+        &json!({"state": "open", "gate": "outcome", "try_n": 2, "next": "decide"}),
+    );
+    let out = show(json!({"boxes": [t]}));
+    assert!(
+        out.contains("  outcome, try 2: moor is checking which outcome holds\n"),
+        "{out}"
+    );
+    assert!(!out.contains("approval"), "{out}");
+}

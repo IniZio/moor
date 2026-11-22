@@ -79,12 +79,17 @@ fn gate_text(view: &Value) -> Option<String> {
         "stuck" => format!("gate {name} is stuck: {}", field(status, "why")),
         "failed" => format!("gate {name} failed: {}", field(status, "why")),
         _ => {
+            let try_n = status.get("try_n").and_then(Value::as_u64).unwrap_or(1);
             let waits = match field(status, "next") {
+                "decide" => {
+                    return Some(format!(
+                        "outcome, try {try_n}: moor is checking which outcome holds"
+                    ))
+                }
                 "agent" => "the agent's evidence",
                 "run_checks" => "its checks",
                 _ => "your approval",
             };
-            let try_n = status.get("try_n").and_then(Value::as_u64).unwrap_or(1);
             format!("gate {name}, try {try_n}: waiting for {waits}")
         }
     })
