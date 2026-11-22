@@ -5,7 +5,6 @@ use std::time::Instant;
 
 use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
 use moor_core::boxscript::one_at_a_time;
-use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};
 use moor_core::config::BoxSettings;
@@ -17,7 +16,6 @@ use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
 use moor_core::seam::proc::Output;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::shape::Shape;
-use moor_core::view::WorkTreeView;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
 use super::others::{clone_others, warn_left_out};
@@ -40,8 +38,6 @@ pub(super) struct Cloned {
     pub(super) ms: Option<u64>,
     /// The CPUs and memory the Box has, as read inside it.
     pub(super) delivered: Option<Shape>,
-    /// How the kept work tree started; none when the Box keeps none or already refreshed it.
-    pub(super) work_tree: Option<WorkTreeView>,
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -55,9 +51,6 @@ struct Plan {
     base: String,
     /// The Box branch.
     branch: String,
-    /// The Box's key when its work tree may hold another Box's files, which is refreshed once per
-    /// Box before the clone.
-    refresh: Option<String>,
 }
 
 impl Plan {
@@ -68,13 +61,6 @@ impl Plan {
             base: &self.base,
             branch: &self.branch,
         }
-    }
-
-    /// The refresh to run before the clone, if any.
-    fn refresh_text(&self) -> String {
-        let key = self.refresh.as_deref();
-        let text = key.map(|k| refresh_script(&self.checkout(), k));
-        text.unwrap_or_default()
     }
 }
 
@@ -98,7 +84,7 @@ pub(super) fn clone_with_proxy(
     let kept = row.as_ref().map_or_else(CachePlan::none, |r| {
         cache::derived(cx, store, r, cfg, &ProviderId::new(target.provider))
     });
-    let plan = plan(row, target, &kept);
+    let plan = plan(row, target);
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
@@ -152,20 +138,15 @@ pub(super) fn clone_with_proxy(
 }
 
 /// What the Box clones: its repo at the Box's base and on its branch; none for a Box with no repo.
-fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>, kept: &CachePlan) -> Option<Plan> {
+fn plan(row: Option<BoxRow>, target: &SetupTarget<'_>) -> Option<Plan> {
     let repo = target.repo?;
     let row = row?;
-    let refresh = kept
-        .work_tree()
-        .is_some()
-        .then(|| target.handle.as_str().to_owned());
     Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
         branch: row
             .branch
             .unwrap_or_else(|| box_key::branch(row.id, &row.name)),
-        refresh,
     })
 }
 
@@ -237,7 +218,6 @@ fn clone(
     let mut script = job.restore.clone().unwrap_or_default();
     script.push_str(&identity.map(Identity::script).unwrap_or_default());
     if let Some(plan) = plan {
-        script.push_str(&plan.refresh_text());
         script.push_str(&clone_script(&plan.checkout()));
     }
     let script = resources::after(&one_at_a_time(&script));
@@ -302,8 +282,8 @@ fn report_emptied(cx: &Cx, store: &Store, id: BoxId, text: &str) {
     }
 }
 
-/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, a submodule
-/// left out and a refresh that fell back to a fresh clone. Returns what the exec told about the Box.
+/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key and a
+/// submodule left out. Returns what the exec told about the Box.
 fn report(
     cx: &Cx,
     identity: Option<&Identity>,
@@ -315,21 +295,9 @@ fn report(
         identity.report(cx, text);
     }
     warn_left_out(cx, "", text.unwrap_or_default());
-    let kept = plan.is_some_and(|p| p.refresh.is_some());
-    let tree = text
-        .filter(|_| kept)
-        .and_then(outcome)
-        .and_then(WorkTreeView::parse);
-    if let Some(WorkTreeView::ColdAfter { reason }) = &tree {
-        cx.warn(Warning {
-            code: "work_tree".to_owned(),
-            message: format!("the work tree refresh failed: {reason}"),
-        });
-    }
     Cloned {
         ms: plan.map(|_| ms),
         delivered: text.and_then(resources::parse),
-        work_tree: tree,
     }
 }
 

@@ -13,7 +13,6 @@ pub mod presets;
 mod restore;
 #[cfg(test)]
 mod tests;
-mod work_tree;
 
 use std::fmt::{self, Write as _};
 use std::num::NonZeroU32;
@@ -23,11 +22,10 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 pub use agent::{AgentCache, NAME as AGENT};
-pub use config::{CacheConfig, Presets, VolumeDecl};
+pub use config::{CacheConfig, Presets, RetiredWorkTree, VolumeDecl};
 pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
 pub use restore::{emptied, Emptied, EMPTIED};
-pub use work_tree::{WorkTree, WorkTreeSize, NAME as WORK_TREE};
 
 use crate::name::ForgeRepo;
 use crate::user::UserId;
@@ -95,8 +93,6 @@ pub enum Origin {
     Repo,
     /// The operator's moor config: kept per user, across repos.
     Operator,
-    /// moor itself, for the repo's work tree: scoped like a repo volume, in a group of its own.
-    WorkTree,
     /// moor itself, for the agent's install directory: kept per user, in a group of its own.
     Agent,
 }
@@ -203,7 +199,7 @@ fn group(salt: &CacheSalt, origin: Origin, user: UserId, repo: Option<&ForgeRepo
         format!("{}/{}", r.owner.to_lowercase(), r.name.to_lowercase())
     });
     let scope = match origin {
-        Origin::Preset | Origin::Repo | Origin::WorkTree => format!("repo\0{}\0{repo}", user.get()),
+        Origin::Preset | Origin::Repo => format!("repo\0{}\0{repo}", user.get()),
         Origin::Operator | Origin::Agent => format!("user\0{}", user.get()),
     };
     let mut mac = Hmac::<Sha256>::new(Key::<Hmac<Sha256>>::from_slice(&salt.0));
@@ -249,8 +245,6 @@ pub struct CachePlan {
     dropped: Vec<Dropped>,
     /// The repo-scope hash, the Box's own scope; set only for a repo Box with volumes.
     scope: Option<String>,
-    /// The work tree's directory below the work root, when the plan keeps it.
-    work_tree: Option<String>,
 }
 
 impl CachePlan {
@@ -261,13 +255,12 @@ impl CachePlan {
             volumes: Vec::new(),
             dropped: Vec::new(),
             scope: None,
-            work_tree: None,
         }
     }
 
     /// Keys every volume of `layers` to its scope for `user` and `repo`; a Box without a repo
-    /// gets the operator's volumes only. The work tree's group ends in `w`, the agent's in `a` and
-    /// any other volume with restore steps in `x`, so one bad group never empties another.
+    /// gets the operator's volumes only. The agent's group ends in `a` and any other volume with
+    /// restore steps in `x`, so one bad group never empties another.
     ///
     /// # Errors
     /// As [`CacheLayers::declared`].
@@ -278,16 +271,9 @@ impl CachePlan {
         salt: &CacheSalt,
     ) -> Result<Self, CacheError> {
         let Resolved { volumes, dropped } = layers.resolve(repo)?;
-        let work_tree = volumes
-            .iter()
-            .find(|d| d.origin == Origin::WorkTree)
-            .and_then(|d| work_tree::below_root(d.volume.paths.first()?))
-            .map(str::to_owned);
         let planned = volumes.into_iter().map(|d| {
             let mut group = group(salt, d.origin, user, repo);
-            if d.origin == Origin::WorkTree {
-                group.push('w');
-            } else if d.origin == Origin::Agent {
+            if d.origin == Origin::Agent {
                 group.push('a');
             } else if !d.volume.restore.is_empty() {
                 group.push('x');
@@ -310,7 +296,6 @@ impl CachePlan {
             volumes,
             dropped,
             scope,
-            work_tree,
         })
     }
 
@@ -325,13 +310,6 @@ impl CachePlan {
     #[must_use]
     pub fn scope(&self) -> Option<&str> {
         self.scope.as_deref()
-    }
-
-    /// The work tree's directory below the Box's work root, `repos/<name>`, when the plan keeps
-    /// the work tree; the Box's workdir is then that directory.
-    #[must_use]
-    pub fn work_tree(&self) -> Option<&str> {
-        self.work_tree.as_deref()
     }
 
     /// Declared volumes left out because they met a preset with restore steps.

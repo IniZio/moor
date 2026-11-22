@@ -1,10 +1,9 @@
-//! The submodules a clone leaves, under `sh` with real git; kept trees run the refresh first.
+//! The submodules a clone leaves, under `sh` with real git.
 
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use super::super::{clone_script, left_out_submodules, script, Checkout, SUBMODULE_GIT};
-use crate::boxscript::refresh::{outcome, refresh_script};
 use crate::testgit::{Origin, BRANCH};
 
 fn repo(o: &Origin, name: &str) -> PathBuf {
@@ -95,17 +94,6 @@ fn clone(o: &Origin, base: &str) -> String {
         branch: BRANCH,
     };
     run(o, &clone_script(&c), &[]).1
-}
-
-fn start(o: &Origin, key: &str, base: &str) -> String {
-    let url = o.url();
-    let c = Checkout {
-        url: &url,
-        base,
-        branch: BRANCH,
-    };
-    let both = format!("{}{}", refresh_script(&c, key), clone_script(&c));
-    run(o, &both, &[]).1
 }
 
 fn read(o: &Origin, rel: &str) -> String {
@@ -238,44 +226,6 @@ fn a_broken_nested_submodule_is_named_by_its_full_path() {
 }
 
 #[test]
-fn a_refused_submodule_does_not_send_the_next_box_cold() {
-    let o = Origin::new("sub-kept-refused");
-    let good = repo(&o, "good");
-    add_link(&o, "refused", &url_of(&o.path("missing")));
-    add(&o, &o.seed(), &good, "lib");
-    let base = publish(&o);
-    let first = start(&o, "moor-1-aaaaaa", &base);
-    assert_eq!(left_out_paths(&first), ["refused"], "{first}");
-    std::fs::create_dir_all(o.tree().join("build")).unwrap();
-    std::fs::write(o.tree().join("build/out"), "kept").unwrap();
-
-    let second = start(&o, "moor-2-bbbbbb", &base);
-
-    assert_eq!(outcome(&second), Some("refreshed"), "{second}");
-    assert_eq!(left_out_paths(&second), ["refused"], "{second}");
-    assert_eq!(read(&o, "build/out"), "kept");
-    assert_eq!(read(&o, "lib/s.txt"), "good\n");
-}
-
-#[test]
-fn a_kept_tree_without_its_submodule_gets_it_on_the_next_box() {
-    let o = Origin::new("sub-kept");
-    let base = o.base.clone();
-    start(&o, "moor-1-aaaaaa", &base);
-    std::fs::create_dir_all(o.tree().join("build")).unwrap();
-    std::fs::write(o.tree().join("build/out"), "kept").unwrap();
-    let sub = repo(&o, "sub");
-    add(&o, &o.seed(), &sub, "lib");
-    o.push(BRANCH, &[]);
-
-    let text = start(&o, "moor-2-bbbbbb", &base);
-
-    assert_eq!(outcome(&text), Some("refreshed"), "{text}");
-    assert_eq!(read(&o, "lib/s.txt"), "sub\n");
-    assert_eq!(read(&o, "build/out"), "kept");
-}
-
-#[test]
 fn a_rerun_leaves_a_submodule_where_the_session_moved_it() {
     let o = Origin::new("sub-rerun");
     let sub = repo(&o, "sub");
@@ -392,37 +342,4 @@ fn a_fresh_clone_fetches_an_ssh_submodule_over_https_and_writes_no_config() {
         let lib = o.tree().join("lib");
         assert_eq!(o.git(&lib, &["remote", "get-url", "--push", "origin"]), ssh);
     }
-}
-
-#[test]
-fn a_refresh_moves_an_initialised_ssh_submodule_to_its_new_commit() {
-    let o = Origin::new("sub-ssh-refresh");
-    let sub = repo(&o, "native");
-    let first = o.git(&sub, &["rev-parse", "HEAD"]);
-    add_link_at(&o, "lib", "git@github.com:acme/native.git", &first);
-    let base = publish(&o);
-    let (vars, _) = fake_https(&o, &sub);
-    let vars = borrowed(&vars);
-    let url = o.url();
-    let c = Checkout {
-        url: &url,
-        base: &base,
-        branch: BRANCH,
-    };
-    let script_for = |key: &str| format!("{}{}", refresh_script(&c, key), clone_script(&c));
-    let (_, text) = run(&o, &script_for("moor-1-aaaaaa"), &vars);
-    assert_eq!(read(&o, "lib/s.txt"), "native\n", "{text}");
-
-    std::fs::write(sub.join("s.txt"), "moved\n").unwrap();
-    o.git(&sub, &["commit", "-q", "-am", "moved"]);
-    let moved = o.git(&sub, &["rev-parse", "HEAD"]);
-    let link = format!("160000,{moved},lib");
-    o.git(&o.seed(), &["update-index", "--cacheinfo", &link]);
-    o.push(BRANCH, &[]);
-
-    let (_, text) = run(&o, &script_for("moor-2-bbbbbb"), &vars);
-
-    assert_eq!(outcome(&text), Some("refreshed"), "{text}");
-    assert_eq!(o.git(&o.tree().join("lib"), &["rev-parse", "HEAD"]), moved);
-    assert_eq!(read(&o, "lib/s.txt"), "moved\n");
 }

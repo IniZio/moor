@@ -395,31 +395,6 @@ fn start_prints_inline_warnings() {
 }
 
 #[test]
-fn start_draws_the_work_tree_outcome_as_its_own_line() {
-    for (tree, line) in [
-        (json!({"state": "refreshed"}), "work tree: refreshed\n"),
-        (json!({"state": "cold"}), "work tree: cold\n"),
-        (
-            json!({"state": "cold_after", "reason": "git fetch failed"}),
-            "work tree: cold after: git fetch failed\n",
-        ),
-    ] {
-        let v = json!({
-            "box": lifecycle_box("alpha", "ready", Some("ready")),
-            "work_tree": tree,
-            "warnings_inline": []
-        });
-        let (out, _) = render(&Response::ok("start", Some(v)), false);
-        assert_eq!(
-            out,
-            format!(
-                "started alpha (#7): ready/idle, box ready\nsee it with: moor show alpha\n{line}"
-            )
-        );
-    }
-}
-
-#[test]
 fn start_keeps_its_output_for_a_launched_agent() {
     let v = json!({
         "box": lifecycle_box("alpha", "ready", Some("ready")),

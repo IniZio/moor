@@ -298,7 +298,7 @@ fn a_docker_that_was_not_running_is_left_alone() {
 #[test]
 fn no_volume_with_steps_means_no_script() {
     let p = plan(&layers("cache: {presets: false}", ""));
-    assert_eq!(names(&p), ["worktree"]);
+    assert!(names(&p).is_empty());
     assert_eq!(p.restore_script(), None);
 }
 

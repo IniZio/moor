@@ -305,7 +305,6 @@ fn run_and_record(
     Ok(Provisioned {
         setup: run,
         dotfiles,
-        work_tree: cloned.work_tree,
         after_failed,
     })
 }

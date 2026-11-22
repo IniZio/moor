@@ -101,9 +101,8 @@ Each line runs once on a new Box, in the work tree. When a line fails, the Box
 goes to `setup_failed` and the agent does not start. The start names the line
 and shows the end of its log. Fix the line, push it, and retry the Box.
 
-Every Box runs every line. A kept work tree, which
-[Cache volumes](config.md#cache-volumes) describes, keeps ignored files from
-an earlier Box on the updated tree. So keep each line safe to rerun.
+Every Box runs every line, and a cache volume keeps what an earlier Box
+downloaded. So keep each line safe to rerun.
 
 A guard that checks only whether output exists can keep stale output:
 
@@ -177,8 +176,7 @@ one per slot. Slot `k` moves each port `p` to `p + 10·k`.
 ## Keep more between Boxes
 
 Common package caches, such as npm, cargo, and Docker, are kept by default.
-The repo's work tree is kept too, so ignored build outputs survive. To keep
-another directory, declare a volume:
+To keep another directory, declare a volume:
 
 ```yaml
 cache:
@@ -187,5 +185,4 @@ cache:
       path: /opt/android-sdk
 ```
 
-To start every Box from a clean clone, set `cache.work_tree: false`.
 [Cache volumes](config.md#cache-volumes) lists the presets and the rules.

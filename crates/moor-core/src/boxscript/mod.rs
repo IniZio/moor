@@ -5,7 +5,6 @@ pub mod clone;
 pub mod detached;
 pub mod profile;
 pub mod record;
-pub mod refresh;
 pub mod resources;
 pub mod setup;
 pub mod teardown;

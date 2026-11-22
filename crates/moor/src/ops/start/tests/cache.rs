@@ -51,8 +51,7 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
     let got = names(&plan);
     assert_eq!(got.first(), Some(&"cache"));
     assert_eq!(got.last(), Some(&"sdk"));
-    assert_eq!(got.len(), 17);
-    assert!(got.contains(&"worktree"), "{got:?}");
+    assert_eq!(got.len(), 16);
     assert!(cache_warnings(&w).is_empty());
 }
 
@@ -152,7 +151,7 @@ fn a_volume_over_docker_data_is_refused_with_presets_off() {
     script_repo(&w, Some(yaml));
     run(&w.cx, &repo_req("demo")).unwrap();
     let [plan]: [CachePlan; 1] = w.driver.acquired_plans().try_into().unwrap();
-    assert_eq!(names(&plan), ["worktree"], "only the work tree is kept");
+    assert!(names(&plan).is_empty(), "{:?}", names(&plan));
     let [warned]: [String; 1] = refusals(&w).try_into().unwrap();
     assert!(warned.starts_with("cache_refused: "), "{warned}");
 }
@@ -175,15 +174,12 @@ fn close(cx: &Cx) {
 }
 
 #[test]
-fn a_box_restores_its_caches_before_it_refreshes_and_clones() {
+fn a_box_restores_its_caches_before_it_clones() {
     let w = world(FakeDriver::new().cache_volumes());
     let plan = started(&w);
     let (_, script) = clone_exec(&w);
     let restore = script.find(&plan.restore_script().unwrap()).expect(&script);
-    assert!(
-        restore < script.find("moor_tree_refresh\n").unwrap(),
-        "{script}"
-    );
+    assert!(restore < script.find("git clone").unwrap(), "{script}");
     assert_eq!(restored_execs(&w), 1);
 }
 
@@ -266,96 +262,6 @@ fn clone_exec(w: &World) -> (String, String) {
     let mut found =
         execs.filter_map(|(h, spec, _)| Some((h.as_str().to_owned(), spec.argv.last()?.clone())));
     found.find(|(_, s)| s.contains("git clone")).unwrap()
-}
-
-#[test]
-fn a_box_that_keeps_its_work_tree_refreshes_it_once_before_the_clone() {
-    let w = world(FakeDriver::new().cache_volumes());
-    started(&w);
-    let (handle, script) = clone_exec(&w);
-    let refresh = script.find("moor_tree_refresh\n").expect(&script);
-    assert!(refresh < script.find("git clone").unwrap(), "{script}");
-    assert!(script.contains(&format!("= '{handle}' ]")), "{script}");
-}
-
-#[test]
-fn a_box_without_the_work_tree_clones_with_no_refresh() {
-    for driver in [FakeDriver::new(), FakeDriver::new().cache_volumes()] {
-        let w = world(driver);
-        let yaml = "cache: {work_tree: false}\n";
-        script_repo(&w, Some(yaml));
-        run(&w.cx, &repo_req("demo")).unwrap();
-        assert!(!clone_exec(&w).1.contains("moor_tree_refresh"));
-    }
-}
-
-/// Starts the `demo` repo Box with the refresh printing `printed`; returns the reply and the
-/// `work_tree` warnings the start raised, as `message`.
-fn start_printing(printed: &str, yaml: Option<&str>) -> (StartView, Vec<String>) {
-    let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
-    script_repo(&w, yaml);
-    let view = run(&w.cx, &repo_req("demo")).unwrap();
-    let warned =
-        w.cx.take_warnings()
-            .into_iter()
-            .filter(|w| w.code == "work_tree")
-            .map(|w| w.message)
-            .collect();
-    (view, warned)
-}
-
-#[test]
-fn the_start_reply_says_how_the_work_tree_started() {
-    for (printed, want) in [
-        ("moor: work tree refreshed\n", json!({"state": "refreshed"})),
-        ("moor: work tree cold\n", json!({"state": "cold"})),
-        (
-            "moor: work tree cold after: git fetch failed\n",
-            json!({"state": "cold_after", "reason": "git fetch failed"}),
-        ),
-    ] {
-        let (view, _) = start_printing(printed, Some(YAML));
-        let got = serde_json::to_value(&view).unwrap();
-        assert_eq!(got.get("work_tree"), Some(&want), "{printed}");
-    }
-}
-
-#[test]
-fn refreshed_and_cold_are_start_facts_not_warnings() {
-    for printed in ["moor: work tree refreshed\n", "moor: work tree cold\n"] {
-        let (view, warned) = start_printing(printed, Some(YAML));
-        assert!(warned.is_empty(), "{warned:?}");
-        assert!(
-            view.warnings_inline.is_empty(),
-            "{:?}",
-            view.warnings_inline
-        );
-    }
-}
-
-#[test]
-fn a_refresh_that_fell_back_warns_with_its_reason() {
-    let (_, warned) = start_printing("moor: work tree cold after: git fetch failed\n", Some(YAML));
-    assert_eq!(warned, ["the work tree refresh failed: git fetch failed"]);
-}
-
-#[test]
-fn a_refresh_that_printed_nothing_says_nothing() {
-    let w = world(FakeDriver::new().cache_volumes());
-    script_repo(&w, Some(YAML));
-    let view = run(&w.cx, &repo_req("demo")).unwrap();
-    assert_eq!(view.work_tree, None);
-    assert!(w.cx.take_warnings().iter().all(|w| w.code != "work_tree"));
-}
-
-#[test]
-fn a_box_that_does_not_keep_its_work_tree_says_nothing_about_it() {
-    let (view, warned) = start_printing(
-        "moor: work tree cold after: stale\n",
-        Some("cache: {work_tree: false}\n"),
-    );
-    assert_eq!(view.work_tree, None);
-    assert!(warned.is_empty(), "{warned:?}");
 }
 
 #[test]
