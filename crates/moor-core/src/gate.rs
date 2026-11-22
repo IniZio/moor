@@ -32,7 +32,7 @@ mod wait;
 pub use brief::{split_gate_preamble, split_owner_note};
 pub use check::{Check, CheckDoc, SaidDoc, SAYS_MAX};
 pub use error::GateError;
-pub use line::{GateLine, Tried};
+pub use line::{CheckOf, GateLine, Tried, Unanswered};
 pub use outcome::{
     closing, Outcome, OutcomeDoc, OutcomeName, Tone, Verdict, CLOSING, OUTCOMES_MAX,
     OUTCOME_NAME_MAX,

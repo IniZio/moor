@@ -3,8 +3,11 @@
 
 use super::check::named;
 use super::outcome::CLOSING_TRIES;
-use super::{closing, Approval, Gate, GateLine, GateNext, GateStatus, Gates, Outcome, OutcomeName};
-use crate::workflow::{Answer, StepResult};
+use super::{
+    closing, Approval, CheckOf, Gate, GateLine, GateNext, GateStatus, Gates, Outcome, OutcomeName,
+    Unanswered,
+};
+use crate::workflow::{Answer, StepId, StepResult};
 
 /// How a gate ended short of passing.
 #[derive(Debug)]
@@ -22,8 +25,8 @@ pub(super) struct Attempts {
     used: u8,
     /// Refusals in this try.
     refused: u8,
-    /// Lost check streams on the check in hand.
-    lost: u8,
+    /// Checks in a row moor got no answer from in this try.
+    unanswered: u8,
     /// Checks that passed in this try.
     pub(super) checks: u8,
     /// Whether the agent was reminded in this try.
@@ -127,6 +130,12 @@ impl Walk<'_> {
         if gate.map_or_else(closing, |g| g.name.clone()) != *line.gate() {
             return;
         }
+        if self.end.is_none()
+            && !matches!(line, GateLine::NoAnswer { .. })
+            && line.try_n().is_some_and(|t| self.current(t))
+        {
+            self.tries.unanswered = 0;
+        }
         match (&self.end, gate) {
             (Some(End::Stuck(..)), _) => self.reopen(line),
             (Some(End::Failed(_)), _) => {}
@@ -181,7 +190,15 @@ impl Walk<'_> {
             GateLine::Checked {
                 try_n, check, exit, ..
             } => self.checked(gate, (*try_n, *check), *exit),
-            GateLine::CheckLost { try_n, check, .. } => self.lost(gate, (*try_n, *check)),
+            GateLine::NoAnswer {
+                try_n, check, why, ..
+            } => {
+                if self.waits(gate, *try_n, GateNext::Agent)
+                    || self.waits(gate, *try_n, GateNext::RunChecks)
+                {
+                    self.unanswered(&gate.name, check, why);
+                }
+            }
             GateLine::Reminded { try_n, .. } => self.reminded(gate, *try_n),
             GateLine::Quiet { try_n, .. } => self.quiet(gate, *try_n),
             GateLine::Answered {
@@ -222,6 +239,9 @@ impl Walk<'_> {
             GateLine::NoneHeld { try_n, .. } if self.current(*try_n) => {
                 self.fail_by(CLOSING_TRIES, "no outcome held");
             }
+            GateLine::NoAnswer {
+                try_n, check, why, ..
+            } if self.current(*try_n) => self.unanswered(&closing(), check, why),
             _ => {}
         }
     }
@@ -258,23 +278,18 @@ impl Walk<'_> {
         }
         if exit == 0 {
             self.tries.checks += 1;
-            self.tries.lost = 0;
         } else {
             self.fail(gate, &format!("{} exited {exit}", named(gate, check)));
         }
     }
 
-    /// A check's stream was lost; losing it twice fails the try.
-    fn lost(&mut self, gate: &Gate, (try_n, check): (u8, u8)) {
-        if !self.waits(gate, try_n, GateNext::RunChecks) || check != self.tries.checks {
-            return;
-        }
-        self.tries.lost += 1;
-        if self.tries.lost >= 2 {
-            self.fail(
-                gate,
-                &format!("{} lost its output twice", named(gate, check)),
-            );
+    /// moor got no answer from a check of stage `stage`; the second in a row waits for a person
+    /// and spends no try, since it is not the agent's doing.
+    fn unanswered(&mut self, stage: &StepId, check: &CheckOf, why: &Unanswered) {
+        self.tries.unanswered += 1;
+        if self.tries.unanswered >= 2 {
+            let why = self.gates.unanswered_why(stage, check, why);
+            self.end = Some(End::Stuck(why, self.tries.used + 1));
         }
     }
 

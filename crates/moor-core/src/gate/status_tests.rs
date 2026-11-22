@@ -79,10 +79,11 @@ fn checked(g: &str, try_n: u8, check: u8, exit: i32) -> GateLine {
 }
 
 fn lost(g: &str, try_n: u8, check: u8) -> GateLine {
-    GateLine::CheckLost {
+    GateLine::NoAnswer {
         gate: id(g),
         try_n,
-        check,
+        check: CheckOf::Gate { check },
+        why: Unanswered::Lost,
     }
 }
 
@@ -251,12 +252,13 @@ fn checks_stop_at_the_first_failure() {
 }
 
 #[test]
-fn a_lost_stream_is_tried_again_and_two_count_as_a_failure() {
+fn a_lost_stream_is_tried_again_and_two_wait_for_a_person() {
     let g = gates(&[tries(2, doc("tests", &[], &["a"], None))]);
     let once = [lost("tests", 1, 0)];
     assert_eq!(status(&g, &once), open("tests", 1, GateNext::RunChecks));
     let twice = [lost("tests", 1, 0), lost("tests", 1, 0)];
-    assert_eq!(status(&g, &twice), open("tests", 2, GateNext::RunChecks));
+    let why = "moor, not the agent, could not run check 1 (`a`) twice: its output stream was lost";
+    assert_eq!(status(&g, &twice), stuck("tests", 1, why));
     let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
     assert_eq!(status(&g, &then_ok), passed());
 }
@@ -395,3 +397,4 @@ fn a_check_out_of_order_changes_nothing() {
 
 mod answered;
 mod due;
+mod no_answer;

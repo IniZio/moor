@@ -87,7 +87,7 @@ fn none_held(try_n: u8) -> GateLine {
         tried: vec![Tried {
             outcome: OutcomeName("check passed".to_owned()),
             check: 0,
-            exit: Some(1),
+            exit: 1,
             tail: "state is failure".to_owned(),
         }],
     }

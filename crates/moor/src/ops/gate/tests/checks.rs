@@ -165,7 +165,7 @@ fn two_lost_streams_in_one_try_fail_the_try() {
 }
 
 #[test]
-fn a_try_that_failed_with_tries_left_tells_the_agent_that_the_output_was_lost() {
+fn two_lost_streams_with_tries_left_spend_none_and_tell_the_agent_nothing() {
     let f = fx_on(
         FakeDriver::new().exec_fails_when("lost-always", cut()),
         |_| vec![gate("tests", &["echo lost-always"], 2)],
@@ -173,10 +173,8 @@ fn a_try_that_failed_with_tries_left_tells_the_agent_that_the_output_was_lost() 
     f.quiet();
     f.pass();
     f.pass();
-    let told = f.told();
-    assert_eq!(told.len(), 1, "{told:?}");
-    assert!(told[0].contains("lost"), "{}", told[0]);
-    assert_eq!(f.standing().0, open("tests", 2));
+    assert!(f.told().is_empty(), "{:?}", f.told());
+    assert!(matches!(f.standing().0, GateStatus::Stuck { try_n: 1, .. }));
 }
 
 #[test]
@@ -292,7 +290,7 @@ fn a_check_sees_the_env_of_the_run_the_agent_shell_sees() {
 }
 
 #[test]
-fn a_check_that_did_not_run_writes_nothing_and_runs_on_the_next_pass() {
+fn a_check_that_did_not_run_is_written_as_no_answer_and_runs_on_the_next_pass() {
     let f = fx_on(
         FakeDriver::new().exec_fails_once_when("busy-once", busy()),
         |_| vec![gate("tests", &["echo busy-once"], 1)],
@@ -300,10 +298,17 @@ fn a_check_that_did_not_run_writes_nothing_and_runs_on_the_next_pass() {
     f.quiet();
     let logged = f.pass();
     assert!(logged.iter().any(|l| l.contains("busy")), "{logged:?}");
-    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    assert!(
+        matches!(f.lines().as_slice(), [GateLine::NoAnswer { .. }]),
+        "{:?}",
+        f.lines()
+    );
     assert_eq!(f.standing().0, open("tests", 1));
     f.pass();
-    assert_eq!(f.exits(), [("tests".to_owned(), Some(0))]);
+    assert_eq!(
+        f.exits(),
+        [("tests".to_owned(), None), ("tests".to_owned(), Some(0))]
+    );
     assert_eq!(f.standing(), (done(), Progress::Done));
     assert!(f.told().is_empty());
 }

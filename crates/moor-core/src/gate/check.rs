@@ -2,7 +2,8 @@
 
 use schemars::JsonSchema;
 
-use super::{Gate, GateError};
+use super::{CheckOf, Gate, GateError, Gates, Unanswered};
+use crate::workflow::StepId;
 
 /// The longest sentence a check may say, in characters.
 pub const SAYS_MAX: usize = 200;
@@ -95,13 +96,58 @@ impl Gate {
         let Some(c) = self.checks.get(usize::from(check)) else {
             return "``".to_owned();
         };
-        if let Some(says) = &c.says {
-            return says.clone();
+        c.says.clone().unwrap_or_else(|| cut(&c.run))
+    }
+}
+
+/// Command `run` cut short and in backticks.
+fn cut(run: &str) -> String {
+    let run = run.trim();
+    let cut: String = run.chars().take(60).collect();
+    let more = if run.chars().count() > 60 { "…" } else { "" };
+    format!("`{cut}{more}`")
+}
+
+impl Gates {
+    /// The check `of` names at stage `stage`: a gate's own, or an outcome's.
+    #[must_use]
+    pub fn check_of(&self, stage: &StepId, of: &CheckOf) -> Option<&Check> {
+        match of {
+            CheckOf::Gate { check } => self
+                .iter()
+                .find(|g| g.name == *stage)?
+                .checks
+                .get(usize::from(*check)),
+            CheckOf::Outcome { outcome, check } => self
+                .outcomes()
+                .iter()
+                .find(|o| o.name == *outcome)?
+                .checks
+                .get(usize::from(*check)),
         }
-        let run = c.run.trim();
-        let cut: String = run.chars().take(60).collect();
-        let more = if run.chars().count() > 60 { "…" } else { "" };
-        format!("`{cut}{more}`")
+    }
+
+    /// Why stage `stage` is stuck after moor got no answer from check `of` twice.
+    pub(super) fn unanswered_why(&self, stage: &StepId, of: &CheckOf, why: &Unanswered) -> String {
+        let (whose, check) = match of {
+            CheckOf::Gate { check } => (String::new(), *check),
+            CheckOf::Outcome { outcome, check } => (format!("outcome `{outcome}` "), *check),
+        };
+        let what = match self.check_of(stage, of) {
+            Some(Check {
+                says: Some(says), ..
+            }) => format!(" (“{says}”)"),
+            Some(Check { run, says: None }) => format!(" ({})", cut(run)),
+            None => String::new(),
+        };
+        let reason = match why {
+            Unanswered::NotRun { reason } => reason.trim(),
+            Unanswered::Lost => "its output stream was lost",
+        };
+        format!(
+            "moor, not the agent, could not run {whose}check {}{what} twice: {reason}",
+            check + 1
+        )
     }
 }
 

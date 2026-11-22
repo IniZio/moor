@@ -10,7 +10,9 @@
 //! steered to the agent, which then fixes the work and goes quiet again.
 
 use moor_core::domain::event::Origin;
-use moor_core::gate::{due_check, due_outcomes, status, GateLine, GateStatus, Gates};
+use moor_core::gate::{
+    due_check, due_outcomes, status, CheckOf, GateLine, GateStatus, Gates, Unanswered,
+};
 use moor_core::request::BoxTarget;
 use moor_core::view::steer::SteerValue;
 use moor_core::workflow::{Answer, StepId};
@@ -204,14 +206,6 @@ fn failure_text(gates: &Gates, lines: &[GateLine]) -> Option<(usize, String)> {
             *try_n,
             waiting()?.failed_check_steer(*check, (&format!("exited {exit}"), tail)),
         ),
-        GateLine::CheckLost {
-            gate: g,
-            try_n,
-            check,
-        } if g == &gate => (
-            *try_n,
-            waiting()?.failed_check_steer(*check, ("lost its output twice", "")),
-        ),
         GateLine::Answered {
             gate: g,
             try_n,
@@ -305,17 +299,23 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
             id.get()
         ));
     }
+    if run_ended(store, id) {
+        return out;
+    }
     let gate = gate.clone();
-    let line = match ran.ended {
-        Ended::NotRun { .. } => return out,
-        _ if run_ended(store, id) => return out,
-        Ended::Lost => GateLine::CheckLost { gate, try_n, check },
-        Ended::Exit { exit, tail } => GateLine::Checked {
+    let line = match unanswered(ran.ended, ran.error) {
+        Ok((exit, tail)) => GateLine::Checked {
             gate,
             try_n,
             check,
             exit,
             tail,
+        },
+        Err(why) => GateLine::NoAnswer {
+            gate,
+            try_n,
+            check: CheckOf::Gate { check },
+            why,
         },
     };
     match store.append_gate_line(id, n, cx.clock().now(), &line) {
@@ -332,6 +332,18 @@ pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Ve
     }
     out.extend(cx.take_warnings().into_iter().map(|w| w.message));
     out
+}
+
+/// The exit code and tail of a check that ended as `ended`, or why moor got no answer from it,
+/// with the exec's `error` as the reason it did not run.
+pub(super) fn unanswered(ended: Ended, error: Option<String>) -> Result<(i32, String), Unanswered> {
+    match ended {
+        Ended::Exit { exit, tail } => Ok((exit, tail)),
+        Ended::Lost => Err(Unanswered::Lost),
+        Ended::NotRun { tail } => Err(Unanswered::NotRun {
+            reason: error.unwrap_or(tail),
+        }),
+    }
 }
 
 /// Tells the agent of Box `id` what failed, when its newest line ended a try.

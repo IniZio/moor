@@ -90,7 +90,6 @@ fn of_line(gates: &Gates, line: &GateLine) -> Option<HistoryEntry> {
             exit,
             tail,
         },
-        GateLine::CheckLost { gate, try_n, .. } => HistoryEntry::CheckLost { step: gate, try_n },
         GateLine::Reminded { gate, try_n } => HistoryEntry::Reminded { step: gate, try_n },
         GateLine::Answered {
             gate,
@@ -106,6 +105,7 @@ fn of_line(gates: &Gates, line: &GateLine) -> Option<HistoryEntry> {
             note: Some(note).filter(|n| !n.is_empty()),
         },
         GateLine::Quiet { .. }
+        | GateLine::NoAnswer { .. }
         | GateLine::TryFailed { .. }
         | GateLine::Reopened { .. }
         | GateLine::Held { .. }

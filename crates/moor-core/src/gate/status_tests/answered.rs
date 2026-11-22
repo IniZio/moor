@@ -38,7 +38,7 @@ fn a_failed_check_is_named_by_its_command() {
     );
     let got = status(&h, &[lost("tests", 1, 0), lost("tests", 1, 0)]);
     let want = format!(
-        "out of tries: check 1 (`{}…`) lost its output twice",
+        "moor, not the agent, could not run check 1 (`{}…`) twice: its output stream was lost",
         "x".repeat(60)
     );
     assert_eq!(got, stuck("tests", 1, &want));

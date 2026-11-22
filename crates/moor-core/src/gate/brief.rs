@@ -94,10 +94,7 @@ impl Gates {
                     Some(Check { run, says: None }) => format!("`{run}`"),
                     None => format!("check {}", t.check + 1),
                 };
-                let how = t
-                    .exit
-                    .map_or_else(|| "lost its output".to_owned(), |e| format!("exited {e}"));
-                let mut line = format!("- `{}`: {what} {how}.", t.outcome);
+                let mut line = format!("- `{}`: {what} exited {}.", t.outcome, t.exit);
                 if !t.tail.trim().is_empty() {
                     line.push_str(" The end of its output:\n");
                     line.push_str(t.tail.trim_end());

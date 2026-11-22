@@ -2,19 +2,20 @@
 //! first whose checks all pass is the run's. The agent never claims one.
 //!
 //! At the closing stage every check that answers leads to a line: the outcome that held, or that
-//! none did, which fails the try and is steered to the agent. A check with no answer, lost or not
-//! run, writes nothing, and the next pass tries again. While the gate in hand has not passed
-//! only the `anytime` outcomes are tried, and when none holds the pass goes on as it would
-//! without them: it runs the gate's due check, or reminds the agent.
+//! none did, which fails the try and is steered to the agent. A check moor got no answer from,
+//! lost or not run, stops the pass with a `NoAnswer` line: the next pass tries again, and a
+//! second in a row waits for a person. While the gate in hand has not passed only the `anytime`
+//! outcomes are tried, and when none holds the pass goes on as it would without them: it runs the
+//! gate's due check, or reminds the agent.
 
-use moor_core::gate::{DueOutcomes, GateLine, OutcomeName, Tried};
+use moor_core::gate::{CheckOf, DueOutcomes, GateLine, OutcomeName, Tried, Unanswered};
 use moor_core::workflow::StepId;
 use moor_core::BoxId;
 
-use super::checks::{run_check, run_ended, taken, tell, GateCheck};
+use super::checks::{run_check, run_ended, taken, tell, unanswered, GateCheck};
 use super::remind::remind;
 use crate::cx::Cx;
-use crate::ops::common::check::{execute, Ended, CHECK_LIMIT};
+use crate::ops::common::check::{execute, CHECK_LIMIT};
 
 /// The outcomes a job tries, with their commands, at a stage and try.
 pub(super) struct Due {
@@ -66,6 +67,8 @@ enum Found {
     Held(OutcomeName),
     /// None held; each with the check that stopped it.
     None(Vec<Tried>),
+    /// moor got no answer from this check, which decides nothing.
+    NoAnswer(CheckOf, Unanswered),
 }
 
 /// Tries the outcomes of `due` in Box `id` and writes what it found as line `n`. Returns what to
@@ -84,6 +87,12 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
             gate: due.stage.clone(),
             try_n: due.try_n,
             outcome,
+        },
+        Found::NoAnswer(check, why) => GateLine::NoAnswer {
+            gate: due.stage.clone(),
+            try_n: due.try_n,
+            check,
+            why,
         },
         Found::None(tried) if due.closing => GateLine::NoneHeld {
             gate: due.stage.clone(),
@@ -114,9 +123,9 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
     out
 }
 
-/// Runs the outcomes' checks in order until one outcome holds. None when the Box is gone or a
-/// check gave no answer, lost or not run: that decides nothing, so a later outcome never wins for
-/// want of an answer, and the next pass tries again.
+/// Runs the outcomes' checks in order until one outcome holds or one gives no answer, lost or not
+/// run: that decides nothing, so a later outcome never wins for want of an answer. None when the
+/// Box is gone.
 fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);
     let mut tried = Vec::new();
@@ -129,15 +138,19 @@ fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
                     id.get()
                 ));
             }
-            let (exit, tail) = match ran.ended {
-                Ended::NotRun { .. } | Ended::Lost => return None,
-                Ended::Exit { exit: 0, .. } => continue,
-                Ended::Exit { exit, tail } => (exit, tail),
+            let check = u8::try_from(at).unwrap_or(u8::MAX);
+            let (exit, tail) = match unanswered(ran.ended, ran.error) {
+                Ok((0, _)) => continue,
+                Ok(answer) => answer,
+                Err(why) => {
+                    let outcome = name.clone();
+                    return Some(Found::NoAnswer(CheckOf::Outcome { outcome, check }, why));
+                }
             };
             tried.push(Tried {
                 outcome: name.clone(),
-                check: u8::try_from(at).unwrap_or(u8::MAX),
-                exit: Some(exit),
+                check,
+                exit,
                 tail,
             });
             continue 'outcomes;

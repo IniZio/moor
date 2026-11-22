@@ -325,10 +325,11 @@ fn a_stuck_card_carries_the_end_of_the_output_and_what_the_person_can_do() {
 #[test]
 fn the_cards_json_names_its_kind_and_gate() {
     let d = doc(&[], &["make"], false);
-    let failed = crate::gate::GateLine::CheckLost {
+    let failed = crate::gate::GateLine::NoAnswer {
         gate: proof(),
         try_n: 1,
-        check: 0,
+        check: crate::gate::CheckOf::Gate { check: 0 },
+        why: crate::gate::Unanswered::Lost,
     };
     let lines = [failed.clone(), failed];
     let p = derive(&standing(BoxLifecycle::Ready, &d, &lines), &[], ten());

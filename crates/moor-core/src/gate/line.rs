@@ -42,14 +42,17 @@ pub enum GateLine {
         /// The end of its output.
         tail: String,
     },
-    /// A check's output stream was lost before it had an exit code.
-    CheckLost {
-        /// The gate.
+    /// moor got no answer from a check, of the gate in hand or of an outcome: it did not run,
+    /// or its output stream was lost. Not the agent's doing, so it spends no try.
+    NoAnswer {
+        /// The gate in hand, or the closing stage.
         gate: StepId,
         /// The try.
         try_n: u8,
-        /// The check's place among the gate's checks, from 0.
-        check: u8,
+        /// Which check.
+        check: CheckOf,
+        /// Why there was no answer.
+        why: Unanswered,
     },
     /// The agent was quiet with nothing submitted, and was reminded.
     Reminded {
@@ -122,10 +125,41 @@ pub struct Tried {
     pub outcome: OutcomeName,
     /// The check's place among the outcome's checks, from 0.
     pub check: u8,
-    /// Its exit code; none when its output stream was lost.
-    pub exit: Option<i32>,
+    /// Its exit code.
+    pub exit: i32,
     /// The end of its output.
     pub tail: String,
+}
+
+/// Which check a [`GateLine::NoAnswer`] is about.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckOf {
+    /// A check of the gate in hand, by its place from 0.
+    Gate {
+        /// The check's place among the gate's checks, from 0.
+        check: u8,
+    },
+    /// A check of an outcome, by its place from 0.
+    Outcome {
+        /// The outcome.
+        outcome: OutcomeName,
+        /// The check's place among the outcome's checks, from 0.
+        check: u8,
+    },
+}
+
+/// Why moor got no answer from a check.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Unanswered {
+    /// The exec failed before the check ran, such as a busy Box.
+    NotRun {
+        /// The exec's error.
+        reason: String,
+    },
+    /// The link to the machine was cut before the check had an exit code.
+    Lost,
 }
 
 impl GateLine {
@@ -150,7 +184,7 @@ impl GateLine {
             Self::Submitted { gate, .. }
             | Self::Refused { gate, .. }
             | Self::Checked { gate, .. }
-            | Self::CheckLost { gate, .. }
+            | Self::NoAnswer { gate, .. }
             | Self::Reminded { gate, .. }
             | Self::Quiet { gate, .. }
             | Self::Answered { gate, .. }
@@ -158,6 +192,24 @@ impl GateLine {
             | Self::Reopened { gate, .. }
             | Self::Held { gate, .. }
             | Self::NoneHeld { gate, .. } => gate,
+        }
+    }
+
+    /// The try the line belongs to; none for a reopening.
+    #[must_use]
+    pub const fn try_n(&self) -> Option<u8> {
+        match self {
+            Self::Submitted { try_n, .. }
+            | Self::Refused { try_n, .. }
+            | Self::Checked { try_n, .. }
+            | Self::NoAnswer { try_n, .. }
+            | Self::Reminded { try_n, .. }
+            | Self::Quiet { try_n, .. }
+            | Self::Answered { try_n, .. }
+            | Self::TryFailed { try_n, .. }
+            | Self::Held { try_n, .. }
+            | Self::NoneHeld { try_n, .. } => Some(*try_n),
+            Self::Reopened { .. } => None,
         }
     }
 }

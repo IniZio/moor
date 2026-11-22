@@ -79,6 +79,10 @@ impl Wait {
     }
 }
 
+/// What a person can do when moor could not run a check: the agent did nothing wrong.
+const NO_ANSWER_HINT: &str = "moor, not the agent, could not run this check. Send the agent a \
+                              message to reopen the gate and run it again, or close the Box.";
+
 /// The wait the gates are at after `lines`; none unless a gate waits for a person.
 #[must_use]
 pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
@@ -91,20 +95,6 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         began -= 1;
     }
     let seq = u32::try_from(began).unwrap_or(u32::MAX);
-    let blank = |gate: &StepId, kind, hint: &str| Wait {
-        gate: gate.to_string(),
-        kind,
-        seq,
-        try_n: None,
-        why: None,
-        handed: Vec::new(),
-        note: None,
-        command: None,
-        says: None,
-        tail: None,
-        missing: Vec::new(),
-        hint: hint.to_owned(),
-    };
     match now {
         GateStatus::Open {
             gate,
@@ -113,7 +103,7 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
         } => {
             let hint =
                 "Answer yes to pass the gate, or no to fail this try; a note goes to the agent.";
-            let mut w = blank(&gate, WaitKind::Approve, hint);
+            let mut w = Wait::blank(&gate, (WaitKind::Approve, seq), hint);
             w.try_n = Some(u32::from(try_n));
             for line in lines {
                 if let GateLine::Submitted {
@@ -131,9 +121,17 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             Some(w)
         }
         GateStatus::Stuck { gate, why, .. } => {
-            let hint = "Send the agent a message to reopen the gate with fresh tries.";
-            let mut w = blank(&gate, WaitKind::Stuck, hint);
+            let cause = began.checked_sub(1).and_then(|n| lines.get(n));
+            let hint = match cause {
+                Some(GateLine::NoAnswer { .. }) => NO_ANSWER_HINT,
+                _ => "Send the agent a message to reopen the gate with fresh tries.",
+            };
+            let mut w = Wait::blank(&gate, (WaitKind::Stuck, seq), hint);
             w.why = Some(why);
+            if let Some(GateLine::NoAnswer { check, .. }) = cause {
+                unanswered_by(&mut w, gates.check_of(&gate, check));
+                return Some(w);
+            }
             match gates.iter().find(|g| g.name == gate) {
                 Some(g) => stuck_by(&mut w, g, lines),
                 None => w.tail = none_held_by(gates, lines),
@@ -141,6 +139,34 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             Some(w)
         }
         GateStatus::Open { .. } | GateStatus::Failed { .. } | GateStatus::Passed { .. } => None,
+    }
+}
+
+impl Wait {
+    /// A wait at `gate` of `kind` that began at `seq`, with only its `hint` filled.
+    fn blank(gate: &StepId, (kind, seq): (WaitKind, u32), hint: &str) -> Self {
+        Self {
+            gate: gate.to_string(),
+            kind,
+            seq,
+            try_n: None,
+            why: None,
+            handed: Vec::new(),
+            note: None,
+            command: None,
+            says: None,
+            tail: None,
+            missing: Vec::new(),
+            hint: hint.to_owned(),
+        }
+    }
+}
+
+/// Fills `w` with the check moor got no answer from.
+fn unanswered_by(w: &mut Wait, check: Option<&super::Check>) {
+    if let Some(c) = check {
+        w.command = Some(c.run.clone());
+        w.says.clone_from(&c.says);
     }
 }
 
@@ -172,10 +198,6 @@ fn stuck_by(w: &mut Wait, gate: &super::Gate, lines: &[GateLine]) {
             } if *g == gate.name && *exit != 0 => {
                 put(w, *check);
                 w.tail = Some(tail.clone()).filter(|t| !t.trim().is_empty());
-                return;
-            }
-            GateLine::CheckLost { gate: g, check, .. } if *g == gate.name => {
-                put(w, *check);
                 return;
             }
             GateLine::Refused {

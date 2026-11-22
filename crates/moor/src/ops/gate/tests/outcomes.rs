@@ -235,7 +235,11 @@ fn an_outcome_check_that_did_not_run_decides_nothing_and_runs_on_the_next_pass()
     f.pass();
     let logged = f.pass();
     assert!(logged.iter().any(|l| l.contains("busy")), "{logged:?}");
-    assert_eq!(kinds(&f), ["checked"], "no result writes no line");
+    assert_eq!(
+        kinds(&f),
+        ["checked", "no_answer"],
+        "no result decides nothing"
+    );
     assert!(f.told().is_empty());
     f.pass();
     assert_eq!(
@@ -246,7 +250,7 @@ fn an_outcome_check_that_did_not_run_decides_nothing_and_runs_on_the_next_pass()
 }
 
 #[test]
-fn a_lost_stream_of_an_outcome_check_writes_nothing_and_runs_on_the_next_pass() {
+fn a_lost_stream_of_an_outcome_check_decides_nothing_and_runs_on_the_next_pass() {
     let f = fx_outcomes_on(
         FakeDriver::new().exec_fails_once_when("no check failed", cut()),
         |dir| three(dir, vec![gate("tests", &["true"], 2)]),
@@ -255,7 +259,11 @@ fn a_lost_stream_of_an_outcome_check_writes_nothing_and_runs_on_the_next_pass() 
     f.quiet();
     f.pass();
     f.pass();
-    assert_eq!(kinds(&f), ["checked"], "a lost stream writes no line");
+    assert_eq!(
+        kinds(&f),
+        ["checked", "no_answer"],
+        "a lost stream decides nothing"
+    );
     assert!(
         f.told().is_empty(),
         "the agent is not steered for moor's fault"
@@ -268,7 +276,7 @@ fn a_lost_stream_of_an_outcome_check_writes_nothing_and_runs_on_the_next_pass() 
 }
 
 #[test]
-fn a_lost_stream_of_an_anytime_check_neither_reminds_nor_writes() {
+fn a_lost_stream_of_an_anytime_check_does_not_remind() {
     let f = fx_outcomes_on(
         FakeDriver::new().exec_fails_once_when("no nothing to do", cut()),
         |dir| three(dir, vec![evidence_gate("proof", &["pr-*"], &[], 2)]),
@@ -276,7 +284,7 @@ fn a_lost_stream_of_an_anytime_check_neither_reminds_nor_writes() {
     hold(&f, "nothing to do");
     f.quiet();
     f.pass();
-    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    assert_eq!(kinds(&f), ["no_answer"]);
     assert!(
         f.told().is_empty(),
         "no reminder for a check that gave no answer"
@@ -334,7 +342,11 @@ fn a_lost_anytime_check_at_a_gate_with_only_checks_holds_back_the_gates_check_to
     );
     f.quiet();
     f.pass();
-    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    assert_eq!(kinds(&f), ["no_answer"], "the gate's check did not run");
     f.pass();
-    assert_eq!(kinds(&f), ["checked"], "the next pass runs both");
+    assert_eq!(
+        kinds(&f),
+        ["no_answer", "checked"],
+        "the next pass runs both"
+    );
 }
