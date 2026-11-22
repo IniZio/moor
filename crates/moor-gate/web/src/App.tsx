@@ -7,6 +7,7 @@ import { SignedOutDialog } from './SignedOutDialog';
 import { pathOf } from './hashQuery';
 import { BoxPage, Home, tabOf, useBoxes, usePoll } from './Portal';
 import { sectionAt, Settings } from './Settings';
+import { Peek } from './Peek';
 import { TopBar } from './TopBar';
 import { Workflows, workflowsAt } from './Workflows';
 import { WriteField } from './WriteField';
@@ -95,6 +96,7 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 							<WriteField account={account} rows={boxes.value ?? []} asked={composing} onStarted={boxes.reload} />
 							{fresh && <Checklist account={account} />}
 							<Home boxes={boxes} hash={address} />
+							<Peek rows={boxes.value} now={boxes.now} hash={address} csrf={account.csrf} onSent={boxes.reload} />
 						</>
 					)}
 				</>

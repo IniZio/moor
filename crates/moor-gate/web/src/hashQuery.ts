@@ -23,6 +23,17 @@ export function withQuery(hash: string, changes: Record<string, string>): string
 	return (path.startsWith('#') ? path : `#/${path}`) + (text ? `?${text}` : '');
 }
 
+/** The box whose peek panel is open, as the address holds it; none when empty. */
+export function peekOf(hash: string): string {
+	return queryOf(hash).get('peek') ?? '';
+}
+
+/** Opens the peek on `box`, or closes it when empty. Replaces the address, so j and k do not fill Back; the app only listens for hashchange, so it is sent by hand. */
+export function setPeek(box: string): void {
+	history.replaceState(null, '', withQuery(location.hash, { peek: box }));
+	dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
 /** How the Tasks home groups its rows. */
 export type Grouping = 'state' | 'repo';
 

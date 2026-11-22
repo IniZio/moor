@@ -1,5 +1,7 @@
 import * as v from 'valibot';
 
+import type { BoxRow, Needs } from './api';
+
 /** What an open gate waits for. */
 const NextSchema = v.picklist(['agent', 'run_checks', 'ask', 'decide']);
 
@@ -230,6 +232,13 @@ export function gateLine(view: GateView | null | undefined): string | null {
 		default:
 			return null;
 	}
+}
+
+/** A row that waits on a gate's card: its Needs carries the gate to read and answer in place. */
+export type Peekable = BoxRow & { needs: Needs & { gate: Wait } };
+
+export function peekable(t: BoxRow): t is Peekable {
+	return t.state === 'needs_you' && !!t.needs?.gate;
 }
 
 /** A check's output cut to its last `keep` lines for the card, and the whole of it when it was cut. */
