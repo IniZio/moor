@@ -21,6 +21,8 @@ const DOCKER: &str = "docker";
 #[cfg(test)]
 mod tests;
 
+mod host;
+
 /// How many seconds `up` waits for the service's first link.
 const LINK_WAIT_SECS: u32 = 60;
 
@@ -62,6 +64,9 @@ pub struct Up {
 /// Brings this machine to linked with `up.server`, keeping its key and state in `dir` and its
 /// service with `manager`, and telling `say` each step; the last line to show.
 ///
+/// Where systemd runs the service, it first makes the host ready for rootless Docker, asking through `ask`
+/// before it runs anything as root; none means no terminal to ask on.
+///
 /// # Errors
 /// The server takes no machines, Docker is not usable, pairing fails, or the service does
 /// not start or link.
@@ -69,6 +74,7 @@ pub fn up(
     up: &Up,
     dir: &Path,
     manager: &Manager,
+    ask: Option<&mut dyn FnMut(&str) -> bool>,
     say: &mut dyn FnMut(&str),
 ) -> Result<String, String> {
     let server = origin(&up.server);
@@ -78,6 +84,9 @@ pub fn up(
         Runtime::Boxes { kind, .. } => {
             Host::named(kind, dir)?;
             if kind == DOCKER {
+                if matches!(manager, Manager::Systemd { .. }) {
+                    host::prepare(&host::Facts::read, &mut host::Real, ask, say)?;
+                }
                 docker_ready()?;
                 trust_docker(say)?;
             }

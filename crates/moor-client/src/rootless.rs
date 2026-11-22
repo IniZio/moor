@@ -17,7 +17,7 @@ pub const SECURITY_ARGS: [&str; 3] = ["info", "--format", "{{json .SecurityOptio
 const LIVE_RESTORE_ARGS: [&str; 3] = ["info", "--format", "{{.LiveRestoreEnabled}}"];
 
 /// Ids a user needs in each of `/etc/subuid` and `/etc/subgid`.
-const SUBIDS_MIN: u64 = 65_536;
+pub const SUBIDS_MIN: u64 = 65_536;
 /// The flag that closes the host's loopback to every Box.
 const LOOPBACK_FLAG: &str = "--disable-host-loopback";
 /// The runbook that sets a host up for Docker Boxes.
@@ -117,7 +117,8 @@ pub fn warnings(facts: &Facts) -> Vec<Failure> {
 }
 
 /// The user's ids in `file` for the name or uid `user`: every range counts.
-fn subid_count(file: &str, user: &str, uid: u32) -> u64 {
+#[must_use]
+pub fn subid_count(file: &str, user: &str, uid: u32) -> u64 {
     file.lines()
         .filter_map(|line| {
             let mut f = line.split(':');
