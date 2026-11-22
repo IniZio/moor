@@ -14,7 +14,7 @@ use moor_core::gate::{
 };
 use moor_core::progress::Progress;
 
-use super::fx::{busy, evidence_gate, fx_outcomes, fx_outcomes_on, gate, Fx};
+use super::fx::{busy, cut, evidence_gate, fx_outcomes, fx_outcomes_on, gate, Fx};
 use crate::testing::driver::FakeDriver;
 
 /// An outcome that holds once the file `name` is in `dir`.
@@ -242,5 +242,42 @@ fn an_outcome_check_that_did_not_run_decides_nothing_and_runs_on_the_next_pass()
         reached(&f),
         ("check failed".to_owned(), Tone::Bad, Progress::Done),
         "a check that did not run never lets a later outcome win"
+    );
+}
+
+#[test]
+fn a_lost_stream_of_an_outcome_check_writes_nothing_and_runs_on_the_next_pass() {
+    let f = fx_outcomes_on(
+        FakeDriver::new().exec_fails_once_when("no check failed", cut()),
+        |dir| three(dir, vec![gate("tests", &["true"], 2)]),
+    );
+    hold(&f, "check failed");
+    f.quiet();
+    f.pass();
+    f.pass();
+    assert_eq!(kinds(&f), ["checked"], "a lost stream writes no line");
+    assert!(f.told().is_empty(), "the agent is not steered for moor's fault");
+    f.pass();
+    assert_eq!(
+        reached(&f),
+        ("check failed".to_owned(), Tone::Bad, Progress::Done)
+    );
+}
+
+#[test]
+fn a_lost_stream_of_an_anytime_check_neither_reminds_nor_writes() {
+    let f = fx_outcomes_on(
+        FakeDriver::new().exec_fails_once_when("no nothing to do", cut()),
+        |dir| three(dir, vec![evidence_gate("proof", &["pr-*"], &[], 2)]),
+    );
+    hold(&f, "nothing to do");
+    f.quiet();
+    f.pass();
+    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    assert!(f.told().is_empty(), "no reminder for a check that gave no answer");
+    f.pass();
+    assert_eq!(
+        reached(&f),
+        ("nothing to do".to_owned(), Tone::Plain, Progress::Done)
     );
 }

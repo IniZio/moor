@@ -95,9 +95,9 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
     out
 }
 
-/// Runs the outcomes' checks in order until one outcome holds. A lost stream stops the search, so
-/// a later outcome never wins for want of an answer. None when the Box is gone or a check did not
-/// run, which decides nothing: the next pass tries again.
+/// Runs the outcomes' checks in order until one outcome holds. None when the Box is gone or a
+/// check gave no answer, lost or not run: that decides nothing, so a later outcome never wins for
+/// want of an answer, and the next pass tries again.
 fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);
     let mut tried = Vec::new();
@@ -111,21 +111,16 @@ fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
                 ));
             }
             let (exit, tail) = match ran.ended {
-                Ended::NotRun { .. } => return None,
-                Ended::Lost => (None, String::new()),
+                Ended::NotRun { .. } | Ended::Lost => return None,
                 Ended::Exit { exit: 0, .. } => continue,
-                Ended::Exit { exit, tail } => (Some(exit), tail),
+                Ended::Exit { exit, tail } => (exit, tail),
             };
-            let check = u8::try_from(at).unwrap_or(u8::MAX);
             tried.push(Tried {
                 outcome: name.clone(),
-                check,
-                exit,
+                check: u8::try_from(at).unwrap_or(u8::MAX),
+                exit: Some(exit),
                 tail,
             });
-            if exit.is_none() {
-                break 'outcomes;
-            }
             continue 'outcomes;
         }
         return Some(Found::Held(name.clone()));
