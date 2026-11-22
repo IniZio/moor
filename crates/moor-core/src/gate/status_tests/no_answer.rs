@@ -304,3 +304,33 @@ fn a_lost_stream_is_tried_again_and_two_wait_for_a_person() {
     let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
     assert_eq!(status(&g, &then_ok), passed());
 }
+
+#[test]
+fn an_outcome_cause_with_a_sentence_names_the_outcome_in_its_json() {
+    let merged = OutcomeDoc {
+        name: "merged".to_owned(),
+        says: None,
+        tone: None,
+        checks: vec![CheckDoc::Said(SaidDoc {
+            run: "gh pr view".to_owned(),
+            says: "The pull request is merged.".to_owned(),
+        })],
+        anytime: false,
+    };
+    let g = Gates::parse(&[doc("tests", &[], &["make"], None)], &[merged]).unwrap();
+    let lines = [checked("tests", 1, 0, 0), outcome_busy(1), outcome_busy(1)];
+    let json = serde_json::to_value(status(&g, &lines)).unwrap();
+    let want = serde_json::json!({
+        "state": "stuck", "gate": "outcome", "try_n": 1,
+        "why": "moor, not the agent, got no answer from its checks twice in a row; the last was \
+                outcome `merged` check 1 (“The pull request is merged.”): Box 3 is busy with \
+                another command",
+        "unanswered": {
+            "check": {"outcome": {"outcome": "merged", "check": 0}},
+            "command": "gh pr view",
+            "says": "The pull request is merged.",
+            "reason": {"kind": "not_run", "reason": "Box 3 is busy with another command"},
+        },
+    });
+    assert_eq!(json, want);
+}

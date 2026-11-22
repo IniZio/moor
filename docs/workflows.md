@@ -164,7 +164,8 @@ The gates, not the agent going quiet, decide how the run ends.
 - A gate is stuck, or asks the owner. The run `waits`, and the owner hears of
   it as at an approve step. `answer_gate` on the run's Box answers a gate that
   asks. A message to the Box reopens a stuck gate with fresh tries, and the
-  run goes on. Waiting does not count toward `timeout_minutes`. A wait with
+  run goes on. A gate stuck because moor got no answer keeps its try and
+  what the agent handed in, so moor runs its checks again at once. Waiting does not count toward `timeout_minutes`. A wait with
   no answer ends the run `declined` after 7 days.
 
 A gated run starts at its first gate, and its history never names a plan step.

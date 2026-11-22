@@ -12,7 +12,7 @@ use crate::workflow::{StepId, StepResult};
 pub enum WaitKind {
     /// Say yes or no to what the agent handed in.
     Approve,
-    /// Steer the agent, which reopens the gate with fresh tries.
+    /// Steer the agent, which reopens the gate.
     Stuck,
 }
 
