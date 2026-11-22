@@ -238,8 +238,8 @@ fn add(
     })
 }
 
-/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates left out are the
-/// stored ones, and an empty list is none.
+/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates or outcomes left
+/// out are the stored ones, and an empty list is none.
 fn parse_gates(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,
@@ -256,9 +256,18 @@ fn parse_gates(
                 .to_owned(),
         )),
         Some([]) => Ok(None),
-        Some(docs) => Gates::parse(docs, outcomes.unwrap_or_default())
-            .map(Some)
-            .map_err(|e| usage(e.to_string())),
+        Some(docs) => {
+            let stored = || {
+                prior
+                    .and_then(|w| w.gates.as_ref())
+                    .map(Gates::outcome_docs)
+                    .unwrap_or_default()
+            };
+            let outcomes = outcomes.map_or_else(stored, <[_]>::to_vec);
+            Gates::parse(docs, &outcomes)
+                .map(Some)
+                .map_err(|e| usage(e.to_string()))
+        }
     }
 }
 

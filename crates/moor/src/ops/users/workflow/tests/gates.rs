@@ -167,3 +167,31 @@ fn outcomes_without_gates_or_that_could_skip_them_are_refused() {
     let listed = ok(&f, &who, cmd(WorkflowCmd::List));
     assert_eq!(listed["workflows"], json!([]), "nothing was stored");
 }
+
+#[test]
+fn gates_sent_without_outcomes_keep_the_stored_outcomes_and_an_empty_list_clears_them() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    let mut req = gated(vec![proof()]);
+    req.outcomes = Some(Box::new(outcomes()));
+    ok(&f, &who, add(req, None));
+    ok(&f, &who, add(gated(vec![proof(), done()]), None));
+    let got = stored(&f, &who);
+    assert_eq!(
+        got.gates.as_ref().map(Gates::docs),
+        Some(vec![proof(), done()])
+    );
+    assert_eq!(
+        got.gates.as_ref().map(Gates::outcome_docs),
+        Some(outcomes()),
+        "outcomes left out are the stored ones"
+    );
+    let mut clear = gated(vec![proof()]);
+    clear.outcomes = Some(Box::default());
+    ok(&f, &who, add(clear, None));
+    assert_eq!(
+        stored(&f, &who).gates.as_ref().map(Gates::outcome_docs),
+        Some(Vec::new()),
+        "an empty list leaves the implicit done"
+    );
+}

@@ -64,7 +64,8 @@ impl Tools {
                        a plan or gates, never both; send `gates: []` to clear them. \
                        \
                        Send `outcomes` with the gates to name how a run may end, such as \
-                       `check passed` or `nothing to do`; left out, a run ends in `done`. Each \
+                       `check passed` or `nothing to do`; left out, a new workflow's run ends in \
+                       `done` and a replaced one keeps its outcomes, and `[]` clears them. Each \
                        has a `name` (one line, 40 characters), an optional `says` sentence, \
                        `tone` (`good` when left out, `bad` or `plain`), `checks` written as a \
                        gate's, and `anytime`. moor decides the outcome itself: once every gate \
