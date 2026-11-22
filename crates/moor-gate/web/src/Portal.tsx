@@ -125,7 +125,8 @@ function Fold({ entries }: { entries: Entry[] }) {
 	);
 }
 
-export function Line({ e, gates }: { e: Entry; gates: readonly string[] }) {
+/** One timeline line; `you` names who wrote to the agent, the reader unless the task is another person's. */
+export function Line({ e, gates, you = 'You' }: { e: Entry; gates: readonly string[]; you?: string }) {
 	switch (e.class) {
 		case 'moor':
 			return <MoorLine e={e} when={clock(e.at)} gates={gates} />;
@@ -139,7 +140,7 @@ export function Line({ e, gates }: { e: Entry; gates: readonly string[] }) {
 		case 'you':
 			return (
 				<div class="t-ev t-you">
-					<span class="t-who">You</span>
+					<span class="t-who">{you}</span>
 					<span class="t-when">{clock(e.at)}</span>
 					<span class="t-what">{e.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : e.text}</span>
 					{e.step && <span class="t-step">Step: {e.step}</span>}
@@ -191,7 +192,7 @@ export function Timeline({ detail }: { detail: BoxDetail }) {
 				) : b.entry.class === 'turn' ? (
 					<TurnLine e={b.entry} entries={detail.timeline} href={`#/box/${encodeURIComponent(detail.box)}/changes`} key={b.entry.id} />
 				) : (
-					<Line e={b.entry} gates={detail.gate?.gates ?? []} key={b.entry.key ?? b.entry.id} />
+					<Line e={b.entry} gates={detail.gate?.gates ?? []} you={detail.owner ?? 'You'} key={b.entry.key ?? b.entry.id} />
 				),
 			)}
 		</div>
