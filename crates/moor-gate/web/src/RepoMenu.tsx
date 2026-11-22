@@ -134,7 +134,7 @@ export function RepoMenuView(p: MenuProps) {
 			)}
 			{rows.length > 0 && (
 				<>
-					<span class="t-mhd">Repos your GitHub access can see</span>
+					<span class="t-mhd">Repos your tasks used</span>
 					{rows.map((r) => (
 						<button
 							type="button"
