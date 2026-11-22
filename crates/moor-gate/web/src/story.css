@@ -1,0 +1,37 @@
+/* The task page's header, its gate story and the prompt. Own classes (t-th, t-sg), no inline styles (the page's CSP forbids them). */
+.t-th { padding: var(--moor-space-1) 0 var(--moor-space-2); }
+.t-th0 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-1) var(--moor-space-3); margin-bottom: var(--moor-space-1); font-size: 0.8125rem; }
+.t-th-repo { display: inline-flex; align-items: center; gap: var(--moor-space-2); }
+.t-th-sep, .t-th-starts, .t-th-meta { color: var(--moor-color-text-muted); }
+.t-th-starts { font-size: 0.75rem; }
+.t-th-issue { font-weight: 650; }
+.t-th-pr { color: var(--moor-color-accent); }
+.t-th1 { display: flex; align-items: center; gap: var(--moor-space-3); min-width: 0; }
+.t-th-title { margin: 0; font: var(--moor-weight-heading) 1.35rem/1.25 var(--moor-font-heading); min-width: 0; overflow-wrap: anywhere; }
+.t-th1 > .t-pill, .t-th1 > .t-acts { flex: none; }
+.t-th1 > .grow { flex: 1 0 0; }
+.t-th-meta { display: flex; flex-wrap: wrap; gap: 0 var(--moor-space-3); margin: var(--moor-space-1) 0 0; font-size: 0.8125rem; }
+.t-th-meta a { color: inherit; }
+
+.t-story { margin: var(--moor-space-3) 0; }
+.t-sg-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--moor-color-border); }
+.t-sg { border-bottom: 1px solid var(--moor-color-border); }
+.t-sg-row { display: flex; align-items: baseline; gap: var(--moor-space-2); padding: 0.45rem 0.4rem; list-style: none; }
+summary.t-sg-row { cursor: pointer; }
+summary.t-sg-row::-webkit-details-marker { display: none; }
+summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
+.t-sg-mark { flex: none; width: 1.1em; text-align: center; font-weight: 650; color: var(--t-tone); }
+.t-sg-n { flex: none; color: var(--moor-color-text-muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.t-sg-name { font-weight: 650; overflow-wrap: anywhere; }
+.t-sg-state { color: var(--moor-color-text-muted); font-size: 0.8125rem; }
+.t-sg-state::before { content: '· '; }
+.t-sg.t-quiet .t-sg-row, .t-sg.t-done .t-sg-name { color: var(--moor-color-text-muted); }
+.t-sg-hand { box-shadow: inset 2px 0 0 var(--t-tone); }
+.t-sg-hand .t-sg-state { color: var(--t-tone); font-weight: 600; }
+.t-sg-body { padding: 0 0.4rem var(--moor-space-3) calc(1.1em + var(--moor-space-2) + 0.4rem); }
+.t-sg-rule { margin: 0 0 var(--moor-space-2); font-size: 0.875rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
+.t-sg-body .t-wait { margin: var(--moor-space-2) 0 0; }
+
+.t-prompt { margin: 0 0 var(--moor-space-3); }
+.t-prompt summary { cursor: pointer; color: var(--moor-color-text-muted); font-size: 0.875rem; }
+.t-prompt pre { margin: var(--moor-space-2) 0 0; padding: 0.5rem 0.7rem; background: var(--moor-color-bg-sunken); border-radius: var(--moor-radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--moor-text-sm)/1.45 var(--moor-font-body); }
