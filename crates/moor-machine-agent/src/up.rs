@@ -17,10 +17,6 @@ use crate::{read_key, Host, State, KEY};
 
 /// The kind of Boxes `up` offers.
 const DOCKER: &str = "docker";
-/// What `up` says about the privileges Docker Boxes take.
-const PRIVILEGED: &str = "Docker Boxes are privileged containers: each Box's work place runs with \
-    --privileged so Docker works inside it, and a user who can run Docker is root on this host. \
-    Only your own Boxes run here.";
 
 #[cfg(test)]
 mod tests;
@@ -219,8 +215,8 @@ fn docker_ready() -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "Docker does not work for this user:\n{}\nfix it, such as by adding this user to the \
-         docker group and logging in again, then run moor-machine-agent up again",
+        "Docker does not work for this user:\n{}\nfix it, such as by pointing DOCKER_HOST at your \
+         rootless daemon, then run moor-machine-agent up again",
         String::from_utf8_lossy(&out.stderr).trim()
     ))
 }
@@ -234,21 +230,24 @@ fn docker_env(get: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Says what Docker Boxes are on this daemon, after checking Boxes can open the KVM device. Under
-/// rootless Docker it first checks the daemon is set up for them, and says every check that fails.
+/// Says what Docker Boxes are on this daemon, after checking it is rootless Docker set up for them
+/// and that Boxes can open the KVM device; says every check that fails.
 fn trust_docker(say: &mut dyn FnMut(&str)) -> Result<(), String> {
-    let rootless = rootless::detect();
+    let line = |f: &rootless::Failure| format!("{}: {}; fix: {}", f.check, f.detail, f.fix);
+    if !rootless::detect() {
+        return Err(line(&rootless::refusal()));
+    }
     let set = std::env::var(kvm::DEVICE_VAR).ok();
     let device = kvm::device(set.as_deref());
-    if let Some(f) = kvm::refusal(rootless, device, kvm::mode_of(device)) {
-        return Err(format!("{}: {}; fix: {}", f.check, f.detail, f.fix));
+    if let Some(f) = kvm::refusal(device, kvm::mode_of(device)) {
+        return Err(line(&f));
     }
-    if !rootless {
-        say(PRIVILEGED);
-        return Ok(());
-    }
-    let user = std::env::var("USER").ok();
-    let facts = rootless::Facts::read(std::env::var("PATH").ok().as_deref(), user.as_deref());
+    let var = |name: &str| std::env::var(name).ok();
+    let facts = rootless::Facts::read(
+        var("PATH").as_deref(),
+        var("USER").as_deref(),
+        var(rootless::ROOT_VAR).as_deref(),
+    );
     let failed = rootless::failures(&facts, false);
     if !failed.is_empty() {
         return Err(format!(

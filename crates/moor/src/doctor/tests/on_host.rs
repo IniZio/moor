@@ -58,37 +58,73 @@ fn egress_forward_fails_when_the_binary_needs_a_loader_and_passes_when_it_is_sta
 
 const ROOTLESS_AT: &str = "unix:///run/user/1000/docker.sock";
 
-#[test]
-fn kvm_is_checked_only_beside_an_installed_node_against_the_daemon_its_unit_names() {
-    let dir = tempfile::tempdir().unwrap();
-    let kvm = dir.path().join("kvm");
+/// A node's agent unit under a temp config dir, with a KVM device of mode 0660, and the rig that
+/// reads both.
+fn node_rig(dir: &Path) -> (Rig, std::path::PathBuf, std::path::PathBuf) {
+    let kvm = dir.join("kvm");
     fs::write(&kvm, "").unwrap();
     mode(&kvm, 0o660);
-    let config = dir.path().join("config");
+    let config = dir.join("config");
     let rig = rig_with(&[
         ("XDG_CONFIG_HOME", config.to_str().unwrap()),
         ("MOOR_KVM_DEVICE", kvm.to_str().unwrap()),
     ]);
-    let asked = |env: &[(String, String)]| {
-        env.iter()
-            .any(|(k, v)| k == "DOCKER_HOST" && v == ROOTLESS_AT)
-    };
+    (rig, config.join("systemd/user/moor-agent.service"), kvm)
+}
+
+/// Says the daemon the unit's variables name is rootless when it is the one at [`ROOTLESS_AT`].
+fn rootless_at() -> impl Fn(&[(String, String)]) -> Option<bool> {
+    |env| {
+        Some(
+            env.iter()
+                .any(|(k, v)| k == "DOCKER_HOST" && v == ROOTLESS_AT),
+        )
+    }
+}
+
+#[test]
+fn a_node_on_a_rootful_daemon_is_refused_and_one_that_does_not_answer_is_not_called_rootful() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rig, unit, _) = node_rig(dir.path());
     assert_eq!(
-        rig.with(|i| host::kvm_with(i, &asked)),
+        rig.with(|i| host::kvm_with(i, &rootless_at())),
         None,
         "no node installed here"
     );
-    let units = config.join("systemd/user");
-    fs::create_dir_all(&units).unwrap();
-    fs::write(units.join("moor-agent.service"), "[Service]\n").unwrap();
-    let rootful = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
-    assert_eq!(rootful.status, Status::Ok, "{rootful:?}");
+    fs::create_dir_all(unit.parent().unwrap()).unwrap();
+    fs::write(&unit, "[Service]\n").unwrap();
+    let rootful = rig.with(|i| host::kvm_with(i, &rootless_at())).unwrap();
+    assert_eq!(
+        (rootful.name, rootful.status),
+        ("docker", Status::Fail),
+        "{rootful:?}"
+    );
+    assert!(rootful.detail.contains("is not rootless"), "{rootful:?}");
+    assert!(
+        rootful.fix.contains("docs/rootless-docker.md"),
+        "{rootful:?}"
+    );
+    let silent = rig
+        .with(|i| host::kvm_with(i, &|_: &[(String, String)]| None))
+        .unwrap();
+    assert_eq!(
+        (silent.name, silent.status),
+        ("kvm", Status::Fail),
+        "{silent:?}"
+    );
+}
+
+#[test]
+fn kvm_is_checked_beside_a_node_on_the_rootless_daemon_its_unit_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rig, unit, kvm) = node_rig(dir.path());
+    fs::create_dir_all(unit.parent().unwrap()).unwrap();
     fs::write(
-        units.join("moor-agent.service"),
+        &unit,
         format!("[Service]\nEnvironment=\"DOCKER_HOST={ROOTLESS_AT}\"\n"),
     )
     .unwrap();
-    let c = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
+    let c = rig.with(|i| host::kvm_with(i, &rootless_at())).unwrap();
     assert_eq!(c.status, Status::Fail, "{c:?}");
     assert!(
         c.detail.starts_with(&format!(
@@ -99,7 +135,7 @@ fn kvm_is_checked_only_beside_an_installed_node_against_the_daemon_its_unit_name
     );
     assert!(c.fix.contains("docs/rootless-docker.md#kvm"), "{c:?}");
     mode(&kvm, 0o666);
-    let ok = rig.with(|i| host::kvm_with(i, &asked)).unwrap();
+    let ok = rig.with(|i| host::kvm_with(i, &rootless_at())).unwrap();
     assert_eq!(ok.status, Status::Ok);
 }
 

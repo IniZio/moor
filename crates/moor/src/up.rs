@@ -86,7 +86,6 @@ fn steps(
     let dir = service::unit_dir(env)
         .ok_or_else(|| Check::fail("service", "HOME is unset", "run moor up as a login user"))?;
     let gate = gate::decide(env, &layout, &dir)?;
-    let found = relay::settle(found, relay.as_ref(), &dir)?;
     found.iter().for_each(&mut say);
     let key_file = match &gate {
         gate::Gate::Run(plan) => {
@@ -97,7 +96,7 @@ fn steps(
     };
     say(&files::controller(&layout, gate.runs())?);
     say(&files::user(env, &layout)?);
-    let unit = service::Unit::new(env, &layout, plan.egress, relay.is_some(), key_file)?;
+    let unit = service::Unit::new(env, &layout, plan.egress, key_file)?;
     say(&service::install(&dir, &unit, &layout, gate.fronts())?);
     if service::lingers(env) == Some(false) {
         say(&Check::warn(
@@ -127,7 +126,7 @@ fn steps(
     for step in secrets::converge(env, &ask, input, prompt) {
         say(&step?);
     }
-    node::converge(env, &ask, &layout, &plan, relay.as_ref(), &dir)?
+    node::converge(env, &ask, &layout, &plan, &relay, &dir)?
         .iter()
         .for_each(&mut say);
     Ok(())

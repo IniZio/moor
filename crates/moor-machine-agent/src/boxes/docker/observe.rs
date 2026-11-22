@@ -63,7 +63,7 @@ impl Docker {
         if !out.status.success() {
             let host = std::env::var("DOCKER_HOST").ok();
             let said = String::from_utf8_lossy(&out.stderr);
-            return Err(cli::listing_failed(&said, host.as_deref(), self.rootless));
+            return Err(cli::listing_failed(&said, host.as_deref()));
         }
         let mut boxes = Vec::new();
         let listed = parse_ps(&String::from_utf8_lossy(&out.stdout));

@@ -1,6 +1,8 @@
 # Set up a rootless Docker host for Boxes
 
 This runbook sets a Linux host up so `moor up` runs Docker Boxes on rootless Docker.
+moor runs Docker Boxes only on rootless Docker. `moor up`, `moor-machine-agent up` and
+`moor doctor` refuse a rootful daemon.
 A Box that breaks out of rootless Docker is your user on this host, not root.
 [Rootless Docker Boxes](specs/rootless-docker-boxes.md) gives the design and every check `moor up` runs.
 Every host gets the same install, and every Box gets KVM.
@@ -24,9 +26,15 @@ Then, as the user:
 
 ```sh
 dockerd-rootless-setuptool.sh install
+docker context use default
 systemctl --user enable --now docker
 sudo loginctl enable-linger "$USER"
 ```
+
+- The setup tool refuses to install while the system Docker runs. Add `--force` then.
+- The setup tool switches the `docker` CLI to its `rootless` context. `docker context use default`
+  switches it back. Otherwise a machine agent that runs without `DOCKER_HOST` moves to the
+  new daemon at its next restart. Step 3 points `docker` at the rootless daemon explicitly.
 
 ## 2. Configure the daemon
 
@@ -39,7 +47,11 @@ systemctl --user edit docker
 ```ini
 [Service]
 Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
+Environment=PATH=/usr/bin:/usr/sbin:/bin:/sbin
 ```
+
+- The `PATH` line makes the daemon run the packaged `/usr/bin/rootlesskit`. The setup tool
+  copies your shell's `PATH` into the unit, so an older `rootlesskit` earlier on it wins otherwise.
 
 - Leave `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK` unset. rootlesskit then runs
   with `--disable-host-loopback`, and no Box reaches a `127.0.0.1` listener of this host.
@@ -85,6 +97,14 @@ export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
 moor up
 ```
 
+A host that only provides Boxes to a remote controller runs `moor-machine-agent up` in
+the same shell instead. It keeps `DOCKER_HOST` in its unit too, and needs no relay.
+
+```sh
+export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
+moor-machine-agent up --server https://moor.example.com
+```
+
 `moor up` writes these user units under `~/.config/systemd/user`.
 
 | Unit | Runs |
@@ -105,14 +125,12 @@ moor doctor
 
 Every line says `ok`, `kvm` and `egress` among them. A `fail` line names its fix.
 
-## Go back to rootful Docker
+## Roll back moor
+
+To run Boxes on rootful Docker again, install a moor release from before rootful support
+was removed, then run `up` again.
 
 ```sh
-moor down
-systemctl --user disable --now docker
-unset DOCKER_HOST
+curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | MOOR_VERSION=<tag> sh
 moor up
 ```
-
-`moor up` on a rootful daemon removes `moor-relay.service`. Rootful Boxes open
-`/dev/kvm` through its group, so the KVM rule can stay.

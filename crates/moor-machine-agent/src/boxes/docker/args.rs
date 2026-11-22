@@ -48,7 +48,6 @@ pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names, cache: &[String]) 
     let mut a = owned(["run", "-d", "--name", &n.agent, "--hostname", slug.as_str()]);
     a.extend(owned(["--network", &s.network, "--restart", "no"]));
     a.extend(owned(["--memory", AGENT_MEMORY]));
-    a.extend(owned(["--add-host", "moor-host:host-gateway"]));
     a.extend(owned([
         "--label",
         &format!("{SLUG_LABEL}={}", slug.as_str()),
@@ -63,50 +62,20 @@ pub(super) fn agent_run(s: &Settings, slug: &Slug, n: &Names, cache: &[String]) 
     a
 }
 
-/// The host's KVM device.
-const KVM: &str = "/dev/kvm";
-
-/// The group that owns the host's `/dev/kvm`; none when the host has no such device. The gid is
-/// the host's, so the work image cannot know it.
-pub(super) fn kvm_gid() -> Option<u32> {
-    gid_of(std::path::Path::new(KVM))
-}
-
-/// The group the work place's init joins to open `/dev/kvm`. Rootless Docker drops the host's
-/// `kvm` group, so none helps there: the device must be open to everyone, which `up` checks.
-pub(super) const fn kvm_group(rootless: bool, device: Option<u32>) -> Option<u32> {
-    if rootless {
-        None
-    } else {
-        device
-    }
-}
-
-/// The group that owns `device`, when it exists.
-pub(super) fn gid_of(device: &std::path::Path) -> Option<u32> {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(device).ok().map(|m| m.gid())
-}
-
 /// The argv, after `docker`, that starts the work place: privileged, in the agent place's network
-/// namespace, with Docker of its own inside. With `kvm_gid` the work init puts the Box user in
-/// that group so it can open the host's `/dev/kvm`. Docker's `--group-add` would not do: the ssh
-/// login that runs commands rebuilds the user's groups from `/etc/group`.
+/// namespace, with Docker of its own inside. It opens the host's `/dev/kvm`, which `up` checks
+/// is open to everyone, since rootless Docker drops the host's `kvm` group.
 pub(super) fn work_run(
     s: &Settings,
     slug: &Slug,
     n: &Names,
     mem_mib: u64,
-    kvm_gid: Option<u32>,
     cache: &[String],
 ) -> Vec<String> {
     let mem = format!("{mem_mib}m");
     let mut a = owned(["run", "-d", "--name", &n.work]);
     a.extend(owned(["--network", &format!("container:{}", n.agent)]));
     a.extend(owned(["--privileged", "--restart", "no"]));
-    if let Some(gid) = kvm_gid {
-        a.extend(owned(["-e", &format!("MOOR_KVM_GID={gid}")]));
-    }
     a.extend(owned(["--memory", &mem, "--memory-swap", &mem]));
     a.extend(owned([
         "--label",

@@ -88,18 +88,6 @@ if ! id "$user" >/dev/null 2>&1; then
     chmod 0440 "/etc/sudoers.d/$user"
   fi
 fi
-# The host's /dev/kvm group (the provider passes its gid) gets a name here and the Box user in it.
-case ${MOOR_KVM_GID:-} in
-  '' | *[!0-9]*) ;;
-  *)
-    kvm_group=$(getent group "$MOOR_KVM_GID" | cut -d: -f1)
-    if [ -z "$kvm_group" ]; then
-      kvm_group=kvm
-      groupadd --gid "$MOOR_KVM_GID" kvm 2>/dev/null || groupmod --gid "$MOOR_KVM_GID" kvm 2>/dev/null || kvm_group=
-    fi
-    [ -z "$kvm_group" ] || usermod -aG "$kvm_group" "$user" || log "cannot add $user to $kvm_group"
-    ;;
-esac
 home=$(getent passwd "$user" | cut -d: -f6)
 mkdir -p "$home"
 chown "$uid:$uid" "$home" 2>/dev/null || true

@@ -61,7 +61,7 @@ pub(crate) fn prepare_egress(env: Env) -> Result<Env, String> {
     };
     if let Some(socket) = route.socket() {
         replace(socket)?;
-        start(&env, &state, (socket, route.bind()))?;
+        start(&env, &state, socket)?;
     }
     Ok(env)
 }
@@ -168,11 +168,7 @@ fn peer_pid(conn: &UnixStream) -> std::io::Result<i32> {
 
 /// Starts the Proxy on `socket` in a process group of its own, tied to this process by its
 /// stdin, and waits for it to answer.
-fn start(
-    env: &Env,
-    state: &Path,
-    (socket, host): (&Path, Option<std::net::SocketAddr>),
-) -> Result<(), String> {
+fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
     let log_path = state.join(LOG_FILE);
     if let Some(dir) = log_path.parent() {
         fs::DirBuilder::new()
@@ -197,9 +193,6 @@ fn start(
         .arg("--listen")
         .arg(socket)
         .arg("--until-stdin-closes");
-    if let Some(host) = host {
-        cmd.arg("--also-listen").arg(host.to_string());
-    }
     let config = load_user(env).unwrap_or_default();
     for service in config.served_hosts() {
         let flag = match service.served {

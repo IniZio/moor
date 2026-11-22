@@ -3,12 +3,12 @@
 
 use std::fs;
 use std::net::Ipv4Addr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use moor_client::rootless;
 
 use super::files::Layout;
-use super::node::{docker, Plan, INSTALL};
+use super::node::{Plan, INSTALL};
 use super::service;
 use crate::doctor::Check;
 use crate::env::Env;
@@ -99,40 +99,4 @@ RestartSec=2
 WantedBy=default.target {docker}
 "
     )
-}
-
-/// The plan's `found` checks, plus one when this daemon needs no relay and the relay unit an earlier
-/// rootless `up` left in `dir` was stopped and removed. It runs before the controller unit is installed.
-pub(super) fn settle(
-    mut found: Vec<Check>,
-    relay: Option<&Relay>,
-    dir: &Path,
-) -> Result<Vec<Check>, Check> {
-    if relay.is_none() && service::remove_units(dir, &[service::RELAY])? {
-        found.push(Check::ok(
-            "relay",
-            format!("removed {}, which a rootless up left", service::RELAY),
-        ));
-    }
-    Ok(found)
-}
-
-/// The address of Docker's default bridge on this host.
-pub(super) fn bridge_gateway() -> Result<Ipv4Addr, Check> {
-    docker(&[
-        "network",
-        "inspect",
-        "bridge",
-        "--format",
-        "{{(index .IPAM.Config 0).Gateway}}",
-    ])
-    .ok()
-    .and_then(|g| g.parse::<Ipv4Addr>().ok())
-    .ok_or_else(|| {
-        Check::fail(
-            "docker",
-            "cannot read the address of Docker's bridge network",
-            "check `docker network inspect bridge`",
-        )
-    })
 }

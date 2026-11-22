@@ -8,7 +8,7 @@
 
 use super::{
     child_ip_from, cmdline_words, failures, is_rootless, live_restore_of, loopback_closed, notice,
-    report, state_dir, warnings, Facts, Failure,
+    refusal, report, state_dir, warnings, Facts, Failure,
 };
 
 /// What rootless Docker 29.10 printed for its security options.
@@ -231,6 +231,22 @@ fn a_proc_command_line_splits_on_nul() {
         words.last().unwrap(),
         "unix:///run/user/1003/rl/docker.sock"
     );
+}
+
+#[test]
+fn a_daemon_that_is_not_rootless_is_refused_with_the_runbook_and_the_command_that_points_at_one() {
+    let f = refusal();
+    assert_eq!(f.check, "docker");
+    assert_eq!(
+        f.detail,
+        "this Docker daemon is not rootless, and Docker Boxes run only on rootless Docker"
+    );
+    assert!(
+        f.fix
+            .contains("export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"),
+        "{f:?}"
+    );
+    assert!(f.fix.contains("docs/rootless-docker.md"), "{f:?}");
 }
 
 #[test]

@@ -48,6 +48,9 @@ mod up;
 #[cfg(target_os = "linux")]
 #[path = "cli/up_images.rs"]
 mod up_images;
+#[cfg(target_os = "linux")]
+#[path = "cli/up_refusals.rs"]
+mod up_refusals;
 #[path = "cli/user.rs"]
 mod user;
 #[path = "cli/via_controller.rs"]

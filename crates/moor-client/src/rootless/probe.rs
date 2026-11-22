@@ -16,7 +16,9 @@ use super::{
 /// The programs a rootless daemon, and a relay, need on `PATH`.
 const BINARIES: [&str; 4] = ["newuidmap", "newgidmap", "slirp4netns", "nsenter"];
 /// The sysctl that stops unprivileged user namespaces under `AppArmor`.
-const APPARMOR_SYSCTL: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
+const APPARMOR_SYSCTL: &str = "proc/sys/kernel/apparmor_restrict_unprivileged_userns";
+/// Names another root to read the id files and the sysctl under, as tests do.
+pub const ROOT_VAR: &str = "MOOR_HOST_ROOT";
 /// What the host says, before any check reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facts {
@@ -44,9 +46,12 @@ pub struct Facts {
 
 impl Facts {
     /// Reads the host for the user running this process; `path` is the `PATH` to look for
-    /// programs on, and `user` the `USER` the environment names.
+    /// programs on, `user` the `USER` the environment names, and `root` the value of
+    /// [`ROOT_VAR`], else `/`.
     #[must_use]
-    pub fn read(path: Option<&str>, user: Option<&str>) -> Self {
+    pub fn read(path: Option<&str>, user: Option<&str>, root: Option<&str>) -> Self {
+        let root = Path::new(root.filter(|r| !r.is_empty()).unwrap_or("/"));
+        let text = |file: &str| std::fs::read_to_string(root.join(file)).ok();
         let uid = std::fs::metadata("/proc/self").map_or(0, |m| m.uid());
         let user = user
             .filter(|u| !u.is_empty())
@@ -55,14 +60,14 @@ impl Facts {
             .unwrap_or_else(|| uid.to_string());
         Self {
             linger: lingers(&user),
-            subuid: std::fs::read_to_string("/etc/subuid").ok(),
-            subgid: std::fs::read_to_string("/etc/subgid").ok(),
+            subuid: text("etc/subuid"),
+            subgid: text("etc/subgid"),
             missing: BINARIES
                 .iter()
                 .filter(|b| !on_path(path, b))
                 .map(|b| (*b).to_owned())
                 .collect(),
-            apparmor_restrict: std::fs::read_to_string(APPARMOR_SYSCTL).ok(),
+            apparmor_restrict: text(APPARMOR_SYSCTL),
             unit: run("systemctl", &["--user", "is-enabled", "docker"]),
             rootlesskit: rootlesskit_args(),
             live_restore: run("docker", &LIVE_RESTORE_ARGS).and_then(|out| live_restore_of(&out)),

@@ -138,8 +138,6 @@ pub(crate) const PLAIN: &str = "x-moor-plain";
 pub(crate) struct Config {
     /// Where it listens.
     pub(crate) listen: Listen,
-    /// A TCP address it also listens on, for the Boxes of Docker machines on this host.
-    pub(crate) also: Option<SocketAddr>,
     /// Where the controller's ledger is.
     pub(crate) ledger: Endpoint,
     /// The key it presents on the ledger.
@@ -229,16 +227,6 @@ impl Server {
         let (listener, listening) = runtime
             .block_on(cfg.listen.bind())
             .map_err(|e| format!("cannot listen on {}: {e}", cfg.listen))?;
-        let also = cfg
-            .also
-            .map(|addr| {
-                let on = Listen::Tcp(addr);
-                runtime
-                    .block_on(on.bind())
-                    .map(|(l, _)| l)
-                    .map_err(|e| format!("cannot listen on {on}: {e}"))
-            })
-            .transpose()?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let (served, warm) = (cfg.served.clone(), cfg.warm);
         let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
@@ -248,14 +236,9 @@ impl Server {
             served,
             key_id,
         });
-        let accepting = std::iter::once(listener)
-            .chain(also)
-            .map(|l| {
-                let stop = Arc::new(Notify::new());
-                let serving = runtime.spawn(accept(l, Arc::clone(&shared), Arc::clone(&stop)));
-                (stop, serving)
-            })
-            .collect();
+        let stop = Arc::new(Notify::new());
+        let serving = runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));
+        let accepting = vec![(stop, serving)];
         let tending = Arc::new(AtomicBool::new(true));
         let thread = spawn_tender(&tending, &shared, Arc::clone(&clock), every)?;
         let warmer = warm

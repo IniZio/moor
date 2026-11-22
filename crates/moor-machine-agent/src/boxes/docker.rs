@@ -16,7 +16,7 @@ use tokio::process::Command;
 
 use super::provider::{BoxProvider, Env, Notes, Observed, ProvideError, Spec};
 use super::Slug;
-use args::{agent_run, kvm_gid, kvm_group, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
+use args::{agent_run, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
 pub use cache::parse_age;
 use cli::{Cli, State};
 use names::Names;
@@ -92,8 +92,6 @@ pub(crate) struct Docker {
     egress: Arc<egress::Watches>,
     /// What keeps a save of a cache volume and a copy of it apart.
     caches: Arc<cache::Caches>,
-    /// Whether the daemon is rootless Docker, read once when the provider is built.
-    rootless: bool,
 }
 
 impl Docker {
@@ -104,15 +102,7 @@ impl Docker {
             network: Arc::default(),
             egress: Arc::default(),
             caches: Arc::default(),
-            rootless: false,
         }
-    }
-
-    /// Makes Boxes for a daemon that is, or is not, rootless Docker.
-    #[must_use]
-    pub(crate) const fn rootless(mut self, rootless: bool) -> Self {
-        self.rootless = rootless;
-        self
     }
 
     /// Keeps when each cache volume was last used under `home`.
@@ -185,15 +175,7 @@ impl Docker {
             (None, Some(spec)) => {
                 let mem = work_memory_mib(spec.class.as_deref());
                 let cache = cache::args(&mounts, true);
-                Cli::ok(work_run(
-                    &self.settings,
-                    slug,
-                    &names,
-                    mem,
-                    kvm_group(self.rootless, kvm_gid()),
-                    &cache,
-                ))
-                .await?;
+                Cli::ok(work_run(&self.settings, slug, &names, mem, &cache)).await?;
             }
             (None, None) => return Err(ProvideError::Missing),
         }
