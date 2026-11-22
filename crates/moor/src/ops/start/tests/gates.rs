@@ -62,6 +62,7 @@ fn show(w: &World, name: Option<&str>) -> ShowView {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     };
     crate::ops::show::run(&w.cx, &req).unwrap()
 }

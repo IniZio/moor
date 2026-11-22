@@ -138,6 +138,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     };
     let shown = crate::ops::show::run(&w.cx, &show).unwrap();
     let t = shown.boxes.as_ref().unwrap().first().unwrap();

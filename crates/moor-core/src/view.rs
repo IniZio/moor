@@ -188,6 +188,9 @@ pub struct BoxView {
     /// The workflow run and machine the Box is tied to; set by `show`.
     #[serde(skip_serializing_if = "BoxTies::is_empty")]
     pub ties: BoxTies,
+    /// Who the Box acts for, by email, when that is not the viewer: set by `show` for everyone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// Outcome of the agent launch.

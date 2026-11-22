@@ -40,6 +40,7 @@ pub(super) fn start(
             artifacts: false,
             pane: false,
             transcript: false,
+            everyone: false,
         }),
     );
     let mut told = false;

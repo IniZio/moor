@@ -63,13 +63,9 @@ fn with_args() -> Vec<Request> {
             ask: None,
         }),
         Request::Show(ShowReq {
-            target: None,
             events: Some(2),
-            agent: false,
             reports: true,
-            artifacts: false,
-            pane: false,
-            transcript: false,
+            ..ShowReq::default()
         }),
         Request::Close(CloseReq {
             target: n("a").into(),

@@ -42,6 +42,7 @@ fn sample_box() -> BoxView {
         said: None,
         progress: None,
         ties: crate::view::BoxTies::default(),
+        owner: None,
     }
 }
 

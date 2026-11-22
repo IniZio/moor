@@ -171,6 +171,7 @@ fn read_req(offset: u64, len: u64) -> ArtifactReadReq {
         version: None,
         offset,
         len,
+        everyone: false,
     }
 }
 

@@ -57,6 +57,7 @@ pub(super) fn used(gate: &Gate, session: &Session) -> Result<BTreeSet<String>, S
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     });
     let shown = tools::act_as(&gate.controller, &session.person, show)?;
     Ok(repos_of(&shown).into_iter().map(str::to_owned).collect())

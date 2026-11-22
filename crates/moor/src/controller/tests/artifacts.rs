@@ -145,6 +145,7 @@ impl Fixture {
         let (env, _) = self.call(&Request::Artifacts(ArtifactsReq {
             target: box_name().into(),
             all,
+            everyone: false,
         }));
         assert_eq!(env["class"], "ok", "{env}");
         let value = &env["value"];
@@ -163,6 +164,7 @@ impl Fixture {
             version,
             offset: 0,
             len: u64::MAX,
+            everyone: false,
         }))
     }
 }
@@ -220,6 +222,7 @@ fn missing_box_name_or_version_is_not_found() {
     let (env, _) = f.call(&Request::Artifacts(ArtifactsReq {
         target: ghost.clone().into(),
         all: false,
+        everyone: false,
     }));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
     let (env, _) = f.call(&Request::ArtifactRead(ArtifactReadReq {
@@ -228,6 +231,7 @@ fn missing_box_name_or_version_is_not_found() {
         version: None,
         offset: 0,
         len: 10,
+        everyone: false,
     }));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
     let (env, frames) = f.read("nope.log", None);

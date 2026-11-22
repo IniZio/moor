@@ -37,6 +37,9 @@ pub(super) struct Row {
     /// The workflow run behind the Box and the node it runs on; none sent by a controller that predates them.
     #[serde(default)]
     pub(super) ties: BoxTies,
+    /// Who the Box acts for, when it is not the person reading it.
+    #[serde(default)]
+    pub(super) owner: Option<String>,
 }
 
 /// A Box as a list row or the head of a Box page.
@@ -64,6 +67,7 @@ pub(super) fn summary(row: &Row) -> Option<Value> {
         "needs": progress.needs,
         "gate": row.gate,
         "retryable": row.lifecycle.as_deref() == Some("setup_failed"),
+        "owner": row.owner,
     }))
 }
 
@@ -83,6 +87,15 @@ mod tests {
             row[key] = value.clone();
         }
         summary(&serde_json::from_value(row).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn another_users_box_names_its_owner_and_the_persons_own_names_none() {
+        assert_eq!(
+            shown(&json!({"owner": "ana@example.com"}))["owner"],
+            "ana@example.com"
+        );
+        assert_eq!(shown(&json!({}))["owner"], Value::Null);
     }
 
     #[test]

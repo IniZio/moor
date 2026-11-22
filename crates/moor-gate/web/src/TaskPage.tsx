@@ -49,6 +49,9 @@ function EvidenceTab({ detail }: { detail: BoxDetail }) {
 const TABS = ['timeline', 'terminal', 'changes', 'evidence'] as const;
 export type Tab = (typeof TABS)[number];
 
+/** The tabs a reader of another person's task gets: the terminal writes and the changes are read live in the owner's Box. */
+const READ_TABS: readonly Tab[] = ['timeline', 'evidence'];
+
 export function tabOf(raw: string | undefined): Tab {
 	return TABS.find((t) => t === raw) ?? 'timeline';
 }
@@ -223,7 +226,8 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 		changes: changesLabel(detail.timeline),
 		evidence: `Evidence ${detail.artifacts.length}`,
 	};
-	const { needs } = detail;
+	const { needs, owner } = detail;
+	if (owner) return <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
 	const asking = detail.state === 'needs_you' && !needs?.plan ? needs : null;
 	const inStory = !!asking?.gate && !!detail.gate?.gates.length;
 	return (
@@ -277,6 +281,46 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 				<MakeRecurring detail={detail} />
 			</div>
 			<Composer detail={detail} csrf={csrf} onSent={reload} />
+		</div>
+	);
+}
+
+/** Another person's task, to read: its head, story, timeline and evidence, and no control that acts on it. */
+function ReadOnlyTask({
+	detail,
+	owner,
+	error,
+	now,
+	tab,
+	base,
+	label,
+	docs,
+}: {
+	detail: BoxDetail;
+	owner: string;
+	error: string;
+	now: number;
+	tab: Tab;
+	base: string;
+	label: Record<Tab, ComponentChildren>;
+	docs: ReturnType<typeof useWorkflowDocs>;
+}) {
+	const shown = READ_TABS.includes(tab) ? tab : 'timeline';
+	return (
+		<div class="t-box">
+			<TaskHead t={detail} now={now} actions={<span class="t-readonly">{owner}'s task</span>} />
+			<p class="t-readonly-note muted">You can read this task. Only {owner} can answer, steer or close it.</p>
+			{error && <p class="notice danger" role="alert">{error}</p>}
+			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} /> : null}
+			<PromptFold prompt={detail.prompt} />
+			<nav class="t-tabs" role="tablist">
+				{READ_TABS.map((t) => (
+					<a class="t-tab" role="tab" aria-selected={shown === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>
+						{label[t]}
+					</a>
+				))}
+			</nav>
+			<section>{shown === 'evidence' ? <EvidenceTab detail={detail} /> : <Timeline detail={detail} />}</section>
 		</div>
 	);
 }

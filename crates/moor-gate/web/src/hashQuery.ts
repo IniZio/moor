@@ -37,10 +37,18 @@ export function setPeek(box: string): void {
 /** How the Tasks home groups its rows. */
 export type Grouping = 'state' | 'repo';
 
+/** Whose tasks the Tasks home lists: the person's own, or everyone's to read. */
+export type Whose = 'mine' | 'everyone';
+
 export type HomeFilter = { repo: string; grp: Grouping };
 
 /** The Tasks home's filter as the address holds it; an unknown `grp` is the default. */
 export function homeFilter(hash: string): HomeFilter {
 	const query = queryOf(hash);
 	return { repo: query.get('repo') ?? '', grp: query.get('grp') === 'repo' ? 'repo' : 'state' };
+}
+
+/** Whose tasks the address asks for; anything but `everyone` is the person's own. */
+export function whoseHome(hash: string): Whose {
+	return queryOf(hash).get('who') === 'everyone' ? 'everyone' : 'mine';
 }

@@ -50,6 +50,7 @@ fn shown(r: &Rig, id: BoxId) -> BoxView {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     };
     crate::ops::show::run(&r.cx, &req).unwrap().boxed.unwrap()
 }

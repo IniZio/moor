@@ -327,6 +327,7 @@ impl Fx {
             artifacts: false,
             pane: false,
             transcript: false,
+            everyone: false,
         };
         let listed = crate::ops::show::run(&self.cx, &req)
             .unwrap()

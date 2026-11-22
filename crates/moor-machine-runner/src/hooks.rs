@@ -276,6 +276,7 @@ pub(super) fn open_boxes(client: &Client) -> Result<OpenBoxes, String> {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     });
     let response = client
         .request(request, |_| {})

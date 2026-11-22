@@ -14,6 +14,9 @@ pub struct ArtifactsReq {
     /// List every version; only the latest of each artifact when false.
     #[serde(default)]
     pub all: bool,
+    /// Read another user's Box too, as a `show` for everyone does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everyone: bool,
 }
 
 /// Arguments of `artifact-read`; the bytes arrive as raw bytes frames before the response.
@@ -33,6 +36,9 @@ pub struct ArtifactReadReq {
     pub offset: u64,
     /// Bytes wanted; fewer arrive when the file ends first.
     pub len: u64,
+    /// Read another user's Box too, as a `show` for everyone does.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub everyone: bool,
 }
 
 #[cfg(test)]
@@ -54,7 +60,8 @@ mod tests {
             req,
             Request::Artifacts(ArtifactsReq {
                 target: box_name().into(),
-                all: true
+                all: true,
+                everyone: false,
             })
         );
         assert_eq!(req.cmd(), "artifacts");
@@ -69,7 +76,8 @@ mod tests {
             req,
             Request::Artifacts(ArtifactsReq {
                 target: box_name().into(),
-                all: false
+                all: false,
+                everyone: false,
             })
         );
     }
@@ -87,6 +95,7 @@ mod tests {
             version: Some(2),
             offset: 10,
             len: 20,
+            everyone: false,
         };
         assert_eq!(req, Request::ArtifactRead(want));
         assert_eq!(req.cmd(), "artifact-read");
@@ -103,6 +112,7 @@ mod tests {
             version: None,
             offset: 0,
             len: 5,
+            everyone: false,
         };
         assert_eq!(req, Request::ArtifactRead(want));
     }

@@ -377,24 +377,14 @@ fn show_and_list_alias() {
         artifacts: false,
         pane: true,
         transcript: false,
+        everyone: false,
     });
     let a = ["t1", "--events", "3", "--agent", "--reports", "--pane"];
     let show: Vec<&str> = std::iter::once("show").chain(a).collect();
     let list: Vec<&str> = std::iter::once("list").chain(a).collect();
     assert_eq!(req(&show), want);
     assert_eq!(req(&list), want);
-    assert_eq!(
-        req(&["show"]),
-        Request::Show(ShowReq {
-            target: None,
-            events: None,
-            agent: false,
-            reports: false,
-            artifacts: false,
-            pane: false,
-            transcript: false
-        })
-    );
+    assert_eq!(req(&["show"]), Request::Show(ShowReq::default()));
 }
 
 #[test]
@@ -523,12 +513,7 @@ fn valid_box_name_parses() {
         req(&["show", "a-1"]),
         Request::Show(ShowReq {
             target: Some(n("a-1").into()),
-            events: None,
-            agent: false,
-            reports: false,
-            artifacts: false,
-            pane: false,
-            transcript: false,
+            ..ShowReq::default()
         })
     );
 }

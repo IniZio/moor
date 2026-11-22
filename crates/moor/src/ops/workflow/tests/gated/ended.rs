@@ -39,6 +39,7 @@ fn shown(r: &super::super::Rig, id: BoxId) -> BoxView {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     };
     let listed = crate::ops::show::run(&r.cx, &req).unwrap().boxes.unwrap();
     listed.into_iter().find(|b| b.id == id.get()).unwrap()

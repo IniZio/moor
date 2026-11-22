@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, boxList, type Entry, failure, toError } from './api';
 import { TurnLine } from './Changes';
+import { whoseHome } from './hashQuery';
 import { HomeListView, useMenuDismiss } from './HomeList';
 import { Markdown } from './Markdown';
 import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
@@ -51,7 +52,16 @@ export function useBoxes() {
 	return usePoll(boxList, 'home');
 }
 
+/** The Tasks home: the person's own tasks from the page's shared poll, or everyone's from a poll of its own, so others' tasks never reach the switcher or the Inbox. */
 export function Home({ boxes, hash }: { boxes: Boxes; hash: string }) {
+	return whoseHome(hash) === 'everyone' ? <EveryonesHome hash={hash} /> : <HomeRows boxes={boxes} hash={hash} />;
+}
+
+function EveryonesHome({ hash }: { hash: string }) {
+	return <HomeRows boxes={usePoll(() => boxList(true), 'everyone')} hash={hash} />;
+}
+
+function HomeRows({ boxes, hash }: { boxes: Boxes; hash: string }) {
 	const { value, error, now } = boxes;
 	useMenuDismiss();
 	if (!value) {
@@ -115,7 +125,8 @@ function Fold({ entries }: { entries: Entry[] }) {
 	);
 }
 
-export function Line({ e, gates }: { e: Entry; gates: readonly string[] }) {
+/** One timeline line; `you` names who wrote to the agent, the reader unless the task is another person's. */
+export function Line({ e, gates, you = 'You' }: { e: Entry; gates: readonly string[]; you?: string }) {
 	switch (e.class) {
 		case 'moor':
 			return <MoorLine e={e} when={clock(e.at)} gates={gates} />;
@@ -129,7 +140,7 @@ export function Line({ e, gates }: { e: Entry; gates: readonly string[] }) {
 		case 'you':
 			return (
 				<div class="t-ev t-you">
-					<span class="t-who">You</span>
+					<span class="t-who">{you}</span>
 					<span class="t-when">{clock(e.at)}</span>
 					<span class="t-what">{e.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : e.text}</span>
 					{e.step && <span class="t-step">Step: {e.step}</span>}
@@ -181,7 +192,7 @@ export function Timeline({ detail }: { detail: BoxDetail }) {
 				) : b.entry.class === 'turn' ? (
 					<TurnLine e={b.entry} entries={detail.timeline} href={`#/box/${encodeURIComponent(detail.box)}/changes`} key={b.entry.id} />
 				) : (
-					<Line e={b.entry} gates={detail.gate?.gates ?? []} key={b.entry.key ?? b.entry.id} />
+					<Line e={b.entry} gates={detail.gate?.gates ?? []} you={detail.owner ?? 'You'} key={b.entry.key ?? b.entry.id} />
 				),
 			)}
 		</div>

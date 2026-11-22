@@ -60,6 +60,7 @@ fn req(box_name: Option<&str>, events: Option<u32>) -> ShowReq {
         artifacts: false,
         pane: false,
         transcript: false,
+        everyone: false,
     }
 }
 

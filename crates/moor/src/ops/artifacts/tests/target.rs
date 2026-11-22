@@ -24,6 +24,7 @@ fn log_of(cx: &Cx, target: &BoxTarget) -> (String, Vec<u8>) {
         &ArtifactsReq {
             target: target.clone(),
             all: false,
+            everyone: false,
         },
     )
     .unwrap();
@@ -74,6 +75,7 @@ fn an_unknown_id_is_not_found() {
         &ArtifactsReq {
             target: target.clone(),
             all: false,
+            everyone: false,
         },
     )
     .unwrap_err();
