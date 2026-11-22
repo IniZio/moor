@@ -41,7 +41,6 @@ pub(super) fn remind(
     if !settled(cx, store, row)? {
         return Ok(());
     }
-    // Try numbers start again after a reopening, so only reminders since the last one count.
     let reminded = lines
         .iter()
         .rev()
