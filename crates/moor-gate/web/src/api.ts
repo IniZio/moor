@@ -422,6 +422,9 @@ function spoken<T extends Spoken>(row: T): T {
 	return row;
 }
 
+/** The workflow whose run started a Box, and the pull request that run was for. */
+const WorkflowRefSchema = v.object({ name: v.string(), pull: v.nullish(v.string()) });
+
 const BoxRowFields = v.object({
 	box: v.string(),
 	repo: v.nullish(v.string()),
@@ -430,6 +433,11 @@ const BoxRowFields = v.object({
 	branch: v.nullish(v.string()),
 	base: v.nullish(v.string()),
 	prompt: v.nullish(v.string()),
+	/** The issue the Box was started for, as the person wrote it. */
+	issue: v.nullish(v.string()),
+	/** The name of the node the Box runs on; none while it is placed on none. */
+	machine: v.nullish(v.string()),
+	workflow: v.nullish(WorkflowRefSchema),
 	title: v.string(),
 	state: ProgressSchema,
 	stale: v.boolean(),
@@ -505,8 +513,8 @@ const BoxDetailFields = v.object({
 	...BoxRowFields.entries,
 	timeline: v.array(EntrySchema),
 	artifacts: v.array(EvidenceSchema),
-	/** The workflow and repo of the failed run this Box came from, when it is that repo's latest run. */
-	workflow: v.nullish(v.object({ name: v.string(), pull: v.nullish(v.string()) })),
+	/** The workflow and pull request of the failed run this Box came from, when it is that workflow's latest run. */
+	run_again: v.nullish(WorkflowRefSchema),
 	/** Whether the person asked for a plan first; its approved plan is the newest plan.json. */
 	plan_first: v.optional(v.boolean(), false),
 	/** Whether a workflow run made this Box. */

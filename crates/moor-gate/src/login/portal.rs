@@ -7,11 +7,11 @@ use std::io::Write as _;
 use std::net::TcpStream;
 
 use moor_core::name::BoxName;
-use moor_core::progress::{PrLink, ProgressView};
+use moor_core::progress::PrLink;
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
 use moor_core::view::ArtifactView;
-use moor_core::workflow::{is_draft_prompt, split_plan_first};
+use moor_core::workflow::is_draft_prompt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -22,6 +22,7 @@ use super::{Login, Session};
 use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
+use row::{summary, Row};
 
 mod again;
 mod answer;
@@ -31,6 +32,7 @@ mod inbox;
 mod plan;
 mod pulls;
 mod retry;
+mod row;
 mod start;
 mod steer;
 
@@ -134,32 +136,6 @@ pub(super) fn serve(
     }
 }
 
-/// A Box row as `show` sends it, the parts a page reads.
-#[derive(Deserialize)]
-struct Row {
-    /// The Box name.
-    name: String,
-    /// The repo, as `OWNER/NAME`.
-    repo: Option<String>,
-    /// The repos cloned beside `repo`, in order.
-    #[serde(default)]
-    other_repos: Vec<String>,
-    /// The branch.
-    branch: Option<String>,
-    /// The base ref.
-    base: Option<String>,
-    /// What the Box was asked.
-    prompt: Option<String>,
-    /// RFC 3339 UTC last update.
-    updated_at: String,
-    /// The lifecycle, as `show` names it.
-    lifecycle: Option<String>,
-    /// The derived state.
-    progress: Option<ProgressView>,
-    /// The Box's gates and where it stands, handed on as `show` sent it.
-    gate: Option<Value>,
-}
-
 /// What `show` sends, the parts a page reads.
 #[derive(Deserialize)]
 struct Shown {
@@ -180,31 +156,6 @@ fn pr_json(pr: Option<&PrLink>) -> Value {
         json!({"repo": p.repo, "number": p.number,
                "url": format!("https://github.com/{}/pull/{}", p.repo, p.number)})
     })
-}
-
-/// A Box as a list row or the head of a Box page.
-fn summary(row: &Row) -> Option<Value> {
-    let progress = row.progress.as_ref()?;
-    Some(json!({
-        "box": row.name,
-        "repo": row.repo,
-        "other_repos": row.other_repos,
-        "branch": row.branch,
-        "base": row.base,
-        "prompt": row.prompt.as_deref().map(|p| split_plan_first(p).unwrap_or(p)),
-        "plan_first": row.prompt.as_deref().and_then(split_plan_first).is_some(),
-        "title": progress.title,
-        "state": progress.state,
-        "failed": progress.failed,
-        "stale": progress.stale,
-        "line": progress.line,
-        "last_event_at": progress.last_event_at,
-        "updated_at": row.updated_at,
-        "pr": pr_json(progress.pr.as_ref()),
-        "needs": progress.needs,
-        "gate": row.gate,
-        "retryable": row.lifecycle.as_deref() == Some("setup_failed"),
-    }))
 }
 
 /// The value of `show`, asked as the session's person.
@@ -314,7 +265,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         map.insert("timeline".to_owned(), shown.timeline.unwrap_or(json!([])));
         map.insert("artifacts".to_owned(), json!(artifacts));
         let run_again = again::failed_run_of(gate, session, shown.boxed.as_ref());
-        map.insert("workflow".to_owned(), run_again);
+        map.insert("run_again".to_owned(), run_again);
         map.insert("from_workflow".to_owned(), json!(again::names_a_run(boxed)));
     }
     json(stream, "200 OK", &view);

@@ -5,7 +5,7 @@ use moor_core::progress::Progress;
 use serde_json::{json, Value};
 
 use super::super::{workflows, Session};
-use super::Row;
+use super::row::Row;
 use crate::Gate;
 
 /// Whether `name` is shaped like the Box of a workflow run, `<workflow>/w<id>-<due time>`.

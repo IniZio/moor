@@ -17,9 +17,11 @@ pub mod pulls;
 pub mod repo_config;
 pub mod run;
 pub mod session;
+pub mod setup;
 pub mod sleep;
 pub mod steer;
 pub mod stuck;
+pub mod ties;
 pub mod user;
 pub mod workflow;
 use crate::domain::{box_state::BoxLifecycle, hands::HandsState, session_state::SessionState};
@@ -29,7 +31,9 @@ pub use detail::{ApprovalView, SaidView};
 pub use forward::{ForwardView, ForwardedView};
 pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
+pub use setup::{DotfilesView, SetupView};
 pub use sleep::unfinished_turn;
+pub use ties::BoxTies;
 
 /// Why the agent could not be launched.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -181,33 +185,9 @@ pub struct BoxView {
     /// The gates the Box must pass before it counts as done, and where it stands; set by `show`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate: Option<gate::GateView>,
-}
-
-/// Outcome of the setup script.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
-pub struct SetupView {
-    /// Whether setup ran.
-    pub ran: bool,
-    /// Whether it succeeded.
-    pub ok: bool,
-    /// Last output line.
-    pub line: Option<String>,
-    /// Duration in milliseconds.
-    pub ms: Option<u64>,
-    /// Last lines of the setup log.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tail: Option<String>,
-}
-
-/// Outcome of dotfiles delivery.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
-pub struct DotfilesView {
-    /// Whether dotfiles ran.
-    pub ran: bool,
-    /// Whether it succeeded.
-    pub ok: bool,
-    /// Duration in milliseconds.
-    pub ms: Option<u64>,
+    /// The workflow run and machine the Box is tied to; set by `show`.
+    #[serde(skip_serializing_if = "BoxTies::is_empty")]
+    pub ties: BoxTies,
 }
 
 /// Outcome of the agent launch.
