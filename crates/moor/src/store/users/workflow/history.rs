@@ -2,11 +2,13 @@
 
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{HistoryEntry, RunId};
-use moor_schema::tables::WorkflowRunHistory;
+use moor_core::BoxId;
+use moor_schema::tables::{WorkflowRunHistory, WorkflowRuns};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::corrupt;
-use crate::store::db::{self, Db, DbExt as _};
+use super::row::{STARTED, WAITING};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension as _, Tx};
 use crate::store::{Store, StoreError};
 
 /// Appends `entry` at `at` to the history of run `run`, as the line after its last.
@@ -45,6 +47,36 @@ pub(super) fn append_history(
                 serde_json::to_string(entry)?.into(),
             ]),
     )?;
+    Ok(())
+}
+
+/// Appends the lines `lines` makes to the history of the run at a step in Box `box_id`, running
+/// or waiting, in `tx`; it is given whether the run waits. Nothing is written for a Box with no
+/// such run.
+pub(in crate::store) fn append_to_open_run(
+    tx: &Tx<'_>,
+    box_id: BoxId,
+    at: Ts,
+    lines: impl FnOnce(bool) -> Vec<HistoryEntry>,
+) -> Result<(), StoreError> {
+    let open: Option<(i64, String)> = tx
+        .row(
+            Query::select()
+                .columns([WorkflowRuns::Id, WorkflowRuns::Outcome])
+                .from(WorkflowRuns::Table)
+                .and_where(Expr::col(WorkflowRuns::Box).eq(box_id.get()))
+                .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTED, WAITING]))
+                .order_by(WorkflowRuns::Id, Order::Desc)
+                .limit(1),
+            |r| Ok::<_, db::Error>((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((run, outcome)) = open else {
+        return Ok(());
+    };
+    for line in lines(outcome == WAITING) {
+        append_history(tx, run, at, &line)?;
+    }
     Ok(())
 }
 

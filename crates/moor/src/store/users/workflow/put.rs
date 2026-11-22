@@ -59,6 +59,15 @@ pub(crate) enum Put {
     },
 }
 
+/// The JSON a workflow keeps of its gates; none for none.
+fn gates_json(def: &WorkflowDef) -> Result<Option<String>, StoreError> {
+    def.gates
+        .as_ref()
+        .map(|g| serde_json::to_string(&g.docs()))
+        .transpose()
+        .map_err(StoreError::from)
+}
+
 /// Inserts `def` as `owner`'s workflow and returns its id.
 fn insert_workflow(
     conn: &dyn Db,
@@ -86,6 +95,7 @@ fn insert_workflow(
                 Workflows::Config,
                 Workflows::Plan,
                 Workflows::OnPullRequest,
+                Workflows::Gates,
             ])
             .values_panic([
                 owner.get().into(),
@@ -103,6 +113,7 @@ fn insert_workflow(
                 def.config.as_deref().into(),
                 plan.into(),
                 i64::from(def.on_pull_request).into(),
+                gates_json(def)?.into(),
             ])
             .returning_col(Workflows::Id),
         |r| r.get(0),
@@ -134,6 +145,7 @@ fn replace_workflow(
         .value(Workflows::Prompt, def.prompt.as_str())
         .value(Workflows::Plan, plan)
         .value(Workflows::OnPullRequest, i64::from(def.on_pull_request))
+        .value(Workflows::Gates, gates_json(def)?)
         .value(Workflows::EnabledAt, enabled_at)
         .value(Workflows::TimeoutMinutes, i64::from(def.timeout.minutes()))
         .value(Workflows::UpdatedAt, now)

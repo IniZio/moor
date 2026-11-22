@@ -167,8 +167,7 @@ fn line_of(at: i64, entry: &Value, r#box: Option<&str>) -> Value {
                     .replace('_', " ")
             )
         }
-        // A kind this build does not know reads as the line it was stored as.
-        other => format!("{other}: {entry}"),
+        other => gate_line::sentence(other, entry, &tries),
     };
     json!({"at": at, "kind": kind, "text": sentence, "evidence": evidence})
 }
@@ -198,6 +197,7 @@ fn step_state(id: &str, run: &RunRowView, lines: &[&Value]) -> &'static str {
         } else {
             "failed"
         }),
+        "gate_passed" => Some("passed"),
         "exhausted" | "unanswered" => Some("failed"),
         _ => None,
     });
@@ -375,3 +375,7 @@ pub(crate) fn answer(
         Err(why) => failed(stream, "run answer", &why),
     }
 }
+
+mod gate_line;
+#[cfg(test)]
+mod tests;

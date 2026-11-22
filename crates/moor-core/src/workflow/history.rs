@@ -80,6 +80,40 @@ pub enum HistoryEntry {
         /// What the owner said with it, passed on to the agent.
         note: Option<String>,
     },
+    /// A gate of the run's Box passed. The next gate, if any, is entered after it.
+    GatePassed {
+        /// The gate.
+        step: StepId,
+    },
+    /// The run waits for a person at a gate: the owner is asked, or the gate is stuck.
+    GateWaiting {
+        /// The gate.
+        step: StepId,
+        /// The try the gate is at.
+        try_n: u8,
+        /// Why the gate is stuck; none when the owner is asked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        why: Option<String>,
+    },
+    /// The owner answered the question of a gate. The wait ends with the run going on.
+    GateAnswered {
+        /// The gate.
+        step: StepId,
+        /// The try the owner was asked about.
+        try_n: u8,
+        /// Who answered.
+        by: String,
+        /// Yes or no.
+        answer: Answer,
+        /// What the owner said with it.
+        note: Option<String>,
+    },
+    /// A run that waited at a gate went on, because the gate opened for the agent again. The wait
+    /// ends here, as an answer ends the wait at an approve step.
+    Resumed {
+        /// The gate the run waited at.
+        step: StepId,
+    },
     /// An approve step got no answer in time, so the run ends declined.
     Unanswered {
         /// The approve step.

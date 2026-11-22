@@ -2,6 +2,7 @@
 //! `workflow-set-enabled` and `workflow-runs`.
 
 use moor_core::config::override_text;
+use moor_core::gate::Gates;
 use moor_core::name::ForgeRepo;
 use moor_core::request::{WorkflowAddReq, WorkflowCmd};
 use moor_core::seam::clock::Ts;
@@ -215,11 +216,7 @@ fn add(
     };
     def.config = config;
     def.on_pull_request = on_pull_request;
-    def.plan = req
-        .plan
-        .as_deref()
-        .map(|text| parse_plan(text, &req.prompt))
-        .transpose()?;
+    (def.plan, def.gates) = plan_or_gates(req, prior.as_ref())?;
     let revision = match store.put_workflow_at(
         user,
         &def,
@@ -239,6 +236,42 @@ fn add(
         revision: Some(revision),
         plan: def.plan.as_ref().map(Plan::outline).unwrap_or_default(),
     })
+}
+
+/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates left out are the
+/// stored ones, and an empty list is none.
+fn parse_gates(
+    req: &WorkflowAddReq,
+    prior: Option<&Workflow>,
+) -> Result<Option<Gates>, CommandError> {
+    match req.gates.as_deref() {
+        None => Ok(prior.and_then(|w| w.gates.clone())),
+        Some([]) => Ok(None),
+        Some(docs) => Gates::parse(docs)
+            .map(Some)
+            .map_err(|e| usage(e.to_string())),
+    }
+}
+
+/// The plan and the gates the workflow ends up with, refused when it would have both.
+fn plan_or_gates(
+    req: &WorkflowAddReq,
+    prior: Option<&Workflow>,
+) -> Result<(Option<Plan>, Option<Gates>), CommandError> {
+    let plan = req
+        .plan
+        .as_deref()
+        .map(|text| parse_plan(text, &req.prompt))
+        .transpose()?;
+    let gates = parse_gates(req, prior)?;
+    if plan.is_some() && gates.is_some() {
+        return Err(usage(if req.gates.is_some() {
+            "a workflow has a plan or gates, not both: send one of them, so nothing was saved"
+        } else {
+            "this workflow keeps its gates, and a workflow has a plan or gates, not both: send `gates: []` to clear the gates, or leave the plan out, so nothing was saved"
+        }));
+    }
+    Ok((plan, gates))
 }
 
 /// The plan in `text`, made for `prompt`, or a refusal that lists every error in it.
@@ -333,6 +366,7 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
         plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
         revision: w.revision,
         on_pull_request: w.on_pull_request,
+        gates: w.gates.as_ref().map(Gates::docs),
         last_run,
     }
 }

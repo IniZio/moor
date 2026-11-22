@@ -1,6 +1,6 @@
 //! A start's gates: checked before any write, and kept with the Box.
 
-use moor_core::gate::{Approval, Gates};
+use moor_core::gate::Gates;
 use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
@@ -41,10 +41,10 @@ pub(super) fn check_fresh(cx: &Cx, req: &StartReq) -> Result<(), CommandError> {
                 .to_owned(),
         ));
     }
-    let reports = gates
-        .iter()
-        .any(|g| g.evidence.is_some() || g.approval != Approval::None);
-    match reports.then(|| unreportable(cx, "a gate with evidence or approval")) {
+    match gates
+        .needs_reports()
+        .then(|| unreportable(cx, "a gate with evidence or approval"))
+    {
         Some(Some(why)) => Err(usage(why)),
         _ => Ok(()),
     }

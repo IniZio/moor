@@ -7,6 +7,7 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{run_verdict, workflow_due, RunVerdict, WorkflowVerdict};
+use moor_core::gate::{GateDoc, Gates};
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
@@ -64,6 +65,8 @@ pub(crate) struct Firing {
     pub(crate) prompt: String,
     /// The step of the workflow's plan the run starts at.
     pub(crate) first_step: StepId,
+    /// The gates the Box starts with, frozen into it; none for a workflow without gates.
+    pub(crate) gates: Option<Vec<GateDoc>>,
 }
 
 impl Firing {
@@ -179,7 +182,12 @@ fn prepare(
         .next()
         .ok_or("the owner has no identity to start a Box as")?;
     let planned = !w.plan.is_single_of(&w.prompt);
-    if let Some(why) = planned.then(|| unreportable(cx, "the plan")).flatten() {
+    let needs = match &w.gates {
+        _ if planned => Some("the plan"),
+        Some(g) if g.needs_reports() => Some("a gate with evidence or approval"),
+        _ => None,
+    };
+    if let Some(why) = needs.and_then(|what| unreportable(cx, what)) {
         return Err(why);
     }
     let prompt = if planned {
@@ -201,7 +209,8 @@ fn prepare(
             cause: cause.clone(),
             name,
             prompt,
-            first_step: w.plan.first().id.clone(),
+            first_step: gated::first_step(w.gates.as_ref(), w.plan.first().id.clone()),
+            gates: w.gates.as_ref().map(Gates::docs),
         },
     })
 }
@@ -294,7 +303,7 @@ fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
         Err(e) => return refused(e.to_string()),
     }
     let req = StartReq {
-        gates: None,
+        gates: job.gates.clone().map(Box::new),
         placement: moor_core::decide::schedule::Placement::FirstOnline,
         cold: false,
         config: job.config.clone(),
@@ -342,9 +351,13 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
                     }),
                     _ => RunState::Running {
                         box_id: row.id,
-                        at: store
-                            .run_plan(run.id, &w.prompt)
-                            .map_or_else(|_| w.plan.first().id.clone(), |p| p.first().id.clone()),
+                        at: gated::first_step(
+                            store.box_gates(row.id).ok().flatten().as_ref(),
+                            store.run_plan(run.id, &w.prompt).map_or_else(
+                                |_| w.plan.first().id.clone(),
+                                |p| p.first().id.clone(),
+                            ),
+                        ),
                         try_n: 1,
                     },
                 }
@@ -369,6 +382,7 @@ pub(super) mod cancel;
 mod check;
 mod eligible;
 mod facts;
+mod gated;
 mod now;
 mod previous;
 mod pull;

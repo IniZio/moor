@@ -109,9 +109,7 @@ pub(crate) fn run(
         .step(&at)
         .filter(|s| matches!(s.kind, StepKind::Approve { .. }))
     else {
-        return Err(refused(format!(
-            "step {at} of the plan is not an approve step"
-        )));
+        return Err(super::gated::not_approve(store, box_id, &at));
     };
     let asked = Asked {
         cx,

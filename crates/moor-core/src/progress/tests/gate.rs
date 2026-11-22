@@ -52,6 +52,7 @@ fn open(next: GateNext) -> GateStatus {
 fn stuck() -> GateStatus {
     GateStatus::Stuck {
         gate: proof(),
+        try_n: 1,
         why: "the agent went quiet".to_owned(),
     }
 }

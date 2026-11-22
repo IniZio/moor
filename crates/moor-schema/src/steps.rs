@@ -50,6 +50,7 @@ mod wanted_effect;
 mod warm_starts;
 mod workflow_also;
 mod workflow_changes;
+mod workflow_gates;
 mod workflow_on_pull;
 mod workflow_optional_cron;
 mod workflow_plans;
@@ -114,4 +115,5 @@ pub const STEPS: &[Step] = &[
     step("V95__drop_workflow_breaker", drop_workflow_breaker::write),
     step("V96__workflow_optional_cron", workflow_optional_cron::write),
     step("V97__box_gates", box_gates::write),
+    step("V98__workflow_gates", workflow_gates::write),
 ];

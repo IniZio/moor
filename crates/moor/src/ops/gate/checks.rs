@@ -25,7 +25,7 @@ use crate::ops::gate::ask::ask;
 use crate::ops::gate::handoff::hand_over;
 use crate::ops::gate::remind::remind;
 use crate::ops::steer;
-use crate::store::{BoxRow, Store, StoreError};
+use crate::store::{BoxRow, RunOfBox, Store, StoreError};
 
 /// A check to run: the gate, the try and the Box, and the number of the line it writes.
 pub(crate) struct Job {
@@ -46,7 +46,8 @@ pub(crate) struct Job {
 }
 
 /// Looks at each open Box with gates, handing the check that is due to `checks`, which must not
-/// wait for it. A failure of the try just ended goes to the agent first. Returns what to log.
+/// wait for it. A Box whose workflow run ended is left alone: a cancelled, failed or timed out run
+/// has nobody to remind or check for. A failure of the try just ended goes to the agent first. Returns what to log.
 ///
 /// # Errors
 /// A store failure listing the Boxes.
@@ -64,6 +65,14 @@ pub(crate) fn pass(
         }
         if !gated.contains(&row.id) {
             continue;
+        }
+        match store.run_of_box(row.id) {
+            Ok(RunOfBox::Ended(_)) => continue,
+            Err(e) => {
+                out.push(format!("gates of {}: {e}", row.name.as_str()));
+                continue;
+            }
+            Ok(RunOfBox::NoRun | RunOfBox::Open) => {}
         }
         if let Err(e) = settle(cx, store, &row, checks) {
             out.push(format!("gates of {}: {}", row.name.as_str(), e.error));

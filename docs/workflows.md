@@ -107,6 +107,64 @@ A saved prompt that changed after the plan was made marks the plan **plan
 stale**. It still runs. **Mark reviewed** saves it as made from the current
 prompt.
 
+## Hold a run open with gates
+
+A plan walks a run through steps. Gates instead hold it open until moor can
+check its finish line. A workflow has a plan or gates, never both. `add_workflow`
+refuses a request that would leave it with both, and nothing is saved.
+
+```json
+{
+  "name": "pr-evidence",
+  "repos": ["acme/web"],
+  "on_pull_request": true,
+  "prompt": "Collect evidence for the pull request in MOOR_PULL_NUMBER, then comment on it.",
+  "gates": [
+    {"name": "proof", "evidence": ["pr-*"], "checks": ["test -s pr-summary.json"], "max_tries": 2},
+    {"name": "done", "evidence": ["posted.md"]}
+  ]
+}
+```
+
+A gate has a `name` and any of these.
+
+| Field | What it asks |
+| --- | --- |
+| `evidence` | Files the agent leaves in `.moor/artifacts/` and names in `report_step`: flat names or a prefix such as `pr-*`. |
+| `checks` | Commands moor runs in the Box once the agent is quiet. Exit 0 passes, and the first failure fails the try. |
+| `approval` | `owner` asks the workflow's owner to say yes or no after the checks. |
+| `max_tries` | How often the gate may be tried, 1 to 5; 2 when left out, so a failed check or an owner's no leaves the agent a chance to fix it. Write 1 for a gate with one try. |
+
+A check that reads GitHub with `gh api` goes through the Proxy as the agent does.
+The default rule has no entry for some reads, such as
+`GET /repos/{repo}/commits/*/statuses`. Add it to the workflow's `proxy.allow`.
+
+The gates open in order. A run freezes them into its Box when it fires, so an
+edit never changes a run in flight. The agent gets the prompt and the gates, and
+no steps. `list_workflows` shows the gates. Adding the workflow again
+without `gates` keeps them, and `gates: []` removes them.
+
+The gates, not the agent going quiet, decide how the run ends.
+
+- Every gate passed. The run is `finished`, and its result is the note of the
+  agent's last accepted report.
+- A gate failed for good, as when the owner says no on its last try. The run
+  `failed` with the gate's reason.
+- A gate is stuck, or asks the owner. The run `waits`, and the owner hears of
+  it as at an approve step. `answer_gate` on the run's Box answers a gate that
+  asks. A message to the Box reopens a stuck gate with fresh tries, and the
+  run goes on. Waiting does not count toward `timeout_minutes`. A wait with
+  no answer ends the run `declined` after 7 days.
+
+A gated run starts at its first gate, and its history never names a plan step.
+The history lists these in order. Each gate in hand. Each report, accepted or
+refused. Each check. Each gate passed. The wait for a person, the answer and the
+resume. The end. A check sees the run's environment as the agent's shell does. That
+includes the `MOOR_PULL_*` variables and the Proxy.
+
+A newer head of a pull request cancels the older head's run, and a cancelled
+run's Box gets no more reminders or checks.
+
 ## Run now
 
 **Run now** starts a run at once, so you can try a workflow before its schedule

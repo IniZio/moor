@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::gate::GateDoc;
+
 /// The front a workflow came from, as shown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OriginView {
@@ -107,6 +109,10 @@ pub struct WorkflowView {
     /// Whether a pull request event on its first repo fires a run.
     #[serde(default)]
     pub on_pull_request: bool,
+    /// The gates each run's Box starts with, as `add_workflow` takes them; none when the workflow
+    /// has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gates: Option<Vec<GateDoc>>,
     /// Its latest run, when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run: Option<LastRunView>,

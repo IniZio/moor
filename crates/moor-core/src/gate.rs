@@ -13,6 +13,7 @@ mod brief;
 #[cfg(test)]
 mod brief_tests;
 mod line;
+mod shown;
 mod status;
 #[cfg(test)]
 mod status_tests;
@@ -33,6 +34,9 @@ pub const CHECKS_MAX: usize = 8;
 
 /// The longest check command, in bytes.
 pub const CHECK_MAX: usize = 4096;
+
+/// How often a gate may be tried when its `max_tries` is left out.
+const DEFAULT_TRIES: Tries = Tries::TWO;
 
 /// Who must say yes before a gate passes.
 #[derive(
@@ -79,7 +83,8 @@ pub struct GateDoc {
     /// `owner` asks the Box's user to approve after the checks; `none` when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval: Option<Approval>,
-    /// How often the gate may be tried, 1 to 5; 1 when left out.
+    /// How often the gate may be tried, 1 to 5; 2 when left out, so a failed check or an owner's
+    /// no leaves the agent a chance to fix it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tries: Option<u64>,
 }
@@ -203,6 +208,14 @@ impl Gates {
         self.0.iter().map(doc_of).collect()
     }
 
+    /// Whether a gate needs the agent to call `report_step` or the owner to answer, which only a
+    /// controller that offers `report_step` can honour.
+    #[must_use]
+    pub fn needs_reports(&self) -> bool {
+        self.iter()
+            .any(|g| g.evidence.is_some() || g.approval != Approval::None)
+    }
+
     /// Every gate, the first one first.
     pub fn iter(&self) -> impl Iterator<Item = &Gate> {
         self.0.iter()
@@ -226,7 +239,7 @@ fn parse_gate(doc: &GateDoc) -> Result<Gate, GateError> {
         return Err(GateError::NothingToPass { gate: gate() });
     }
     let max_tries = match doc.max_tries {
-        None => Tries::ONE,
+        None => DEFAULT_TRIES,
         Some(n) => {
             u8::try_from(n)
                 .ok()
@@ -302,6 +315,6 @@ fn doc_of(gate: &Gate) -> GateDoc {
             .collect(),
         checks: gate.checks.clone(),
         approval: (gate.approval != Approval::None).then_some(gate.approval),
-        max_tries: (gate.max_tries != Tries::ONE).then(|| u64::from(gate.max_tries.get())),
+        max_tries: (gate.max_tries != DEFAULT_TRIES).then(|| u64::from(gate.max_tries.get())),
     }
 }

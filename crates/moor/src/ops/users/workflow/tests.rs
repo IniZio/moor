@@ -36,6 +36,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         keep_state: false,
         enabled: Some(true),
         on_pull_request: Some(false),
+        gates: None,
     }
 }
 
@@ -553,6 +554,7 @@ fn a_starting_or_refused_run_names_its_planned_box_and_no_other_does() {
 }
 
 mod enabled_and_filter;
+mod gates;
 mod keep_omitted;
 mod no_cron;
 mod plan;

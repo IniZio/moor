@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use crate::gate::Gates;
 use crate::name::ForgeRepo;
 use crate::seam::clock::Ts;
 use crate::user::UserId;
@@ -165,6 +166,9 @@ pub struct WorkflowDef {
     pub plan: Option<Plan>,
     /// Whether a pull request event on its first repo fires a run.
     pub on_pull_request: bool,
+    /// The gates each run's Box starts with, in place of a plan; none for none. A definition has
+    /// a plan or gates, never both.
+    pub gates: Option<Gates>,
 }
 
 impl WorkflowDef {
@@ -208,6 +212,7 @@ impl WorkflowDef {
             origin: None,
             plan: None,
             on_pull_request: false,
+            gates: None,
         })
     }
 }
@@ -245,10 +250,15 @@ pub struct Workflow {
     pub revision: u64,
     /// Whether a pull request event on its first repo fires a run.
     pub on_pull_request: bool,
+    /// The gates each run's Box starts with; none for a workflow that walks its plan or runs the
+    /// single prompt.
+    pub gates: Option<Gates>,
 }
 
 mod box_name;
 mod cause;
+mod gated;
+mod gated_history;
 mod history;
 mod plan;
 #[cfg(test)]
@@ -263,6 +273,8 @@ mod tests;
 
 pub use box_name::box_name;
 pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
+pub use gated::{gated_move, GatedMove, Standing};
+pub use gated_history::gate_history;
 pub use history::HistoryEntry;
 pub use plan::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt,

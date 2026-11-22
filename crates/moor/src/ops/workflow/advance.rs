@@ -38,6 +38,9 @@ pub(super) fn finish_runs(
     (checks, out): (&dyn Fn(CheckJob), &mut Vec<String>),
 ) -> Result<(), StoreError> {
     for run in store.open_workflow_runs(w.id)? {
+        if super::gated::settle_held(cx, store, &run, now)? {
+            continue;
+        }
         let RunState::Running {
             box_id,
             ref at,

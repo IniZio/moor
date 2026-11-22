@@ -64,7 +64,7 @@ pub(super) fn ensure(tx: &Tx<'_>, id: BoxId, at: Ts) -> Result<(), StoreError> {
 }
 
 /// The gates of Box `id` and the lines written for them; none for a Box without gates.
-fn load(tx: &Tx<'_>, id: BoxId) -> Result<Option<(Gates, Vec<GateLine>)>, StoreError> {
+pub(super) fn load(tx: &Tx<'_>, id: BoxId) -> Result<Option<(Gates, Vec<GateLine>)>, StoreError> {
     let text: Option<Option<String>> = tx
         .row(
             Query::select()

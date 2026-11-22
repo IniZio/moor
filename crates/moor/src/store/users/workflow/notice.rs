@@ -6,11 +6,12 @@
 //! move that changed nothing (a repeated tick, a restart, a lost race) writes nothing.
 
 use moor_core::domain::event::{Event, WorkflowEvent};
+use moor_core::gate::{wait, GateLine, Gates};
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{Plan, RunEnd, RunId, RunOutcome, RunState, StepKind, WorkflowId};
 use moor_core::BoxId;
-use moor_schema::tables::{Boxes, WorkflowRuns, Workflows};
-use sea_query::{Expr, ExprTrait as _, Query};
+use moor_schema::tables::{BoxGateLines, Boxes, WorkflowRuns, Workflows};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::corrupt;
 use crate::store::apply::insert_event;
@@ -73,7 +74,10 @@ pub(super) fn record(
         RunState::Waiting {
             box_id, at: step, ..
         } => {
-            let question = question_of(tx, run, &prompt, step.as_str())?;
+            let question = match gate_question(tx, box_id.get())? {
+                Some(asked) => asked,
+                None => question_of(tx, run, &prompt, step.as_str())?,
+            };
             let event = WorkflowEvent::RunWaiting {
                 workflow: name,
                 repo,
@@ -153,6 +157,36 @@ fn workflow_of(tx: &dyn Db, id: WorkflowId) -> Result<(String, String), StoreErr
             .and_where(Expr::col(Workflows::Id).eq(id.get())),
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?)
+}
+
+/// What the gate that holds Box `box_id` asks or says, when the Box has gates and one waits for a
+/// person; none otherwise.
+fn gate_question(tx: &dyn Db, box_id: i64) -> Result<Option<String>, StoreError> {
+    let text: Option<Option<String>> = tx
+        .row(
+            Query::select()
+                .column(Boxes::Gates)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(box_id)),
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(text) = text.flatten() else {
+        return Ok(None);
+    };
+    let gates = Gates::from_json(&text).map_err(|e| corrupt("box gates", e))?;
+    let lines = tx
+        .rows(
+            Query::select()
+                .column(BoxGateLines::Entry)
+                .from(BoxGateLines::Table)
+                .and_where(Expr::col(BoxGateLines::Box).eq(box_id))
+                .order_by(BoxGateLines::N, Order::Asc),
+            |r| r.get::<_, String>(0),
+        )?
+        .map(|row| serde_json::from_str::<GateLine>(&row?).map_err(|e| corrupt("gate line", e)))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(wait(&gates, &lines).map(|w| w.question()))
 }
 
 /// What the approve step `step` of run `run`'s frozen plan asks.

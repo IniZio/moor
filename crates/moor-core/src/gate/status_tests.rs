@@ -34,9 +34,10 @@ fn open(g: &str, try_n: u8, next: GateNext) -> GateStatus {
     }
 }
 
-fn stuck(g: &str, why: &str) -> GateStatus {
+fn stuck(g: &str, try_n: u8, why: &str) -> GateStatus {
     GateStatus::Stuck {
         gate: id(g),
+        try_n,
         why: why.to_owned(),
     }
 }
@@ -206,7 +207,7 @@ fn a_quiet_agent_is_reminded_once_then_stuck() {
     lines.push(quiet("proof", 1));
     assert_eq!(
         status(&evidence_gate(), &lines),
-        stuck("proof", "the agent went quiet")
+        stuck("proof", 1, "the agent went quiet")
     );
 }
 
@@ -233,7 +234,10 @@ fn the_next_try_is_reminded_again() {
         reminded("proof", 2),
         quiet("proof", 2),
     ];
-    assert_eq!(status(&g, &lines), stuck("proof", "the agent went quiet"));
+    assert_eq!(
+        status(&g, &lines),
+        stuck("proof", 2, "the agent went quiet")
+    );
 }
 
 #[test]
@@ -277,7 +281,7 @@ fn an_owner_no_fails_the_try_and_a_yes_passes() {
 
 #[test]
 fn an_owner_no_on_the_last_try_fails_the_gate() {
-    let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
+    let g = gates(&[tries(1, doc("ok", &[], &[], Some(Approval::Owner)))]);
     let got = status(&g, &[answered("ok", 1, Answer::No)]);
     assert!(
         matches!(&got, GateStatus::Failed { gate, .. } if *gate == id("ok")),
@@ -287,7 +291,7 @@ fn an_owner_no_on_the_last_try_fails_the_gate() {
 
 #[test]
 fn a_failed_gate_stays_failed() {
-    let g = gates(&[doc("ok", &[], &[], Some(Approval::Owner))]);
+    let g = gates(&[tries(1, doc("ok", &[], &[], Some(Approval::Owner)))]);
     let lines = [
         answered("ok", 1, Answer::No),
         reopened("ok"),
@@ -299,14 +303,15 @@ fn a_failed_gate_stays_failed() {
 #[test]
 fn using_up_the_tries_leaves_the_gate_stuck() {
     let g = gates(&[tries(2, doc("proof", &["proof.md"], &[], None))]);
+    let out = stuck("proof", 2, "out of tries: because");
     let lines = [failed_try("proof", 1), failed_try("proof", 2)];
-    assert_eq!(status(&g, &lines), stuck("proof", "out of tries: because"));
+    assert_eq!(status(&g, &lines), out);
     let more = [
         failed_try("proof", 1),
         failed_try("proof", 2),
         submitted("proof", 3),
     ];
-    assert_eq!(status(&g, &more), stuck("proof", "out of tries: because"));
+    assert_eq!(status(&g, &more), out);
 }
 
 #[test]
@@ -321,7 +326,10 @@ fn a_reopened_gate_gets_fresh_tries_counted_from_the_reopening() {
     lines.push(failed_try("proof", 1));
     assert_eq!(status(&g, &lines), open("proof", 2, GateNext::Agent));
     lines.push(failed_try("proof", 2));
-    assert_eq!(status(&g, &lines), stuck("proof", "out of tries: because"));
+    assert_eq!(
+        status(&g, &lines),
+        stuck("proof", 2, "out of tries: because")
+    );
 }
 
 #[test]

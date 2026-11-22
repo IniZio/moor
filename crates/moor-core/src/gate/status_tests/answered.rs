@@ -21,14 +21,18 @@ fn a_replayed_answer_for_an_earlier_try_changes_nothing() {
 
 #[test]
 fn a_failed_check_is_named_by_its_command() {
-    let g = gates(&[doc("tests", &[], &["cargo test --workspace"], None)]);
+    let g = gates(&[tries(
+        1,
+        doc("tests", &[], &["cargo test --workspace"], None),
+    )]);
     let long = "x".repeat(80);
-    let h = gates(&[doc("tests", &[], &[long.as_str()], None)]);
+    let h = gates(&[tries(1, doc("tests", &[], &[long.as_str()], None))]);
     let got = status(&g, &[checked("tests", 1, 0, 101)]);
     assert_eq!(
         got,
         stuck(
             "tests",
+            1,
             "out of tries: check 1 (`cargo test --workspace`) exited 101"
         )
     );
@@ -37,5 +41,5 @@ fn a_failed_check_is_named_by_its_command() {
         "out of tries: check 1 (`{}…`) lost its output twice",
         "x".repeat(60)
     );
-    assert_eq!(got, stuck("tests", &want));
+    assert_eq!(got, stuck("tests", 1, &want));
 }

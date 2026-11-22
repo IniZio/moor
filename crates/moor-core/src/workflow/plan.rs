@@ -103,6 +103,9 @@ impl Tries {
     /// One entry, no retry.
     pub const ONE: Self = Self(1);
 
+    /// One retry: the default of a gate.
+    pub const TWO: Self = Self(2);
+
     /// The most entries a step may have.
     pub const MAX: u8 = 5;
 

@@ -43,6 +43,7 @@ fn workflow(cron: &str, zone: &str, repos: &[&str], state: WorkflowState) -> Wor
         plan: Plan::single("go"),
         revision: 0,
         on_pull_request: false,
+        gates: None,
     }
 }
 
