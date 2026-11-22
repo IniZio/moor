@@ -3,6 +3,7 @@ use crate::config::{parse_repo, parse_user};
 
 mod agent;
 mod restore;
+mod tools;
 mod work_tree;
 
 fn salt(b: u8) -> CacheSalt {
@@ -164,6 +165,10 @@ fn presets_expand_to_the_table() {
             vec!["~/.android/cache", "~/.android/build-cache"],
         ),
         ("android-sdk", vec!["/opt/android-sdk"]),
+        (
+            "tools",
+            vec!["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
+        ),
     ];
     let want: Vec<(String, Vec<String>)> = want
         .into_iter()
@@ -280,6 +285,7 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
             "bundler",
             "android",
             "android-sdk",
+            "tools",
             "worktree"
         ]
     );

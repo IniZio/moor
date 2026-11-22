@@ -101,6 +101,37 @@ fn the_work_tree_reaches_both_places_and_other_caches_only_the_work_place() {
 }
 
 #[test]
+fn what_the_profile_installs_reaches_both_places_as_a_private_copy() {
+    let c = cache(vec![
+        vol(
+            G,
+            "tools",
+            &["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
+        ),
+        vol(G, "go", &["~/go/pkg/mod"]),
+    ]);
+    let m = mounts(&slug(), Some(&c)).unwrap();
+    assert!(m[..3].iter().all(|m| m.private.is_some()), "{m:?}");
+    let agent = args(&m, false);
+    let mounted: Vec<&str> = agent
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .map(String::as_str)
+        .collect();
+    let tools = |n: usize, path: &str| format!("{SLUG}-cache-tools-{n}:/home/agent/{path}");
+    assert_eq!(
+        mounted,
+        [
+            tools(0, ".bun/bin"),
+            tools(1, ".local/bin"),
+            tools(2, ".claude/plugins")
+        ]
+    );
+    assert_eq!(args(&m, true).len(), 10);
+}
+
+#[test]
 fn a_path_or_name_docker_could_misread_is_refused() {
     for bad in ["~/a:b", "~/a,b", "/opt/../etc", "~/a b", "relative"] {
         let c = cache(vec![vol(G, "x", &[bad])]);

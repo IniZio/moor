@@ -313,12 +313,12 @@ cache:
 
 A layer declares at most 8 volumes, with no shared names and no nested paths.
 moor refuses the paths it writes for each Box. Those include `~/.ssh`,
-`~/.claude`, `~/moor`, and `~/.gradle` itself.
+`~/.claude` (all but `~/.claude/plugins`), `~/moor`, and `~/.gradle` itself.
 
 | Preset | Paths |
 | --- | --- |
 | `cache` | `~/.cache`, which also holds npm, Yarn, Go builds, pip, and ccache |
-| `pnpm` | `~/.local/share/pnpm/store` |
+| `pnpm` | `~/.local/share/pnpm/store`, named in `npm_config_store_dir` and `pnpm_config_store_dir` |
 | `bun` | `~/.bun/install/cache` |
 | `docker` | `~/docker`, `/var/lib/containerd` |
 | `podman` | `~/.local/share/containers` |
@@ -331,9 +331,14 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `bundler` | `~/.bundle/cache`, `~/.local/share/gem` |
 | `android` | `~/.android/cache`, `~/.android/build-cache` |
 | `android-sdk` | `/opt/android-sdk` |
+| `tools` | `~/.bun/bin`, `~/.local/bin`, `~/.claude/plugins`: what the agent profile installs |
 
 A preset, the work tree, and a repo config volume are kept per user and repo.
 A user config volume is kept per user. Another user's Box never sees a cache.
+
+On a Docker machine, a package store such as `pnpm` or `rust` is shared by the
+Boxes that run at once. The other volumes, `tools` and `docker` among them, are
+copied into each Box and saved back when it sleeps or closes. The last save wins.
 
 A Docker machine deletes a repo's kept volumes once no Box has used them for 30 days.
 A Box's open and close count as use, and a volume a live or asleep Box holds is never

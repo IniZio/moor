@@ -40,6 +40,8 @@ const LISTEN_PORT: u16 = 18080;
 
 type Rig = Arc<Boxes<Docker>>;
 
+mod cache;
+
 /// Removes the test Boxes' containers and volumes, and the network when nothing is on it, each by
 /// exact name.
 fn sweep() {

@@ -51,7 +51,7 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
     let got = names(&plan);
     assert_eq!(got.first(), Some(&"cache"));
     assert_eq!(got.last(), Some(&"sdk"));
-    assert_eq!(got.len(), 16);
+    assert_eq!(got.len(), 17);
     assert!(got.contains(&"worktree"), "{got:?}");
     assert!(cache_warnings(&w).is_empty());
 }

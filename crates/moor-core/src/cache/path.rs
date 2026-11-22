@@ -13,6 +13,9 @@ const WHOLE: [&str; 2] = ["/var/lib/containerd", "/var/lib/containers"];
 /// Home directories that hold the Box's own state: the provider's ssh keys, moor's per-Box
 /// files, the agent's state and the gh login.
 const BOX_STATE: [&str; 4] = ["~/.ssh", "~/.moor", "~/.claude", "~/.config/gh"];
+/// Directories inside [`BOX_STATE`] that hold no Box state, only what the agent downloaded: the
+/// plugin marketplaces and installs. A cache may be one of them exactly.
+const DOWNLOADS_IN_STATE: [&str; 1] = ["~/.claude/plugins"];
 
 /// A directory in the Box that a cache may cover.
 ///
@@ -66,6 +69,7 @@ impl CachePath {
         let path = Self(format!("{root}{rel}"));
         let owned = owned_paths()
             .into_iter()
+            .filter(|_| !DOWNLOADS_IN_STATE.contains(&path.0.as_str()))
             .find(|o| path.overlaps(&Self(o.clone())));
         if let Some(o) = owned {
             return Err(bad(format!(

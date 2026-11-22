@@ -87,6 +87,7 @@ fn boxed_proxy() -> BoxProxy {
             hosts: Vec::new(),
         },
         rule_env: vec![("RULE".to_owned(), "x".to_owned())],
+        cache_env: Vec::new(),
     }
 }
 
@@ -141,6 +142,33 @@ fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
         .take_warnings()
         .iter()
         .all(|w| w.code != "agent_env_dropped"));
+}
+
+#[test]
+fn an_exec_gets_the_cache_env_unless_the_repo_env_names_the_same_variable() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = rig(dir.path());
+    let mut p = boxed_proxy();
+    p.cache_env = vec![
+        ("npm_config_store_dir".to_owned(), "~/store".to_owned()),
+        ("REPO".to_owned(), "cache".to_owned()),
+    ];
+    let e = prepare(
+        &r.cx,
+        &r.site(Some(&r.workdir)),
+        Some(&p),
+        &cfg(),
+        Purpose::Run,
+    )
+    .unwrap();
+    assert_eq!(
+        e.vars(),
+        [
+            ("REPO".to_owned(), "1".to_owned()),
+            ("npm_config_store_dir".to_owned(), "~/store".to_owned()),
+            ("RULE".to_owned(), "x".to_owned())
+        ]
+    );
 }
 
 #[test]

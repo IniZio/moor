@@ -24,6 +24,8 @@ pub(crate) struct BoxProxy {
     pub(crate) addr: ProxyAddr,
     /// The non-secret env of the tool rules, which wins over the repo `env`.
     pub(crate) rule_env: Vec<(String, String)>,
+    /// The env that points tools at their cache volumes, which the repo `env` overrides.
+    pub(crate) cache_env: Vec<(String, String)>,
 }
 
 /// The Box an exec runs in and where it runs.
@@ -48,7 +50,8 @@ pub(crate) fn proxy(
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
     let (user, plan) = box_plan(cx, box_id, repo, &cfg.proxy_allow)?;
-    let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
+    let cache_env = cfg.cache.env(repo);
+    let repo_env = under_repo_env(&cache_env, cfg);
     let (box_handle, hands_inc) = hands.map_or((None, None), |(h, inc)| (Some(h), Some(inc.get())));
     let spec = ProxySpec {
         box_id,
@@ -79,7 +82,12 @@ pub(crate) fn proxy(
         .filter(|h| is_machine_handle(h.as_str()));
     if let Some(handle) = machine {
         keep_egress(cx, handle, (ep.egress_port, forward_port), &hosts)?;
-        let vars = [exec_env::proxy_vars(ep.egress_port), rule_env.clone()].concat();
+        let vars = [
+            exec_env::proxy_vars(ep.egress_port),
+            cache_env.clone(),
+            rule_env.clone(),
+        ]
+        .concat();
         cx.driver()
             .set_env(handle, &vars, Some(&ep.ca_pem))
             .map_err(|e| format!("cannot give the Box its Proxy environment: {e}"))?;
@@ -92,7 +100,24 @@ pub(crate) fn proxy(
         hosts,
         keep_egress: machine.is_none(),
     };
-    Ok(BoxProxy { addr, rule_env })
+    Ok(BoxProxy {
+        addr,
+        rule_env,
+        cache_env,
+    })
+}
+
+/// The repo `env`, then the variables of `cache_env` it does not set.
+fn under_repo_env(cache_env: &[(String, String)], cfg: &BoxSettings) -> Vec<(String, String)> {
+    let cache = cache_env
+        .iter()
+        .filter(|(name, _)| !cfg.env.contains_key(name))
+        .cloned();
+    cfg.env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .chain(cache)
+        .collect()
 }
 
 /// Where the agent place leaves what stopped its egress proxy from starting.
@@ -203,7 +228,8 @@ pub(crate) fn prepare(
     purpose: Purpose,
 ) -> Result<BoxExec, String> {
     let strip = strip_env(cx, site.provider);
-    let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
+    let cache_env = proxy.map(|p| p.cache_env.as_slice()).unwrap_or_default();
+    let repo_env = under_repo_env(cache_env, cfg);
     let rule_env = proxy.map(|p| p.rule_env.clone()).unwrap_or_default();
     let env = exec_env::merged_env(repo_env, rule_env);
     let ctx = BoxCtx {

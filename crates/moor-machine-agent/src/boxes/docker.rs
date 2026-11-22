@@ -247,12 +247,7 @@ impl BoxProvider for Docker {
         if Cli::state(&names.agent).await?.is_none() {
             return Err(ProvideError::Missing);
         }
-        for place in [&names.work, &names.agent] {
-            if Cli::state(place).await? == Some(State::Running) {
-                Cli::ok(["stop", "-t", STOP_SECONDS, place]).await?;
-            }
-        }
-        Ok(())
+        self.keep_caches(slug, &names).await
     }
 
     async fn remove(&self, slug: &Slug) -> Result<(), ProvideError> {
