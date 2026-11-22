@@ -69,7 +69,10 @@ fn a_wait_for_want_of_answers_passes_its_cause_to_the_page_and_others_have_none(
     assert!(line_of(0, &plain, None).get("unanswered").is_none());
 }
 
-fn row(history: serde_json::Value, verdict: &serde_json::Value) -> moor_core::view::workflow::RunRowView {
+fn row(
+    history: serde_json::Value,
+    verdict: &serde_json::Value,
+) -> moor_core::view::workflow::RunRowView {
     serde_json::from_value(json!({
         "id": 3, "due_at": 1, "outcome": "finished", "phase": "done", "verdict": verdict,
         "history": history,
@@ -95,7 +98,10 @@ const EARLY: &str = r#"[
 #[test]
 fn gates_an_anytime_outcome_ended_the_run_before_read_not_reached() {
     let verdict = json!({"name": "nothing to do", "tone": "plain"});
-    let view = run_view("evidence", &row(serde_json::from_str(EARLY).unwrap(), &verdict));
+    let view = run_view(
+        "evidence",
+        &row(serde_json::from_str(EARLY).unwrap(), &verdict),
+    );
     assert_eq!(states(&view), ["pending", "pending"]);
     assert_eq!(view["label"], "nothing to do");
     assert_eq!(view["status"], "success");

@@ -40,7 +40,7 @@ pub use outcome::{
 pub use status::{
     due_check, due_outcomes, passed_gates, status, DueCheck, DueOutcomes, GateNext, GateStatus,
 };
-pub use wait::{wait, Wait, WaitKind};
+pub use wait::{wait, Wait, WaitKind, WaitTried};
 
 /// The most gates a Box may have.
 pub const GATES_MAX: usize = 8;

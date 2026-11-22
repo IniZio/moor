@@ -463,7 +463,11 @@ fn passed_as(name: &str, tone: &str) -> GateStatus {
 #[test]
 fn a_finished_box_says_the_outcome_it_ended_in_unless_that_is_the_implicit_done() {
     for (name, tone) in [("check failed", "bad"), ("nothing to do", "plain")] {
-        let mut b = gated(BoxLifecycle::Ready, SessionState::Idle, passed_as(name, tone));
+        let mut b = gated(
+            BoxLifecycle::Ready,
+            SessionState::Idle,
+            passed_as(name, tone),
+        );
         b.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
         let p = derive(&b, &[], ten());
         assert_eq!((p.state, p.line.as_str()), (Progress::Done, name));

@@ -19,7 +19,10 @@ fn a_named_outcome_is_the_label_and_the_implicit_done_stays_finished() {
     assert_eq!(label_of(&bad), "check failed");
     assert_eq!(named(&bad).map(|v| v.name.as_str()), Some("check failed"));
     let implicit = run(json!({"verdict": {"name": "done", "tone": "good"}}));
-    assert_eq!((label_of(&implicit), named(&implicit)), ("finished".to_owned(), None));
+    assert_eq!(
+        (label_of(&implicit), named(&implicit)),
+        ("finished".to_owned(), None)
+    );
     assert_eq!(label_of(&run(json!({}))), "finished");
 }
 
