@@ -44,24 +44,6 @@ fn stuck(g: &str, try_n: u8, why: &str) -> GateStatus {
     }
 }
 
-fn unheard(g: &str, try_n: u8, why: &str, cause: NoAnswerCause) -> GateStatus {
-    GateStatus::Stuck {
-        gate: id(g),
-        try_n,
-        why: why.to_owned(),
-        unanswered: Some(cause),
-    }
-}
-
-fn cause(check: CheckOf, command: &str, reason: Unanswered) -> NoAnswerCause {
-    NoAnswerCause {
-        check,
-        command: Some(command.to_owned()),
-        says: None,
-        reason,
-    }
-}
-
 fn report(g: &str, result: StepResult) -> StepReport {
     StepReport {
         step: id(g),
@@ -268,20 +250,6 @@ fn checks_stop_at_the_first_failure() {
     assert_eq!(status(&g, &lines), open("tests", 2, GateNext::RunChecks));
     let after = [checked("tests", 1, 0, 1), checked("tests", 1, 1, 0)];
     assert_eq!(status(&g, &after), open("tests", 2, GateNext::RunChecks));
-}
-
-#[test]
-fn a_lost_stream_is_tried_again_and_two_wait_for_a_person() {
-    let g = gates(&[tries(2, doc("tests", &[], &["a"], None))]);
-    let once = [lost("tests", 1, 0)];
-    assert_eq!(status(&g, &once), open("tests", 1, GateNext::RunChecks));
-    let twice = [lost("tests", 1, 0), lost("tests", 1, 0)];
-    let why = "moor, not the agent, got no answer from its checks twice in a row; the last was \
-               check 1 (`a`): its output stream was lost";
-    let gone = cause(CheckOf::Gate { check: 0 }, "a", Unanswered::Lost);
-    assert_eq!(status(&g, &twice), unheard("tests", 1, why, gone));
-    let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
-    assert_eq!(status(&g, &then_ok), passed());
 }
 
 #[test]

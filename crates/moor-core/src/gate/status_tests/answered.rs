@@ -1,5 +1,6 @@
 //! What an answer is read at, and how a failed check is named.
 
+use super::no_answer::{cause, unheard};
 use super::*;
 
 #[test]

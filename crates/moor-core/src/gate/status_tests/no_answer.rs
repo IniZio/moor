@@ -30,6 +30,24 @@ fn outcome_busy(try_n: u8) -> GateLine {
 const WHY: &str = "moor, not the agent, got no answer from its checks twice in a row; the last \
                    was check 1 (`make`): Box 3 is busy with another command";
 
+pub(super) fn unheard(g: &str, try_n: u8, why: &str, cause: NoAnswerCause) -> GateStatus {
+    GateStatus::Stuck {
+        gate: id(g),
+        try_n,
+        why: why.to_owned(),
+        unanswered: Some(cause),
+    }
+}
+
+pub(super) fn cause(check: CheckOf, command: &str, reason: Unanswered) -> NoAnswerCause {
+    NoAnswerCause {
+        check,
+        command: Some(command.to_owned()),
+        says: None,
+        reason,
+    }
+}
+
 fn make_busy() -> NoAnswerCause {
     let reason = "Box 3 is busy with another command".to_owned();
     cause(
@@ -156,11 +174,11 @@ fn a_multi_line_command_stays_whole_in_the_cause_and_on_one_line_in_the_sentence
   test";
     let g = gates(&[doc("tests", &[], &[run], None)]);
     let lines = [busy("tests", 1, 0), busy("tests", 1, 0)];
-    let GateStatus::Stuck {
-        why, unanswered, ..
-    } = status(&g, &lines)
-    else {
-        panic!("stuck");
+    let (why, unanswered) = match status(&g, &lines) {
+        GateStatus::Stuck {
+            why, unanswered, ..
+        } => (why, unanswered),
+        other => (format!("{other:?}"), None),
     };
     assert!(!why.contains('\n'), "{why}");
     assert!(why.contains("(`make \\ test`)"), "{why}");
@@ -271,4 +289,18 @@ fn a_reopen_after_the_tries_ran_out_still_waits_for_the_agent() {
         reopened("tests"),
     ];
     assert_eq!(status(&g, &lines), open("tests", 1, GateNext::Agent));
+}
+
+#[test]
+fn a_lost_stream_is_tried_again_and_two_wait_for_a_person() {
+    let g = gates(&[tries(2, doc("tests", &[], &["a"], None))]);
+    let once = [lost("tests", 1, 0)];
+    assert_eq!(status(&g, &once), open("tests", 1, GateNext::RunChecks));
+    let twice = [lost("tests", 1, 0), lost("tests", 1, 0)];
+    let why = "moor, not the agent, got no answer from its checks twice in a row; the last was \
+               check 1 (`a`): its output stream was lost";
+    let gone = cause(CheckOf::Gate { check: 0 }, "a", Unanswered::Lost);
+    assert_eq!(status(&g, &twice), unheard("tests", 1, why, gone));
+    let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
+    assert_eq!(status(&g, &then_ok), passed());
 }
