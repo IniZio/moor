@@ -31,7 +31,7 @@ function hint(mode: Mode, state: Progress, needs: Needs | null | undefined, over
 	if (state === 'asleep') return 'This Box is asleep. Sending wakes it, and the agent reads your message once it is up.';
 	return mode === 'interrupt'
 		? 'The agent stops its turn now and reads your message.'
-		: 'The agent reads your message after its current tool call.';
+		: 'It reaches the agent after its current step.';
 }
 
 /** A message that waits in the Box's inbox, shown as a You row until the timeline holds it. */
@@ -104,20 +104,12 @@ export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: st
 					}}
 				>
 					<div class="t-say-row">
-						<div class="t-seg" role="radiogroup" aria-label="How to send">
-							{(['steer', 'interrupt'] as const).map((m) => (
-								<label class="t-seg-opt" key={m} title={m === 'steer' ? 'After its current tool call' : 'Stop its turn now'}>
-									<input type="radio" name="say-mode" value={m} checked={how === m} disabled={busy || (asleep && m === 'interrupt')} onChange={() => setMode(m)} />
-									<span>{m === 'steer' ? 'Steer' : 'Interrupt'}</span>
-								</label>
-							))}
-						</div>
 						<textarea
 							ref={area}
 							rows={Math.min(6, Math.max(1, text.split('\n').length))}
 							value={text}
 							disabled={busy}
-							placeholder={over ? 'Say what to do instead…' : how === 'interrupt' ? 'Interrupt the agent…' : 'Steer the agent…'}
+							placeholder={over ? 'Say what to do instead…' : how === 'interrupt' ? 'Interrupt the agent…' : 'Write to the agent…'}
 							aria-label="Message to the agent"
 							onInput={(e) => setText(e.currentTarget.value)}
 							onKeyDown={(e) => {
@@ -127,11 +119,21 @@ export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: st
 								}
 							}}
 						/>
-						<button type="submit" class="btn primary" disabled={busy || !text.trim()}>
+						<button type="submit" class="btn primary" disabled={busy}>
 							{busy ? 'Sending…' : 'Send'}
 						</button>
 					</div>
-					<p class="muted t-say-hint">{hint(how, detail.state, detail.needs, over)}</p>
+					<div class="t-say-foot">
+						<p class="muted t-say-hint">{hint(how, detail.state, detail.needs, over)}</p>
+						<div class="t-seg" role="radiogroup" aria-label="How to send">
+							{(['steer', 'interrupt'] as const).map((m) => (
+								<label class="t-seg-opt" key={m} title={m === 'steer' ? 'After its current tool call' : 'Stop its turn now'}>
+									<input type="radio" name="say-mode" value={m} checked={how === m} disabled={busy || (asleep && m === 'interrupt')} onChange={() => setMode(m)} />
+									<span>{m === 'steer' ? 'Steer' : 'Interrupt'}</span>
+								</label>
+							))}
+						</div>
+					</div>
 				</form>
 			)}
 			{error && (

@@ -1,37 +1,72 @@
-/* The task page's header, its gate story and the prompt. Own classes (t-th, t-sg), no inline styles (the page's CSP forbids them). */
-.t-th { padding: var(--moor-space-1) 0 var(--moor-space-2); }
-.t-th0 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moor-space-1) var(--moor-space-3); margin-bottom: var(--moor-space-1); font-size: 0.8125rem; }
-.t-th-repo { display: inline-flex; align-items: center; gap: var(--moor-space-2); }
+/* The task page: head, needs card, gate story, prompt, tabs, timeline rows and message box. Own classes (t-th, t-sg), no inline styles (the page's CSP forbids them). */
+.t-th { display: block; padding: 0; margin-bottom: 18px; }
+.t-th0 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 6px; font-size: 0.8125rem; }
+.t-th-repo { display: inline-flex; align-items: center; gap: 8px; }
+.t-th-repo .t-mono { font-size: 0.8125rem; }
 .t-th-sep, .t-th-starts, .t-th-meta { color: var(--moor-color-text-muted); }
-.t-th-starts { font-size: 0.75rem; }
-.t-th-issue { font-weight: 650; }
+.t-th-starts { font-size: 0.8125rem; }
+.t-th-issue { font-size: 0.75rem; color: var(--moor-color-text-muted); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
 .t-th-pr { color: var(--moor-color-accent); }
-.t-th1 { display: flex; align-items: center; gap: var(--moor-space-3); min-width: 0; }
-.t-th-title { margin: 0; font: var(--moor-weight-heading) 1.35rem/1.25 var(--moor-font-heading); min-width: 0; overflow-wrap: anywhere; }
-.t-th1 > .t-pill, .t-th1 > .t-acts { flex: none; }
-.t-th1 > .grow { flex: 1 0 0; }
-.t-th-meta { display: flex; flex-wrap: wrap; gap: 0 var(--moor-space-3); margin: var(--moor-space-1) 0 0; font-size: 0.8125rem; }
+.t-th1 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.t-th-title { margin: 0; font: var(--moor-weight-heading) var(--moor-text-2xl) / 1.2 var(--moor-font-heading); min-width: 0; overflow-wrap: anywhere; }
+.t-th1 > .t-pill { flex: none; padding: 1px 9px; font-size: 0.75rem; font-weight: var(--moor-weight-strong); }
+.t-th1 > .t-acts { flex: none; }
+.t-th1 > .grow { flex: 1 1 auto; }
+.t-th-meta { display: flex; flex-wrap: wrap; margin: 6px 0 0; font-size: 0.875rem; }
+.t-th-meta > * + *::before { content: ' · '; white-space: pre; }
+.t-th-meta .t-mono { font-size: 0.78rem; }
 .t-th-meta a { color: inherit; }
+.t-box .t-stop { border-color: var(--moor-color-border-strong); color: inherit; }
+.t-box .t-stop:hover:not(:disabled) { background: var(--moor-color-bg-raised); border-color: var(--moor-color-text-muted); }
 
-.t-story { margin: var(--moor-space-3) 0; }
+/* What the agent asks, above the gates: a card with the state's colour. */
+.t-box .t-wait { margin: 0 0 28px; padding: 16px 18px; border: 1.5px solid var(--state-needs); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-md); }
+.t-box .t-wait-stuck { border-color: var(--moor-color-danger); }
+.t-box .t-wait-h { font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-box .t-wait-q { margin: 0 0 8px; font: var(--moor-weight-heading) 1.1rem / 1.2 var(--moor-font-heading); }
+.t-box .t-wait-btns { margin-top: 12px; }
+
+.t-story { margin: 0; }
 .t-sg-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--moor-color-border); }
 .t-sg { border-bottom: 1px solid var(--moor-color-border); }
-.t-sg-row { display: flex; align-items: baseline; gap: var(--moor-space-2); padding: 0.45rem 0.4rem; list-style: none; }
+.t-sg-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; list-style: none; }
 summary.t-sg-row { cursor: pointer; }
 summary.t-sg-row::-webkit-details-marker { display: none; }
 summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
-.t-sg-mark { flex: none; width: 1.1em; text-align: center; font-weight: 650; color: var(--t-tone); }
-.t-sg-n { flex: none; color: var(--moor-color-text-muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
-.t-sg-name { font-weight: 650; overflow-wrap: anywhere; }
-.t-sg-state { color: var(--moor-color-text-muted); font-size: 0.8125rem; }
-.t-sg-state::before { content: '· '; }
-.t-sg.t-quiet .t-sg-row, .t-sg.t-done .t-sg-name { color: var(--moor-color-text-muted); }
+.t-sg-mark { flex: none; width: 1.1em; text-align: center; font-weight: var(--moor-weight-strong); color: var(--t-tone); }
+.t-sg-n { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 1.5px solid var(--moor-color-text); border-radius: 50%; font-size: 0.7rem; font-weight: var(--moor-weight-strong); font-variant-numeric: tabular-nums; }
+.t-sg-name { font-weight: 700; overflow-wrap: anywhere; }
+.t-sg-state { font-size: 0.875rem; font-weight: var(--moor-weight-strong); color: var(--moor-color-text-muted); }
+.t-sg-state::before { content: '· '; font-weight: 400; }
+.t-sg.t-quiet .t-sg-row { color: var(--moor-color-text-muted); }
 .t-sg-hand { box-shadow: inset 2px 0 0 var(--t-tone); }
-.t-sg-hand .t-sg-state { color: var(--t-tone); font-weight: 600; }
-.t-sg-body { padding: 0 0.4rem var(--moor-space-3) calc(1.1em + var(--moor-space-2) + 0.4rem); }
+.t-sg-hand .t-sg-state { color: var(--t-tone); }
+.t-sg-end .t-sg-row { font-size: 0.875rem; }
+.t-sg-body { padding: 0 6px 10px calc(6px + 1.1em + 1.25rem + 16px); }
 .t-sg-rule { margin: 0 0 var(--moor-space-2); font-size: 0.875rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
 .t-sg-body .t-wait { margin: var(--moor-space-2) 0 0; }
 
-.t-prompt { margin: 0 0 var(--moor-space-3); }
-.t-prompt summary { cursor: pointer; color: var(--moor-color-text-muted); font-size: 0.875rem; }
+.t-prompt { margin: 10px 0 26px; }
+.t-prompt summary { display: inline-block; list-style: none; cursor: pointer; font-size: 0.875rem; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
+.t-prompt summary::-webkit-details-marker { display: none; }
 .t-prompt pre { margin: var(--moor-space-2) 0 0; padding: 0.5rem 0.7rem; background: var(--moor-color-bg-sunken); border-radius: var(--moor-radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--moor-text-sm)/1.45 var(--moor-font-body); }
+
+/* Tabs, then the timeline in rows of who, what and when. */
+.t-box .t-tabs { align-items: center; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 12px; padding-top: 8px; border-top: 1px solid var(--moor-color-border); border-bottom: 0; }
+.t-box .t-tab { padding: 4px 0; font-weight: var(--moor-weight-body); border-bottom: 2px solid transparent; margin-bottom: 0; }
+.t-box .t-tab[aria-selected='true'] { border-bottom-color: var(--moor-color-text); }
+.t-tabs > .grow { flex: 1 1 auto; }
+.t-tabs .t-cnt { font-size: 0.8125rem; font-weight: 500; }
+.t-tabs .t-cnt .t-counts { font: inherit; }
+.t-box .t-events { display: block; }
+.t-box .t-ev { grid-template-columns: 4rem minmax(0, 1fr) 3rem; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
+.t-box .t-ev > .t-who { grid-column: 1; }
+.t-box .t-ev > .t-what { grid-column: 2; padding: 0; background: none; border-radius: 0; font-size: inherit; }
+.t-box .t-ev > .t-when { grid-column: 3; grid-row: 1; text-align: right; }
+.t-box .t-ev > .t-step { grid-column: 2; }
+.t-box .t-you .t-who { color: inherit; }
+.t-box .t-moor .t-who { font-family: var(--moor-font-heading); }
+.t-box .t-moor .t-what { padding-left: 0; border-left: 0; font-size: inherit; }
+.t-box .t-fold, .t-box .t-tool-fold { padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
+.t-box .t-fold summary, .t-box .t-tool-fold > summary { display: block; width: auto; padding: 0 0 0 calc(4rem + 10px); font-size: 0.875rem; color: var(--moor-color-text-muted); }
+.t-box .t-fold-body, .t-box .t-tool-runs { margin: 4px 0 0 calc(4rem + 10px); }

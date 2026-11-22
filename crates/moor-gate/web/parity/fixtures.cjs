@@ -21,6 +21,47 @@ async function fixtures(page, mockDir, hide, tz) {
     const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: (t.kind === 'pr' ? t.pr : prs[t.id]) || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
     return { tasks, github: M.github };
   }, prs);
+  // The mock's own timeline rows for the four tasks the task page states open, read off its task page.
+  const lines = {};
+  for (const id of [41, 43, 44, 40]) {
+    const scene = seen.find((t) => t.id === id).scene;
+    await page.goto('file://' + path.resolve(mockDir) + '/index.html#/task/' + id + '?scene=' + scene);
+    await page.waitForSelector('.tl');
+    lines[id] = await page.evaluate(() =>
+      [...document.querySelectorAll('.tl > li')].map((li) =>
+        li.classList.contains('tl-fold')
+          ? ['fold', li.querySelector('summary').textContent, [...li.querySelectorAll('ul li')].map((x) => x.textContent)]
+          : [li.className.replace('tl-', ''), li.querySelector('.tl-text').textContent, li.querySelector('.tl-when').textContent],
+      ),
+    );
+  }
+  const clock = (at, hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date(at + 8 * 3600e3);
+    let ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m) - 8 * 3600e3;
+    if (ms > at + 60e3) ms -= 86400e3;
+    return ms;
+  };
+  const entries = (id) => {
+    const items = lines[id];
+    if (!items) return null;
+    const task = seen.find((t) => t.id === id);
+    let n = 0;
+    const out = [];
+    items.forEach((it, i) => {
+      if (it[0] === 'fold') {
+        const next = items.slice(i).find((x) => x[0] !== 'fold') || items[i - 1];
+        const at = iso(clock(task.at, next[2]));
+        const reads = (/^Read (\d+) files/.exec(it[1]) || [])[1];
+        if (/^Set up/.test(it[1])) it[2].forEach((m) => out.push({ id: ++n, at, kind: 'setup', class: 'routine', text: m }));
+        else for (let k = 0; k < Number(reads || 0); k++) out.push({ id: ++n, key: 'tool-' + id + '-' + n, at, kind: 'tool', class: 'step', text: 'Read', tool: { name: 'Read', title: 'Read file', group: 'read' } });
+        return;
+      }
+      const cls = { you: 'you', agent: 'message', moor: 'moor', them: 'you' }[it[0]];
+      out.push({ id: ++n, at: iso(clock(task.at, it[2])), kind: it[0] === 'moor' ? 'moor' : 'message', class: cls, text: it[1] });
+    });
+    return out;
+  };
   const row = (t) => ({
     box: 'mock-' + t.id,
     repo: t.repos[0],
@@ -65,11 +106,11 @@ async function fixtures(page, mockDir, hide, tz) {
     ...r,
     branch: 'moor/' + r.box.slice(5),
     machine: 'my-laptop',
-    timeline: [
+    timeline: entries(Number(r.box.slice(5))) || [
       { id: 1, at: r.updated_at, kind: 'message', class: 'you', text: r.prompt },
       { id: 2, at: r.updated_at, kind: 'message', class: 'message', text: 'I found where this happens. I will fix it there and add a test.' },
     ],
-    artifacts: (r.needs?.gate?.handed ?? []).map((name, i) => ({ name, version: 1, kind: 'evidence', content_type: 'image/png', size: 2048, created_at: r.updated_at, image: true, href: '/account/api/box/evidence/' + name })),
+    artifacts: (r.needs?.gate?.handed ?? (lines[r.box.slice(5)] ? ['before.png', 'after.png'] : [])).map((name, i) => ({ name, version: 1, kind: 'evidence', content_type: 'image/png', size: 2048, created_at: r.updated_at, image: true, href: '/account/api/box/evidence/' + name })),
     run_again: null, plan_first: false, from_workflow: !!r.pr,
   });
   const boxApi = {};

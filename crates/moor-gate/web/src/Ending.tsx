@@ -18,8 +18,8 @@ function whyNot(e: Error): string {
 	return e instanceof Refused && e.unsaved && (e.unsaved.ahead > 0 || e.unsaved.dirty > 0) ? unsavedWords(e.unsaved) : failure(e);
 }
 
-/** Stop beside the state, and Close under a menu with a confirm; Close removes the Box. */
-export function HeaderActions({ detail, csrf, onDone }: { detail: BoxDetail; csrf: string; onDone: () => void }) {
+/** Stop beside the state (`part="stop"`), and the terminal and Close under a menu with a confirm (`part="more"`); Close removes the Box. Without a part, both. */
+export function HeaderActions({ detail, csrf, onDone, part }: { detail: BoxDetail; csrf: string; onDone: () => void; part?: 'stop' | 'more' }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [refused, setRefused] = useState('');
@@ -52,12 +52,12 @@ export function HeaderActions({ detail, csrf, onDone }: { detail: BoxDetail; csr
 
 	return (
 		<div class="t-acts">
-			{STOPPABLE.includes(detail.state) && (
+			{part !== 'more' && STOPPABLE.includes(detail.state) && (
 				<button type="button" class="btn t-stop" disabled={busy} onClick={() => void run(() => boxStop(csrf, detail.box), (e) => setError(whyNot(e)))}>
 					{busy ? 'Stopping…' : 'Stop'}
 				</button>
 			)}
-			{!closed && (
+			{part !== 'stop' && !closed && (
 				<>
 					<button type="button" class="btn ghost icon" ref={opener} popovertarget="t-more" aria-label="More actions" aria-haspopup="menu" disabled={busy}>
 						⋯
@@ -75,6 +75,9 @@ export function HeaderActions({ detail, csrf, onDone }: { detail: BoxDetail; csr
 							}
 						}}
 					>
+						<a class="t-more-item" href={`#/box/${encodeURIComponent(detail.box)}/terminal`} onClick={() => menu.current?.hidePopover()}>
+							Open the terminal
+						</a>
 						<button
 							type="button"
 							class="t-more-item t-more-danger"
@@ -94,23 +97,25 @@ export function HeaderActions({ detail, csrf, onDone }: { detail: BoxDetail; csr
 					{error}
 				</p>
 			)}
-			<dialog ref={dialog} class="t-confirm" aria-labelledby="t-confirm-h" onClose={() => setRefused('')}>
-				<h2 id="t-confirm-h">Close this task?</h2>
-				<p class="muted">The Box is removed. Pushed commits and evidence stay.</p>
-				{refused && (
-					<p class="notice danger" role="alert">
-						{refused}
-					</p>
-				)}
-				<div class="actions">
-					<button type="button" class="btn t-close-go" disabled={busy} onClick={() => void close(Boolean(refused))}>
-						{busy ? 'Closing…' : refused ? 'Discard and close' : 'Close task'}
-					</button>
-					<button type="button" class="btn ghost" disabled={busy} onClick={() => dialog.current?.close()}>
-						Keep it
-					</button>
-				</div>
-			</dialog>
+			{part !== 'stop' && (
+				<dialog ref={dialog} class="t-confirm" aria-labelledby="t-confirm-h" onClose={() => setRefused('')}>
+					<h2 id="t-confirm-h">Close this task?</h2>
+					<p class="muted">The Box is removed. Pushed commits and evidence stay.</p>
+					{refused && (
+						<p class="notice danger" role="alert">
+							{refused}
+						</p>
+					)}
+					<div class="actions">
+						<button type="button" class="btn t-close-go" disabled={busy} onClick={() => void close(Boolean(refused))}>
+							{busy ? 'Closing…' : refused ? 'Discard and close' : 'Close task'}
+						</button>
+						<button type="button" class="btn ghost" disabled={busy} onClick={() => dialog.current?.close()}>
+							Keep it
+						</button>
+					</div>
+				</dialog>
+			)}
 		</div>
 	);
 }
