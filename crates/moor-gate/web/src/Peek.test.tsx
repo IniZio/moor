@@ -31,42 +31,40 @@ const row = (box: string, over: Partial<BoxRow> = {}): BoxRow => ({
 	...over,
 });
 
-const asking = (box: string, gate: Wait) => row(box, { state: 'needs_you', needs: { id: 'ask-1', kind: gate.kind, question: 'q', picks: [], plan: false, gate } }) as Peekable;
+const asking = (box: string, gate: Wait) => row(box, { state: 'needs_you', issue: 'https://linear.app/acme/issue/WEB-142/fix-the-avatar', needs: { id: 'ask-1', kind: gate.kind, question: 'q', picks: [], plan: false, gate } }) as Peekable;
 
 const props = (t: Peekable): ApproveProps => ({
 	box: t.box,
 	wait: t.needs.gate,
 	busy: false,
-	refusing: false,
 	note: '',
 	error: '',
+	images: [],
+	pr: null,
 	onYes: () => {},
 	onNo: () => {},
-	onSendNo: () => {},
-	onBack: () => {},
 	onNote: () => {},
 });
 
-test('the peek of an approval says where the task is and what it says, then holds the same card as the task page', () => {
+test('the peek of an approval says where the task is, its issue key and what it says, then holds the same card as the task page', () => {
 	const t = asking('web/gated', approval);
-	const text = textOf(PeekView({ t, now: NOW, detail: null, approve: props(t), onClose: () => {} }));
-	expect(text).toContain('acme/web');
-	expect(text).toContain('acme/api');
-	expect(text).toContain('PR #7');
+	const text = textOf(PeekView({ t, now: NOW, approve: props(t), onClose: () => {} }));
+	expect(text).toContain('acme/web+1');
+	expect(text).toContain('WEB-142');
 	expect(text).toContain('Task web/gated');
 	expect(text).toContain('14:46');
 	expect(text).toContain(textOf(ApproveView(props(t))));
-	const view = PeekView({ t, now: NOW, detail: null, approve: props(t), onClose: () => {} });
+	const view = PeekView({ t, now: NOW, approve: props(t), onClose: () => {} });
 	expect(all(view, 'a').find((a) => textOf(a) === 'Open task')?.props.href).toBe('#/box/web%2Fgated');
-	expect(button(view, 'Yes')).toBeDefined();
-	expect(button(view, 'No')).toBeDefined();
+	expect(button(view, 'Yes, it’s done')).toBeDefined();
+	expect(button(view, 'No, send it back')).toBeDefined();
 });
 
-test('the peek of a stuck gate holds the stuck card and the reopen hint', () => {
+test('the peek of a stuck gate holds the stuck card, which sends the person to the task page to write', () => {
 	const t = asking('web/stuck', stuck);
-	const text = textOf(PeekView({ t, now: NOW, detail: null, approve: props(t), onClose: () => {} }));
-	expect(text).toContain('Stuck, and needs you');
-	expect(text).toContain('Your message reopens this gate with fresh tries.');
+	const text = textOf(PeekView({ t, now: NOW, approve: props(t), onClose: () => {} }));
+	expect(text).toContain('Stuck on “review”');
+	expect(text).toContain('You can write to the agent on the task page, or open the terminal and fix it yourself.');
 	expect(text).toContain('after.png');
 	expect(text).not.toContain('Yes');
 });
@@ -74,7 +72,7 @@ test('the peek of a stuck gate holds the stuck card and the reopen hint', () => 
 test('the close button closes the peek', () => {
 	const t = asking('web/gated', approval);
 	let closed = 0;
-	button(PeekView({ t, now: NOW, detail: null, approve: props(t), onClose: () => closed++ }), '✕')?.props.onClick?.();
+	button(PeekView({ t, now: NOW, approve: props(t), onClose: () => closed++ }), '✕')?.props.onClick?.();
 	expect(closed).toBe(1);
 });
 
@@ -116,6 +114,6 @@ test('thumbnails are the newest version of each handed-in image, and nothing els
 	expect(handedImages(['plan.md', 'after.png'], detail).map((a) => a.href)).toEqual(['/a/after.png/2']);
 	expect(handedImages(['after.png'], null)).toEqual([]);
 	const t = asking('web/gated', approval);
-	const imgs = all(PeekView({ t, now: NOW, detail, approve: props(t), onClose: () => {} }), 'img');
+	const imgs = all(PeekView({ t, now: NOW, approve: { ...props(t), images: handedImages(t.needs.gate.handed, detail) }, onClose: () => {} }), 'img');
 	expect(imgs.map((i) => (i.props as { src?: string }).src)).toEqual(['/a/after.png/2']);
 });

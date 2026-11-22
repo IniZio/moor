@@ -1,11 +1,11 @@
 /* The peek panel at the right of the Tasks home. Own classes (t-), no inline styles (the page's CSP forbids them). */
-.t-peek { position: fixed; top: 3rem; right: 0; bottom: 0; z-index: 30; width: min(460px, 100vw); overflow: auto; padding: var(--moor-space-3) var(--moor-space-4) var(--moor-space-4); background: var(--moor-color-bg-raised); border-left: 1px solid var(--moor-color-border-strong); box-shadow: var(--moor-shadow-lg); }
-.t-peek-head { display: flex; align-items: center; gap: var(--moor-space-2); }
-.t-peek-repos { display: flex; flex-wrap: wrap; gap: 0.1rem 0.75rem; min-width: 0; color: var(--moor-color-text-muted); }
-.t-peek-repo { display: inline-flex; align-items: center; gap: 0.4rem; }
-.t-peek-pr { font-size: 0.8125rem; white-space: nowrap; }
-.t-peek-title { margin: var(--moor-space-3) 0 2px; font-size: 1.15rem; overflow-wrap: anywhere; }
-.t-peek-line { margin: 0 0 var(--moor-space-4); font-size: 0.8125rem; color: var(--moor-color-text-muted); font-variant-numeric: tabular-nums; }
-.t-peek-thumbs { display: flex; flex-wrap: wrap; gap: var(--moor-space-2); margin-bottom: var(--moor-space-3); }
-.t-peek-thumbs img { display: block; max-width: 8rem; max-height: 8rem; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); }
-.t-peek-hint { margin: var(--moor-space-2) 0 0; font-size: var(--app-text-xs); }
+.t-peek { position: fixed; top: 50px; right: 0; bottom: 0; z-index: 30; width: min(460px, 100vw); overflow: auto; padding: 14px 18px 18px; background: var(--moor-color-bg-raised); border-left: 1px solid var(--moor-color-border-strong); box-shadow: var(--moor-shadow-lg); }
+.t-peek-head { display: flex; align-items: center; gap: 8px; }
+.t-peek-head .btn { padding: 3px 10px; font-size: 0.8125rem; }
+.t-peek-head .btn.ghost { padding: 2px 8px; font-size: 0.9375rem; line-height: 1.5; }
+.t-peek-head .t-rrepo { display: inline-flex; align-items: center; gap: 7px; }
+.t-peek-title { margin: 10px 0 2px; font-size: 1.15rem; line-height: 1.2; overflow-wrap: anywhere; }
+.t-peek-line { margin: 0 0 14px; font-size: 0.8125rem; color: var(--moor-color-text-muted); font-variant-numeric: tabular-nums; }
+.t-peek-now { color: var(--moor-color-accent-strong); }
+.t-peek .t-ncard { box-shadow: none; margin-bottom: 12px; padding: 12px 14px; }
+.t-peek-hint { margin: 6px 0 0; font-size: 0.8125rem; }

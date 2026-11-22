@@ -1,4 +1,6 @@
 import type { BoxRow, InboxItem } from './api';
+import './inbox.css';
+import { gateLine } from './gate';
 import { exactTime, RepoCell, reposOf } from './HomeList';
 
 /** What the inbox shows beside an item's wording: its mark, by state and kind. */
@@ -51,8 +53,7 @@ export function InboxView({ items, rows, now, unread, onReadAll, onOpen }: Inbox
 							{exactTime(item.at, now)}
 						</time>
 						<span class="inbox-now">
-							{item.state === 'resolved' ? 'Answered: ' : ''}
-							{item.text}
+							{item.state === 'resolved' ? `Answered: ${item.text}` : ((task?.state === 'needs_you' && gateLine(task.gate)) || item.text)}
 						</span>
 					</a>
 				);

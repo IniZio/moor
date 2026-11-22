@@ -10,50 +10,47 @@ const props = (over: Partial<ApproveProps> = {}): ApproveProps => ({
 	box: 'web/gated',
 	wait: base,
 	busy: false,
-	refusing: false,
 	note: '',
 	error: '',
+	images: [],
+	pr: null,
 	onYes: () => {},
 	onNo: () => {},
-	onSendNo: () => {},
-	onBack: () => {},
 	onNote: () => {},
 	...over,
 });
 
-test('the approval card says what is asked, lists what the agent handed in and wrote, and offers Yes and No', () => {
-	const card = ApproveView(props());
+test('the approval card says what it waits for, shows what the agent handed in and wrote, and offers a note and yes or no', () => {
+	const card = ApproveView(props({ pr: 12 }));
 	const text = textOf(card);
-	expect(text).toContain('The agent asks you to approve “review”.');
-	expect(text).toContain('Ready for you.');
+	expect(textOf(all(card, 'h2')[0])).toBe('Waiting for your yes on “review”');
+	expect(text).toContain('The agent handed in:');
+	expect(textOf(all(card, 'blockquote')[0])).toBe('Ready for you. PR #12 is open.');
 	expect(text).not.toContain('`');
-	expect(button(card, 'Yes')).toBeDefined();
-	expect(button(card, 'No')).toBeDefined();
-	expect(all(card, 'input')).toHaveLength(0);
-	const links = all(card, 'a').map((a) => [textOf(a), a.props.href]);
+	expect(button(card, 'Yes, it’s done')).toBeDefined();
+	expect(button(card, 'No, send it back')).toBeDefined();
+	expect(all(card, 'textarea')[0]?.props.placeholder).toBe('Add a note for the agent (optional)');
+	const links = all(card, 'a').map((a) => [a.props.title, a.props.href]);
 	expect(links).toEqual([
 		['plan.md', '#/box/web%2Fgated/evidence'],
 		['after.png', '#/box/web%2Fgated/evidence'],
 	]);
 });
 
-test('pressing the buttons runs Yes, and No opens the note before anything is sent', () => {
+test('the note is written beside the buttons, and each button answers at once', () => {
 	const sent: string[] = [];
-	const card = ApproveView(props({ onYes: () => sent.push('yes'), onNo: () => sent.push('no-opened'), onSendNo: () => sent.push('no-sent') }));
-	button(card, 'Yes')?.props.onClick();
-	button(card, 'No')?.props.onClick();
-	expect(sent).toEqual(['yes', 'no-opened']);
-	const asking = ApproveView(props({ refusing: true, note: 'use blue', onSendNo: () => sent.push('no-sent') }));
-	expect(button(asking, 'Yes')).toBeUndefined();
-	expect(all(asking, 'input')[0]?.props.value).toBe('use blue');
-	expect(button(asking, 'Send No')).toBeDefined();
-	expect(button(asking, 'Back')).toBeDefined();
+	const card = ApproveView(props({ note: 'use blue', onYes: () => sent.push('yes'), onNo: () => sent.push('no'), onNote: (t) => sent.push(`note:${t}`) }));
+	expect(all(card, 'textarea')[0]?.props.value).toBe('use blue');
+	all(card, 'textarea')[0]?.props.onInput?.({ currentTarget: { value: 'use red' } });
+	button(card, 'Yes, it’s done')?.props.onClick();
+	button(card, 'No, send it back')?.props.onClick();
+	expect(sent).toEqual(['note:use red', 'yes', 'no']);
 });
 
 test('an approval with nothing handed in and no note leaves those lines out, and an error is shown', () => {
 	const text = textOf(ApproveView(props({ wait: { ...base, handed: [], note: null }, error: 'nothing asks you' })));
 	expect(text).not.toContain('handed in');
-	expect(text).not.toContain('The agent wrote');
+	expect(all(ApproveView(props({ wait: { ...base, handed: [], note: null } })), 'blockquote')).toHaveLength(0);
 	expect(text).toContain('nothing asks you');
 });
 
@@ -62,14 +59,14 @@ const stuck: Wait = { ...base, kind: 'stuck', try_n: null, handed: [], note: nul
 test('the stuck card says which gate, why, the failing command and its output, and what the person can do', () => {
 	const card = StuckView({ wait: stuck });
 	const text = textOf(card);
-	expect(text).toContain('“review” is stuck.');
-	expect(text).toContain('Check 1 exited with code 3. No tries left.');
-	expect(text).toContain("sh -c 'echo boom; exit 3'");
+	expect(textOf(all(card, 'h2')[0])).toBe('Stuck on “review”');
+	expect(text).toContain('Check 1 exited with code 3. No tries left');
+	expect(textOf(all(card, 'code')[0])).toBe("sh -c 'echo boom; exit 3'");
 	expect(text).toContain('boom');
-	expect(text).toContain('write to the agent below');
+	expect(text).toContain('You can write to the agent below, or open the terminal and fix it yourself.');
 	expect(text).not.toContain('`');
 	expect(all(card, 'details')).toHaveLength(0);
-	expect(all(card, 'pre').length).toBe(2);
+	expect(all(card, 'pre').length).toBe(1);
 });
 
 test('a long output is cut to its last lines, with the whole of it behind a click', () => {
@@ -93,20 +90,15 @@ const SAYS = 'The pull request has exactly one evidence comment for this commit,
 const LONG = 'sha=$MOOR_PULL_HEAD_SHA; echo "<!-- moor-evidence sha=$sha -->" | grep -c . || { echo "no comment"; exit 1; }';
 const said: Wait = { ...stuck, gate: 'done', says: SAYS, command: LONG, why: 'out of tries: check 1 (“' + SAYS + '”) exited 1', tail: 'want 1 moor-evidence comment, found 0' };
 
-test('a stuck card with a sentence leads with it, then what it printed, and keeps the command behind Show the check', () => {
-	const card = StuckView({ wait: said });
+test('a stuck card with a sentence says what must be true and what moor ran after each try, then what it printed', () => {
+	const card = StuckView({ wait: { ...said, try_n: 2 } });
 	const text = textOf(card);
 	const at = (s: string) => text.indexOf(s);
-	expect(text).toContain('“done” is stuck.');
-	expect(at(SAYS)).toBeGreaterThan(-1);
-	expect(at(SAYS)).toBeLessThan(at('What it printed'));
-	expect(at('What it printed')).toBeLessThan(at('Show the check'));
-	expect(text).toContain('Check 1 exited with code 1. No tries left.');
-	expect(text).not.toContain('The check that failed');
-	const [fold] = all(card, 'details');
-	expect(textOf(all(fold, 'summary')[0])).toBe('Show the check');
-	expect(textOf(all(fold, 'pre')[0])).toBe(LONG);
-	expect(all(card, 'pre').map(textOf).filter((p) => p === LONG)).toHaveLength(1);
+	expect(textOf(all(card, 'h2')[0])).toBe('Stuck on “done”');
+	expect(text).toContain(`What must be true: ${SAYS} moor ran ${LONG} after each of the agent’s two tries.`);
+	expect(at(SAYS)).toBeLessThan(at('want 1 moor-evidence comment'));
+	expect(text).toContain('Check 1 exited with code 1. No tries left');
+	expect(all(card, 'details')).toHaveLength(0);
 });
 
 const gates: GateDoc[] = [
@@ -197,9 +189,9 @@ const HINT = 'moor, not the agent, got no answer from its checks. Send the agent
 
 test('a check moor got no answer from reads as moor\'s trouble: the heading, the check, why, then what to do', () => {
 	const busy = StuckView({ wait: { ...stuck, gate: 'tests', why: WHY, says: null, tail: null, hint: HINT, unanswered: NOT_RUN } });
-	expect(textOf(busy)).toBe(`Stuck, and needs youmoor got no answer from its checks.makeBox 3 is busy with another command.${HINT}`);
+	expect(textOf(busy)).toBe(`moor could not run “tests”This is moor’s trouble, not the agent’s. moor tried twice. Box 3 is busy with another command.makeThe agent is waiting. Nothing it did is lost.${HINT}`);
 	const lost = StuckView({ wait: { ...stuck, gate: 'outcome', why: WHY, tail: null, hint: HINT, unanswered: LOST } });
-	expect(textOf(lost)).toBe(`Stuck, and needs youmoor got no answer from its checks.The pull request is merged.The check's output was lost.Show the checkgh pr view${HINT}`);
+	expect(textOf(lost)).toBe(`moor got no answer from its checks.This is moor’s trouble, not the agent’s. moor tried twice. The check's output was lost.The pull request is merged.Show the checkgh pr viewThe agent is waiting. Nothing it did is lost.${HINT}`);
 });
 
 test('a card stuck for want of answers with no hint says that sending reruns the checks, not that it gives fresh tries', () => {
