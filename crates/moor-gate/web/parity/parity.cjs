@@ -87,6 +87,22 @@ function compare(a, b) {
   return lines;
 }
 
+// Hides what a state masks (each with the reason states.cjs gives) so the rest lines up, and returns the share of the page the masked elements covered.
+function mask(page, list) {
+  if (!list || !list.length) return Promise.resolve(0);
+  return page.evaluate((sels) => {
+    const els = [...new Set(sels.flatMap((s) => [...document.querySelectorAll(s)]))];
+    const top = els.filter((el) => !els.some((o) => o !== el && o.contains(el)));
+    let area = 0;
+    for (const el of top) {
+      const r = el.getBoundingClientRect();
+      area += Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+    }
+    for (const el of top) el.style.setProperty('display', 'none', 'important');
+    return area / (innerWidth * innerHeight);
+  }, list.map((m) => m.sel));
+}
+
 async function settle(page) {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
@@ -118,7 +134,10 @@ async function settle(page) {
   await page.route((u) => u.pathname === '/account/api' || u.pathname.startsWith('/account/api/'), (route) => {
     const u = new URL(route.request().url());
     const key = u.pathname + u.search;
-    if (u.pathname.startsWith('/account/api/box/evidence/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(data.png, 'base64') });
+    if (u.pathname.startsWith('/account/api/box/evidence/')) {
+      const name = decodeURIComponent(u.pathname.slice('/account/api/box/evidence/'.length));
+      return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from(data.images[name] ?? data.png, 'base64') });
+    }
     const body = data.api[key] ?? data.api[u.pathname];
     if (body === undefined) { missing.push(route.request().method() + ' ' + key); return route.abort(); }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -131,27 +150,41 @@ async function settle(page) {
     await page.evaluate(() => { try { sessionStorage.clear(); } catch {} });
     if (s.mockDo) await s.mockDo(page);
     await settle(page);
-    const a = await page.screenshot();
+    const a0 = await page.screenshot();
+    fs.writeFileSync(path.join(out, s.key + '-mock.png'), a0);
+    const ma = await mask(page, s.mask?.mock);
+    if (ma) await settle(page);
+    const a = ma ? await page.screenshot() : a0;
+    if (ma) fs.writeFileSync(path.join(out, s.key + '-mock-masked.png'), a);
     const ta = await texts(page);
-    fs.writeFileSync(path.join(out, s.key + '-mock.png'), a);
     errors.length = 0; missing.length = 0;
     await page.goto(portal.url + '/');
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    // A full load: a hash change that lands before the app listens for it leaves the page on the old route.
+    await page.goto('about:blank');
     await page.goto(portal.url + '/' + s.product);
     await page.addStyleTag({ content: HIDE_MOCK });
-    await page.waitForSelector(s.ready || 'main:not([aria-busy])');
+    await page.waitForSelector(s.ready || 'main:not([aria-busy])').catch(async (e) => {
+      fs.writeFileSync(path.join(out, s.key + '-timeout.png'), await page.screenshot());
+      throw new Error(s.key + ': ' + e.message.split('\n')[0] + ' at ' + page.url() + ' (screenshot ' + s.key + '-timeout.png)');
+    });
     if (s.productDo) await s.productDo(page);
     await settle(page);
     const alert = await page.$('[role=alert]');
     if (alert) throw new Error(s.key + ': the portal shows an alert: ' + (await alert.innerText()));
     if (missing.length) throw new Error(s.key + ': no fixture for ' + missing.join(', '));
-    const b = await page.screenshot();
+    const b0 = await page.screenshot();
+    fs.writeFileSync(path.join(out, s.key + '-product.png'), b0);
+    const mb = await mask(page, s.mask?.product);
+    if (mb) await settle(page);
+    const b = mb ? await page.screenshot() : b0;
     const lines = compare(ta, await texts(page));
     fs.writeFileSync(path.join(out, s.key + '-text.txt'), lines.join('\n') + '\n');
-    fs.writeFileSync(path.join(out, s.key + '-product.png'), b);
     const r = await diff(page, a, b, path.join(out, s.key + '-diff.png'));
-    rows.push({ key: s.key, ...r, errors: [...errors] });
-    console.log([s.key, r.pct + '%', r.n + ' px', 'h ' + r.heights.join('/'), lines.length + ' text runs differ', errors.length ? 'console errors: ' + errors.length : ''].join('\t'));
+    const raw = ma || mb ? (await diff(page, a0, b0, path.join(out, s.key + '-diff-raw.png'))).pct : r.pct;
+    const masked = +(100 * Math.max(ma, mb)).toFixed(2);
+    rows.push({ key: s.key, ...r, raw, masked, masks: [...(s.mask?.mock ?? []), ...(s.mask?.product ?? [])].map((m) => m.why), errors: [...errors] });
+    console.log([s.key, r.pct + '%', r.n + ' px', 'raw ' + raw + '%', 'masked ' + masked + '%', 'h ' + r.heights.join('/'), lines.length + ' text runs differ', errors.length ? 'console errors: ' + errors.length : ''].join('\t'));
   }
   fs.writeFileSync(path.join(out, 'parity.json'), JSON.stringify(rows, null, 1));
   await page.unrouteAll({ behavior: 'ignoreErrors' });

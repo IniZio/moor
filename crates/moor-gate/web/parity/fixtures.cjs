@@ -23,10 +23,24 @@ async function fixtures(page, mockDir, hide, tz) {
   }, prs);
   // The mock's own timeline rows for the four tasks the task page states open, read off its task page.
   const lines = {};
+  const branches = {};
+  const machines = {};
+  const images = {};
   for (const id of [41, 43, 44, 40]) {
     const scene = seen.find((t) => t.id === id).scene;
     await page.goto('file://' + path.resolve(mockDir) + '/index.html#/task/' + id + '?scene=' + scene);
     await page.waitForSelector('.tl');
+    branches[id] = await page.evaluate(() => document.querySelector('.taskhead .meta .mono').textContent);
+    machines[id] = await page.evaluate(() => (/ on ([\w-]+)/.exec(document.querySelector('.taskhead .meta').textContent) || [])[1]);
+    // The mock draws each handed-in screenshot as an SVG; the product shows the image the API serves, in its own frame.
+    if (id === 41) {
+      await page.addStyleTag({ content: '.t-frame{stroke:none!important}' });
+      const thumbs = page.locator('.ncard svg.thumb');
+      for (let i = 0; i < (await thumbs.count()); i++) {
+        const name = await thumbs.nth(i).getAttribute('aria-label');
+        images[name] = (await thumbs.nth(i).screenshot()).toString('base64');
+      }
+    }
     lines[id] = await page.evaluate(() =>
       [...document.querySelectorAll('.tl > li')].map((li) =>
         li.classList.contains('tl-fold')
@@ -79,7 +93,7 @@ async function fixtures(page, mockDir, hide, tz) {
   });
   const GATES = {
     41: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'review', try_n: 1, next: 'ask' }, wait: { gate: 'review', kind: 'approve', seq: 1, handed: ['before.png', 'after.png'], note: 'The avatar sat in a 48px box that hid its overflow, so tall pictures lost their top. The box is square now and the picture covers it.' } },
-    43: { gates: ['tests', 'review'], status: { state: 'stuck', gate: 'tests', why: 'exited with code 1' }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, why: 'exited with code 1', command: 'make test', says: 'all tests pass', tail: '--- FAIL: TestRefundOldOrder (0.02s)\n    status = 409, want 200' } },
+    43: { gates: ['proof', 'tests', 'review'], status: { state: 'stuck', gate: 'tests', why: 'exited with code 1' }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, why: 'exited with code 1', command: 'make test', says: 'all tests pass', tail: '--- FAIL: TestRefundOldOrder (0.02s)\n    status = 409, want 200' } },
     57: { gates: ['evidence', 'tests', 'comment'], status: { state: 'stuck', gate: 'tests', why: 'could not run', unanswered: { check: 'npm run e2e', command: 'npm run e2e', says: null, reason: { kind: 'lost' } } }, wait: { gate: 'tests', kind: 'stuck', seq: 1, try_n: 2, command: 'npm run e2e', unanswered: { check: 'npm run e2e', command: 'npm run e2e', says: null, reason: { kind: 'lost' } } } },
     44: { gates: ['proof', 'tests', 'review'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'agent' } },
     58: { gates: ['evidence', 'tests', 'comment'], status: { state: 'open', gate: 'tests', try_n: 1, next: 'run_checks' } },
@@ -104,8 +118,8 @@ async function fixtures(page, mockDir, hide, tz) {
   const all = seen.map((t) => withGate(row(t), t));
   const detail = (r) => ({
     ...r,
-    branch: 'moor/' + r.box.slice(5),
-    machine: 'my-laptop',
+    branch: branches[r.box.slice(5)] ?? 'moor/' + r.box.slice(5),
+    machine: machines[r.box.slice(5)] ?? 'my-laptop',
     timeline: entries(Number(r.box.slice(5))) || [
       { id: 1, at: r.updated_at, kind: 'message', class: 'you', text: r.prompt },
       { id: 2, at: r.updated_at, kind: 'message', class: 'message', text: 'I found where this happens. I will fix it there and add a test.' },
@@ -131,6 +145,7 @@ async function fixtures(page, mockDir, hide, tz) {
   };
   return {
     seen,
+    images,
     png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGPY0QAAAkABIGVN9fkAAAAASUVORK5CYII=',
     api: {
       '/account/api': account,
