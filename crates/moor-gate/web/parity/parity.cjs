@@ -42,6 +42,51 @@ async function diff(page, a, b, file) {
   }, { a: a.toString('base64'), b: b.toString('base64') }).then((r) => { fs.writeFileSync(file, Buffer.from(r.png, 'base64')); delete r.png; return r; });
 }
 
+// Every text run on the page with its box and type, so a pixel difference can be named.
+function texts(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const style = (el) => { const s = getComputedStyle(el); return [s.fontFamily.split(',')[0].replace(/"/g, ''), s.fontSize, s.fontWeight, s.lineHeight, s.letterSpacing, s.color].join(' '); };
+    const add = (text, r, el) => { text = text.replace(/\s+/g, ' ').trim(); if (text && r.width && r.height && r.bottom > 0 && r.top < innerHeight) out.push({ text, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), style: style(el) }); };
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walk.nextNode());) {
+      const el = n.parentElement;
+      if (!n.textContent.trim() || !el.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true })) continue;
+      const range = document.createRange(); range.selectNodeContents(n);
+      add(n.textContent, range.getBoundingClientRect(), el);
+    }
+    document.querySelectorAll('input[placeholder],textarea[placeholder]').forEach((el) => { if (!el.value && el.checkVisibility()) add('[placeholder] ' + el.placeholder, el.getBoundingClientRect(), el); });
+    // Join runs that sit side by side on one line in one type, so "◆" + "moor" reads as "◆ moor".
+    out.sort((a, b) => a.y - b.y || a.x - b.x);
+    const joined = [];
+    for (const t of out) {
+      const p = joined[joined.length - 1];
+      if (p && Math.abs(p.y - t.y) <= 1 && p.h === t.h && p.style === t.style && t.x >= p.x + p.w - 1 && t.x - (p.x + p.w) <= 6) { p.text += ' ' + t.text; p.w = t.x + t.w - p.x; } else joined.push({ ...t });
+    }
+    return joined;
+  });
+}
+
+// Pair runs by text in reading order; print the ones that moved, changed type, or exist on one side only.
+function compare(a, b) {
+  const lines = [];
+  const pool = new Map();
+  const key = (t) => t.text.replace(/\s+/g, '');
+  for (const t of b) { if (!pool.has(key(t))) pool.set(key(t), []); pool.get(key(t)).push(t); }
+  for (const t of a) {
+    const c = pool.get(key(t)) || [];
+    const i = c.reduce((best, u, j) => (best < 0 || Math.abs(u.y - t.y) + Math.abs(u.x - t.x) < Math.abs(c[best].y - t.y) + Math.abs(c[best].x - t.x) ? j : best), -1);
+    const m = i < 0 ? undefined : c.splice(i, 1)[0];
+    if (!m) { lines.push(`mock only  ${t.x},${t.y} ${t.w}x${t.h}  ${JSON.stringify(t.text)}  ${t.style}`); continue; }
+    m.seen = true;
+    const d = [m.x - t.x, m.y - t.y, m.w - t.w, m.h - t.h];
+    const moved = d.some((v) => Math.abs(v) > 0);
+    if (moved || m.style !== t.style) lines.push(`moved      ${t.x},${t.y} ${t.w}x${t.h} d=${d.join(',')}  ${JSON.stringify(t.text)}${m.style !== t.style ? `  mock[${t.style}] product[${m.style}]` : ''}`);
+  }
+  for (const t of b) if (!t.seen) lines.push(`product only ${t.x},${t.y} ${t.w}x${t.h}  ${JSON.stringify(t.text)}  ${t.style}`);
+  return lines;
+}
+
 async function settle(page) {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
@@ -86,6 +131,7 @@ async function settle(page) {
     if (s.mockDo) await s.mockDo(page);
     await settle(page);
     const a = await page.screenshot();
+    const ta = await texts(page);
     fs.writeFileSync(path.join(out, s.key + '-mock.png'), a);
     errors.length = 0; missing.length = 0;
     await page.goto(portal.url + '/');
@@ -99,10 +145,12 @@ async function settle(page) {
     if (alert) throw new Error(s.key + ': the portal shows an alert: ' + (await alert.innerText()));
     if (missing.length) throw new Error(s.key + ': no fixture for ' + missing.join(', '));
     const b = await page.screenshot();
+    const lines = compare(ta, await texts(page));
+    fs.writeFileSync(path.join(out, s.key + '-text.txt'), lines.join('\n') + '\n');
     fs.writeFileSync(path.join(out, s.key + '-product.png'), b);
     const r = await diff(page, a, b, path.join(out, s.key + '-diff.png'));
     rows.push({ key: s.key, ...r, errors: [...errors] });
-    console.log([s.key, r.pct + '%', r.n + ' px', 'h ' + r.heights.join('/'), errors.length ? 'console errors: ' + errors.length : ''].join('\t'));
+    console.log([s.key, r.pct + '%', r.n + ' px', 'h ' + r.heights.join('/'), lines.length + ' text runs differ', errors.length ? 'console errors: ' + errors.length : ''].join('\t'));
   }
   fs.writeFileSync(path.join(out, 'parity.json'), JSON.stringify(rows, null, 1));
   await page.unrouteAll({ behavior: 'ignoreErrors' });
