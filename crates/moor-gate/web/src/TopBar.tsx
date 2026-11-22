@@ -4,6 +4,7 @@ import { type BoxRow, type Inbox, type InboxItem, inboxRead, type Progress } fro
 import { Glyph, STATES } from './Glyph';
 import { age } from './Portal';
 import { currentTheme, setTheme, type Theme } from './theme';
+import { focusWrite } from './WriteField';
 
 /** Where a Box sits in the switcher: the ones that need the person first. */
 const ORDER = {
@@ -170,9 +171,9 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 					<kbd>{MAC ? '⌘K' : 'Ctrl K'}</kbd>
 				</button>
 				<span class="grow" />
-				<a class="btn primary" href="#/new">
+				<button class="btn primary" onClick={focusWrite}>
 					{'+ New task'}
-				</a>
+				</button>
 				<button class="btn ghost" popovertarget="inbox">
 					Inbox{unread > 0 && <b class="count">{unread}</b>}
 				</button>

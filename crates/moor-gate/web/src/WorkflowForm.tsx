@@ -5,7 +5,7 @@ import { textProblems } from './plan';
 import { GeneratePlan } from './PlanDraft';
 import { PlanEditor } from './PlanEditor';
 import { PullSwitch } from './PullSwitch';
-import { RepoPicker } from './RepoPicker';
+import { RepoMenu } from './RepoMenu';
 import { toCron, zones } from './schedule';
 import { Preview, SchedulePicker } from './SchedulePicker';
 import { blank, type Draft, fromFlow, takeDraft } from './WorkflowDraft';
@@ -80,7 +80,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			<div class="wf-field">
 				<span>Repos</span>
 				<div class="wf-repos">
-					<RepoPicker repos={draft.repos} known={known} onChange={(repos) => set({ repos })} />
+					<RepoMenu repos={draft.repos} known={known} rows={[]} onChange={(repos) => set({ repos })} />
 				</div>
 				<span class="muted">Each run is one task with all of them. The agent starts in the first.</span>
 			</div>

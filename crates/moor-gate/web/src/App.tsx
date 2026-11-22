@@ -5,10 +5,11 @@ import { Checklist } from './Checklist';
 import { dropDrafts, signInHref, useRenewWhileActive } from './session';
 import { SignedOutDialog } from './SignedOutDialog';
 import { pathOf } from './hashQuery';
-import { BoxPage, Home, NewBox, tabOf, useBoxes, usePoll } from './Portal';
+import { BoxPage, Home, tabOf, useBoxes, usePoll } from './Portal';
 import { sectionAt, Settings } from './Settings';
 import { TopBar } from './TopBar';
 import { Workflows, workflowsAt } from './Workflows';
+import { WriteField } from './WriteField';
 
 type State = { at: 'loading' } | { at: 'ready'; account: Account } | { at: 'out' } | { at: 'failed'; why: string };
 
@@ -79,7 +80,7 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 		<>
 			<SignedOutDialog />
 			<TopBar email={account.email} csrf={account.csrf} rows={boxes.value ?? []} inbox={inbox} onSignOut={() => void leave()} />
-			<main class={flows || settings ? 'wide' : composing ? 'app-new' : open ? 'app-box' : home ? 'app-home' : undefined}>
+			<main class={flows || settings ? 'wide' : open ? 'app-box' : home ? 'app-home' : undefined}>
 			{flows ? (
 				<Workflows csrf={account.csrf} at={flows} />
 			) : home ? (
@@ -89,8 +90,9 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
-					{composing ? <NewBox account={account} /> : open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} /> : (
+					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} /> : (
 						<>
+							<WriteField account={account} rows={boxes.value ?? []} asked={composing} onStarted={boxes.reload} />
 							{fresh && <Checklist account={account} />}
 							<Home boxes={boxes} hash={address} />
 						</>
