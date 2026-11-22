@@ -17,7 +17,7 @@ pub const SECURITY_ARGS: [&str; 3] = ["info", "--format", "{{json .SecurityOptio
 const LIVE_RESTORE_ARGS: [&str; 3] = ["info", "--format", "{{.LiveRestoreEnabled}}"];
 
 /// Ids a user needs in each of `/etc/subuid` and `/etc/subgid`.
-const SUBIDS_MIN: u64 = 65_536;
+pub const SUBIDS_MIN: u64 = 65_536;
 /// The flag that closes the host's loopback to every Box.
 const LOOPBACK_FLAG: &str = "--disable-host-loopback";
 /// The runbook that sets a host up for Docker Boxes.
@@ -103,7 +103,6 @@ pub fn failures(facts: &Facts, local_relay: bool) -> Vec<Failure> {
     let mut found = Vec::new();
     found.extend(subids(facts));
     found.extend(tools(facts, local_relay));
-    found.extend(apparmor(facts));
     found.extend(unit(facts));
     found.extend(linger(facts));
     found.extend(loopback(facts));
@@ -117,7 +116,8 @@ pub fn warnings(facts: &Facts) -> Vec<Failure> {
 }
 
 /// The user's ids in `file` for the name or uid `user`: every range counts.
-fn subid_count(file: &str, user: &str, uid: u32) -> u64 {
+#[must_use]
+pub fn subid_count(file: &str, user: &str, uid: u32) -> u64 {
     file.lines()
         .filter_map(|line| {
             let mut f = line.split(':');
@@ -171,18 +171,6 @@ fn tools(f: &Facts, local_relay: bool) -> Vec<Failure> {
         )
     })
     .collect()
-}
-
-/// `AppArmor` lets an unprivileged user make a user namespace; a host without the sysctl does.
-fn apparmor(f: &Facts) -> Option<Failure> {
-    let value = f.apparmor_restrict.as_deref()?.trim();
-    (value != "0").then(|| {
-        fail(
-            "apparmor",
-            format!("kernel.apparmor_restrict_unprivileged_userns is {value}"),
-            "run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, and set it in /etc/sysctl.d to keep it",
-        )
-    })
 }
 
 /// The rootless `docker.service` user unit starts with the user's manager.

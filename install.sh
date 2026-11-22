@@ -17,14 +17,37 @@ fail() {
 }
 
 bins=
-for arg in "$@"; do
-  case $arg in
+server=
+token=
+name=
+while [ $# -gt 0 ]; do
+  case $1 in
     --nightly) channel=nightly ;;
-    -*) fail "unknown option $arg" ;;
-    *) bins="$bins $arg" ;;
+    --server | --token | --name)
+      [ $# -ge 2 ] || fail "$1 needs a value"
+      case $1 in
+        --server) server=$2 ;;
+        --token) token=$2 ;;
+        --name) name=$2 ;;
+      esac
+      shift
+      ;;
+    --server=*) server=${1#*=} ;;
+    --token=*) token=${1#*=} ;;
+    --name=*) name=${1#*=} ;;
+    -*) fail "unknown option $1" ;;
+    *) bins="$bins $1" ;;
   esac
+  shift
 done
-[ -n "$bins" ] || bins=" moor moor-gate moor-egress-forward moor-machine-agent moor-machine-runner"
+[ -n "$server" ] || [ -z "$token$name" ] || fail "--token and --name need --server"
+if [ -z "$bins" ]; then
+  if [ -n "$server" ]; then
+    bins=" moor-machine-agent"
+  else
+    bins=" moor moor-gate moor-egress-forward moor-machine-agent moor-machine-runner"
+  fi
+fi
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
@@ -79,6 +102,25 @@ for bin in $bins; do
   mv -f "$tmp/x-$bin/$bin" "$dir/$bin"
   echo "installed $dir/$bin ($version)"
 done
+
+if [ -n "$server" ]; then
+  agent=$dir/moor-machine-agent
+  [ -x "$agent" ] || fail "$agent is not installed; leave out the binary list, or name moor-machine-agent in it"
+  set -- up --server "$server"
+  [ -z "$name" ] || set -- "$@" --name "$name"
+  if [ -n "$token" ]; then
+    MOOR_PAIR_TOKEN=$token
+    export MOOR_PAIR_TOKEN
+  fi
+  rm -rf "$tmp"
+  trap - EXIT HUP INT TERM
+  echo "running: $agent $*"
+  # Under curl | sh this script is stdin; up asks its one sudo question on the terminal.
+  if [ ! -t 0 ] && (: </dev/tty) 2>/dev/null; then
+    exec "$agent" "$@" </dev/tty
+  fi
+  exec "$agent" "$@"
+fi
 
 first=${bins# }
 first=${first%% *}

@@ -4,7 +4,7 @@ import { type Node, failure, toError } from './api';
 import { Command } from './Connect';
 import { machineToken } from './settingsApi';
 
-const INSTALL = 'curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s -- --nightly moor-machine-agent';
+const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/IniZio/moor/develop/install.sh | sh -s -- --nightly';
 
 /** Where adding a machine stands: the dialog shows one of these. */
 type Step =
@@ -14,9 +14,9 @@ type Step =
 	| { at: 'expired' }
 	| { at: 'failed'; why: string };
 
-/** The one line that installs the agent and enrolls this machine with `token`. */
+/** The one line that installs the agent, sets up rootless Docker and enrolls this machine with `token`. */
 export function enrollLine(server: string, token: string): string {
-	return `${INSTALL} && ~/.local/bin/moor-machine-agent up --server ${server} --token ${token}`;
+	return `${INSTALL} --server ${server} --token ${token}`;
 }
 
 /** Personal machines that are online, by name. */
@@ -81,7 +81,7 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 			<dialog ref={dialog} class="add-machine" aria-labelledby="add-machine-h" onClose={() => setStep(null)}>
 				<h2 id="add-machine-h">Add a machine</h2>
 				<p class="muted">
-					Run your Boxes on a computer of your own. It needs Docker that your user can run without sudo. Only your Boxes run there.
+					Run your Boxes on a Linux computer of your own that has Docker. The command sets up rootless Docker for your user and asks once before it runs anything with sudo. Only your Boxes run there.
 				</p>
 				{step?.at === 'minting' && <p aria-busy="true">Making a command for you…</p>}
 				{step?.at === 'waiting' && (
@@ -99,7 +99,6 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 							<pre>
 								<code>{`moor-machine-agent up --server ${server} --token ${step.token}`}</code>
 							</pre>
-							<p>On Linux, run loginctl enable-linger once so the agent keeps running after you log out.</p>
 						</details>
 					</>
 				)}

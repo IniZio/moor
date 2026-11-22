@@ -1,6 +1,6 @@
 //! `moor-machine-agent`: pairs this computer with a moor server and keeps it linked.
 
-use std::io::Write;
+use std::io::{BufRead as _, IsTerminal as _, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -90,6 +90,9 @@ struct UpFlags {
 
 /// Brings this machine to linked as `flags` say.
 fn up_here(flags: UpFlags) -> ExitCode {
+    if let Some(ended) = at_rootless_docker(flags.allow_exec) {
+        return ended;
+    }
     let runtime = if flags.allow_exec {
         Runtime::Exec
     } else {
@@ -108,12 +111,59 @@ fn up_here(flags: UpFlags) -> ExitCode {
         runtime,
         token: flags.token.map(Token::new),
     };
+    let mut ask = |question: &str| confirm(question);
+    let terminal = std::io::stdin().is_terminal();
     done(up::up(
         &req,
         &state_dir(),
         &Manager::here(&home),
+        terminal.then_some(&mut ask as &mut dyn FnMut(&str) -> bool),
         &mut |line| say(line),
     ))
+}
+
+/// Runs this `up` again with `DOCKER_HOST` at the person's rootless daemon, so every docker call
+/// and the service's unit reach it with nothing to export; none when the person already points
+/// docker somewhere, or the machine hosts no Boxes.
+#[cfg(target_os = "linux")]
+fn at_rootless_docker(allow_exec: bool) -> Option<ExitCode> {
+    use std::os::unix::process::CommandExt as _;
+    let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty());
+    if allow_exec || set("DOCKER_HOST") || set("DOCKER_CONTEXT") {
+        return None;
+    }
+    let runtime = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())?;
+    let exe = std::env::current_exe().ok()?;
+    let err = std::process::Command::new(exe)
+        .args(std::env::args_os().skip(1))
+        .env("DOCKER_HOST", format!("unix://{runtime}/docker.sock"))
+        .exec();
+    say(&format!("cannot run again with DOCKER_HOST set: {err}"));
+    Some(ExitCode::FAILURE)
+}
+
+/// Rootless Docker runs only on Linux.
+#[cfg(not(target_os = "linux"))]
+const fn at_rootless_docker(_allow_exec: bool) -> Option<ExitCode> {
+    None
+}
+
+/// Asks `question` on the terminal; an empty answer is yes, and end of input is no.
+fn confirm(question: &str) -> bool {
+    let mut err = std::io::stderr();
+    let _ = write!(err, "{question}");
+    let _ = err.flush();
+    let mut answer = String::new();
+    let read = std::io::stdin().lock().read_line(&mut answer);
+    match read {
+        Ok(0) | Err(_) => false,
+        Ok(_) => matches!(
+            answer.trim().to_ascii_lowercase().as_str(),
+            "" | "y" | "yes"
+        ),
+    }
 }
 
 fn main() -> ExitCode {

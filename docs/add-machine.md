@@ -22,24 +22,17 @@ machine checks in. The token lasts 10 minutes, and a new one replaces it.
 
 To pair by hand instead:
 
-1. Install Docker, and let your user run it without `sudo`. On Linux that
-   means your user is in the `docker` group. `docker info` must work.
+1. Install Docker. Docker as root, such as from get.docker.com, is fine.
 
-2. Install the agent as that user:
-
-   ```sh
-   curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent
-   ```
-
-3. Pair the machine. The Machines section of the portal shows this
-   line ready to copy:
+2. As the user that will own the Boxes, install the agent and pair the machine:
 
    ```sh
-   moor-machine-agent up --server https://HOST
+   curl -fsSL https://raw.githubusercontent.com/IniZio/moor/develop/install.sh | sh -s -- --nightly --server https://HOST
    ```
 
-   `up` checks that `docker info` works and says what it needs when it does
-   not. It then prints a link and a code.
+3. `up` sets up rootless Docker for your user. It asks once before it runs
+   anything with sudo, as [rootless-docker.md](rootless-docker.md) says. It
+   then prints a link and a code.
 
 4. Open the link on any device, sign in, check that the code matches, and add
    the machine. The code lasts 10 minutes.
@@ -48,9 +41,6 @@ To pair by hand instead:
    that keeps the agent running, a systemd user unit on Linux or a launch
    agent on macOS. It runs as you, so you manage it without root:
    `systemctl --user status moor-machine-agent`.
-
-On Linux, run `loginctl enable-linger` once, so the service keeps running
-after you log out.
 
 The machine is now a node named after it. It shows on the portal and in
 `list_nodes`, with `docker` as what it provides. A new Box of yours tries your

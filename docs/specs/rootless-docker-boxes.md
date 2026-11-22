@@ -15,6 +15,11 @@ The team's live node, engine-03, moved to rootless Docker that day. A Box there 
 nested Docker. Rootful support went with no flag to keep it, because no install depends on it.
 The rootful KVM group, `MOOR_EGRESS_LISTEN` and `moor-host` went with it.
 
+On 2026-11-22 the host owner also chose one command from a fresh host to a linked machine.
+Setting rootless Docker up by hand took six steps, and teammates' hosts run Docker as root.
+`install.sh --server` installs the agent and runs `moor-machine-agent up`, and `up` sets the
+host up first. See [Host setup](#host-setup).
+
 ## Why
 
 Today `moor up` says "a user who can run Docker is root on this host". Each Box's work
@@ -172,10 +177,47 @@ the default bridge's gateway, though the container sat on a network whose gatewa
   does every machine on that network, and closing it takes a host firewall, which takes
   root.
 
+## Host setup
+
+`moor-machine-agent up` sets the host up before its preflight, where systemd runs its service.
+It wraps Docker's own tools and adds no daemon of its own.
+
+1. It reads every gap that needs root at once. The gaps are a `/dev/kvm` not open to every
+   user, a missing `newuidmap`, `newgidmap` or `slirp4netns`, and too few subordinate ids.
+   No linger is a gap too, and so is a host that restricts user namespaces with no `AppArmor`
+   profile for the rootlesskit to run. So is a missing setup tool
+   where Docker's repository is configured. Subordinate ids, packages and linger count exactly when the preflight below fails them,
+   because both read the same facts. It first tries `loginctl enable-linger` as the user, which polkit often allows.
+2. With gaps and a terminal, it lists them, shows one `sudo sh -ec '…'` command, and asks
+   once. Without a terminal, or on no, it prints the command and exits 1. A missing
+   `/dev/kvm` and a host with neither apt nor dnf fail plainly, since no command fixes them.
+3. Where no rootless daemon answers and none is installed, it writes the daemon's settings
+   first. A drop-in sets slirp4netns and a `PATH` that starts at Docker's own directory.
+   daemon.json gets `"live-restore": false`, and keeps its other keys. Then it runs `dockerd-rootless-setuptool.sh
+   install --force`, or `https://get.docker.com/rootless` with `FORCE_ROOTLESS_INSTALL=1`
+   where neither the package nor Docker's repository is there. It puts the CLI's context back,
+   starts the unit and waits for the daemon.
+4. A daemon that answers, or an installed unit that runs, is left as it is. `up` never
+   restarts a running daemon, so a rerun does not stop Boxes.
+5. When neither `DOCKER_HOST` nor `DOCKER_CONTEXT` is set, `up` runs again with
+   `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock`, so its checks and the agent's unit
+   reach the rootless daemon.
+
+Ubuntu 24.04 sets `kernel.apparmor_restrict_unprivileged_userns` to 1. Its `apparmor` package
+ships an unconfined profile with `userns` for `/usr/bin/rootlesskit`, which is what Docker's
+package runs. Docker's [rootless troubleshooting](https://docs.docker.com/engine/security/rootless/troubleshoot/)
+page says the same, and gives a profile for `$HOME/bin/rootlesskit` after its install script.
+`up` writes that profile only where no profile names the rootlesskit to run, and leaves the
+sysctl alone. On 2026-11-22 a fresh 24.04 VM kept the sysctl at 1, and the daemon started
+under Ubuntu's profile. In a `--privileged` container, as in a Box's work place, `unshare -Ur`
+and `bwrap --unshare-user` worked.
+
+`moor up` does not set the host up. It checks it, as below.
+
 ## Preflight
 
-`moor up` and `moor-machine-agent up` check each line and fail with the fix. They do not
-change the host.
+`moor up` and `moor-machine-agent up` check each line and fail with the fix. The checks
+do not change the host.
 
 | Check | Fix it names |
 | --- | --- |
@@ -184,7 +226,6 @@ change the host.
 | `newuidmap` and `newgidmap` are installed | install `uidmap` |
 | `slirp4netns` is installed | install `slirp4netns` |
 | `nsenter` is installed (local route only) | install `util-linux` |
-| `kernel.apparmor_restrict_unprivileged_userns` is 0 where the sysctl exists | set it to 0 |
 | The rootless `docker.service` user unit is enabled and the user lingers | `systemctl --user enable docker`, `loginctl enable-linger` |
 | rootlesskit runs with `--disable-host-loopback` | unset `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK` |
 | `/dev/kvm` exists and is mode `0666` | a udev rule with `MODE="0666"` |

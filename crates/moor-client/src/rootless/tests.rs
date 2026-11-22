@@ -100,14 +100,14 @@ fn nsenter_matters_only_where_a_relay_enters_the_namespace() {
 }
 
 #[test]
-fn apparmor_restricting_user_namespaces_fails_and_a_host_without_the_sysctl_passes() {
+fn a_running_daemon_is_not_refused_for_the_apparmor_sysctl() {
     let mut f = good();
     f.apparmor_restrict = Some("1\n".to_owned());
-    assert!(only(&f)
-        .fix
-        .contains("apparmor_restrict_unprivileged_userns=0"));
-    f.apparmor_restrict = None;
-    assert_eq!(failures(&f, true), []);
+    assert_eq!(
+        failures(&f, true),
+        [],
+        "rootlesskit already made its namespace"
+    );
 }
 
 #[test]
