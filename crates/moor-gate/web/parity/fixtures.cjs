@@ -12,13 +12,15 @@ async function fixtures(page, mockDir, hide, tz) {
   await page.goto('file://' + path.resolve(mockDir) + '/index.html#/tasks?who=all&settled=1');
   await page.addStyleTag({ content: hide });
   await page.waitForSelector('body[data-ready]');
-  const { tasks: seen, github } = await page.evaluate(() => {
+  // The pull request each issue task opened: app.js keeps this map (PRS) inside its closure.
+  const prs = { 41: 12, 43: 34, 44: 14, 40: 13, 39: 7, 30: 9, 31: 31, 32: 8, 33: 5, 70: 15, 71: 41, 72: 9 };
+  const { tasks: seen, github } = await page.evaluate((prs) => {
     const M = window.MOCK;
     const now = {};
     document.querySelectorAll('a.row[data-task]').forEach((a) => { now[a.dataset.task] = a.querySelector('.rnow').textContent; });
-    const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: (t.kind === 'pr' ? t.pr : PRS[t.id]) || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
+    const tasks = M.tasks.concat(M.settled).map((t) => ({ id: t.id, kind: t.kind, repos: t.repos, key: t.key || null, pr: (t.kind === 'pr' ? t.pr : prs[t.id]) || null, title: t.title, scene: t.scene, owner: t.owner || null, settled: !!t.settled, at: t.at.getTime(), line: now[t.id] || t.line || '' }));
     return { tasks, github: M.github };
-  });
+  }, prs);
   const row = (t) => ({
     box: 'mock-' + t.id,
     repo: t.repos[0],
