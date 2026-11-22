@@ -49,8 +49,7 @@ const props = (t: Peekable): ApproveProps => ({
 test('the peek of an approval says where the task is, its issue key and what it says, then holds the same card as the task page', () => {
 	const t = asking('web/gated', approval);
 	const text = textOf(PeekView({ t, now: NOW, approve: props(t), onClose: () => {} }));
-	expect(text).toContain('acme/web');
-	expect(text).toContain('acme/api');
+	expect(text).toContain('acme/web+1');
 	expect(text).toContain('WEB-142');
 	expect(text).toContain('Task web/gated');
 	expect(text).toContain('14:46');
