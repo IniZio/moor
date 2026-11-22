@@ -256,7 +256,10 @@ fn a_lost_stream_of_an_outcome_check_writes_nothing_and_runs_on_the_next_pass() 
     f.pass();
     f.pass();
     assert_eq!(kinds(&f), ["checked"], "a lost stream writes no line");
-    assert!(f.told().is_empty(), "the agent is not steered for moor's fault");
+    assert!(
+        f.told().is_empty(),
+        "the agent is not steered for moor's fault"
+    );
     f.pass();
     assert_eq!(
         reached(&f),
@@ -274,10 +277,51 @@ fn a_lost_stream_of_an_anytime_check_neither_reminds_nor_writes() {
     f.quiet();
     f.pass();
     assert!(f.lines().is_empty(), "{:?}", f.lines());
-    assert!(f.told().is_empty(), "no reminder for a check that gave no answer");
+    assert!(
+        f.told().is_empty(),
+        "no reminder for a check that gave no answer"
+    );
     f.pass();
     assert_eq!(
         reached(&f),
         ("nothing to do".to_owned(), Tone::Plain, Progress::Done)
+    );
+}
+
+/// A Box whose one gate has only a check, which fails until the agent fixes the work.
+fn checks_only_box() -> Fx {
+    fx_outcomes(|dir| {
+        let check = format!("test -e {}", dir.join("fixed").display());
+        three(dir, vec![gate("tests", &[&check], 2)])
+    })
+}
+
+#[test]
+fn an_anytime_outcome_is_tried_before_the_checks_of_a_gate_that_has_only_checks() {
+    let f = checks_only_box();
+    hold(&f, "nothing to do");
+    f.quiet();
+    assert!(f.pass().is_empty());
+    assert_eq!(
+        reached(&f),
+        ("nothing to do".to_owned(), Tone::Plain, Progress::Done)
+    );
+    assert_eq!(kinds(&f), ["held"], "the gate's check never ran");
+}
+
+#[test]
+fn with_no_anytime_outcome_holding_the_gates_check_runs_in_the_same_pass() {
+    let f = checks_only_box();
+    f.quiet();
+    assert!(f.pass().is_empty());
+    assert_eq!(kinds(&f), ["checked"]);
+    assert_eq!(f.told().len(), 1, "the failed check goes to the agent");
+    hold(&f, "nothing to do");
+    f.quiet();
+    assert!(f.pass().is_empty());
+    assert_eq!(
+        reached(&f),
+        ("nothing to do".to_owned(), Tone::Plain, Progress::Done),
+        "tried again on the next try"
     );
 }

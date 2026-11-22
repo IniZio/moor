@@ -68,7 +68,7 @@ impl Gates {
             "\n\nHow the run ends is not yours to say: moor decides it by running the checks of \
              these outcomes in order, and the first whose checks all pass is the run's outcome. \
              It tries them once every gate has passed, and tries those marked \"anytime\" also \
-             whenever you stop before handing in the gate in hand. Never fake evidence or a \
+             whenever you stop before the gate in hand has passed. Never fake evidence or a \
              result to reach one. If you find there is nothing to do, say so in one line and \
              stop: moor checks the outcomes then.\n\n{}",
             lines.join("\n")

@@ -68,7 +68,7 @@ pub struct Outcome {
     /// What moor runs in the Box; the outcome holds when all exit 0, and one with none always
     /// holds.
     pub checks: Vec<Check>,
-    /// Whether moor also tries it when the agent goes quiet before a gate is handed in.
+    /// Whether moor also tries it when the agent goes quiet before the gate in hand has passed.
     pub anytime: bool,
 }
 
@@ -88,7 +88,7 @@ pub struct OutcomeDoc {
     /// when all exit 0; moor tries the outcomes in order and the first that holds is the run's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<CheckDoc>,
-    /// True to also try it whenever the agent goes quiet without handing in the gate in hand;
+    /// True to also try it whenever the agent goes quiet before the gate in hand has passed;
     /// when it holds the run ends at once. Needs a check.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub anytime: bool,

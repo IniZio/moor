@@ -114,8 +114,8 @@ pub struct DueOutcomes<'a> {
 /// The outcomes due from `gates` and the `lines` written for them.
 ///
 /// Every outcome when the status is open at `Decide`, and the `anytime` ones, if any, when a gate
-/// waits for the agent, which moor tries once the agent is quiet before it reminds it. None
-/// otherwise.
+/// waits for the agent or its checks, which moor tries once the agent is quiet, before it reminds
+/// it or runs the check. None otherwise.
 #[must_use]
 pub fn due_outcomes<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueOutcomes<'a>> {
     let GateStatus::Open { gate, try_n, next } = status(gates, lines) else {
@@ -123,8 +123,10 @@ pub fn due_outcomes<'a>(gates: &'a Gates, lines: &[GateLine]) -> Option<DueOutco
     };
     let outcomes: Vec<&Outcome> = match next {
         GateNext::Decide => gates.outcomes().iter().collect(),
-        GateNext::Agent => gates.outcomes().iter().filter(|o| o.anytime).collect(),
-        GateNext::RunChecks | GateNext::Ask => return None,
+        GateNext::Agent | GateNext::RunChecks => {
+            gates.outcomes().iter().filter(|o| o.anytime).collect()
+        }
+        GateNext::Ask => return None,
     };
     (!outcomes.is_empty()).then_some(DueOutcomes {
         stage: gate,

@@ -182,7 +182,7 @@ fn an_anytime_outcome_that_holds_while_the_first_gate_waits_ends_the_run() {
 }
 
 #[test]
-fn only_an_anytime_outcome_ends_a_gate_and_only_while_it_waits_for_the_agent() {
+fn only_an_anytime_outcome_ends_a_gate_and_only_while_the_gate_has_not_passed() {
     let g = fixture();
     let not_anytime = [held("proof", 1, "check passed")];
     assert!(matches!(
@@ -196,11 +196,14 @@ fn only_an_anytime_outcome_ends_a_gate_and_only_while_it_waits_for_the_agent() {
     assert_eq!(passed_gates(&g, &stale), 1);
     assert!(matches!(status(&g, &stale), GateStatus::Open { .. }));
     let running = [submitted("proof"), submitted("done")];
+    let due = due_outcomes(&g, &running).unwrap();
     assert_eq!(
-        due_outcomes(&g, &running),
-        None,
-        "moor runs the gate's checks"
+        (due.stage.as_str(), names(&due)),
+        ("done", vec!["nothing to do".to_owned()]),
+        "tried before the gate's checks"
     );
+    let ended = [running.to_vec(), vec![held("done", 1, "nothing to do")]].concat();
+    assert!(matches!(status(&g, &ended), GateStatus::Passed { .. }));
 }
 
 #[test]

@@ -200,10 +200,11 @@ impl Walk<'_> {
         }
     }
 
-    /// An `anytime` outcome held while the gate in hand waited for the agent.
+    /// An `anytime` outcome held while the gate in hand waited for the agent or its checks.
     fn held_at(&mut self, gate: &Gate, try_n: u8, outcome: &OutcomeName) {
         let gates = self.gates;
-        if self.waits(gate, try_n, GateNext::Agent) {
+        if self.waits(gate, try_n, GateNext::Agent) || self.waits(gate, try_n, GateNext::RunChecks)
+        {
             self.held = gates
                 .outcomes()
                 .iter()

@@ -71,7 +71,7 @@ impl Tools {
                        gate's, and `anytime`. moor decides the outcome itself: once every gate \
                        passed it runs the outcomes' checks in order and the first whose checks \
                        all pass is the run's; an `anytime` outcome is also tried whenever the \
-                       agent goes quiet before handing in a gate, and ends the run at once when it \
+                       agent goes quiet before the gate in hand has passed, and ends the run at once when it \
                        holds. An anytime outcome needs a check, and only the last outcome that is \
                        not anytime may have none. When none holds the agent is told why, like a \
                        failed check. A run in a `bad` outcome is still delivered. \

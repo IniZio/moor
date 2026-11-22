@@ -43,18 +43,21 @@ pub(crate) struct Job {
 /// What a job runs.
 enum Work {
     /// One check of a gate.
-    Check {
-        /// The gate.
-        gate: StepId,
-        /// The try.
-        try_n: u8,
-        /// The check's place among the gate's checks.
-        check: u8,
-        /// The command.
-        command: String,
-    },
+    Check(GateCheck),
     /// The checks of the outcomes due, to find the one that holds.
     Outcomes(Due),
+}
+
+/// One check of a gate, due at a try.
+pub(super) struct GateCheck {
+    /// The gate.
+    gate: StepId,
+    /// The try.
+    try_n: u8,
+    /// The check's place among the gate's checks.
+    check: u8,
+    /// The command.
+    command: String,
 }
 
 /// Looks at each open Box with gates, handing the check that is due to `checks`, which must not
@@ -125,9 +128,9 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     Ok(())
 }
 
-/// What the pass runs next in Box `row`: the check that is due, else the outcomes that are due once
-/// the owner is asked and the agent told of a hand-over. None when nothing is to run, after the
-/// agent is reminded if it waits for one.
+/// What the pass runs next in Box `row`: the check that is due, after the `anytime` outcomes when
+/// there are any, else the outcomes that are due once the owner is asked and the agent told of a
+/// hand-over. None when nothing is to run, after the agent is reminded if it waits for one.
 fn due_work(
     cx: &Cx,
     store: &Store,
@@ -135,16 +138,19 @@ fn due_work(
     (gates, lines): (&Gates, &[GateLine]),
 ) -> Result<Option<Work>, CommandError> {
     if let Some(due) = due_check(gates, lines) {
-        return Ok(due
-            .gate
-            .checks
-            .get(usize::from(due.check))
-            .map(|command| Work::Check {
-                gate: due.gate.name.clone(),
-                try_n: due.try_n,
-                check: due.check,
-                command: command.run.clone(),
-            }));
+        let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
+            return Ok(None);
+        };
+        let check = GateCheck {
+            gate: due.gate.name.clone(),
+            try_n: due.try_n,
+            check: due.check,
+            command: command.run.clone(),
+        };
+        return Ok(Some(match due_outcomes(gates, lines) {
+            Some(anytime) => Work::Outcomes(Due::of(&anytime).then(check)),
+            None => Work::Check(check),
+        }));
     }
     ask(cx, store, row, (gates, lines))?;
     if hand_over(cx, store, row, (gates, lines))? {
@@ -265,25 +271,21 @@ pub(super) fn taken(e: &StoreError) -> bool {
 /// Runs `job` in its Box as the Box's owner and writes how it ended. Returns what to log.
 pub(crate) fn run(cx: &Cx, job: &Job) -> Vec<String> {
     match &job.work {
-        Work::Check {
-            gate,
-            try_n,
-            check,
-            command,
-        } => run_check(cx, (job.box_id, job.n), (gate, *try_n, *check), command),
+        Work::Check(check) => run_check(cx, (job.box_id, job.n), check),
         Work::Outcomes(due) => decide::run(cx, (job.box_id, job.n), due),
     }
 }
 
-/// Runs check `check` of try `try_n` of `gate` in Box `id` and writes how it ended as line `n`,
-/// then tells the agent when that failed the try. A result whose line number was taken meanwhile
-/// is dropped.
-fn run_check(
-    cx: &Cx,
-    (id, n): (BoxId, i64),
-    (gate, try_n, check): (&StepId, u8, u8),
-    command: &str,
-) -> Vec<String> {
+/// Runs `check` in Box `id` and writes how it ended as line `n`, then tells the agent when that
+/// failed the try. A result whose line number was taken meanwhile is dropped.
+pub(super) fn run_check(cx: &Cx, (id, n): (BoxId, i64), check: &GateCheck) -> Vec<String> {
+    let GateCheck {
+        gate,
+        try_n,
+        check,
+        command,
+    } = check;
+    let (try_n, check) = (*try_n, *check);
     let mut out = Vec::new();
     let Ok(store) = cx.store() else { return out };
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);

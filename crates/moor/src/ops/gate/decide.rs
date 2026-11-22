@@ -2,15 +2,15 @@
 //! checks all pass is the run's. The agent never claims one.
 //!
 //! At the closing stage a result is always written: the outcome that held, or that none did,
-//! which fails the try and is steered to the agent. While a gate waits for a quiet agent only the
-//! `anytime` outcomes are tried, and when none holds the pass reminds the agent as it would
-//! without them.
+//! which fails the try and is steered to the agent. While the gate in hand has not passed only the
+//! `anytime` outcomes are tried, and when none holds the pass goes on as it would without them:
+//! it runs the gate's due check, or reminds the agent.
 
 use moor_core::gate::{DueOutcomes, GateLine, OutcomeName, Tried};
 use moor_core::workflow::StepId;
 use moor_core::BoxId;
 
-use super::checks::{taken, tell};
+use super::checks::{run_check, taken, tell, GateCheck};
 use super::remind::remind;
 use crate::cx::Cx;
 use crate::ops::common::check::{execute, Ended, CHECK_LIMIT};
@@ -25,6 +25,8 @@ pub(super) struct Due {
     closing: bool,
     /// Each outcome with its check commands, in order.
     outcomes: Vec<(OutcomeName, Vec<String>)>,
+    /// The gate's check to run when none holds.
+    then: Option<GateCheck>,
 }
 
 impl Due {
@@ -44,6 +46,15 @@ impl Due {
                     )
                 })
                 .collect(),
+            then: None,
+        }
+    }
+
+    /// The same, running `check` when none holds.
+    pub(super) fn then(self, check: GateCheck) -> Self {
+        Self {
+            then: Some(check),
+            ..self
         }
     }
 }
@@ -76,6 +87,10 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
             tried,
         },
         Found::None(_) => {
+            if let Some(check) = &due.then {
+                out.extend(run_check(cx, (id, n), check));
+                return out;
+            }
             if let Err(e) = remind_now(cx, id) {
                 out.push(format!("outcomes: could not remind the agent: {}", e.error));
             }
