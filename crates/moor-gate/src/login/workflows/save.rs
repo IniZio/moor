@@ -122,6 +122,7 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         enabled: None,
         on_pull_request: Some(stored.on_pull_request),
         gates: None,
+        outcomes: None,
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {

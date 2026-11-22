@@ -37,6 +37,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         enabled: Some(true),
         on_pull_request: Some(false),
         gates: None,
+        outcomes: None,
     }
 }
 
@@ -559,3 +560,28 @@ mod gates;
 mod keep_omitted;
 mod no_cron;
 mod plan;
+
+#[test]
+fn a_delivered_run_lists_the_outcome_moor_found_and_stays_finished() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    let verdict = serde_json::from_value(json!({"name": "check failed", "tone": "bad"})).unwrap();
+    let outcome = moor_core::workflow::RunOutcome::Delivered {
+        result: "pr 7".to_owned(),
+        verdict: Some(verdict),
+    };
+    record(&f, &who, crate::testing::runs::ended(9, 100, outcome), 100);
+    record(&f, &who, crate::testing::runs::delivered(9, 200), 200);
+    let listed = run_list(&f, &who, None);
+    let runs = listed["runs"].as_array().unwrap();
+    assert_eq!(runs[1]["outcome"], "finished");
+    assert_eq!(
+        runs[1]["verdict"],
+        json!({"name": "check failed", "tone": "bad"})
+    );
+    assert!(
+        runs[0].get("verdict").is_none(),
+        "a run without gates has none"
+    );
+}

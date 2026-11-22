@@ -147,6 +147,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         enabled: Some(true),
         on_pull_request: Some(on_pull_request),
         gates: None,
+        outcomes: None,
     }
 }
 

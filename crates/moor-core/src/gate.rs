@@ -229,7 +229,7 @@ pub enum GateError {
 }
 
 /// Gates and outcomes as a Box or a workflow keeps them.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GatesDoc {
     /// The gates.

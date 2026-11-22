@@ -25,6 +25,10 @@ pub struct LastRunView {
     /// `queued`, `running`, `waiting` or `done`.
     #[serde(default)]
     pub phase: String,
+    /// The outcome moor found for a delivered run of a Box with gates, such as "check failed";
+    /// `outcome` stays `finished`, since a bad outcome is still a run that did its job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<crate::gate::Verdict>,
     /// What fired the run: `cron`, `manual` or `pull_request`.
     #[serde(default = "cron")]
     pub trigger: String,
@@ -113,6 +117,10 @@ pub struct WorkflowView {
     /// has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gates: Option<Vec<GateDoc>>,
+    /// The outcomes its runs may end in, as `add_workflow` takes them; none when the workflow
+    /// names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcomes: Option<Vec<crate::gate::OutcomeDoc>>,
     /// Its latest run, when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run: Option<LastRunView>,

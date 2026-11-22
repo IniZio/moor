@@ -70,6 +70,10 @@ pub struct WorkflowAddReq {
     /// with a plan, or kept beside one, the call is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gates: Option<Vec<GateDoc>>,
+    /// The outcomes a run may end in, sent with `gates` and kept with them; left out, a run
+    /// ends in `done` once every gate passes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcomes: Option<Vec<crate::gate::OutcomeDoc>>,
 }
 
 /// Arguments of `workflow-remove`.

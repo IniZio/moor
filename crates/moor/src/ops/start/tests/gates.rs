@@ -25,7 +25,10 @@ fn proof() -> GateDoc {
 fn with_gates(name: &str, gates: Vec<GateDoc>) -> StartReq {
     StartReq {
         prompt: Some("Fix the typo.".to_owned()),
-        gates: Some(Box::new(gates)),
+        gates: Some(Box::new(moor_core::gate::GatesDoc {
+            gates,
+            outcomes: Vec::new(),
+        })),
         ..repo_req(name)
     }
 }

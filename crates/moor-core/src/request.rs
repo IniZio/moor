@@ -318,15 +318,11 @@ pub struct StartReq {
     /// Parent Session of the Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,
-    /// The gates the Box must pass before it counts as done, written once at start. Left out of
-    /// the JSON when absent, so an older controller that refuses unknown fields still takes a
-    /// start that has none.
+    /// The gates the Box must pass before it counts as done, and the outcomes its run may end
+    /// in, written once at start. Left out of the JSON when absent, so an older controller that
+    /// refuses unknown fields still takes a start that has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[allow(
-        clippy::box_collection,
-        reason = "keeps `Request` and the CLI enums that hold it under the large-variant size"
-    )]
-    pub gates: Option<Box<Vec<crate::gate::GateDoc>>>,
+    pub gates: Option<Box<crate::gate::GatesDoc>>,
     /// The identity the Box acts for; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,

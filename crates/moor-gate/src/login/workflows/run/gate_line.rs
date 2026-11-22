@@ -30,6 +30,13 @@ pub(super) fn sentence(kind: &str, entry: &Value, tries: &str) -> String {
             )
         }
         "resumed" => "Resumed after the wait".to_owned(),
+        "outcome_reached" => entry
+            .get("outcome")
+            .and_then(|o| text(o, "name"))
+            .map_or_else(
+                || "Outcome reached".to_owned(),
+                |n| format!("Ended in “{n}”"),
+            ),
         other => format!("{other}: {entry}"),
     }
 }

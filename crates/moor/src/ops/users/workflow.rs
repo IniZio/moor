@@ -244,10 +244,19 @@ fn parse_gates(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,
 ) -> Result<Option<Gates>, CommandError> {
+    let outcomes = req.outcomes.as_deref();
     match req.gates.as_deref() {
+        None if outcomes.is_some() => Err(usage(
+            "send outcomes with the gates they end, so nothing was saved".to_owned(),
+        )),
         None => Ok(prior.and_then(|w| w.gates.clone())),
+        Some([]) if outcomes.is_some_and(|o| !o.is_empty()) => Err(usage(
+            "outcomes need gates: a workflow without gates ends as its plan says, so nothing was \
+             saved"
+                .to_owned(),
+        )),
         Some([]) => Ok(None),
-        Some(docs) => Gates::parse(docs, &[])
+        Some(docs) => Gates::parse(docs, outcomes.unwrap_or_default())
             .map(Some)
             .map_err(|e| usage(e.to_string())),
     }
@@ -367,6 +376,11 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
         revision: w.revision,
         on_pull_request: w.on_pull_request,
         gates: w.gates.as_ref().map(Gates::docs),
+        outcomes: w
+            .gates
+            .as_ref()
+            .map(Gates::outcome_docs)
+            .filter(|o| !o.is_empty()),
         last_run,
     }
 }

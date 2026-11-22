@@ -379,7 +379,7 @@ pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
     let gates = req
         .gates
         .as_deref()
-        .and_then(|docs| Gates::parse(docs, &[]).ok());
+        .and_then(|doc| Gates::parse(&doc.gates, &doc.outcomes).ok());
     LaunchPrompt::Text(gates.map_or_else(|| asked.clone(), |g| g.first_message(&asked)))
 }
 

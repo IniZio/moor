@@ -213,3 +213,30 @@ fn the_owners_note_splits_out_of_a_no_whatever_it_holds() {
         None
     );
 }
+
+#[test]
+fn the_preamble_names_the_outcomes_and_says_moor_decides_them() {
+    let outcomes: Vec<OutcomeDoc> = serde_json::from_value(serde_json::json!([
+        {"name": "nothing to do", "says": "The pull request is closed or moved.", "tone": "plain",
+         "checks": [{"run": "true", "says": "The pull request is not open."}], "anytime": true},
+        {"name": "check passed", "checks": ["true"]}
+    ]))
+    .unwrap();
+    let with = Gates::parse(&gates().docs(), &outcomes).unwrap();
+    let first = with.first_message("Collect evidence.");
+    assert!(
+        first.contains("not yours to say: moor decides it"),
+        "{first}"
+    );
+    assert!(first.contains("Never fake evidence"), "{first}");
+    assert!(
+        first.contains("- `nothing to do`: The pull request is closed or moved. (anytime) It holds when: “The pull request is not open.”"),
+        "{first}"
+    );
+    assert!(first.contains("- `check passed`"), "{first}");
+    let plain = gates().first_message("Collect evidence.");
+    assert!(
+        !plain.contains("outcome"),
+        "no outcomes, no word of them: {plain}"
+    );
+}

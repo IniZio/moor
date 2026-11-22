@@ -28,6 +28,9 @@ pub(super) struct StartArgs {
     /// a plain sentence of what must be true), and an owner approval. A Box
     /// with an open gate shows as working, never as done. Written once, at start.
     pub(super) gates: Option<Vec<moor_core::gate::GateDoc>>,
+    /// The outcomes the Box's run may end in, sent with `gates`; see `add_workflow`. Left out,
+    /// the run ends in `done` once every gate passes.
+    pub(super) outcomes: Option<Vec<moor_core::gate::OutcomeDoc>>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.
     pub(super) wait: Option<bool>,

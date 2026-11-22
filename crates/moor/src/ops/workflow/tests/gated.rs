@@ -53,6 +53,11 @@ impl Rig {
 
     /// Like [`Rig::put_gated`], firing on pull requests when `on_pull_request`.
     fn put_gated_for(&self, gates: &[GateDoc], on_pull_request: bool) -> WorkflowId {
+        self.put_gates(Gates::parse(gates, &[]).unwrap(), on_pull_request)
+    }
+
+    /// Stores the daily workflow `evidence` with `gates` and their outcomes.
+    fn put_gates(&self, gates: Gates, on_pull_request: bool) -> WorkflowId {
         let mut def = WorkflowDef::new(
             WorkflowName::parse("evidence").unwrap(),
             Some(WorkflowSchedule::parse("0 9 * * *", "UTC").unwrap()),
@@ -61,7 +66,7 @@ impl Rig {
             (true, TimeoutMinutes::DEFAULT),
         )
         .unwrap();
-        def.gates = Some(Gates::parse(gates, &[]).unwrap());
+        def.gates = Some(gates);
         def.on_pull_request = on_pull_request;
         self.cx
             .store()
@@ -486,3 +491,4 @@ impl Rig {
 
 mod ended;
 mod history;
+mod outcomes;

@@ -63,6 +63,18 @@ impl Tools {
                        answer_gate on the Box, or steers it to reopen a stuck gate. A workflow has \
                        a plan or gates, never both; send `gates: []` to clear them. \
                        \
+                       Send `outcomes` with the gates to name how a run may end, such as \
+                       `check passed` or `nothing to do`; left out, a run ends in `done`. Each \
+                       has a `name` (one line, 40 characters), an optional `says` sentence, \
+                       `tone` (`good` when left out, `bad` or `plain`), `checks` written as a \
+                       gate's, and `anytime`. moor decides the outcome itself: once every gate \
+                       passed it runs the outcomes' checks in order and the first whose checks \
+                       all pass is the run's; an `anytime` outcome is also tried whenever the \
+                       agent goes quiet before handing in a gate, and ends the run at once when it \
+                       holds. An anytime outcome needs a check, and only the last outcome that is \
+                       not anytime may have none. When none holds the agent is told why, like a \
+                       failed check. A run in a `bad` outcome is still delivered. \
+                       \
                        Write a plan for any job with more than one finish line; a prompt with no \
                        plan runs as one step. Turn the prompt into `plan.steps`, a short list \
                        the author reviews: one step per finish line. Use `work` steps for what \
@@ -120,6 +132,7 @@ impl Tools {
             enabled: args.enabled,
             on_pull_request: args.on_pull_request,
             gates: args.gates,
+            outcomes: args.outcomes,
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

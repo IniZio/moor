@@ -82,6 +82,13 @@ pub(super) fn run_view(
         due_at: run.due_at.as_millis(),
         outcome: run.state.tag().to_owned(),
         phase: run.state.phase().as_str().to_owned(),
+        verdict: match &run.state {
+            RunState::Done(RunEnd::Ended {
+                outcome: RunOutcome::Delivered { verdict, .. },
+                ..
+            }) => verdict.clone(),
+            _ => None,
+        },
         trigger: run.cause.trigger().as_str().to_owned(),
         pull: run
             .cause
