@@ -56,8 +56,8 @@ summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-box .t-tab { padding: 4px 0; font-weight: var(--moor-weight-body); border-bottom: 2px solid transparent; margin-bottom: 0; }
 .t-box .t-tab[aria-selected='true'] { border-bottom-color: var(--moor-color-text); }
 .t-tabs > .grow { flex: 1 1 auto; }
-.t-cnt { font-size: 0.8125rem; font-weight: 500; }
-.t-cnt .t-counts { font: inherit; }
+.t-tabs .t-cnt { font-size: 0.8125rem; font-weight: 500; }
+.t-tabs .t-cnt .t-counts { font: inherit; }
 .t-box .t-events { display: block; }
 .t-box .t-ev { grid-template-columns: 4rem minmax(0, 1fr) 3rem; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
 .t-box .t-ev > .t-who { grid-column: 1; }
