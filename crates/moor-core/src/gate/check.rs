@@ -145,7 +145,8 @@ impl Gates {
 }
 
 impl NoAnswerCause {
-    /// Why the stage waits for a person, in one line.
+    /// Why the stage waits for a person, in one line. The count of no answers runs across the
+    /// checks of a pass, so this names only the last.
     #[must_use]
     pub fn why(&self) -> String {
         let (whose, check) = match &self.check {
@@ -162,7 +163,8 @@ impl NoAnswerCause {
             Unanswered::Lost => "its output stream was lost".to_owned(),
         };
         format!(
-            "moor, not the agent, could not run {whose}check {}{what} twice: {reason}",
+            "moor, not the agent, got no answer from its checks twice in a row; the last was \
+             {whose}check {}{what}: {reason}",
             check + 1
         )
     }

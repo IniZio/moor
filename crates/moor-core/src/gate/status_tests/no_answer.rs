@@ -27,8 +27,8 @@ fn outcome_busy(try_n: u8) -> GateLine {
     }
 }
 
-const WHY: &str =
-    "moor, not the agent, could not run check 1 (`make`) twice: Box 3 is busy with another command";
+const WHY: &str = "moor, not the agent, got no answer from its checks twice in a row; the last \
+                   was check 1 (`make`): Box 3 is busy with another command";
 
 fn make_busy() -> NoAnswerCause {
     let reason = "Box 3 is busy with another command".to_owned();
@@ -113,8 +113,9 @@ fn at_the_closing_stage_two_in_a_row_wait_for_a_person_naming_the_outcome() {
     let once = [through.clone(), outcome_busy(1)];
     assert_eq!(status(&g, &once), open(CLOSING, 1, GateNext::Decide));
     let twice = [through, outcome_busy(1), outcome_busy(1)];
-    let why = "moor, not the agent, could not run outcome `merged` check 1 \
-               (`gh pr view --json state`) twice: Box 3 is busy with another command";
+    let why = "moor, not the agent, got no answer from its checks twice in a row; the last was \
+               outcome `merged` check 1 (`gh pr view --json state`): Box 3 is busy with another \
+               command";
     let merged = CheckOf::Outcome {
         outcome: OutcomeName("merged".to_owned()),
         check: 0,
@@ -186,4 +187,31 @@ fn a_multi_line_command_stays_whole_in_the_cause_and_on_one_line_in_the_sentence
             ..
         }
     ));
+}
+
+#[test]
+fn no_answers_from_two_checks_in_a_row_wait_naming_the_last_and_claim_no_more() {
+    let anytime: OutcomeDoc = serde_json::from_value(serde_json::json!(
+        {"name": "nothing to do", "checks": ["gh pr view"], "anytime": true}
+    ))
+    .unwrap();
+    let done: OutcomeDoc = serde_json::from_value(serde_json::json!({"name": "done"})).unwrap();
+    let g = Gates::parse(&[doc("tests", &[], &["make"], None)], &[anytime, done]).unwrap();
+    let not_run = GateLine::NoAnswer {
+        gate: id("tests"),
+        try_n: 1,
+        check: CheckOf::Outcome {
+            outcome: OutcomeName("nothing to do".to_owned()),
+            check: 0,
+        },
+        why: Unanswered::NotRun {
+            reason: "Box 3 is busy with another command".to_owned(),
+        },
+    };
+    // The anytime check then exits 1, which writes no line, and `make` loses its stream.
+    let lines = [not_run, lost("tests", 1, 0)];
+    let why = "moor, not the agent, got no answer from its checks twice in a row; the last was \
+               check 1 (`make`): its output stream was lost";
+    let gone = cause(CheckOf::Gate { check: 0 }, "make", Unanswered::Lost);
+    assert_eq!(status(&g, &lines), unheard("tests", 1, why, gone));
 }

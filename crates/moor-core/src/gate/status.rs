@@ -31,8 +31,8 @@ pub enum GateStatus {
         /// What it waits for.
         next: GateNext,
     },
-    /// A gate waits for a person: the agent went quiet, the tries are used up, or moor could not
-    /// run a check twice in a row.
+    /// A gate waits for a person: the agent went quiet, the tries are used up, or moor got no
+    /// answer from its checks twice in a row.
     Stuck {
         /// The gate.
         gate: StepId,

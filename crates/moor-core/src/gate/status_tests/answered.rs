@@ -38,7 +38,8 @@ fn a_failed_check_is_named_by_its_command() {
     );
     let got = status(&h, &[lost("tests", 1, 0), lost("tests", 1, 0)]);
     let want = format!(
-        "moor, not the agent, could not run check 1 (`{}…`) twice: its output stream was lost",
+        "moor, not the agent, got no answer from its checks twice in a row; the last was check 1 \
+         (`{}…`): its output stream was lost",
         "x".repeat(60)
     );
     let long = cause(CheckOf::Gate { check: 0 }, &long, Unanswered::Lost);

@@ -45,7 +45,7 @@ pub struct Wait {
     pub handed: Vec<String>,
     /// What the agent wrote with its report.
     pub note: Option<String>,
-    /// The check that failed, or that moor could not run, as written.
+    /// The check that failed, or that moor last got no answer from, as written.
     pub command: Option<String>,
     /// What that check says must be true, when its author wrote it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,9 +82,9 @@ impl Wait {
     }
 }
 
-/// What a person can do when moor could not run a check: the agent did nothing wrong.
-const NO_ANSWER_HINT: &str = "moor, not the agent, could not run this check. Send the agent a \
-                              message to reopen the gate and run it again, or close the Box.";
+/// What a person can do when moor got no answer from its checks: the agent did nothing wrong.
+const NO_ANSWER_HINT: &str = "moor, not the agent, got no answer from its checks. Send the agent \
+                              a message to reopen the gate and run them again, or close the Box.";
 
 /// The wait the gates are at after `lines`; none unless a gate waits for a person.
 #[must_use]

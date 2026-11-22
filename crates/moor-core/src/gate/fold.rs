@@ -295,8 +295,8 @@ impl Walk<'_> {
         }
     }
 
-    /// moor got no answer from a check of stage `stage`; the second in a row waits for a person
-    /// and spends no try, since it is not the agent's doing.
+    /// moor got no answer from a check of stage `stage`; the second in a row, of any check, waits
+    /// for a person and spends no try, since it is not the agent's doing.
     fn unanswered(&mut self, stage: &StepId, check: &CheckOf, why: &Unanswered) {
         self.tries.unanswered += 1;
         if self.tries.unanswered >= 2 {
