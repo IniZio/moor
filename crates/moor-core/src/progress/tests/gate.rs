@@ -453,3 +453,27 @@ fn a_done_gated_box_without_a_report_note_keeps_the_agents_line() {
         (Progress::Done, "Finished the change.")
     );
 }
+
+fn passed_as(name: &str, tone: &str) -> GateStatus {
+    GateStatus::Passed {
+        outcome: serde_json::from_value(json!({"name": name, "tone": tone})).unwrap(),
+    }
+}
+
+#[test]
+fn a_finished_box_says_the_outcome_it_ended_in_unless_that_is_the_implicit_done() {
+    for (name, tone) in [("check failed", "bad"), ("nothing to do", "plain")] {
+        let mut b = gated(BoxLifecycle::Ready, SessionState::Idle, passed_as(name, tone));
+        b.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
+        let p = derive(&b, &[], ten());
+        assert_eq!((p.state, p.line.as_str()), (Progress::Done, name));
+    }
+    let mut plain = gated(
+        BoxLifecycle::Ready,
+        SessionState::Idle,
+        passed_as("done", "good"),
+    );
+    assert_eq!(derive(&plain, &[], ten()).line, "done");
+    plain.gate.as_mut().unwrap().note = Some("PR #7 was checked.".to_owned());
+    assert_eq!(derive(&plain, &[], ten()).line, "PR #7 was checked.");
+}

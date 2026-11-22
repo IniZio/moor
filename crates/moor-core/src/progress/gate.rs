@@ -94,6 +94,9 @@ pub(super) fn line(state: Progress, b: &BoxView) -> Option<String> {
     }
     let status = open_status(b)?;
     match (state, status) {
+        (Progress::Done, GateStatus::Passed { outcome }) if !outcome.is_implicit() => {
+            Some(outcome.name.to_string())
+        }
         (Progress::Working, GateStatus::Open { gate, next, .. }) if quiet(b) => Some(match next {
             GateNext::Agent => format!("gate {gate}: waiting for the agent's evidence"),
             GateNext::RunChecks => format!("gate {gate}: running its checks"),
