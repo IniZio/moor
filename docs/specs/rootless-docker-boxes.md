@@ -184,9 +184,10 @@ It wraps Docker's own tools and adds no daemon of its own.
 
 1. It reads every gap that needs root at once. The gaps are a `/dev/kvm` not open to every
    user, a missing `newuidmap`, `newgidmap` or `slirp4netns`, and too few subordinate ids.
-   The `AppArmor` sysctl above 0 and no linger are gaps too. So is a missing setup tool
-   where Docker's repository is configured. A gap counts exactly when the preflight below fails it, because both read the
-   same facts. It first tries `loginctl enable-linger` as the user, which polkit often allows.
+   No linger is a gap too, and so is a host that restricts user namespaces with no `AppArmor`
+   profile for the rootlesskit to run. So is a missing setup tool
+   where Docker's repository is configured. Subordinate ids, packages and linger count exactly when the preflight below fails them,
+   because both read the same facts. It first tries `loginctl enable-linger` as the user, which polkit often allows.
 2. With gaps and a terminal, it lists them, shows one `sudo sh -ec '…'` command, and asks
    once. Without a terminal, or on no, it prints the command and exits 1. A missing
    `/dev/kvm` and a host with neither apt nor dnf fail plainly, since no command fixes them.
@@ -202,11 +203,14 @@ It wraps Docker's own tools and adds no daemon of its own.
    `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock`, so its checks and the agent's unit
    reach the rootless daemon.
 
-`AppArmor` keeps the sysctl rule, not a profile. Ubuntu 24.04's `apparmor` package ships an
-unconfined profile with `userns` for `/usr/bin/rootlesskit`, and Docker's docs add one for
-`~/bin/rootlesskit`. A profile covers rootlesskit only. A Box's own programs that make a user
-namespace, such as a browser sandbox, would still be refused. The only host proven with Boxes,
-engine-03, runs with the sysctl at 0.
+Ubuntu 24.04 sets `kernel.apparmor_restrict_unprivileged_userns` to 1. Its `apparmor` package
+ships an unconfined profile with `userns` for `/usr/bin/rootlesskit`, which is what Docker's
+package runs. Docker's [rootless troubleshooting](https://docs.docker.com/engine/security/rootless/troubleshoot/)
+page says the same, and gives a profile for `$HOME/bin/rootlesskit` after its install script.
+`up` writes that profile only where no profile names the rootlesskit to run, and leaves the
+sysctl alone. On 2026-11-22 a fresh 24.04 VM kept the sysctl at 1, and the daemon started
+under Ubuntu's profile. In a `--privileged` container, as in a Box's work place, `unshare -Ur`
+and `bwrap --unshare-user` worked.
 
 `moor up` does not set the host up. It checks it, as below.
 
@@ -222,7 +226,6 @@ do not change the host.
 | `newuidmap` and `newgidmap` are installed | install `uidmap` |
 | `slirp4netns` is installed | install `slirp4netns` |
 | `nsenter` is installed (local route only) | install `util-linux` |
-| `kernel.apparmor_restrict_unprivileged_userns` is 0 where the sysctl exists | set it to 0 |
 | The rootless `docker.service` user unit is enabled and the user lingers | `systemctl --user enable docker`, `loginctl enable-linger` |
 | rootlesskit runs with `--disable-host-loopback` | unset `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK` |
 | `/dev/kvm` exists and is mode `0666` | a udev rule with `MODE="0666"` |

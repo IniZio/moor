@@ -30,7 +30,7 @@ already done prints `ok`. Run it again and nothing changes. With the agent insta
 | Open `/dev/kvm` to every user | sudo | A udev rule `KERNEL=="kvm", MODE="0666"` in `/etc/udev/rules.d/65-kvm.rules`, then `udevadm` reload, trigger and settle |
 | Install packages | sudo | `uidmap`, `slirp4netns`, and `docker-ce-rootless-extras` when Docker's apt or dnf repository is set up |
 | Give subordinate ids | sudo | `usermod --add-subuids --add-subgids` with 65536 ids no one else has |
-| Allow user namespaces | sudo | `kernel.apparmor_restrict_unprivileged_userns=0`, kept in `/etc/sysctl.d/60-rootless-docker.conf` |
+| Let rootlesskit make user namespaces | sudo | Only where `kernel.apparmor_restrict_unprivileged_userns` is 1 and no AppArmor profile names the rootlesskit to run. Writes Docker's profile for it, then restarts `apparmor.service` |
 | Linger | you, else sudo | `loginctl enable-linger` |
 | Rootless daemon | you | Writes the daemon's settings, runs Docker's `dockerd-rootless-setuptool.sh install --force`, puts the `docker` context back, and runs `systemctl --user enable --now docker` |
 | Agent service | you | Writes the agent's user unit with `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock` |
@@ -58,10 +58,12 @@ These are the steps `up` runs, for a host where you want to do them yourself.
 ```sh
 sudo apt-get install -y uidmap slirp4netns docker-ce-rootless-extras
 sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER"
-echo kernel.apparmor_restrict_unprivileged_userns=0 | sudo tee /etc/sysctl.d/60-rootless-docker.conf
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 loginctl enable-linger || sudo loginctl enable-linger "$USER"
 ```
+
+Ubuntu 24.04 restricts user namespaces, and its `apparmor` package ships a profile for
+`/usr/bin/rootlesskit`, so Docker's package needs nothing more. A rootlesskit under `~/bin`
+needs the profile in Docker's [rootless troubleshooting](https://docs.docker.com/engine/security/rootless/troubleshoot/) page.
 
 Write the daemon's settings before its first start. Keep anything else your daemon.json says.
 
