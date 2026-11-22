@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: moor
       POSTGRES_DB: moor
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1::5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "moor"]
       interval: 1s
@@ -18,7 +18,7 @@ services:
       RUSTFS_ACCESS_KEY: moor-test-key
       RUSTFS_SECRET_KEY: moor-test-secret
     ports:
-      - "127.0.0.1:${MOOR_TEST_S3_PORT:-9000}:9000"
+      - "127.0.0.1::9000"
   s3-bucket:
     image: rclone/rclone:1.71.2
     profiles: [setup]
