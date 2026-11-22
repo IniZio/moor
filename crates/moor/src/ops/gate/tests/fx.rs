@@ -85,7 +85,15 @@ pub(super) fn fx_on(
 pub(super) fn fx_outcomes(
     doc: impl FnOnce(&std::path::Path) -> (Vec<GateDoc>, Vec<OutcomeDoc>),
 ) -> Fx {
-    fx_doc(FakeDriver::new(), |dir| {
+    fx_outcomes_on(FakeDriver::new(), doc)
+}
+
+/// [`fx_outcomes`] over `driver`.
+pub(super) fn fx_outcomes_on(
+    driver: FakeDriver,
+    doc: impl FnOnce(&std::path::Path) -> (Vec<GateDoc>, Vec<OutcomeDoc>),
+) -> Fx {
+    fx_doc(driver, |dir| {
         let (gates, outcomes) = doc(dir);
         GatesDoc { gates, outcomes }
     })
@@ -159,6 +167,11 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, gates: String) -> BoxId {
         .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     id
+}
+
+/// What a Box busy with another command looks like to the exec op: no result, and no cut link.
+pub(super) fn busy() -> DriverError {
+    DriverError::Unavailable("Box 1 is busy with another command; waited 30s".to_owned())
 }
 
 /// What a lost stream looks like to the exec op.

@@ -11,7 +11,7 @@ use moor_core::workflow::StepId;
 
 use moor_core::workflow::{StepReport, StepResult};
 
-use super::fx::{cut, done, evidence_gate, fx, fx_on, gate};
+use super::fx::{busy, cut, done, evidence_gate, fx, fx_on, gate};
 use crate::testing::driver::FakeDriver;
 
 fn id(name: &str) -> StepId {
@@ -289,4 +289,21 @@ fn a_check_sees_the_env_of_the_run_the_agent_shell_sees() {
     f.quiet();
     f.pass();
     assert_eq!(f.exits(), [("posted".to_owned(), Some(0))]);
+}
+
+#[test]
+fn a_check_that_did_not_run_writes_nothing_and_runs_on_the_next_pass() {
+    let f = fx_on(
+        FakeDriver::new().exec_fails_once_when("busy-once", busy()),
+        |_| vec![gate("tests", &["echo busy-once"], 1)],
+    );
+    f.quiet();
+    let logged = f.pass();
+    assert!(logged.iter().any(|l| l.contains("busy")), "{logged:?}");
+    assert!(f.lines().is_empty(), "{:?}", f.lines());
+    assert_eq!(f.standing().0, open("tests", 1));
+    f.pass();
+    assert_eq!(f.exits(), [("tests".to_owned(), Some(0))]);
+    assert_eq!(f.standing(), (done(), Progress::Done));
+    assert!(f.told().is_empty());
 }

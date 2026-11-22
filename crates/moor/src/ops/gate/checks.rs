@@ -299,6 +299,7 @@ fn run_check(
     }
     let gate = gate.clone();
     let line = match ran.ended {
+        Ended::NotRun { .. } => return out,
         Ended::Lost => GateLine::CheckLost { gate, try_n, check },
         Ended::Exit { exit, tail } => GateLine::Checked {
             gate,

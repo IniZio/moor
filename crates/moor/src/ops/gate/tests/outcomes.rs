@@ -14,7 +14,8 @@ use moor_core::gate::{
 };
 use moor_core::progress::Progress;
 
-use super::fx::{evidence_gate, fx_outcomes, gate, Fx};
+use super::fx::{busy, evidence_gate, fx_outcomes, fx_outcomes_on, gate, Fx};
+use crate::testing::driver::FakeDriver;
 
 /// An outcome that holds once the file `name` is in `dir`.
 fn when(dir: &Path, name: &str, tone: Option<Tone>, anytime: bool) -> OutcomeDoc {
@@ -209,4 +210,37 @@ fn no_outcome_holding_is_steered_then_stuck_and_a_person_reopens_it() {
             GateLine::Held { try_n: 1, .. }
         ]
     ));
+}
+
+#[test]
+fn an_outcome_check_that_did_not_run_decides_nothing_and_runs_on_the_next_pass() {
+    let f = fx_outcomes_on(
+        FakeDriver::new().exec_fails_once_when("no check failed", busy()),
+        |dir| {
+            let outcomes = vec![
+                when(dir, "check failed", Some(Tone::Bad), false),
+                OutcomeDoc {
+                    name: "check passed".to_owned(),
+                    says: None,
+                    tone: None,
+                    checks: Vec::new(),
+                    anytime: false,
+                },
+            ];
+            (vec![gate("tests", &["true"], 2)], outcomes)
+        },
+    );
+    hold(&f, "check failed");
+    f.quiet();
+    f.pass();
+    let logged = f.pass();
+    assert!(logged.iter().any(|l| l.contains("busy")), "{logged:?}");
+    assert_eq!(kinds(&f), ["checked"], "no result writes no line");
+    assert!(f.told().is_empty());
+    f.pass();
+    assert_eq!(
+        reached(&f),
+        ("check failed".to_owned(), Tone::Bad, Progress::Done),
+        "a check that did not run never lets a later outcome win"
+    );
 }

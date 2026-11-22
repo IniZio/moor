@@ -9,7 +9,7 @@ use moor_core::workflow::{HistoryEntry, RunId, StepId};
 use moor_core::BoxId;
 
 use crate::cx::Cx;
-use crate::ops::common::check::{execute, Ended, Flight};
+use crate::ops::common::check::{execute, Ended, Flight, NOT_RUN_EXIT};
 
 /// A check to run: the step, the Box and the deadline.
 pub(crate) struct CheckJob {
@@ -36,6 +36,13 @@ fn outcome_line(job: &CheckJob, ended: Ended) -> HistoryEntry {
             step,
             try_n,
             exit,
+            tail,
+            check: None,
+        },
+        Ended::NotRun { tail } => HistoryEntry::Checked {
+            step,
+            try_n,
+            exit: NOT_RUN_EXIT,
             tail,
             check: None,
         },

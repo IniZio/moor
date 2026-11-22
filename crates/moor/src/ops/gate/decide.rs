@@ -96,7 +96,8 @@ pub(super) fn run(cx: &Cx, (id, n): (BoxId, i64), due: &Due) -> Vec<String> {
 }
 
 /// Runs the outcomes' checks in order until one outcome holds. A lost stream stops the search, so
-/// a later outcome never wins for want of an answer. None when a check gave no result at all.
+/// a later outcome never wins for want of an answer. None when the Box is gone or a check did not
+/// run, which decides nothing: the next pass tries again.
 fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
     let timeout = u32::try_from(CHECK_LIMIT.as_secs()).unwrap_or(u32::MAX);
     let mut tried = Vec::new();
@@ -110,6 +111,7 @@ fn find(cx: &Cx, id: BoxId, due: &Due, out: &mut Vec<String>) -> Option<Found> {
                 ));
             }
             let (exit, tail) = match ran.ended {
+                Ended::NotRun { .. } => return None,
                 Ended::Lost => (None, String::new()),
                 Ended::Exit { exit: 0, .. } => continue,
                 Ended::Exit { exit, tail } => (Some(exit), tail),

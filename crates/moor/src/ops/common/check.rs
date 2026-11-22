@@ -4,7 +4,7 @@
 //!
 //! The act comes first and its line after, so a controller that stops in between runs the check
 //! again. A cut link is no result: it is a lost stream, and the caller reruns it. Any other error
-//! is a check that did not pass, with its reason in the tail.
+//! before an exit code, such as a busy Box, is a check that did not run.
 
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -33,8 +33,9 @@ pub(crate) const TAIL_BYTES: usize = 4096;
 /// What is recorded for a check stopped at its deadline, which has no exit code.
 const DEADLINE_EXIT: i32 = -1;
 
-/// What is recorded for a check that never got a result and was not cut off by the link.
-const NOT_RUN_EXIT: i32 = -2;
+/// What is recorded for a check that a signal stopped before it exited, and what the workflow tick
+/// records for a check that did not run.
+pub(crate) const NOT_RUN_EXIT: i32 = -2;
 
 /// What a check in flight is claimed by: a workflow run, or a Box with gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,8 +121,8 @@ fn link_cut(e: &CommandError) -> bool {
 /// How a check ended.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Ended {
-    /// It ran to a result: an exit code, or the deadline, or a failure that is no cut link, each
-    /// with the end of its output.
+    /// It ran to a result: an exit code, or the deadline, or a signal, each with the end of its
+    /// output.
     Exit {
         /// The exit code.
         exit: i32,
@@ -130,6 +131,12 @@ pub(crate) enum Ended {
     },
     /// The link was cut before an exit code: run it again.
     Lost,
+    /// The exec failed before the check ran to a result, such as a busy Box or a Proxy that could
+    /// not start; the tail says why. No result, so it decides nothing.
+    NotRun {
+        /// The end of its output, with why it did not run.
+        tail: String,
+    },
 }
 
 /// A check that ran, and the error that cut it short, when one did.
@@ -140,21 +147,23 @@ pub(crate) struct Ran {
     pub(crate) error: Option<String>,
 }
 
-/// How a check that ended as `ran` says, with the `timeout_secs` it was held to. An exit code or
-/// the deadline is a result, and a cut link is a lost stream. Every other end is a check that did
-/// not pass, whose reason the tail keeps.
+/// How a check that ended as `ran` says, with the `timeout_secs` it was held to. An exit code,
+/// the deadline or a signal is a result, a cut link is a lost stream, and any other error is a
+/// check that did not run.
 fn ended_by(ran: Result<ExecView, &CommandError>, tail: &Tail, timeout_secs: u32) -> Ended {
-    let not_run = |why: String| Ended::Exit {
-        exit: NOT_RUN_EXIT,
-        tail: format!("{}\n[moor: {why}]", tail.text()),
-    };
+    let said = |why: String| format!("{}\n[moor: {why}]", tail.text());
     match ran {
         Err(e) if link_cut(e) => Ended::Lost,
-        Err(e) => not_run(format!("the check did not run to a result: {}", e.error)),
+        Err(e) => Ended::NotRun {
+            tail: said(format!("the check did not run to a result: {}", e.error)),
+        },
         Ok(ExecView {
             exit: None,
             timed_out: false,
-        }) => not_run("the check was interrupted before it exited".to_owned()),
+        }) => Ended::Exit {
+            exit: NOT_RUN_EXIT,
+            tail: said("the check was interrupted before it exited".to_owned()),
+        },
         Ok(ExecView {
             exit: Some(exit), ..
         }) => Ended::Exit {
