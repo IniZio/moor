@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, mirror_skipped, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
 use moor_core::boxscript::one_at_a_time;
 use moor_core::boxscript::resources;
 use moor_core::cache::{emptied, CachePlan};
@@ -18,7 +18,7 @@ use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::shape::Shape;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
-use super::others::{clone_others, warn_left_out};
+use super::others::{clone_others, warn_left_out, warn_mirror_skipped, Onto};
 use super::outcome::clone_failed;
 use super::SetupTarget;
 use crate::cx::Cx;
@@ -108,16 +108,20 @@ pub(super) fn clone_with_proxy(
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
         _ => clone(cx, store, target, cfg, &job, &proxy).and_then(|done| {
             let branch = plan.as_ref().map(|p| p.branch.as_str()).unwrap_or_default();
+            let onto = Onto {
+                branch,
+                kept: &kept,
+            };
             let others = target.repo.is_some_and(|r| !r.others.is_empty());
             let cloned = |step| {
                 timed_result(cx, store, id, step, || {
-                    clone_others(cx, id, target, cfg, &proxy, branch)
+                    clone_others(cx, id, target, cfg, &proxy, onto)
                 })
             };
             if others {
                 cloned(PostCloneStep::CloneOthers)
             } else {
-                clone_others(cx, id, target, cfg, &proxy, branch)
+                clone_others(cx, id, target, cfg, &proxy, onto)
             }
             .map(|()| done)
         }),
@@ -298,12 +302,7 @@ fn report(
         identity.report(cx, text);
     }
     warn_left_out(cx, "", text.unwrap_or_default());
-    if let Some(why) = text.and_then(mirror_skipped) {
-        cx.warn(Warning {
-            code: "git_mirror".to_owned(),
-            message: format!("cloned without the git mirror: {why}"),
-        });
-    }
+    warn_mirror_skipped(cx, "", text.unwrap_or_default());
     Cloned {
         ms: plan.map(|_| ms),
         delivered: text.and_then(resources::parse),

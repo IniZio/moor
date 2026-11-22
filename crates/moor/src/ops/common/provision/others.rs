@@ -1,8 +1,11 @@
 //! The repos a Box lists after its primary one: each cloned into its own work tree and set up there.
 
-use moor_core::boxscript::clone::{clone_script, left_out_submodules, Checkout, CloneStep};
+use moor_core::boxscript::clone::{
+    clone_script, left_out_submodules, mirror_skipped, Checkout, CloneStep,
+};
 use moor_core::boxscript::one_at_a_time;
 use moor_core::boxscript::quote;
+use moor_core::cache::CachePlan;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
 use moor_core::exec_env::Purpose;
@@ -53,15 +56,24 @@ pub(super) fn trees<'a>(target: &SetupTarget<'a>) -> Result<Vec<OtherTree<'a>>, 
     Ok(out)
 }
 
-/// Clones each other repo into its work tree on the Box `branch`, all at once; the reason names
-/// every repo whose clone failed, in listed order.
+/// How each other repo is cloned.
+#[derive(Clone, Copy)]
+pub(super) struct Onto<'a> {
+    /// The Box branch it checks out.
+    pub(super) branch: &'a str,
+    /// The Box's cache plan, which says whether each repo clones through its own git mirror.
+    pub(super) kept: &'a CachePlan,
+}
+
+/// Clones each other repo into its work tree as `onto` says, all at once; the reason names every
+/// repo whose clone failed, in listed order.
 pub(super) fn clone_others(
     cx: &Cx,
     id: BoxId,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
-    branch: &str,
+    onto: Onto<'_>,
 ) -> Result<(), String> {
     let jobs: Vec<(String, Result<CloneJob, String>)> = trees(target)?
         .into_iter()
@@ -74,7 +86,7 @@ pub(super) fn clone_others(
             let log = at
                 .tree_of
                 .and_then(|repo| clone_log_of(cx, id, &repo.name).ok());
-            let job = prepare_clone(cx, &at, log, cfg, proxy, branch);
+            let job = prepare_clone(cx, &at, log, cfg, proxy, onto);
             (tree.listed.repo.to_string(), job)
         })
         .collect();
@@ -108,6 +120,7 @@ pub(super) fn clone_others(
         .filter_map(|(name, r)| match r {
             Ok(text) => {
                 warn_left_out(cx, &format!("{name}:"), &text);
+                warn_mirror_skipped(cx, &format!("{name}: "), &text);
                 None
             }
             Err(e) => Some(format!("{name}: {e}")),
@@ -134,26 +147,28 @@ struct CloneJob {
     log: Option<PathBuf>,
 }
 
-/// The clone of the repo `at` holds, from its default branch when the remote has no Box branch.
+/// The clone of the repo `at` holds, from its default branch when the remote has no Box branch,
+/// through the repo's own git mirror when `onto` keeps one.
 fn prepare_clone(
     cx: &Cx,
     at: &SetupTarget<'_>,
     log: Option<PathBuf>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
-    branch: &str,
+    onto: Onto<'_>,
 ) -> Result<CloneJob, String> {
     let url = at.tree_of.map(ForgeRepo::clone_url).unwrap_or_default();
+    let mirror = at.tree_of.and_then(|r| onto.kept.git_mirror(r));
     let checkout = Checkout {
         url: &url,
         base: "HEAD",
-        branch,
+        branch: onto.branch,
     };
     let dir = quote(at.workdir.as_str());
     let script = format!(
         "mkdir -p -- {dir} && cd -- {dir} || exit {}\n{}",
         CloneStep::Clone as i32,
-        one_at_a_time(&clone_script(&checkout, None))
+        one_at_a_time(&clone_script(&checkout, mirror.as_deref()))
     );
     let site = Site {
         handle: at.handle,
@@ -174,7 +189,7 @@ fn prepare_clone(
         spec,
         deadline: exec.deadline(),
         url,
-        branch: branch.to_owned(),
+        branch: onto.branch.to_owned(),
         log,
     })
 }
@@ -289,6 +304,17 @@ pub(super) fn warn_left_out(cx: &Cx, repo: &str, text: &str) {
         cx.warn(Warning {
             code: "submodule".to_owned(),
             message: format!("submodule {repo}{left_out}; the Box runs without it"),
+        });
+    }
+}
+
+/// Warns when a passing clone's `text` says it went without the git mirror, naming the repo after
+/// `repo`.
+pub(super) fn warn_mirror_skipped(cx: &Cx, repo: &str, text: &str) {
+    if let Some(why) = mirror_skipped(text) {
+        cx.warn(Warning {
+            code: "git_mirror".to_owned(),
+            message: format!("{repo}cloned without the git mirror: {why}"),
         });
     }
 }

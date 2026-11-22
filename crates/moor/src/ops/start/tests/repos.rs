@@ -241,3 +241,59 @@ fn a_link_drop_during_another_repos_clone_waits_for_the_relink() {
         .count();
     assert_eq!(lib_clones, 2, "one ask cut, one after");
 }
+
+/// The clone script of the listed repo `name` of owner `o`.
+fn clone_of(w: &World, name: &str) -> String {
+    let url = format!("github.com/o/{name}.git");
+    w.driver
+        .execs()
+        .into_iter()
+        .filter(|e| is_clone_exec(&e.1))
+        .map(|e| script(&e.1))
+        .find(|s| s.contains(&url))
+        .unwrap()
+}
+
+#[test]
+fn every_listed_repo_clones_through_its_own_git_mirror() {
+    let (w, _) = provisioned(FakeDriver::new().cache_volumes(), lib_and_deploy());
+    for name in ["lib", "deploy"] {
+        let s = clone_of(&w, name);
+        let own = format!("moor_mirror=\"$HOME\"/'.local/share/git-mirror/o/{name}.git'");
+        assert!(s.contains(&own), "{s}");
+        assert!(
+            s.contains("--reference \"$moor_mirror\" --dissociate"),
+            "{s}"
+        );
+    }
+}
+
+#[test]
+fn a_listed_repo_without_the_git_preset_clones_from_its_remote_alone() {
+    let (w, _) = provisioned(FakeDriver::new(), lib_and_deploy());
+    for name in ["lib", "deploy"] {
+        assert!(!clone_of(&w, name).contains("moor_mirror"));
+    }
+}
+
+#[test]
+fn a_listed_repo_cloned_without_its_mirror_warns_naming_the_repo() {
+    let skipped = "moor: git mirror skipped: git fetch failed\n";
+    let driver = FakeDriver::new()
+        .cache_volumes()
+        .exec_stdout(std::iter::repeat_n(skipped, 8));
+    let (w, _) = provisioned(driver, vec![listed("o", "lib")]);
+    let warned: Vec<String> =
+        w.cx.take_warnings()
+            .into_iter()
+            .filter(|w| w.code == "git_mirror")
+            .map(|w| w.message)
+            .collect();
+    assert_eq!(
+        warned,
+        [
+            "cloned without the git mirror: git fetch failed",
+            "o/lib: cloned without the git mirror: git fetch failed",
+        ]
+    );
+}

@@ -330,7 +330,7 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `android` | `~/.android/cache`, `~/.android/build-cache` |
 | `android-sdk` | `/opt/android-sdk` |
 | `tools` | `~/.bun/bin`, `~/.local/bin`, `~/.claude/plugins`: what the agent profile installs |
-| `git` | `~/.local/share/git-mirror`: a bare mirror of the repo, which the clone fetches into and clones from |
+| `git` | `~/.local/share/git-mirror`: a bare mirror of each repo the Box clones, which the clone fetches into and clones from |
 
 A preset and a repo config volume are kept per user and repo.
 A user config volume is kept per user. Another user's Box never sees a cache.
@@ -339,8 +339,10 @@ On a Docker machine, a package store such as `pnpm` or `rust` is shared by the
 Boxes that run at once. The other volumes, `tools` and `docker` among them, are
 copied into each Box and saved back when it sleeps or closes. The last save wins.
 
-The `git` mirror is shared the same way. A Box locks it while it fetches the
-repo's new commits and clones from it. So two Boxes never write it at once. The Box's clone keeps no link to the mirror. When the mirror
+The `git` mirrors are shared the same way. Each repo the Box clones, the
+listed ones too, has its own mirror and its own lock. A Box locks a mirror while
+it fetches that repo's new commits and clones from it. So two Boxes never write
+one mirror at once, and a Box's repos never wait on each other. The Box's clone keeps no link to the mirror. When the mirror
 cannot be used, the Box clones from GitHub and the start warns why.
 
 A Docker machine deletes a repo's kept volumes once no Box has used them for 30 days.
