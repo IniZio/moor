@@ -181,3 +181,39 @@ fn a_run_stuck_at_its_gate_waits_at_the_try_the_gate_ended_in() {
         }
     );
 }
+
+#[test]
+fn the_closing_stage_is_entered_resumed_and_waited_at_like_a_gate() {
+    let closing = crate::gate::closing();
+    let deciding = GateStatus::Open {
+        gate: closing.clone(),
+        try_n: 1,
+        next: GateNext::Decide,
+    };
+    assert_eq!(
+        gated_move(stands(&id("done"), false), &deciding),
+        GatedMove::Enter {
+            gate: closing.clone(),
+            try_n: 1
+        }
+    );
+    assert_eq!(
+        gated_move(stands(&closing, false), &deciding),
+        GatedMove::Stay
+    );
+    assert_eq!(
+        gated_move(stands(&closing, true), &deciding),
+        GatedMove::Resume {
+            gate: closing.clone(),
+            try_n: 1
+        },
+        "a person's steer reopened it"
+    );
+    assert_eq!(
+        gated_move(stands(&closing, false), &stuck_at(crate::gate::CLOSING, 2)),
+        GatedMove::Wait {
+            gate: closing,
+            try_n: 2
+        }
+    );
+}
