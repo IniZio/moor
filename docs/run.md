@@ -6,17 +6,16 @@ use. You add those later, when teammates join.
 
 You need:
 
-- a Linux host with Docker that your user can run (`docker info` works)
+- a Linux host with rootless Docker, set up with
+  [Set up a rootless Docker host for Boxes](rootless-docker.md). moor refuses
+  rootful Docker.
 - `/dev/kvm` that Boxes can open, since every Box gets KVM (see
   [KVM](rootless-docker.md#kvm))
 - `claude` and `gh` on your own computer, signed in
 
-For rootless Docker, follow
-[Set up a rootless Docker host for Boxes](rootless-docker.md) first.
-
-Docker Boxes are privileged containers. Each Box's work place runs with
-`--privileged` so Docker works inside it, and a user who can run Docker is root
-on this host. Use this setup for your own Boxes.
+Each Box's work place runs with `--privileged` so Docker works inside it. A Box
+that breaks out is your user on this host, not root. Use this setup for your own
+Boxes.
 
 ## 1. Install moor
 
@@ -38,8 +37,9 @@ moor up
 line carries its fix. Rerun `moor up` after a fix. A rerun changes nothing that
 is already in place.
 
-1. It checks that `docker info` works for your user, and says that Docker
-   Boxes are privileged containers.
+1. It checks that `docker info` works for your user and names rootless Docker.
+   It checks the daemon is set up for Boxes, and says what a Box that breaks
+   out can reach.
 2. It writes the controller config, `~/.config/moor/controller.yaml`, with a
    front for the gate that may report steps, and adds the controller to
    `~/.config/moor/config.yaml`. It also adds `moor_service`, which routes
@@ -48,15 +48,16 @@ is already in place.
    that names another listener, means you run the gate yourself. moor up then
    starts none.
 3. It installs and starts the controller as the systemd user units
-   `moor.socket` and `moor.service`. The service also listens on the address
-   of Docker's bridge network, where Boxes reach the Proxy. It then starts
+   `moor.socket` and `moor.service`. It then starts
    `moor-gate.service`, a `moor-gate` with no public listener and no sign-in.
    It serves `report_step` to Boxes at `127.0.0.1:8444`. moor up makes a key once, in `~/.local/state/moor/service.env`. It goes to the
    controller and the gate. No other process on the host can name a Box.
 4. It creates your moor user and asks for your `claude` and `github` secrets.
    Paste what `claude setup-token` and `gh auth token` print.
-5. It starts the machine runner as `moor-runner.service`. The runner takes
-   agent links on a loopback port.
+5. It starts `moor-relay.service`, which carries Box egress from inside the
+   rootless daemon's network namespace to the controller's Proxy. It then
+   starts the machine runner as `moor-runner.service`. The runner takes agent
+   links on a loopback port.
 6. It runs `moor node add local` with an agent home under the controller's
    state directory, `~/.local/state/moor/agent-home`. The node is shared, and
    needs no sign-in.

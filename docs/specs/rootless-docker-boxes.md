@@ -1,12 +1,19 @@
 # Rootless Docker Boxes
 
-A host owner can run Docker Boxes on rootless Docker. A Box that breaks out of its
-containers is then the daemon's user, not root on the host. The mode is opt-in. To opt in,
-a person points Docker at a rootless daemon, then runs `moor up` or
-`moor-machine-agent up`. moor reads `docker info`. Under rootless Docker its
-`SecurityOptions` lists `name=rootless`.
+Docker Boxes run only on rootless Docker. A Box that breaks out of its containers is the
+daemon's user, not root on the host. A person points Docker at a rootless daemon, then runs
+`moor up` or `moor-machine-agent up`. moor reads `docker info`. Under rootless Docker its
+`SecurityOptions` lists `name=rootless`. `moor up`, `moor-machine-agent up` and
+`moor doctor` refuse a daemon whose list lacks it. The refusal names
+[rootless-docker.md](../rootless-docker.md) and the command that points `docker` at a
+rootless daemon.
 
-Rootful Docker stays the default and does not change.
+## Decision
+
+On 2026-11-22 the host owner made rootless Docker the only supported way to run Docker Boxes.
+The team's live node, engine-03, moved to rootless Docker that day. A Box there used KVM and
+nested Docker. Rootful support went with no flag to keep it, because no install depends on it.
+The rootful KVM group, `MOOR_EGRESS_LISTEN` and `moor-host` went with it.
 
 ## Why
 
@@ -27,8 +34,7 @@ and proxied rows. Seven gaps remain, and this spec closes them.
 - **Egress enforcement.** The work place's root still owns the Box's network namespace,
   so it can flush the egress table, as [egress-log.md](egress-log.md) says.
 - **Wildcard listeners.** A host service that listens on `0.0.0.0` answers a Box at the
-  host's own address, as under rootful Docker. In the prototype, sshd answered a Box at
-  the host's interface address.
+  host's own address. In the prototype, sshd answered a Box at the host's interface address.
 
 ## The gaps
 
@@ -44,10 +50,9 @@ and proxied rows. Seven gaps remain, and this spec closes them.
 
 ## How a Box reaches the Proxy
 
-The controller's Proxy already listens on a Unix socket, `egress/egress.sock` in the
-state dir, mode `0600`. `MOOR_EGRESS_LISTEN` adds a TCP listener with the same handler
-and the same token check ([`proxy/egress.rs:350`](https://github.com/IniZio/moor/blob/37f635c7a673de27c16ff96c69c952c992317d71/crates/moor/src/proxy/egress.rs#L350)). The handler does not look at which listener a connection came from. A
-Unix socket is a file, so a process in another network namespace can connect to it.
+The controller's Proxy listens on a Unix socket, `egress/egress.sock` in the state dir,
+mode `0600`. A Unix socket is a file, so a process in another network namespace can
+connect to it.
 
 A relay runs inside rootlesskit's network namespace. It listens on the namespace's own
 address, the one slirp4netns gives the tap device, and the egress port. `moor up` reads
@@ -82,8 +87,7 @@ flowchart LR
 The relay is the only new way from a Box to the host, and it leads to one socket. One old
 way stays. slirp4netns answers DNS at `10.0.2.3` and passes each query to the host's
 resolver. That resolver can listen on loopback, as `127.0.0.53` does. Every
-Box of the daemon can reach the relay's port. The same holds for the port on `docker0`
-under rootful Docker. The token decides which Box a connection is.
+Box of the daemon can reach the relay's port. The token decides which Box a connection is.
 
 ### Decisions
 
@@ -99,13 +103,11 @@ under rootful Docker. The token decides which Box a connection is.
   The relay reads `child_pid` when it starts, so it enters the current namespace.
 - **The relay is a mode of `moor-egress-forward`.** The controller already knows where
   that binary is, and a byte relay from TCP to a Unix socket is small.
-- **The controller names the address and does not bind it.** A new variable,
-  `MOOR_EGRESS_RELAYED=IP:PORT`, takes the place of `MOOR_EGRESS_LISTEN` in the
-  controller's unit. `EgressRoute::upstream` builds `ws://IP:PORT/egress` from it, with
-  the relay's IP literal, and `ws://moor-host:PORT/egress` from `MOOR_EGRESS_LISTEN`.
-  Only `MOOR_EGRESS_LISTEN` makes the Proxy bind. A bind on the host either fails or lands
-  on the system `docker0`. The Box's forwarder accepts plain `ws://` to a private IP
-  literal as it accepts `moor-host`.
+- **The controller names the address and does not bind it.** `MOOR_EGRESS_RELAYED=IP:PORT`
+  in the controller's unit names the relay. `EgressRoute::upstream` builds
+  `ws://IP:PORT/egress` from it, with the relay's IP literal. A bind on the host would either
+  fail or land on the system `docker0`. The Box's forwarder accepts plain `ws://` only to a
+  loopback or private IP literal.
 - **Host loopback stays closed.** Docker's rootless start script passes
   `--disable-host-loopback` unless `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK`
   is `false`. `moor up` reads
@@ -172,11 +174,12 @@ the default bridge's gateway, though the container sat on a network whose gatewa
 
 ## Preflight
 
-Under rootless Docker, `moor up` and `moor-machine-agent up` check each line and fail
-with the fix. They do not change the host.
+`moor up` and `moor-machine-agent up` check each line and fail with the fix. They do not
+change the host.
 
 | Check | Fix it names |
 | --- | --- |
+| The daemon's `SecurityOptions` list `name=rootless` | `export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock`, and the runbook |
 | `/etc/subuid` and `/etc/subgid` give the user at least 65536 ids | `usermod --add-subuids` and `--add-subgids` |
 | `newuidmap` and `newgidmap` are installed | install `uidmap` |
 | `slirp4netns` is installed | install `slirp4netns` |
@@ -194,15 +197,13 @@ warning says to turn live-restore off in the daemon.json under the user's .confi
 ## KVM
 
 Every Box gets KVM. `moor up` and `moor-machine-agent up` refuse, and `moor doctor` fails, when
-Boxes cannot open `/dev/kvm`. That holds on rootful Docker too, so the check runs before the
-rootless ones. It fails in three cases:
+Boxes cannot open `/dev/kvm`. The check runs right after the rootless one. It fails in two
+cases:
 
 - `/dev/kvm` is missing.
-- Rootless Docker, and `/dev/kvm` is not open to everyone.
-- Rootful Docker, and `/dev/kvm` is open neither to its group nor to everyone. The agent hands
-  the device's gid to the work place as `MOOR_KVM_GID`, and the Box user joins that group.
+- `/dev/kvm` is not open to everyone, since runc drops the host's `kvm` group.
 
-Under rootless Docker the agent passes the device and no `MOOR_KVM_GID`. With mode `0666` an
+The work place is privileged, so it sees the device. With mode `0666` an
 Android emulator booted in the work place in 23 s. crun's `keep_original_groups` is the other
 way. The host owner chose `0666` because it keeps runc, and the crun way is not tested. The
 cost is that every user of the host can open `/dev/kvm`. The teammate runbook,
@@ -210,7 +211,7 @@ cost is that every user of the host can open `/dev/kvm`. The teammate runbook,
 
 ## Privilege notice
 
-Under rootless Docker both programs say:
+Both programs say:
 
 > Docker Boxes run on rootless Docker as USER. Each Box's work place runs with
 > --privileged so Docker works inside it, and a Box that breaks out is USER on this
@@ -228,9 +229,8 @@ Nothing is copied from the system daemon.
   same phases (exec 1.3 s and 1.4 s, wake about 6 s on both). The slow first exec shows on
   both. Each `box-shell` call costs about 1 s on both, because its watcher's `sleep 1`
   keeps ssh's stdout open after the command ends. That is a separate `box-shell` fix.
-- **Socket mount as the next step.** Mounting the socket also closes the shared port
-  under rootful Docker, and `MOOR_EGRESS_LISTEN` and the relay could then both go. Is
-  that worth a change to the forwarder and to the socket's mode?
+- **Socket mount as the next step.** Mounting the socket lets the relay go. Is that worth
+  a change to the forwarder and to the socket's mode?
 - **Relay unit.** Settled. A throwaway user unit stood in for `docker.service`. A
   `systemctl restart` and a crash of rootlesskit each gave the relay a new process in
   the new namespace. `BindsTo` and `PartOf` alone left it stopped after a crash, so the
