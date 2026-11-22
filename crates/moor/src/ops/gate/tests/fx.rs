@@ -11,14 +11,18 @@ use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::gate::{GateDoc, GateLine, GateStatus};
 use moor_core::progress::Progress;
+use moor_core::request::StepReportReq;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::Steer;
 use moor_core::seam::proc::Tool;
+use moor_core::view::workflow::StepReportValue;
+use moor_core::workflow::{StepId, StepReport, StepResult};
 use moor_core::{BoxId, BoxName, BoxPath, ProviderId, ShowReq, SteerReq};
 
 use crate::cx::Cx;
 use crate::ops::gate::checks::{pass, run, Job};
+use crate::ops::workflow::step_report;
 use crate::store::StoreError;
 use crate::testing::agent;
 use crate::testing::cx::REQUESTER_USER;
@@ -29,6 +33,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 pub(super) struct Fx {
     pub(super) dir: tempfile::TempDir,
     pub(super) cx: Cx,
+    pub(super) driver: Arc<FakeDriver>,
     pub(super) engine: Arc<FakeEngine>,
     pub(super) id: BoxId,
 }
@@ -41,6 +46,14 @@ pub(super) fn gate(name: &str, checks: &[&str], tries: u64) -> GateDoc {
         checks: checks.iter().map(|c| (*c).to_owned()).collect(),
         approval: None,
         max_tries: Some(tries),
+    }
+}
+
+/// A gate that asks for `evidence` and then runs `checks`, tried up to `tries` times.
+pub(super) fn evidence_gate(name: &str, evidence: &[&str], checks: &[&str], tries: u64) -> GateDoc {
+    GateDoc {
+        evidence: evidence.iter().map(|e| (*e).to_owned()).collect(),
+        ..gate(name, checks, tries)
     }
 }
 
@@ -71,6 +84,7 @@ pub(super) fn fx_on(
     Fx {
         dir,
         cx,
+        driver,
         engine,
         id,
     }
@@ -129,6 +143,41 @@ pub(super) fn cut() -> DriverError {
 }
 
 impl Fx {
+    /// The agent calls `report_step` for `gate`, with the evidence files named `names`.
+    pub(super) fn report(&self, gate: &str, result: StepResult, names: &[&str]) -> StepReportValue {
+        self.report_from(self.id, gate, result, names)
+    }
+
+    /// [`Self::report`] from Box `id`.
+    pub(super) fn report_from(
+        &self,
+        id: BoxId,
+        gate: &str,
+        result: StepResult,
+        names: &[&str],
+    ) -> StepReportValue {
+        let report = StepReport {
+            step: StepId::parse(gate).unwrap(),
+            result,
+            evidence: names.iter().map(|n| (*n).to_owned()).collect(),
+            note: if result == StepResult::Fail {
+                "stuck".to_owned()
+            } else {
+                String::new()
+            },
+        };
+        step_report(&self.cx, &StepReportReq { box_id: id, report }).unwrap()
+    }
+
+    /// What the next look in the Box's artifacts folder finds: each file with its size.
+    pub(super) fn leave(&self, files: &[(&str, u64)]) {
+        let sha = "a".repeat(64);
+        let text = files.iter().fold(String::new(), |text, (name, size)| {
+            format!("{text}{name}\t{size}\t{sha}\n")
+        });
+        self.driver.push_artifact_index(text);
+    }
+
     fn fixed(&self) -> PathBuf {
         self.dir.path().join("fixed")
     }

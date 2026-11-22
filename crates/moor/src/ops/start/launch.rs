@@ -11,6 +11,7 @@ use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::domain::session_state::SessionState;
+use moor_core::gate::Gates;
 use moor_core::seam::engine::{EngineError, HeldRepo, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, StartReq};
@@ -367,13 +368,19 @@ pub(crate) fn queued_or(
     Ok(queued.map_or(LaunchPrompt::None, |r| LaunchPrompt::Text(r.text)))
 }
 
-/// The first prompt `req` gives a fresh agent: its prompt, else one naming its Issue.
+/// The first prompt `req` gives a fresh agent: its prompt, else one naming its Issue, then what its
+/// gates ask of it. A Box with gates and nothing to ask has no first prompt, so no gates are told.
 pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
-    match (&req.prompt, &req.issue) {
-        (Some(p), _) => LaunchPrompt::Text(p.clone()),
-        (None, Some(i)) => LaunchPrompt::Text(format!("Resolve issue {i}.")),
-        (None, None) => LaunchPrompt::None,
-    }
+    let asked = match (&req.prompt, &req.issue) {
+        (Some(p), _) => p.clone(),
+        (None, Some(i)) => format!("Resolve issue {i}."),
+        (None, None) => return LaunchPrompt::None,
+    };
+    let gates = req
+        .gates
+        .as_deref()
+        .and_then(|docs| Gates::parse(docs).ok());
+    LaunchPrompt::Text(gates.map_or_else(|| asked.clone(), |g| g.first_message(&asked)))
 }
 
 mod failed;

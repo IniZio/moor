@@ -9,7 +9,9 @@ use moor_core::gate::{GateLine, GateNext, GateStatus};
 use moor_core::progress::Progress;
 use moor_core::workflow::StepId;
 
-use super::fx::{cut, fx, fx_on, gate};
+use moor_core::workflow::{StepReport, StepResult};
+
+use super::fx::{cut, evidence_gate, fx, fx_on, gate};
 use crate::testing::driver::FakeDriver;
 
 fn id(name: &str) -> StepId {
@@ -210,4 +212,60 @@ fn of_two_passes_that_read_the_same_lines_one_writes_the_check() {
     let lines = f.lines();
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert!(matches!(&lines[0], GateLine::Checked { exit: 0, .. }));
+}
+
+#[test]
+fn a_check_failure_not_yet_told_is_told_although_a_refusal_came_after_it() {
+    let f = fx(|dir| {
+        let check = format!("test -e {}", dir.join("fixed").display());
+        vec![evidence_gate("proof", &["proof.md"], &[&check], 2)]
+    });
+    let store = f.cx.store().unwrap();
+    let write = |n: i64, line: GateLine| {
+        store
+            .append_gate_line(f.id, n, f.cx.clock().now(), &line)
+            .unwrap();
+        f.pause(1);
+    };
+    let proof = id("proof");
+    let report = StepReport {
+        step: proof.clone(),
+        result: StepResult::Ok,
+        evidence: vec!["proof.md".to_owned()],
+        note: String::new(),
+    };
+    write(
+        1,
+        GateLine::Submitted {
+            gate: proof.clone(),
+            try_n: 1,
+            report,
+        },
+    );
+    write(
+        2,
+        GateLine::Checked {
+            gate: proof.clone(),
+            try_n: 1,
+            check: 0,
+            exit: 1,
+            tail: "nope".to_owned(),
+        },
+    );
+    write(
+        3,
+        GateLine::Refused {
+            gate: proof,
+            try_n: 2,
+            missing: vec!["proof.md".to_owned()],
+        },
+    );
+    f.quiet();
+    assert!(f.pass().is_empty());
+    let told = f.told();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("nope"), "{}", told[0]);
+    assert!(told[0].contains("call report_step again"), "{}", told[0]);
+    f.pass();
+    assert_eq!(f.told().len(), 1, "told once");
 }

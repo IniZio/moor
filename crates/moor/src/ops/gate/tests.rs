@@ -3,6 +3,8 @@
 mod checks;
 mod fx;
 mod hold;
+mod remind;
+mod report;
 
 use std::path::Path;
 use std::sync::Arc;

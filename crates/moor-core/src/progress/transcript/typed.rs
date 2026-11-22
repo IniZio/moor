@@ -4,6 +4,7 @@
 use serde_json::Value;
 
 use super::text_of;
+use crate::gate::split_gate_preamble;
 use crate::workflow::{is_draft_prompt, split_plan_first, split_start_prompt};
 
 /// How a note Claude or another agent made for the model opens: a tag with a hyphen in its name,
@@ -50,9 +51,12 @@ pub(super) fn prompt(v: &Value) -> Option<String> {
 }
 
 /// Whether `text` is one of the prompts moor builds for an agent: a plan draft, a plan-first
-/// prompt or a workflow step's start prompt.
+/// prompt, a workflow step's start prompt or a first message with a Box's gates.
 fn made_by_moor(text: &str) -> bool {
-    is_draft_prompt(text) || split_plan_first(text).is_some() || split_start_prompt(text).is_some()
+    is_draft_prompt(text)
+        || split_plan_first(text).is_some()
+        || split_start_prompt(text).is_some()
+        || split_gate_preamble(text).is_some()
 }
 
 #[cfg(test)]

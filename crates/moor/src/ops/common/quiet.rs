@@ -6,6 +6,7 @@ use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
+use crate::cx::Cx;
 use crate::store::{BoxRow, Store, StoreError};
 
 /// What a pass reads of Box `row` to tell where its agent stands.
@@ -39,6 +40,14 @@ fn death_capped(store: &Store, id: BoxId) -> Result<bool, StoreError> {
     };
     let woke = store.newest_event_of(id, "woke")?;
     Ok(woke.is_none_or(|w| w.id < capped.id))
+}
+
+/// Whether the agent of Box `row` is quiet enough for moor to act on it: idle since the last steer
+/// or ended, with nothing waiting in its inbox.
+pub(crate) fn settled(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, StoreError> {
+    let steered = store.last_event_at(row.id, &["steered"])?;
+    let facts = box_facts(store, row)?;
+    Ok(quiet_for_check(&facts, steered, cx.clock().now()) && store.unsent(row.id)?.is_empty())
 }
 
 /// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the

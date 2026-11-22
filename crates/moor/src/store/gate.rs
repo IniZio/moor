@@ -43,15 +43,19 @@ impl Store {
             .collect()
     }
 
-    /// When the newest gate line of Box `id` was written; none when it has none.
-    pub(crate) fn newest_gate_line_at(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
-        let at: Option<i64> = self.reader()?.row(
-            Query::select()
-                .expr(Expr::col(BoxGateLines::At).max())
-                .from(BoxGateLines::Table)
-                .and_where(Expr::col(BoxGateLines::Box).eq(id.get())),
-            |r| r.get(0),
-        )?;
+    /// When line `n` of Box `id`'s gate lines was written; none when there is no such line.
+    pub(crate) fn gate_line_at(&self, id: BoxId, n: i64) -> Result<Option<Ts>, StoreError> {
+        let at: Option<i64> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(BoxGateLines::At)
+                    .from(BoxGateLines::Table)
+                    .and_where(Expr::col(BoxGateLines::Box).eq(id.get()))
+                    .and_where(Expr::col(BoxGateLines::N).eq(n)),
+                |r| r.get(0),
+            )
+            .optional()?;
         Ok(at.map(Ts::from_millis))
     }
 

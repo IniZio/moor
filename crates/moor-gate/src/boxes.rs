@@ -61,12 +61,12 @@ enum ResultArg {
 /// Arguments of `report_step`.
 #[derive(Deserialize, JsonSchema)]
 struct ReportArgs {
-    /// The id of the step you are reporting, as the step's brief names it.
+    /// The id of the step or gate you are reporting, as its brief names it.
     step: String,
     /// `ok` when the step is done, `fail` when it cannot be done.
     result: ResultArg,
-    /// The names of the files you left in `.moor/artifacts/` as evidence. The step's brief
-    /// lists the evidence it needs.
+    /// The names of the files you left in `.moor/artifacts/` as evidence. The step's or gate's
+    /// brief lists the evidence it needs.
     #[serde(default)]
     evidence: Vec<String>,
     /// For `fail`, why the step cannot be done. For the last step, the run's result, in at
@@ -84,13 +84,14 @@ struct BoxTools {
 
 #[tool_router]
 impl BoxTools {
-    /// Reports a step of the run in the caller's Box.
+    /// Reports a step of the run, or a gate, in the caller's Box.
     #[tool(
-        description = "Report the step of your workflow run that you were asked to do. Call it \
-                       when the step is done, with result ok and the evidence files the step \
-                       names left in .moor/artifacts/. Call it with result fail and a note \
-                       saying why when the step cannot be done. The last step takes a note \
-                       that becomes the run's result. The reply says what to do next."
+        description = "Report the step of your workflow run, or the gate of your work, that you \
+                       were asked to do. Call it when it is done, with result ok and the \
+                       evidence files it names left in .moor/artifacts/. Call it with result \
+                       fail and a note saying why when it cannot be done. The last workflow \
+                       step takes a note that becomes the run's result. The reply says what \
+                       to do next."
     )]
     async fn report_step(
         &self,

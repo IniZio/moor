@@ -104,6 +104,9 @@ pub(crate) fn run(
     req: &moor_core::request::StepReportReq,
 ) -> Result<StepReportValue, CommandError> {
     let store = cx.store()?;
+    if let Some(reply) = crate::ops::gate::report::run(cx, store, req)? {
+        return Ok(reply);
+    }
     for _ in 0..TRIES {
         let Some(s) = standing(store, req.box_id)? else {
             return Ok(refused(NO_RUN));
