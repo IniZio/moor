@@ -156,7 +156,7 @@ test('the gate list ends with the outcome row, and gates never reached read not 
 	const early = { name: 'nothing to do', tone: 'plain', says: 'The pull request is closed.' } as const;
 	expect(rows({ gates: ['proof', 'done'], gates_passed: 1, status: { state: 'passed', outcome: early } })).toEqual([
 		'✓proofpassed',
-		'○donenot reached',
+		'○doneended',
 		'✓Outcomenothing to do · The pull request is closed.',
 	]);
 	const bad = { name: 'check failed', tone: 'bad' } as const;
@@ -184,9 +184,10 @@ const none: Wait = {
 test('the stuck card of the closing stage lists each outcome tried with its sentence or name, exit, output and command', () => {
 	const card = StuckView({ wait: none });
 	const text = textOf(card);
-	expect(text).toContain('No outcome holds yet.');
+	expect(text).toContain('No outcome holds.moor tried each outcome twice.');
 	expect(text).not.toContain('“outcome” is stuck');
-	expect(text).toContain('No outcome held. No tries left.');
+	expect(text).not.toContain('yet');
+	expect(text).not.toContain('No outcome held');
 	expect(text).not.toContain('one blob');
 	const items = all(card, 'li').map(textOf);
 	expect(items[0]).toContain('The newest status is success.');
@@ -199,7 +200,7 @@ test('the stuck card of the closing stage lists each outcome tried with its sent
 });
 
 const outcomes: OutcomeDoc[] = [
-	{ name: 'nothing to do', says: 'There is no open pull request.', tone: 'plain', anytime: true, checks: ['true'] },
+	{ name: 'nothing to do', says: 'There is no open pull request.', tone: 'plain', anytime: true, checks: [{ run: '[ -z "$N" ]', says: 'No pull request is named.' }] },
 	{ name: 'check failed', says: 'The check failed.', tone: 'bad', checks: ['false'] },
 	{ name: 'done', says: 'The run delivered.' },
 ];
@@ -211,8 +212,37 @@ test('the workflow page lists how a run ends in place of the static delivery lin
 	expect(text).not.toContain('Then the run is delivered.');
 	const rows = all(view, 'li').map(textOf).slice(gates.length);
 	expect(rows).toEqual([
-		'nothing to do — There is no open pull request. · at any point',
-		'check failed — The check failed.',
+		'nothing to do — There is no open pull request. · at any pointmoor checks: No pull request is named.Show the check[ -z "$N" ]',
+		'check failed — The check failed.moor checks: a command exits with code 0Show the checkfalse',
 		'done — The run delivered. · when no other holds',
 	]);
+});
+
+test('the JSON behind the toggle holds the outcomes beside the gates', () => {
+	const [box] = all(RulesView({ gates, outcomes, asJson: true, onToggle: () => {} }), 'textarea');
+	expect(JSON.parse(String(box?.props.value))).toEqual({ gates, outcomes });
+});
+
+const BUSY = 'moor, not the agent, could not run check 1 (`make`) twice: Box 3 is busy with another command';
+const OUTCOME_BUSY = 'moor, not the agent, could not run outcome `merged` check 1 (`gh pr view --json state`) twice: Box 3 is busy with another command';
+const HINT = 'moor, not the agent, could not run this check. Send the agent a message to reopen the gate and run it again, or close the Box.';
+
+test('a check moor could not run reads as moor\'s trouble, at a gate and at the closing stage', () => {
+	const cases: Wait[] = [
+		{ ...stuck, gate: 'tests', why: BUSY, says: 'The tests pass.', command: 'make', tail: null, hint: HINT },
+		{ ...stuck, gate: 'outcome', why: OUTCOME_BUSY, says: null, command: 'gh pr view --json state', tail: null, hint: HINT },
+	];
+	for (const wait of cases) {
+		const card = StuckView({ wait });
+		const text = textOf(card);
+		expect(text).toContain('moor could not run a check.Box 3 is busy with another command.');
+		expect(text).not.toContain('No outcome holds');
+		expect(text).not.toContain('is stuck');
+		expect(text).not.toContain('Not yet true');
+		expect(text).not.toContain('The check that failed');
+		expect(text).not.toContain('What you can do');
+		expect(text).toContain(HINT);
+		expect(all(card, 'pre').map(textOf)).toContain(wait.command ?? '');
+	}
+	expect(textOf(StuckView({ wait: cases[0] as Wait }))).toContain('The tests pass.');
 });

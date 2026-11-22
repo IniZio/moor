@@ -1,7 +1,8 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { failure, gateAnswer, type Needs, toError } from './api';
-import { checkRun, closingRow, GATE_LOOK, type GateDoc, type GateView, gateRows, type OutcomeDoc, quoted, ruleSentence, tailView, type Tried, type Wait, whyWords } from './gate';
+import { checkRun, checkWords, closingRow, GATE_LOOK, type GateDoc, type GateView, gateRows, isNoAnswer, noAnswerReason, type OutcomeDoc, quoted, ruleSentence, tailView, type Tried, type Wait, whyWords } from './gate';
 import { useDraft } from './session';
 import './gates.css';
 
@@ -167,38 +168,69 @@ function TriedList({ tried }: { tried: readonly Tried[] }) {
 	);
 }
 
-/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own, below. */
-export function StuckView({ wait }: { wait: Wait }) {
+/** The frame of a card for a stuck gate: what is wrong first, then the body, then what the person can do. */
+function StuckFrame({ head, note, children }: { head: string; note: string; children: ComponentChildren }) {
 	return (
 		<div class="t-wait" role="region" aria-label="This gate is stuck">
 			<div class="t-wait-h">Stuck, and needs you</div>
-			<p class="t-wait-q">{wait.tried?.length ? 'No outcome holds yet.' : `${quoted(wait.gate)} is stuck.`}</p>
-			{wait.tried?.length ? (
-				<>
-					<p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on')}</p>
-					<TriedList tried={wait.tried} />
-				</>
-			) : null}
-			{!wait.tried?.length && wait.says && (
+			<p class="t-wait-q">{head}</p>
+			{children}
+			<p class="muted t-wait-note">{note}</p>
+		</div>
+	);
+}
+
+const REOPEN = 'What you can do: write to the agent below. Your message reopens this gate with fresh tries.';
+
+/** A check moor could not run twice: moor's trouble, not the agent's, with the check and what the person can do. */
+function NoAnswerView({ wait }: { wait: Wait }) {
+	return (
+		<StuckFrame head="moor could not run a check." note={wait.hint ?? REOPEN}>
+			<p class="t-gate-why">{noAnswerReason(wait.why ?? '')}</p>
+			{wait.says && <p class="t-gate-says">{wait.says}</p>}
+			{wait.command && (
+				<details class="t-gate-cmd">
+					<summary>Show the check</summary>
+					<pre class="t-quote">{wait.command}</pre>
+				</details>
+			)}
+		</StuckFrame>
+	);
+}
+
+/** What a stuck gate shows: why, the check that failed with its output, or the evidence not found, and what a person can do. The message box is the page's own, below. */
+export function StuckView({ wait }: { wait: Wait }) {
+	if (isNoAnswer(wait.why)) return <NoAnswerView wait={wait} />;
+	if (wait.tried?.length) {
+		return (
+			<StuckFrame head="No outcome holds." note={REOPEN}>
+				<p class="t-gate-why">moor tried each outcome twice.</p>
+				<TriedList tried={wait.tried} />
+			</StuckFrame>
+		);
+	}
+	return (
+		<StuckFrame head={`${quoted(wait.gate)} is stuck.`} note={REOPEN}>
+			{wait.says && (
 				<>
 					<p class="t-gate-label">Not yet true</p>
 					<p class="t-gate-says">{wait.says}</p>
 				</>
 			)}
-			{!wait.tried?.length && <p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on', wait.says)}</p>}
-			{wait.command && !wait.says && !wait.tried?.length && (
+			<p class="t-gate-why">{whyWords(wait.why ?? 'it cannot go on', wait.says)}</p>
+			{wait.command && !wait.says && (
 				<>
 					<p class="t-gate-label">The check that failed</p>
 					<pre class="t-quote">{wait.command}</pre>
 				</>
 			)}
-			{wait.tail && !wait.tried?.length && (
+			{wait.tail && (
 				<>
 					<p class="t-gate-label">What it printed</p>
 					<Tail text={wait.tail} />
 				</>
 			)}
-			{wait.command && wait.says && !wait.tried?.length && (
+			{wait.command && wait.says && (
 				<details class="t-gate-cmd">
 					<summary>Show the check</summary>
 					<pre class="t-quote">{wait.command}</pre>
@@ -214,8 +246,7 @@ export function StuckView({ wait }: { wait: Wait }) {
 					</ul>
 				</>
 			)}
-			<p class="muted t-wait-note">What you can do: write to the agent below. Your message reopens this gate with fresh tries.</p>
-		</div>
+		</StuckFrame>
 	);
 }
 
@@ -260,6 +291,15 @@ function OutcomeRules({ outcomes }: { outcomes: readonly OutcomeDoc[] }) {
 						{o.says ? ` — ${o.says}` : ''}
 						{o.anytime && <span class="muted"> · at any point</span>}
 						{(o.checks ?? []).length === 0 && <span class="muted"> · when no other holds</span>}
+						{(o.checks ?? []).map((c) => (
+							<div class="t-rule-check" key={checkRun(c)}>
+								moor checks: {checkWords(c)}
+								<details class="t-gate-cmd">
+									<summary>Show the check</summary>
+									<pre class="t-quote">{checkRun(c)}</pre>
+								</details>
+							</div>
+						))}
 					</li>
 				))}
 			</ul>
@@ -279,7 +319,7 @@ export function RulesView({ gates, outcomes, asJson, onToggle }: RulesProps) {
 			</div>
 			{asJson ? (
 				<>
-					<textarea aria-label="Gates JSON" class="t-mono" rows={14} spellcheck={false} readOnly value={JSON.stringify(gates, null, 2)} />
+					<textarea aria-label="Gates JSON" class="t-mono" rows={14} spellcheck={false} readOnly value={JSON.stringify(outcomes?.length ? { gates, outcomes } : gates, null, 2)} />
 					<p class="muted">Read-only here. Change the gates with add_workflow.</p>
 				</>
 			) : (

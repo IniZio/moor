@@ -99,7 +99,7 @@ test('gates an anytime outcome ended the run before read not reached, and a coun
 	const early: GateView = { gates, gates_passed: 1, status: { state: 'passed', outcome: nothing } };
 	expect(gateRows(early).map((r) => [r.state, r.words])).toEqual([
 		['passed', 'passed'],
-		['later', 'not reached'],
+		['later', 'ended'],
 		['later', 'not reached'],
 	]);
 	expect(gateRows({ gates, status: { state: 'passed', outcome: nothing } }).map((r) => r.state)).toEqual(['passed', 'passed', 'passed']);
@@ -126,6 +126,15 @@ test('the rail line for a stuck closing stage speaks of the outcome, not a gate 
 	const line = gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why: 'out of tries: no outcome held' } });
 	expect(line).toBe('No outcome holds yet: No outcome held. No tries left.');
 	expect(gateLine(view({ state: 'stuck', gate: 'tests', why: 'out of tries: check 1 exited 2' }))).toContain('“tests” is stuck');
+});
+
+test('the rail line for an outcome check moor could not run says so, with no word of an outcome holding', () => {
+	const why = 'moor, not the agent, could not run outcome `merged` check 1 (`gh pr view --json state`) twice: Box 3 is busy with another command';
+	expect(gateLine({ gates, status: { state: 'stuck', gate: 'outcome', why } })).toBe(
+		'moor, not the agent, could not run outcome merged check 1 twice: Box 3 is busy with another command.',
+	);
+	const own = gateLine(view({ state: 'stuck', gate: 'tests', why: 'moor, not the agent, could not run check 1 (`make`) twice: its output stream was lost' }));
+	expect(own).toBe('“tests” is stuck: moor, not the agent, could not run check 1 twice: its output stream was lost.');
 });
 
 test('an outcome is one line of its name and what it says', () => {

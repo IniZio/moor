@@ -127,7 +127,7 @@ export function gateRows(view: GateView): GateRow[] {
 	const { status } = view;
 	if (status.state === 'passed') {
 		const reached = view.gates_passed ?? view.gates.length;
-		return view.gates.map((name, i): GateRow => (i < reached ? { name, state: 'passed', words: 'passed' } : { name, state: 'later', words: 'not reached' }));
+		return view.gates.map((name, i): GateRow => (i < reached ? { name, state: 'passed', words: 'passed' } : { name, state: 'later', words: i === reached ? 'ended' : 'not reached' }));
 	}
 	const named = view.gates.indexOf(status.gate);
 	const at = named === -1 ? view.gates.length : named;
@@ -173,9 +173,21 @@ export function whyWords(why: string, says?: string | null): string {
 	let text = why.trim().replace(/^out of tries: /i, '').replace(/\s*\(`[^`]*`\)/, '');
 	if (says) text = text.replace(/\s*\(“[^”]*”\)/, '');
 	text = text.replace(/`/g, '').replace(/\bexited (-?\d+)/, 'exited with code $1');
-	text = text.charAt(0).toUpperCase() + text.slice(1);
+	if (!/^moor\b/.test(text)) text = text.charAt(0).toUpperCase() + text.slice(1);
 	const sentence = /[.!?]$/.test(text) ? text : `${text}.`;
 	return spent ? `${sentence} No tries left.` : sentence;
+}
+
+const NO_ANSWER = /^moor, not the agent, could not run .*? twice: /;
+
+/** Whether moor, not the agent, is why the gate is stuck: it could not run a check twice. */
+export function isNoAnswer(why: string | null | undefined): boolean {
+	return NO_ANSWER.test(why?.trim() ?? '');
+}
+
+/** Why moor could not run the check, as a sentence: the part of the reason after the check it names. */
+export function noAnswerReason(why: string): string {
+	return whyWords(why.trim().replace(NO_ANSWER, ''));
 }
 
 /** The one line a list row or a card says about its gates when a person has something to do or it failed; none otherwise. */
@@ -183,7 +195,8 @@ export function gateLine(view: GateView | null | undefined): string | null {
 	const status = view?.status;
 	switch (status?.state) {
 		case 'stuck':
-			return status.gate === CLOSING ? `No outcome holds yet: ${whyWords(status.why)}` : `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
+			if (status.gate !== CLOSING) return `${quoted(status.gate)} is stuck: ${whyWords(status.why)}`;
+			return isNoAnswer(status.why) ? whyWords(status.why) : `No outcome holds yet: ${whyWords(status.why)}`;
 		case 'failed':
 			return `Failed at ${quoted(status.gate)}: ${whyWords(status.why)}`;
 		case 'open':
