@@ -36,12 +36,12 @@ test('each gate state reads as a person would say it', () => {
 });
 
 test('a gate check with a sentence shows it first and the command behind Show the check; one without keeps the command line', () => {
-	const row = StepItem({ step: gate({ state: 'waiting' }), number: 2 });
+	const row = StepItem({ step: gate({ state: 'waiting' }) });
 	const text = textOf(row);
 	expect(text.indexOf('The file never.txt exists.')).toBeLessThan(text.indexOf('Show the check'));
 	expect(all(row, 'code')).toHaveLength(0);
 	expect(textOf(all(row, 'pre')[0])).toBe('test -f never.txt');
-	const bare = StepItem({ step: gate({ checks: [{ run: 'test -f never.txt', says: null }] }), number: 2 });
+	const bare = StepItem({ step: gate({ checks: [{ run: 'test -f never.txt', says: null }] }) });
 	expect(all(bare, 'code').map(textOf)).toEqual(['test -f never.txt']);
 });
 
@@ -53,19 +53,19 @@ test('a plan step keeps its words: a passed work step is done', () => {
 const run = (over: Partial<Run>): Run => ({ workflow: 'evidence', id: 3, due_at: 1, phase: 'done', status: 'success', label: 'finished', steps: [], lines: [], ...over });
 
 test('the outcome row after the gates shows the name and what it says', () => {
-	const found = OutcomeItem({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' } }), number: 3 });
+	const found = OutcomeItem({ run: run({ verdict: { name: 'check failed', tone: 'bad', says: 'The pull request check failed.' } }) });
 	const [summary] = all(found, 'summary');
-	expect(textOf(summary)).toBe('outcome3. Outcomecheck failed');
+	expect(textOf(summary)).toBe('outcomeOutcomecheck failed');
 	expect(textOf(found)).toContain('The pull request check failed.');
 	expect(all(summary, 'span').map((s) => s.props.class)).toContain('state failed');
-	const plain = OutcomeItem({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }), number: 2 });
-	expect(textOf(all(plain, 'summary')[0])).toBe('outcome2. Outcomenothing to do');
+	const plain = OutcomeItem({ run: run({ verdict: { name: 'nothing to do', tone: 'plain' } }) });
+	expect(textOf(all(plain, 'summary')[0])).toBe('outcomeOutcomenothing to do');
 });
 
 test('while moor decides the outcome row says so, and a run with no outcome has none', () => {
-	const deciding = OutcomeItem({ run: run({ phase: 'running', status: 'running', label: 'running', closing: 'deciding' }), number: 3 });
-	expect(textOf(all(deciding, 'summary')[0])).toBe('outcome3. Outcomemoor is checking which outcome holds');
-	const waiting = OutcomeItem({ run: run({ phase: 'waiting', status: 'waiting', closing: 'waiting' }), number: 3 });
+	const deciding = OutcomeItem({ run: run({ phase: 'running', status: 'running', label: 'running', closing: 'deciding' }) });
+	expect(textOf(all(deciding, 'summary')[0])).toBe('outcomeOutcomemoor is checking which outcome holds');
+	const waiting = OutcomeItem({ run: run({ phase: 'waiting', status: 'waiting', closing: 'waiting' }) });
 	expect(textOf(all(waiting, 'summary')[0])).toContain('waiting for you');
-	expect(OutcomeItem({ run: run({}), number: 3 })).toBeNull();
+	expect(OutcomeItem({ run: run({}) })).toBeNull();
 });

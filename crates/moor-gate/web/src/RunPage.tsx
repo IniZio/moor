@@ -61,7 +61,7 @@ function GateChecks({ checks }: { checks: NonNullable<Step['checks']> }) {
 const OUTCOME_STATE = { good: 'passed', bad: 'failed', plain: 'ended' } as const;
 
 /** The closing row of a run: what moor found, or that it is still checking which outcome holds. */
-export function OutcomeItem({ run, number }: { run: Run; number: number }) {
+export function OutcomeItem({ run }: { run: Run }) {
 	const found = run.verdict;
 	if (!found && !run.closing) return null;
 	const waiting = run.closing === 'waiting';
@@ -72,7 +72,7 @@ export function OutcomeItem({ run, number }: { run: Run; number: number }) {
 			<details open>
 				<summary>
 					<span class="kind outcome">outcome</span>
-					<span class="grow">{number}. Outcome</span>
+					<span class="grow">Outcome</span>
 					<span class={`state ${state}`}>{word}</span>
 				</summary>
 				{found?.says && <p class="muted">{found.says}</p>}
@@ -170,7 +170,7 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
 					<ol class="steps">
 						{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}
-						<OutcomeItem run={run} number={run.steps.length + 1} />
+						<OutcomeItem run={run} />
 					</ol>
 					{run.lines.length > 0 && <ul class="history">{run.lines.map((l) => <LineItem key={`${l.at}${l.kind}`} line={l} />)}</ul>}
 					<div class="actions"><button class="quiet" onClick={reload}>Refresh</button></div>
