@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxRow, type Inbox, type InboxItem, inboxRead, type Progress } from './api';
-import { age, Glyph, STATES } from './Portal';
+import { Glyph, STATES } from './Glyph';
+import { age } from './Portal';
 import { currentTheme, setTheme, type Theme } from './theme';
 
 /** Where a Box sits in the switcher: the ones that need the person first. */
