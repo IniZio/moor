@@ -1,4 +1,5 @@
-//! The gate pass: runs the checks of a Box's gates once its agent is quiet, one after another.
+//! The gate pass: runs the checks of a Box's gates one after another, once the agent's report is
+//! accepted, or once the agent is quiet for a gate that takes no report.
 //!
 //! The lines are the state. A pass reads them, and the check that is due goes to a thread of its
 //! own, so a long check never holds up the pass. The line it writes takes the number the pass read
@@ -9,6 +10,7 @@
 //! A failed check ends the try, as `status()` reads it. When tries remain, the end of its output is
 //! steered to the agent, which then fixes the work and goes quiet again.
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Origin;
 use moor_core::gate::{
     due_check, due_outcomes, status, CheckOf, GateLine, GateStatus, Gates, Unanswered,
@@ -115,12 +117,10 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     let n = i64::try_from(lines.len())
         .unwrap_or(i64::MAX)
         .saturating_add(1);
-    let Some(work) = due_work(cx, store, row, (&gates, &lines))? else {
+    let quiet = settled(cx, store, row)?;
+    let Some(work) = due_work(cx, store, row, (&gates, &lines), quiet)? else {
         return Ok(());
     };
-    if !settled(cx, store, row)? {
-        return Ok(());
-    }
     checks(Job {
         box_id: row.id,
         work,
@@ -130,16 +130,25 @@ fn settle(cx: &Cx, store: &Store, row: &BoxRow, checks: &dyn Fn(Job)) -> Result<
     Ok(())
 }
 
-/// What the pass runs next in Box `row`: the check that is due, after the `anytime` outcomes when
-/// there are any, else the outcomes that are due once the owner is asked and the agent told of a
-/// hand-over. None when nothing is to run, after the agent is reminded if it waits for one.
+/// What the pass runs next in Box `row`, whose agent is `quiet` or not: the check that is due,
+/// after the `anytime` outcomes when there are any, else the outcomes that are due once the owner
+/// is asked and the agent told of a hand-over. None when nothing is to run, after the agent is
+/// reminded if it waits for one.
+///
+/// Only a check that follows an accepted report runs while the agent works: it reads what the
+/// agent handed in, not what it still does. The `anytime` outcomes wait for a quiet agent.
 fn due_work(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     (gates, lines): (&Gates, &[GateLine]),
+    quiet: bool,
 ) -> Result<Option<Work>, CommandError> {
     if let Some(due) = due_check(gates, lines) {
+        let handed_in = due.follows_report() && row.lifecycle == BoxLifecycle::Ready;
+        if !quiet && !handed_in {
+            return Ok(None);
+        }
         let Some(command) = due.gate.checks.get(usize::from(due.check)) else {
             return Ok(None);
         };
@@ -149,7 +158,7 @@ fn due_work(
             check: due.check,
             command: command.run.clone(),
         };
-        return Ok(Some(match due_outcomes(gates, lines) {
+        return Ok(Some(match due_outcomes(gates, lines).filter(|_| quiet) {
             Some(anytime) => Work::Outcomes(Due::of(&anytime).then(check)),
             None => Work::Check(check),
         }));
@@ -162,7 +171,7 @@ fn due_work(
         remind(cx, store, row, (gates, lines))?;
         return Ok(None);
     };
-    Ok(Some(Work::Outcomes(Due::of(&due))))
+    Ok(quiet.then(|| Work::Outcomes(Due::of(&due))))
 }
 
 /// Whether `line` is one the agent's own doings wrote in try `try_n`, which a failure that ended
