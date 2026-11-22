@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{status, GateLine, GateNext, GateStatus, Gates};
+use super::{status, GateLine, GateNext, GateStatus, Gates, NoAnswerCause};
 use crate::workflow::{StepId, StepResult};
 
 /// What the person is asked to do.
@@ -54,6 +54,9 @@ pub struct Wait {
     pub tail: Option<String>,
     /// The evidence names that were not found.
     pub missing: Vec<String>,
+    /// The check moor last got no answer from, when that is why the gate is stuck.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unanswered: Option<NoAnswerCause>,
     /// What the person can do about it.
     pub hint: String,
 }
@@ -120,16 +123,22 @@ pub fn wait(gates: &Gates, lines: &[GateLine]) -> Option<Wait> {
             }
             Some(w)
         }
-        GateStatus::Stuck { gate, why, .. } => {
-            let cause = began.checked_sub(1).and_then(|n| lines.get(n));
-            let hint = match cause {
-                Some(GateLine::NoAnswer { .. }) => NO_ANSWER_HINT,
-                _ => "Send the agent a message to reopen the gate with fresh tries.",
+        GateStatus::Stuck {
+            gate,
+            why,
+            unanswered,
+            ..
+        } => {
+            let hint = match unanswered {
+                Some(_) => NO_ANSWER_HINT,
+                None => "Send the agent a message to reopen the gate with fresh tries.",
             };
             let mut w = Wait::blank(&gate, (WaitKind::Stuck, seq), hint);
             w.why = Some(why);
-            if let Some(GateLine::NoAnswer { check, .. }) = cause {
-                unanswered_by(&mut w, gates.check_of(&gate, check));
+            if let Some(cause) = unanswered {
+                w.command.clone_from(&cause.command);
+                w.says.clone_from(&cause.says);
+                w.unanswered = Some(cause);
                 return Some(w);
             }
             match gates.iter().find(|g| g.name == gate) {
@@ -157,16 +166,9 @@ impl Wait {
             says: None,
             tail: None,
             missing: Vec::new(),
+            unanswered: None,
             hint: hint.to_owned(),
         }
-    }
-}
-
-/// Fills `w` with the check moor got no answer from.
-fn unanswered_by(w: &mut Wait, check: Option<&super::Check>) {
-    if let Some(c) = check {
-        w.command = Some(c.run.clone());
-        w.says.clone_from(&c.says);
     }
 }
 

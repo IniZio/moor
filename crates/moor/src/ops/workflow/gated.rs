@@ -135,14 +135,17 @@ impl Held<'_> {
                 .step_workflow_run(self.run.id, (self.at, (&gate, try_n)), (&[], self.now))
                 .map(drop),
             GatedMove::Wait { gate, try_n } => {
-                let why = match status {
-                    GateStatus::Stuck { why, .. } => Some(why.clone()),
-                    _ => None,
+                let (why, unanswered) = match status {
+                    GateStatus::Stuck {
+                        why, unanswered, ..
+                    } => (Some(why.clone()), unanswered.clone()),
+                    _ => (None, None),
                 };
                 let line = HistoryEntry::GateWaiting {
                     step: gate.clone(),
                     try_n,
                     why,
+                    unanswered,
                 };
                 self.store
                     .wait_workflow_run(

@@ -41,5 +41,6 @@ fn a_failed_check_is_named_by_its_command() {
         "moor, not the agent, could not run check 1 (`{}…`) twice: its output stream was lost",
         "x".repeat(60)
     );
-    assert_eq!(got, stuck("tests", 1, &want));
+    let long = cause(CheckOf::Gate { check: 0 }, &long, Unanswered::Lost);
+    assert_eq!(got, unheard("tests", 1, &want, long));
 }

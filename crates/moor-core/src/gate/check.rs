@@ -2,7 +2,7 @@
 
 use schemars::JsonSchema;
 
-use super::{CheckOf, Gate, GateError, Gates, Unanswered};
+use super::{CheckOf, Gate, GateError, Gates, NoAnswerCause, Unanswered};
 use crate::workflow::StepId;
 
 /// The longest sentence a check may say, in characters.
@@ -127,28 +127,50 @@ impl Gates {
         }
     }
 
-    /// Why stage `stage` is stuck after moor got no answer from check `of` twice.
-    pub(super) fn unanswered_why(&self, stage: &StepId, of: &CheckOf, why: &Unanswered) -> String {
-        let (whose, check) = match of {
+    /// What moor got no answer from at stage `stage`: check `of`, for `reason`.
+    pub(super) fn no_answer(
+        &self,
+        stage: &StepId,
+        of: &CheckOf,
+        reason: &Unanswered,
+    ) -> NoAnswerCause {
+        let check = self.check_of(stage, of);
+        NoAnswerCause {
+            check: of.clone(),
+            command: check.map(|c| c.run.clone()),
+            says: check.and_then(|c| c.says.clone()),
+            reason: reason.clone(),
+        }
+    }
+}
+
+impl NoAnswerCause {
+    /// Why the stage waits for a person, in one line.
+    #[must_use]
+    pub fn why(&self) -> String {
+        let (whose, check) = match &self.check {
             CheckOf::Gate { check } => (String::new(), *check),
             CheckOf::Outcome { outcome, check } => (format!("outcome `{outcome}` "), *check),
         };
-        let what = match self.check_of(stage, of) {
-            Some(Check {
-                says: Some(says), ..
-            }) => format!(" (“{says}”)"),
-            Some(Check { run, says: None }) => format!(" ({})", cut(run)),
-            None => String::new(),
+        let what = match (&self.says, &self.command) {
+            (Some(says), _) => format!(" (“{says}”)"),
+            (None, Some(run)) => format!(" ({})", cut(&one_line(run))),
+            (None, None) => String::new(),
         };
-        let reason = match why {
-            Unanswered::NotRun { reason } => reason.trim(),
-            Unanswered::Lost => "its output stream was lost",
+        let reason = match &self.reason {
+            Unanswered::NotRun { reason } => one_line(reason),
+            Unanswered::Lost => "its output stream was lost".to_owned(),
         };
         format!(
             "moor, not the agent, could not run {whose}check {}{what} twice: {reason}",
             check + 1
         )
     }
+}
+
+/// `text` on one line, each run of whitespace a single space.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// `says`, trimmed, when it is one line of 1 to [`SAYS_MAX`] characters; errors name `gate`.

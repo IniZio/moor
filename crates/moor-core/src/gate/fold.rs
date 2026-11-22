@@ -4,16 +4,23 @@
 use super::check::named;
 use super::outcome::CLOSING_TRIES;
 use super::{
-    closing, Approval, CheckOf, Gate, GateLine, GateNext, GateStatus, Gates, Outcome, OutcomeName,
-    Unanswered,
+    closing, Approval, CheckOf, Gate, GateLine, GateNext, GateStatus, Gates, NoAnswerCause,
+    Outcome, OutcomeName, Unanswered,
 };
 use crate::workflow::{Answer, StepId, StepResult};
 
 /// How a gate ended short of passing.
 #[derive(Debug)]
 enum End {
-    /// Waits for a person's steer, at the try given.
-    Stuck(String, u8),
+    /// Waits for a person's steer.
+    Stuck {
+        /// Why.
+        why: String,
+        /// The try it was at.
+        try_n: u8,
+        /// The check moor last got no answer from, when that is why.
+        unanswered: Option<NoAnswerCause>,
+    },
     /// Over.
     Failed(String),
 }
@@ -103,10 +110,15 @@ impl Walk<'_> {
             |g| (g.name.clone(), self.tries.next(g)),
         );
         match &self.end {
-            Some(End::Stuck(why, try_n)) => GateStatus::Stuck {
+            Some(End::Stuck {
+                why,
+                try_n,
+                unanswered,
+            }) => GateStatus::Stuck {
                 gate: name,
                 try_n: *try_n,
                 why: why.clone(),
+                unanswered: unanswered.clone(),
             },
             Some(End::Failed(why)) => GateStatus::Failed {
                 gate: name,
@@ -137,7 +149,7 @@ impl Walk<'_> {
             self.tries.unanswered = 0;
         }
         match (&self.end, gate) {
-            (Some(End::Stuck(..)), _) => self.reopen(line),
+            (Some(End::Stuck { .. }), _) => self.reopen(line),
             (Some(End::Failed(_)), _) => {}
             (None, Some(gate)) => self.take(gate, line),
             (None, None) => self.decided(line),
@@ -288,8 +300,12 @@ impl Walk<'_> {
     fn unanswered(&mut self, stage: &StepId, check: &CheckOf, why: &Unanswered) {
         self.tries.unanswered += 1;
         if self.tries.unanswered >= 2 {
-            let why = self.gates.unanswered_why(stage, check, why);
-            self.end = Some(End::Stuck(why, self.tries.used + 1));
+            let cause = self.gates.no_answer(stage, check, why);
+            self.end = Some(End::Stuck {
+                why: cause.why(),
+                try_n: self.tries.used + 1,
+                unanswered: Some(cause),
+            });
         }
     }
 
@@ -303,7 +319,11 @@ impl Walk<'_> {
     /// The agent was quiet again after a reminder.
     fn quiet(&mut self, gate: &Gate, try_n: u8) {
         if self.waits(gate, try_n, GateNext::Agent) && self.tries.reminded {
-            self.end = Some(End::Stuck("the agent went quiet".to_owned(), try_n));
+            self.end = Some(End::Stuck {
+                why: "the agent went quiet".to_owned(),
+                try_n,
+                unanswered: None,
+            });
         }
     }
 
@@ -338,7 +358,11 @@ impl Walk<'_> {
     fn fail_by(&mut self, max: u8, why: &str) {
         self.tries.used += 1;
         if self.tries.used >= max {
-            self.end = Some(End::Stuck(format!("out of tries: {why}"), self.tries.used));
+            self.end = Some(End::Stuck {
+                why: format!("out of tries: {why}"),
+                try_n: self.tries.used,
+                unanswered: None,
+            });
         } else {
             self.tries.restart();
         }

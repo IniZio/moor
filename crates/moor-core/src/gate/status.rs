@@ -1,7 +1,7 @@
 //! Where a Box stands against its gates and outcomes: a pure fold over the lines written for them.
 
 use super::fold::walk;
-use super::{Gate, GateLine, Gates, Outcome, Verdict};
+use super::{Gate, GateLine, Gates, NoAnswerCause, Outcome, Verdict};
 use crate::workflow::StepId;
 
 /// What an open gate waits for.
@@ -40,6 +40,9 @@ pub enum GateStatus {
         try_n: u8,
         /// Why.
         why: String,
+        /// The check moor last got no answer from, when that is why.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unanswered: Option<NoAnswerCause>,
     },
     /// A gate failed for good.
     Failed {

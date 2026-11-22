@@ -58,6 +58,7 @@ fn stuck() -> GateStatus {
         gate: proof(),
         try_n: 1,
         why: "the agent went quiet".to_owned(),
+        unanswered: None,
     }
 }
 

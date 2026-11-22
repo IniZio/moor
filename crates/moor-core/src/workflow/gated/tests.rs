@@ -35,6 +35,7 @@ fn stuck_at(gate: &str, try_n: u8) -> GateStatus {
         gate: id(gate),
         try_n,
         why: "the agent went quiet".to_owned(),
+        unanswered: None,
     }
 }
 

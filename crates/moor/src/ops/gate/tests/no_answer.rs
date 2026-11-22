@@ -36,7 +36,7 @@ fn card(f: &Fx, stage: &str) -> Wait {
     assert_eq!(progress.state, Progress::NeedsYou);
     let status = shown.gate.unwrap().status;
     assert!(
-        matches!(&status, GateStatus::Stuck { gate, try_n: 1, why } if gate.as_str() == stage && why.contains("not the agent")),
+        matches!(&status, GateStatus::Stuck { gate, try_n: 1, why, .. } if gate.as_str() == stage && why.contains("not the agent")),
         "{status:?}"
     );
     progress.needs.unwrap().gate.unwrap()

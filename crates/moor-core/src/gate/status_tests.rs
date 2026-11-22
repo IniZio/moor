@@ -40,6 +40,25 @@ fn stuck(g: &str, try_n: u8, why: &str) -> GateStatus {
         gate: id(g),
         try_n,
         why: why.to_owned(),
+        unanswered: None,
+    }
+}
+
+fn unheard(g: &str, try_n: u8, why: &str, cause: NoAnswerCause) -> GateStatus {
+    GateStatus::Stuck {
+        gate: id(g),
+        try_n,
+        why: why.to_owned(),
+        unanswered: Some(cause),
+    }
+}
+
+fn cause(check: CheckOf, command: &str, reason: Unanswered) -> NoAnswerCause {
+    NoAnswerCause {
+        check,
+        command: Some(command.to_owned()),
+        says: None,
+        reason,
     }
 }
 
@@ -258,7 +277,8 @@ fn a_lost_stream_is_tried_again_and_two_wait_for_a_person() {
     assert_eq!(status(&g, &once), open("tests", 1, GateNext::RunChecks));
     let twice = [lost("tests", 1, 0), lost("tests", 1, 0)];
     let why = "moor, not the agent, could not run check 1 (`a`) twice: its output stream was lost";
-    assert_eq!(status(&g, &twice), stuck("tests", 1, why));
+    let gone = cause(CheckOf::Gate { check: 0 }, "a", Unanswered::Lost);
+    assert_eq!(status(&g, &twice), unheard("tests", 1, why, gone));
     let then_ok = [lost("tests", 1, 0), checked("tests", 1, 0, 0)];
     assert_eq!(status(&g, &then_ok), passed());
 }

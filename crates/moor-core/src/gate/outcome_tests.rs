@@ -225,6 +225,7 @@ fn no_outcome_holding_steers_again_then_is_stuck_until_a_person_reopens_it() {
             gate: closing(),
             try_n: 2,
             why: "out of tries: no outcome held".to_owned(),
+            unanswered: None,
         }
     );
     assert!(status(&g, &lines).can_move());

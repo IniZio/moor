@@ -162,6 +162,22 @@ pub enum Unanswered {
     Lost,
 }
 
+/// The check moor last got no answer from, when a stage waits for a person because moor got no
+/// answer from its checks twice in a row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NoAnswerCause {
+    /// Which check.
+    pub check: CheckOf,
+    /// Its command as written; none when the gates do not have it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// What it says must be true, when its author wrote it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<String>,
+    /// Why there was no answer.
+    pub reason: Unanswered,
+}
+
 impl GateLine {
     /// What the agent wrote with its report, when this line is an accepted report that says
     /// something.

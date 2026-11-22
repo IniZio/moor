@@ -231,3 +231,29 @@ fn a_recovered_run_of_a_gated_workflow_starts_at_its_first_gate() {
     assert_eq!(r.at(id), ("running", ("proof".to_owned(), 1)));
     assert_eq!(r.told(id), ["queued", "entered proof 1"]);
 }
+
+#[test]
+fn a_run_waiting_because_moor_got_no_answer_keeps_the_cause_as_data() {
+    let r = rig();
+    let id = r.started_gated(&[done()]);
+    let lost = GateLine::NoAnswer {
+        gate: step("done"),
+        try_n: 1,
+        check: moor_core::gate::CheckOf::Gate { check: 0 },
+        why: moor_core::gate::Unanswered::Lost,
+    };
+    for line in [reported("done", ""), lost.clone(), lost] {
+        r.gate_line(id, &line);
+    }
+    r.pass();
+    let run = r.latest(id);
+    let lines = r.cx.store().unwrap().run_history(run.id).unwrap();
+    let waiting = lines
+        .iter()
+        .find(|l| l.entry["kind"] == "gate_waiting")
+        .expect("the run waits");
+    assert_eq!(
+        waiting.entry["unanswered"],
+        serde_json::json!({"check": {"gate": {"check": 0}}, "command": "true", "reason": {"kind": "lost"}})
+    );
+}

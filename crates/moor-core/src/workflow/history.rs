@@ -103,6 +103,9 @@ pub enum HistoryEntry {
         /// Why the gate is stuck; none when the owner is asked.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         why: Option<String>,
+        /// The check moor last got no answer from, when that is why the gate is stuck.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unanswered: Option<crate::gate::NoAnswerCause>,
     },
     /// The owner answered the question of a gate. The wait ends with the run going on.
     GateAnswered {
