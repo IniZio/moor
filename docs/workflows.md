@@ -156,6 +156,11 @@ The gates, not the agent going quiet, decide how the run ends.
   agent's last accepted report.
 - A gate failed for good, as when the owner says no on its last try. The run
   `failed` with the gate's reason.
+- moor could not run a gate's or an outcome's check twice in a row. The Box was
+  busy, or the link to its machine was cut. That is not the agent's
+  doing, so it spends no try and the agent hears nothing. The gate is stuck,
+  and the owner sees the command and the reason. One such failure is just
+  run again on the next pass.
 - A gate is stuck, or asks the owner. The run `waits`, and the owner hears of
   it as at an approve step. `answer_gate` on the run's Box answers a gate that
   asks. A message to the Box reopens a stuck gate with fresh tries, and the
