@@ -5,6 +5,7 @@
     reason = "test assertions index what they just counted, and one test walks a whole story"
 )]
 
+use moor_core::domain::session_state::SessionState;
 use moor_core::gate::{GateLine, GateNext, GateStatus};
 use moor_core::progress::Progress;
 use moor_core::workflow::StepId;
@@ -12,6 +13,7 @@ use moor_core::workflow::StepId;
 use moor_core::workflow::{StepReport, StepResult};
 
 use super::fx::{busy, cut, done, evidence_gate, fx, fx_on, gate};
+use crate::testing::agent;
 use crate::testing::driver::FakeDriver;
 
 fn id(name: &str) -> StepId {
@@ -183,6 +185,22 @@ fn a_check_does_not_run_while_the_agent_works() {
     assert!(f.due().is_empty(), "the agent is still on its first turn");
     f.quiet();
     assert_eq!(f.due().len(), 1);
+}
+
+#[test]
+fn a_check_after_an_accepted_report_runs_while_the_agent_still_works() {
+    let f = fx(|_| vec![evidence_gate("proof", &["proof.md"], &["true"], 1)]);
+    let now = f.cx.clock().now();
+    f.engine
+        .set_probes("agent-1", agent::waiting(&[".scratch/live/run.sh"], true, now));
+    f.leave(&[("proof.md", 5)]);
+    let told = f.report("proof", StepResult::Ok, &["proof.md"]);
+    assert!(!told.error, "{told:?}");
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
+    assert_eq!(row.session, SessionState::Working, "the agent has not gone quiet");
+    assert!(f.pass().is_empty());
+    assert_eq!(f.exits(), [("proof".to_owned(), Some(0))]);
+    assert_eq!(f.standing(), (done(), Progress::Done));
 }
 
 #[test]
