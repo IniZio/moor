@@ -1,7 +1,7 @@
 //! A client goes through the engine's nono proxy to a fake HTTPS upstream.
 
 use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr, TcpStream};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +13,7 @@ use ureq::Agent;
 use super::{Host, Running, Wiring, DEADLINE};
 use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
+use crate::testing::net::assert_closes;
 
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
@@ -129,7 +130,6 @@ fn engine_injects_the_credential_audits_requests_and_stops() {
     assert_audited(&run, &host);
     assert_eq!(up.seen().len(), 1);
 
-    let addr = run.engine().addr();
-    run.stop();
-    assert!(TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_err());
+    let port = run.port();
+    assert_closes(&[port], || run.stop());
 }

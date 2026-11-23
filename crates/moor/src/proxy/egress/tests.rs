@@ -34,6 +34,7 @@ use crate::proxy::token;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, test_vault_key};
+use crate::testing::net::listeners;
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
@@ -380,12 +381,14 @@ fn a_token_past_its_rate_is_refused() {
 fn a_drain_lets_an_open_tunnel_finish_and_refuses_a_new_one() {
     let w = World::new();
     let server = w.server(10.0);
-    let addr = addr(&server);
+    let port = addr(&server).port();
+    let listening = listeners(port);
+    assert!(!listening.is_empty(), "nothing listens before the drain");
     let tunnel = open(&server, &w.token, &w.target()).unwrap();
     std::thread::scope(|s| {
         let drained = s.spawn(|| server.drain(Duration::from_secs(20)));
         let mut tries = 0;
-        while TcpStream::connect(addr).is_ok() {
+        while !listeners(port).is_disjoint(&listening) {
             tries += 1;
             assert!(tries < 200, "still listening while draining");
             std::thread::sleep(Duration::from_millis(25));
