@@ -13,6 +13,11 @@ use moor_machine_runner::{
     Agents, Config, Dial, Relay,
 };
 
+/// musl's own allocator is several times slower than glibc's, so the musl builds use mimalloc.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// Serves the tools a Box uses to work on its attached machine.
 #[derive(Parser)]
 #[command(name = "moor-machine-runner")]

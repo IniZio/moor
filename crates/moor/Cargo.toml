@@ -111,6 +111,9 @@ netlink-packet-core = "0.9.0"
 netlink-packet-route = "0.33"
 netlink-sys = "0.9.0"
 
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = "0.1.52"
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", default-features = false, features = ["test-util"] }

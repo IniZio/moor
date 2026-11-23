@@ -42,8 +42,8 @@ jobs:
           platforms: linux/amd64
           push: false
           build-args: MOOR_COMMIT=${{ github.sha }}
-          # Read-only: the release build in cd.yaml owns the cache, so a pull request cannot
-          # push the 10 GB Actions cache over its limit and evict everything.
+          # Read-only, and no job refreshes it: releases no longer compile in Docker, so these
+          # cargo layers are the last release that did. A changed Cargo.lock builds cold.
           cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache
 
   # The Box images build and, started together on the runner's Docker, pass the smoke script.
