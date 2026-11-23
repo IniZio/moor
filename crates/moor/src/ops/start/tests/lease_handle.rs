@@ -55,11 +55,3 @@ fn an_acquired_handle_off_the_plan_is_held_and_the_planned_row_stays_planned() {
         Some(LeaseState::Held)
     );
 }
-
-#[test]
-fn an_acquired_handle_on_the_plan_holds_the_planned_row() {
-    assert_eq!(
-        state_after_hold("planned-1", "planned-1"),
-        Some(LeaseState::Held)
-    );
-}

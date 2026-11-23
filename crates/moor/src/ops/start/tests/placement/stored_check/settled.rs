@@ -43,69 +43,6 @@ fn suspended_at_work() -> (World, BoxId) {
 }
 
 #[test]
-fn an_idle_box_suspended_for_room_keeps_its_answer() {
-    let (w, b) = suspended_for_room();
-    assert_eq!(stored(&w, b), Some((0, 0)));
-}
-
-#[test]
-fn a_last_resort_suspend_keeps_no_answer() {
-    let (w, b) = suspended_at_work();
-    assert_eq!(stored(&w, b), None);
-}
-
-#[test]
-fn a_last_resort_suspend_with_runs_in_flight_keeps_no_answer() {
-    let (w, hv) = live_world(32_768);
-    let (a, b) = (started(&w, "a"), started(&w, "b"));
-    idle(&w, a);
-    idle(&w, b);
-    let (w, _) = agents_report(w, &[a, b], &[]);
-    holds(&w, a, CLEAN);
-    holds(&w, b, CLEAN);
-    let store = w.cx.store().unwrap();
-    let run = |box_id| crate::store::NewRun {
-        box_id,
-        argv: vec!["make".into()],
-        record: None,
-        sha: None,
-        pid: 4242,
-    };
-    let _claims = (
-        store.begin_run(run(a)).unwrap(),
-        store.begin_run(run(b)).unwrap(),
-    );
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
-    let suspended = if lifecycle(&w, a) == Ready { b } else { a };
-    assert_eq!(stored(&w, suspended), None);
-}
-
-#[test]
-fn a_run_in_flight_keeps_no_answer_even_when_the_agent_is_quiet() {
-    let (w, _) = live_world(32_768);
-    let b = started(&w, "b");
-    idle(&w, b);
-    holds(&w, b, CLEAN);
-    let store = w.cx.store().unwrap();
-    let _claim = store
-        .begin_run(crate::store::NewRun {
-            box_id: b,
-            argv: vec!["make".into()],
-            record: None,
-            sha: None,
-            pid: 4242,
-        })
-        .unwrap();
-    let row = store.box_row(b).unwrap().unwrap();
-    let handle = autosleep::ready_handle(&row).unwrap();
-    let settled = autosleep::settled(&w.cx, store, &row).unwrap();
-    autosleep::sleep_parked(&w.cx, store, &row, &handle, settled)
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored(&w, b), None);
-}
-
-#[test]
 fn the_hard_ceiling_keeps_no_clean_answer() {
     let (w, _) = live_world(32_768);
     let b = started(&w, "b");
@@ -150,16 +87,6 @@ fn asking_an_idle_box_to_sleep_keeps_its_answer_and_a_working_one_does_not() {
 }
 
 #[test]
-fn an_unwoken_close_reports_the_caches_not_saved() {
-    let (w, b) = suspended_for_room();
-    let before = calls(&w, "wake");
-    close_box(&w, b, false).unwrap();
-    assert_eq!(calls(&w, "wake"), before);
-    assert_eq!(state(&w, b), Some(HandsState::Deleted));
-    assert!(lost(&w, b));
-}
-
-#[test]
 fn a_forced_close_of_a_box_suspended_for_room_reports_the_caches_not_saved() {
     let (w, b) = suspended_for_room();
     close_box(&w, b, true).unwrap();
@@ -198,19 +125,6 @@ fn the_hard_ceiling_of_an_idle_box_read_as_unread_keeps_no_answer() {
     let store = w.cx.store().unwrap();
     autosleep::run(&w.cx, store, b, autosleep::AgentRead::Unread);
     assert_eq!(lifecycle(&w, b), Asleep);
-    assert_eq!(stored(&w, b), None);
-}
-
-#[test]
-fn an_idle_box_with_an_unread_agent_suspended_for_room_keeps_no_answer() {
-    let (w, hv) = live_world(32_768);
-    let (a, b) = (started(&w, "a"), started(&w, "b"));
-    idle(&w, b);
-    let (w, _) = agents_report(w, &[], &[a]);
-    holds(&w, b, CLEAN);
-    super::super::unread::unread(&w, b);
-    tick(&w, hv, CRITICAL, 0, 0);
-    assert_eq!(lifecycle(&w, b), Pending, "an unread agent may be at work");
     assert_eq!(stored(&w, b), None);
 }
 

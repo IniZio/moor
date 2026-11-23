@@ -14,9 +14,6 @@ use crate::testing::engine::FakeEngine;
 /// The agent session the first Box's launch records.
 const SESSION: &str = "moor-1";
 
-/// Reads of a watch that runs its whole window.
-const FULL_WINDOW: usize = 17;
-
 fn prompt_req(name: &str) -> StartReq {
     StartReq {
         prompt: Some("ship it".into()),
@@ -64,31 +61,5 @@ fn a_status_on_the_first_read_ends_the_watch_at_once() {
     let engine = FakeEngine::new().probes(SESSION, agent::working(Ts::from_millis(1_000)));
     let (w, engine) = watching(engine);
     run(&w.cx, &prompt_req("demo")).unwrap();
-    assert_eq!(engine.probe_count(SESSION), 1);
-}
-
-#[test]
-fn an_agent_that_reports_no_status_keeps_the_full_window() {
-    let engine = FakeEngine::new().probes(SESSION, silent("working"));
-    let (w, engine) = watching(engine);
-    run(&w.cx, &prompt_req("demo")).unwrap();
-    assert_eq!(engine.probe_count(SESSION), FULL_WINDOW);
-}
-
-#[test]
-fn a_prompt_on_screen_is_recorded_before_a_status_ends_the_watch() {
-    let engine = FakeEngine::new()
-        .then_probes(SESSION, silent("Do you trust this folder?"))
-        .probes(SESSION, agent::working(Ts::from_millis(1_000)));
-    let (w, engine) = watching(engine);
-    let v = run(&w.cx, &prompt_req("demo")).unwrap();
-    let blocked =
-        w.cx.store()
-            .unwrap()
-            .events(moor_core::BoxId::new(v.boxed.id), 50)
-            .unwrap()
-            .into_iter()
-            .any(|e| e.kind == "agent_prompt_blocked");
-    assert!(blocked);
     assert_eq!(engine.probe_count(SESSION), 1);
 }

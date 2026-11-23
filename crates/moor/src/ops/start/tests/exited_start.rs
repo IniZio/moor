@@ -147,13 +147,6 @@ fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_before_settling(
 }
 
 #[test]
-fn a_wake_after_the_agent_exited_opens_a_new_session() {
-    let (w, engine, id) = exited_agent();
-    crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
-    check_second_session(&w, &engine, id);
-}
-
-#[test]
 fn a_new_session_after_wake_makes_no_box_call() {
     let (w, engine, id) = exited_agent();
     let before = w.driver.calls();

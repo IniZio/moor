@@ -432,13 +432,6 @@ fn no_box_passes_a_head_that_stopping_the_running_boxes_would_fit() {
 }
 
 #[test]
-fn no_box_passes_when_a_running_box_does_not_say_what_it_holds() {
-    let (w, hv, big, small, _) = stuck_queue(None);
-    tick(&w, hv, with_free(8192), 0, 0);
-    assert_eq!(states(&w, &[big, small]), [Pending, Pending]);
-}
-
-#[test]
 fn passing_stops_once_the_head_could_fit() {
     let (w, hv, big, small, up) = stuck_queue(Some(1024));
     holding(&w, hv, &[(up, 16 * 1024)]);

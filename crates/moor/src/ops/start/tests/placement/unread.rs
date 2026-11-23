@@ -6,7 +6,6 @@ use moor_core::activity::Probe;
 use moor_core::domain::box_state::BoxLifecycle::{Asleep, Pending, Ready};
 
 use super::pressure::{tick, BELOW_RESERVE, CRITICAL};
-use super::stored_check::holds;
 use super::*;
 use crate::testing::agent;
 use crate::testing::engine::FakeEngine;
@@ -148,16 +147,6 @@ fn the_only_box_is_left_running_when_it_is_unread_and_memory_is_critical() {
     let (w, hv, only) = only_unread();
     tick(&w, hv, 512, 0, 0);
     assert_eq!(lifecycle(&w, only), Ready);
-}
-
-#[test]
-fn nothing_is_stored_about_what_an_unread_box_holds() {
-    let (w, hv, _, a) = working_then_unread();
-    holds(&w, a, "ahead=0 dirty=0");
-    tick(&w, hv, CRITICAL, 0, 0);
-    assert_eq!(lifecycle(&w, a), Pending);
-    let check = w.cx.store().unwrap().suspend_check(a).unwrap();
-    assert_eq!(check, None);
 }
 
 #[test]

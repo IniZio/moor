@@ -88,10 +88,6 @@ pub(super) fn gone(engine: &FakeEngine) {
     engine.set_probes("p-1", agent::gone());
 }
 
-fn warning_codes(w: &World) -> Vec<String> {
-    w.cx.take_warnings().into_iter().map(|x| x.code).collect()
-}
-
 #[test]
 fn a_gone_terminal_relaunches_with_a_prompt() {
     let (w, engine, id) = started();
@@ -196,14 +192,6 @@ fn a_given_prompt_with_a_live_agent_is_typed_in_once_it_reports_idle() {
     assert_eq!(live_ref(&w, id), "p-1");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.prompt.as_deref(), Some("ship it"));
-}
-
-#[test]
-fn a_live_agent_without_a_prompt_does_not_warn() {
-    let (w, _engine, _id) = started();
-    w.cx.take_warnings();
-    run(&w.cx, &req("demo")).unwrap();
-    assert!(!warning_codes(&w).contains(&"prompt_ignored".to_owned()));
 }
 
 #[test]

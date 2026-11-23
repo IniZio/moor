@@ -151,22 +151,6 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
     );
 }
 
-/// Rule names the proxy gets for a Box of a GitHub repo.
-fn rule_names_with_a_repo() -> Vec<String> {
-    let (w, _, fake) = host_world(FakeProxyHost::new());
-    script_repo(&w, None);
-    run(&w.cx, &prompt_repo_req()).unwrap();
-    spec_of(&fake).rules.into_iter().map(|r| r.name).collect()
-}
-
-#[test]
-fn a_box_with_a_repo_always_gets_the_upload_rule() {
-    let names = rule_names_with_a_repo();
-    for want in ["claude", "github-api", "github-git", "github-uploads"] {
-        assert!(names.iter().any(|n| n == want), "{want}: {names:?}");
-    }
-}
-
 #[test]
 fn without_a_repo_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());

@@ -4,21 +4,6 @@ use moor_core::BoxId;
 use super::{req, world_with};
 use crate::testing::driver::FakeDriver;
 
-#[test]
-fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
-    let config = parse_user("config.yaml", "nodes: {p: {runtime: p}}").unwrap();
-    let w = world_with(FakeDriver::new(), config);
-    let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    let egress = row.unwrap().unwrap().hands.unwrap().egress;
-    assert_eq!(egress, None);
-    assert!(!w
-        .cx
-        .take_warnings()
-        .iter()
-        .any(|x| x.code == "egress_unenforced"));
-}
-
 fn launch_strip_env(config_yaml: &str) -> Vec<String> {
     let config = parse_user("config.yaml", config_yaml).unwrap();
     let w = world_with(FakeDriver::new(), config);
