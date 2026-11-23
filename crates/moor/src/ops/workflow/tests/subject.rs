@@ -171,7 +171,7 @@ fn a_newer_head_cancels_the_older_run_and_stops_its_agent_and_leaves_other_pulls
 
     let store = r.cx.store().unwrap();
     let changes = store
-        .workflow_changes(REQUESTER_USER, 0, 50, (None, None))
+        .workflow_changes(REQUESTER_USER, Some(0), 50, (None, None))
         .unwrap();
     let mut seqs: Vec<i64> = changes.iter().map(|c| c.seq).collect();
     seqs.dedup();

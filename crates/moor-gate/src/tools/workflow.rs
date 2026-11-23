@@ -291,22 +291,21 @@ impl Tools {
     }
 
     /// Reads changes to the caller's workflow runs.
-    #[tool(
-        description = "Read what your workflow runs did, oldest change first: each entry is a \
+    #[tool(description = "Read what your workflow runs did: each entry is a \
                        compact row for a run (id, workflow, due_at, outcome, a one-line detail \
                        when it was refused or failed, Box). A run appears again each time it \
                        moves on, from started to finished or timed out. The rows leave out the \
                        run's history and result: call get_workflow_run with the workflow and the \
                        run's id for those. For a run of a Box \
                        with gates, `verdict` names what it found, such as `check failed`, while \
-                       `outcome` stays `finished`. Pass the previous \
-                       `next` as `after` to get only newer changes, `workflow` to read one \
+                       `outcome` stays `finished`. Without `after` you get the latest `limit` changes, oldest first \
+                       within that page; pass the previous `next` as `after` to get only newer \
+                       changes, or `after` 0 to read from the oldest change, `workflow` to read one \
                        workflow's changes only, and `pull`, such as `owner/name#12`, to read \
                        only the runs for that pull request. The filters apply before `limit`, \
                        so paging with `after` still works. To follow runs as they move, use \
                        `moor listen --workflow NAME` rather than calling this in a loop. Needs \
-                       the moor:read scope."
-    )]
+                       the moor:read scope.")]
     async fn list_workflow_runs(
         &self,
         context: RequestContext<RoleServer>,
