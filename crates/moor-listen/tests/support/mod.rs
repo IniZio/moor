@@ -66,6 +66,9 @@ pub fn answer(stream: UnixStream, fake: &Mutex<Fake>) {
                 let f = fake.lock().unwrap();
                 let value = if inner["cmd"] == "workflow-runs" {
                     runs_after(&f.runs, inner)
+                } else if inner["cmd"] == "workflow-run-list" {
+                    let run = f.runs.iter().rfind(|c| c["id"] == inner["run"]).cloned();
+                    json!({"workflow": inner["workflow"], "runs": run.into_iter().collect::<Vec<_>>()})
                 } else {
                     match inner["box"].as_str() {
                         Some(name) => json!({

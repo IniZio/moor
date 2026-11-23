@@ -428,8 +428,10 @@ Other tools:
   such as `owner/name#12`, to answer that pull request's run. Without it the
   run for no pull request is answered, or the only run that waits. Several
   waiting runs and no `pull` is refused with the list.
-- `list_workflows` shows each workflow, its next due time, its plan and its
-  latest run. `list_workflow_runs` lists each change oldest first, with an
+- `list_workflows` shows one compact row per workflow.
+  The row has its next due time, the names of its gates and a one-line latest run. `get_workflow` shows one
+  workflow in full, with its prompt and plan. `get_workflow_run` shows one run
+  with its result and history. `list_workflow_runs` lists each change oldest first, with an
   outcome and a `trigger` of `cron`, `manual` or `pull_request`. A run for a
   pull request also shows its `pull` and `head_sha`. A run of a Box with gates
   adds a `verdict` that names what it found.

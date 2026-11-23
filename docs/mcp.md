@@ -16,7 +16,7 @@ token's audience.
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `list_nodes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `list_workflow_runs`, `get_repo_config`, `list_events`, `GET /events`, artifact downloads, the Box resources, `subscriptions/listen` |
+| `moor:read` | `list_boxes`, `list_nodes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `get_workflow`, `list_workflow_runs`, `get_workflow_run`, `get_repo_config`, `list_events`, `GET /events`, artifact downloads, the Box resources, `subscriptions/listen` |
 | `moor:write` | `start_box`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled`, `answer_run`, `answer_gate`, `run_workflow`, `set_repo_config` |
 
 ## Tools
@@ -39,8 +39,10 @@ token's audience.
 | `remove_webhook` | `id` |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
 | `add_workflow` | `name`, `repos`, `prompt`. Optional: `cron` with `timezone` (none means by hand or on pull requests), `config`, `timeout_minutes`, `plan`, `gates` (in place of a plan; a gate's check is a command or `{run, says}`), `expected_revision`, `enabled` (false stores it disabled), `on_pull_request` (true also fires on the first repo's pull requests) |
-| `list_workflows` | none |
-| `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs) |
+| `list_workflows` | none. One compact row each; the prompt, plan, config, gates and run detail stay with `get_workflow` |
+| `get_workflow` | `name` |
+| `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs). Compact rows without history or result |
+| `get_workflow_run` | `workflow`, `run` (the `id` of a listed row). The whole run with its history and result |
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |
 | `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note`, `pull` (`OWNER/NAME#NUMBER`, which run when several wait) |

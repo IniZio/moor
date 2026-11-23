@@ -329,7 +329,7 @@ fn send(
     let answered = call(request)?;
     answer(&answered).map_err(|why| reply.refused(why, &answered))?;
     let mut value = answered.value.unwrap_or_default();
-    reply.apply(&mut value, &ask);
+    reply.apply(&mut value, &ask)?;
     Ok(value)
 }
 

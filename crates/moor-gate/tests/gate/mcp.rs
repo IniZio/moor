@@ -23,6 +23,7 @@ mod repo_config;
 mod tool_list;
 mod webhook;
 mod workflow;
+mod workflow_list;
 
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     let listener = UnixListener::bind(path).unwrap();
@@ -69,7 +70,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
                         "show" => list::boxes(who),
                         "start" => json!({"started": inner["name"]}),
-                        _ => Value::Null,
+                        _ => workflow_list::answer(cmd, inner).unwrap_or(Value::Null),
                     };
                     let envelope = Response::ok("x", Some(value));
                     let out = json!({"frame": "response", "id": frame["id"], "envelope": envelope});
