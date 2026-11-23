@@ -16,7 +16,8 @@ pub struct Redial {
     /// failure is returned.
     pub budget: Duration,
     /// Longest wall time a run of refused connects lasts, within `budget`. A refused connect
-    /// proves only that nothing listens on the path, not that a controller is coming back.
+    /// proves only that nothing listens on the path, not that a controller is coming back; once
+    /// one answered `restarting`, refused connects last the whole `budget`.
     pub refused: Duration,
     /// Pause before the first redial; each later pause doubles, up to `max_pause`.
     pub first_pause: Duration,
@@ -125,11 +126,16 @@ pub fn redial<T, E>(
     let mut refused_since: Option<Instant> = None;
     let mut next = policy.first_pause;
     let mut paused = false;
+    let mut restarting = false;
     loop {
         let tried = clock.instant();
         let (e, limit) = match attempt() {
             Attempt::Done(value) => return Ok(value),
             Attempt::Failed(e) => return Err(GaveUp::Failed(e)),
+            Attempt::Refused(e) if restarting => {
+                refused_since = None;
+                (e, None)
+            }
             Attempt::Refused(e) => {
                 let since = *refused_since.get_or_insert(tried);
                 let spent = clock.instant().saturating_duration_since(since);
@@ -137,6 +143,7 @@ pub fn redial<T, E>(
                 (e, Some(left))
             }
             Attempt::Unrun(e) => {
+                restarting = true;
                 refused_since = None;
                 (e, None)
             }

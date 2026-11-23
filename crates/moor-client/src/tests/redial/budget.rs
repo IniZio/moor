@@ -156,3 +156,28 @@ fn refused_connects_get_five_seconds_of_the_default_budget() {
         "{took:?}"
     );
 }
+
+/// Refused first, then `restarting`, then refused until the budget ends: the controller that said
+/// it was restarting is gone from its socket until the next one binds.
+fn restarting_then_refused() -> Attempt<(), &'static str> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static CALLS: AtomicU32 = AtomicU32::new(0);
+    if CALLS.fetch_add(1, Ordering::Relaxed) == 0 {
+        Attempt::Unrun("restarting")
+    } else {
+        Attempt::Refused("refused")
+    }
+}
+
+#[test]
+fn refused_connects_after_a_restarting_answer_get_the_whole_budget() {
+    let (ended, took) = timed(&Redial::default(), restarting_then_refused);
+    assert!(
+        matches!(ended, GaveUp::Budget { budget, .. } if budget == Duration::from_secs(60)),
+        "{ended:?}"
+    );
+    assert!(
+        took >= Duration::from_secs(60) && took <= Duration::from_secs(61),
+        "{took:?}"
+    );
+}
