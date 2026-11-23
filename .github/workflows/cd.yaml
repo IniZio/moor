@@ -62,8 +62,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "${tag:-no release this run}"
 
-  # The Linux tarballs are what agents install, so the deploy waits for these and not for
-  # build-macos. The two jobs share one list of steps.
+  # Agents install the Linux tarballs, so the deploy waits for this job and not for build-macos.
   build:
     needs: release
     if: &build-if always() && (needs.release.outputs.tag != '' || github.event_name == 'pull_request')
@@ -115,7 +114,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # The CLI tarballs people install on a Mac. Nothing else waits for this job.
   build-macos:
     needs: release
     if: *build-if
@@ -215,7 +213,6 @@ jobs:
             sleep $((attempt * 10))
           done
 
-  # Signs the Linux tarballs, which the deploy waits for. sign-macos signs the rest.
   sign:
     needs: [release, build]
     if: &sign-if github.event_name == 'push' && needs.release.outputs.tag != ''
