@@ -135,8 +135,6 @@ jobs:
 
       - name: Allow unprivileged user namespaces for the front tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Run the doc tests
-        run: make unit-doc
       - name: Check the store schema and run the store tests on Postgres
         run: make unit-pg
       - name: Round-trip blobs through a real S3-compatible store
@@ -147,6 +145,8 @@ jobs:
         run: |
           sudo apt-get install -y tinyproxy-bin
           make unit-egress
+      - name: Run the doc tests
+        run: make unit-doc
 
   test:
     needs: [stack, web, lint, unit, integration]
