@@ -103,15 +103,16 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.ingress.enabled=true --set gate.ingress.className=nginx --set gate.login=true | grep -q 'path: /pair$$'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
-	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
-	  --set egress.url= --set egress.ingress.enabled=true --set egress.ingress.className=cloudflare-tunnel --set egress.ingress.host=pub.example.com \
-	  | awk '/^kind: Ingress/{k=1} /^kind: /&&!/Ingress/{k=0} /name: moor-egress$$/&&k{p=1} p&&/host: "pub.example.com"/{h=1} p&&/path: \/egress/&&h{ok=1} END{exit !ok}'
-	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
-	  --set egress.url= --set egress.ingress.enabled=true --set egress.ingress.className=cloudflare-tunnel --set egress.ingress.host=pub.example.com \
-	  | grep -q 'value: "wss://pub.example.com/egress"'
 	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
-	  --set egress.url= --set egress.ingress.enabled=true --set egress.ingress.className=cloudflare-tunnel --set egress.ingress.host=pub.example.com \
-	  | awk '/name: moor-gate$$/{g=1} /^---/{g=0} g&&/path: \/egress/' | wc -l)" = 0
+	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
+	  | awk '/^---/{k=0;p=0} /^kind: Ingress/{k=1} k&&/name: moor-public$$/{p=1} p&&/path:/' | tr -d ' ' | tr '\n' ' ')" = '-path:/egress -path:/hooks/github '
+	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
+	  | awk '/name: moor-gate$$/{g=1} /^---/{g=0} g&&/path: \/(egress|hooks\/github)/' | wc -l)" = 0
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
+	  | grep -q 'value: "wss://pub.example.com/egress"'
+	helm template moor $(CHART) $(CHART_VALUES) --set publicIngress.enabled=true --set publicIngress.className=c 2>&1 | grep -q 'publicIngress.host is required'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url=ws://egress.test/egress 2>&1 | grep -q 'egress.url .* must be a wss://'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \

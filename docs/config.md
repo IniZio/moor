@@ -423,7 +423,7 @@ installation tokens ask for those two reads alone, whatever else the App holds. 
 that cannot read a key file, finds no RSA key in it, or finds an empty webhook secret, does
 not start.
 
-Set the App's webhook URL to `<public url>/hooks/github`, with the same secret and the
+Set the App's webhook URL to `<public url>/hooks/github`, which is the `publicIngress.host` when the chart sets it, with the same secret and the
 `pull_request` event. The gate takes deliveries there without sign-in. The controller
 checks each one's `X-Hub-Signature-256` and answers `401` to a bad or missing one.
 
