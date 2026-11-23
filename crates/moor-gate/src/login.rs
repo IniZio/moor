@@ -130,6 +130,8 @@ pub struct Login {
     endpoints: Mutex<Option<Endpoints>>,
     /// Trades codes for tokens.
     http: Http,
+    /// Seconds a pairing agent is told to wait between polls.
+    pair_interval: u64,
 }
 
 impl Login {
@@ -188,7 +190,16 @@ impl Login {
             seal,
             endpoints: Mutex::new(None),
             http: Http(Agent::new_with_config(config)),
+            pair_interval: pair::INTERVAL_SECS,
         })
+    }
+
+    /// Tells pairing agents to poll every `secs` seconds instead of the default, so a test
+    /// that pairs does not wait out the default.
+    #[must_use]
+    pub const fn with_pair_interval(mut self, secs: u64) -> Self {
+        self.pair_interval = secs;
+        self
     }
 
     /// The public origin, without a trailing slash.

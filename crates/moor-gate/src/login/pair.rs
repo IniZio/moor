@@ -32,7 +32,7 @@ pub(crate) const PATH: &str = "/pair";
 const TTL: Duration = Duration::from_mins(10);
 
 /// Seconds the agent waits between polls.
-const INTERVAL_SECS: u64 = 5;
+pub(super) const INTERVAL_SECS: u64 = 5;
 
 /// Codes drawn before giving up when each is already taken.
 const TRIES: usize = 4;
@@ -228,7 +228,7 @@ fn start(controller: &Client, login: &Login, ask: &Ask) -> (&'static str, Value)
                     json!({"device_code": device_code, "user_code": code,
                         "verification_uri_complete": format!("{uri}?code={code}"),
                         "verification_uri": uri, "expires_in": TTL.as_secs(),
-                        "interval": INTERVAL_SECS}),
+                        "interval": login.pair_interval}),
                 );
             }
             Ok(MachinePairValue::Full) => {

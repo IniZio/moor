@@ -90,7 +90,7 @@ fn world() -> World {
     });
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = format!("http://{}", tcp.local_addr().unwrap());
-    let login = Arc::new(Login::new(&gate).unwrap());
+    let login = Arc::new(Login::new(&gate).unwrap().with_pair_interval(1));
     let config = Arc::new(Gate {
         controller: moor_client::Client::new(socket),
         mcp: None,

@@ -19,6 +19,14 @@ use crate::Moor;
 /// of a lock's fd until it execs; only a running controller holds it longer.
 pub(super) const LOCK_WAIT: Duration = Duration::from_secs(5);
 
+/// The wait for a held controller lock: [`LOCK_WAIT`], or `MOOR_TEST_LOCK_WAIT_MS` milliseconds
+/// when set, so a test that expects the refusal does not wait out the whole of it.
+pub(super) fn lock_wait(env: &Env) -> Duration {
+    env.get("MOOR_TEST_LOCK_WAIT_MS")
+        .and_then(|ms| ms.parse().ok())
+        .map_or(LOCK_WAIT, Duration::from_millis)
+}
+
 /// How often a start tries a held lock again within [`LOCK_WAIT`].
 const LOCK_POLL: Duration = Duration::from_millis(20);
 

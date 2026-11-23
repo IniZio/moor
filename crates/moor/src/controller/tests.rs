@@ -82,7 +82,8 @@ fn second_instance_names_first() {
     let cfg = config(tmp.path(), "");
     let first = start(&env(tmp.path()), &cfg).expect("start");
     let out = Buf::default();
-    let code = serve(&env(tmp.path()), &cfg, out.clone());
+    let quick = env_with(tmp.path(), &[("MOOR_TEST_LOCK_WAIT_MS", "200")]);
+    let code = serve(&quick, &cfg, out.clone());
     assert_eq!(code, 1);
     let want = format!(
         "already running (pid {}) on {}",

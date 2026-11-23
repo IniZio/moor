@@ -38,7 +38,7 @@ use crate::adapters::github::hook::HookSecret;
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
-use lock::{take_lock, take_socket_lock, LOCK_WAIT};
+use lock::{lock_wait, take_lock, take_socket_lock};
 use serving::serve_started;
 use socket_bind::bind;
 
@@ -207,7 +207,7 @@ fn start_until(
     // Held before the store opens, so no other moor migrates the db this controller serves.
     let state_lock = env
         .state_dir()
-        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket, LOCK_WAIT))
+        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket, lock_wait(&env)))
         .transpose()?;
     // Before the wait, as a pod's PID 1 ignores SIGTERM it has no handler for.
     let wake = wake()?;

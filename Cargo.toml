@@ -36,3 +36,12 @@ debug = false
 
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3
+
+[profile.dev.package.croner]
+opt-level = 3
+
+[profile.dev.package.jiff]
+opt-level = 3
+
+[profile.dev.package.serde_json]
+opt-level = 3

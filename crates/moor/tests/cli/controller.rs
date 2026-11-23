@@ -198,7 +198,11 @@ fn socket_envelope_equals_call_envelope() {
 fn second_instance_names_the_first() {
     let sandbox = Sandbox::new();
     let first = Controller::start(&sandbox);
-    let out = sandbox.serve().output().unwrap();
+    let out = sandbox
+        .serve()
+        .env("MOOR_TEST_LOCK_WAIT_MS", "200")
+        .output()
+        .unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains(&first.child.id().to_string()), "{stderr}");
@@ -239,6 +243,7 @@ fn second_controller_on_another_socket_refuses_to_start() {
         .command()
         .args(["controller", "serve", "--config"])
         .arg(&config)
+        .env("MOOR_TEST_LOCK_WAIT_MS", "200")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
