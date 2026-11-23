@@ -45,9 +45,13 @@ pub const STREAM_DRAIN_SECS: u64 = 5;
 
 /// How long a gate holds a request while the controller is away, before it answers 503.
 /// Only a request that provably never ran is dialled again.
+///
+/// 60 s covers the nightly handover's worst case of about 40 s (30 s drain, a surge pod waiting
+/// on the Postgres lock, migrate, 5 s readiness) and matches the client's default budget. The
+/// budget is a hard cap: past it the request gets 503 with `Retry-After`.
 pub const HOLD: Redial = Redial {
-    budget: Duration::from_secs(30),
-    refused: Duration::from_secs(30),
+    budget: Duration::from_secs(60),
+    refused: Duration::from_secs(60),
     first_pause: Duration::from_millis(100),
     max_pause: Duration::from_secs(2),
 };

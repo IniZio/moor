@@ -38,7 +38,7 @@ const CUT: &str = "repo/cut";
 /// A hold no test here runs out unless it means to.
 const LONG: Duration = Duration::from_secs(10);
 
-/// [`HOLD`] with `budget` in place of its 30 s, so a test need not wait them out.
+/// [`HOLD`] with `budget` in place of its 60 s, so a test need not wait them out.
 const fn holding(budget: Duration) -> Redial {
     Redial {
         budget,
@@ -414,8 +414,8 @@ fn relays(stream: TcpStream) {
 }
 
 #[test]
-fn the_gate_holds_30_s_on_every_way_a_request_may_not_have_run() {
-    assert_eq!(HOLD.budget, Duration::from_secs(30));
+fn the_gate_holds_60_s_on_every_way_a_request_may_not_have_run() {
+    assert_eq!(HOLD.budget, Duration::from_secs(60));
     assert_eq!(HOLD.refused, HOLD.budget);
 }
 

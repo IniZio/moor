@@ -46,7 +46,7 @@ struct Args {
     )]
     front_socket: Option<PathBuf>,
     /// The controller's TLS listener, `tls://HOST:PORT`, in place of `--front-socket`. A request
-    /// waits up to 30 s for it to answer, then gets 503 with `Retry-After`.
+    /// waits up to 60 s for it to answer, then gets 503 with `Retry-After`.
     #[arg(
         long,
         env = "MOOR_GATE_CONTROLLER",

@@ -267,7 +267,7 @@ PR 1 fixes #1174 alone, as #1184. PR 2 is #1195. Turn on `runner.separate` in ni
 
 | Question | Recommendation |
 | --- | --- |
-| Hold requests 45 s, above the 30 s crash takeover, then 503? | Yes |
+| Hold requests 60 s, above the 30 s crash takeover, then 503? | Yes |
 
 ## Out of scope
 
