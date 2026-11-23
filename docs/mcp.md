@@ -41,7 +41,7 @@ token's audience.
 | `add_workflow` | `name`, `repos`, `prompt`. Optional: `cron` with `timezone` (none means by hand or on pull requests), `config`, `timeout_minutes`, `plan`, `gates` (in place of a plan; a gate's check is a command or `{run, says}`), `expected_revision`, `enabled` (false stores it disabled), `on_pull_request` (true also fires on the first repo's pull requests) |
 | `list_workflows` | none. One compact row each; the prompt, plan, config, gates and run detail stay with `get_workflow` |
 | `get_workflow` | `name` |
-| `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs). Compact rows without history or result |
+| `list_workflow_runs` | optional `after`, `limit`, `workflow` (one workflow's runs). Compact rows without history or result. Without `after`, the latest `limit` changes; `after` 0 reads from the oldest |
 | `get_workflow_run` | `workflow`, `run` (the `id` of a listed row). The whole run with its history and result |
 | `remove_workflow` | `name` |
 | `set_workflow_enabled` | `name`, `enabled` |

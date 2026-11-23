@@ -231,6 +231,11 @@ fn the_list_tools_send_agents_to_the_get_tools_for_detail() {
     assert!(workflows.contains("get_workflow"), "{workflows}");
     let runs = description(&m, &token, "list_workflow_runs");
     assert!(runs.contains("get_workflow_run"), "{runs}");
+    assert!(
+        runs.contains("Without `after` you get the latest `limit` changes"),
+        "{runs}"
+    );
+    assert!(!runs.contains("oldest change first"), "{runs}");
     let one = description(&m, &token, "get_workflow_run");
     assert!(one.contains("history"), "{one}");
 }

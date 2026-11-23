@@ -136,7 +136,8 @@ pub(super) struct RunNowArgs {
 /// Arguments of `list_workflow_runs`.
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct RunsArgs {
-    /// The `next` of the previous call, to get only what changed since; everything when left out.
+    /// The `next` of the previous call, to get only what changed since; 0 reads from the oldest
+    /// change. The latest `limit` changes when left out.
     pub(super) after: Option<i64>,
     /// Most changes to return, up to 200; 50 when left out.
     pub(super) limit: Option<u32>,

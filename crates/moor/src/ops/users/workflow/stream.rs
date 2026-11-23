@@ -107,7 +107,8 @@ pub(super) fn run_view(
     })
 }
 
-/// `workflow-runs`: the changes after the cursor.
+/// `workflow-runs`: the changes after the cursor, or the latest ones when there is none. The
+/// store owns the paging; `next` is the newest change returned, or the cursor again.
 pub(super) fn runs(
     store: &Store,
     user: UserId,
@@ -115,10 +116,10 @@ pub(super) fn runs(
     (workflow, pull): (Option<&str>, Option<&PullTarget>),
 ) -> Result<serde_json::Value, CommandError> {
     let only = workflow.map(parse_name).transpose()?;
-    let after = after.unwrap_or(0).max(0);
+    let after = after.map(|a| a.max(0));
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let mut changes = Vec::new();
-    let mut next = after;
+    let mut next = after.unwrap_or(0);
     let mut prompts = HashMap::new();
     for change in store.workflow_changes(user, after, u64::from(limit), (only.as_ref(), pull))? {
         next = next.max(change.seq);

@@ -507,7 +507,7 @@ fn concurrent_settles_get_gapless_numbers_in_commit_order() {
         }
     });
     let seqs: Vec<_> = store
-        .workflow_changes(alice, 0, 1000, (None, None))
+        .workflow_changes(alice, Some(0), 1000, (None, None))
         .unwrap()
         .iter()
         .map(|c| c.seq)
@@ -518,7 +518,7 @@ fn concurrent_settles_get_gapless_numbers_in_commit_order() {
         .unwrap());
     assert_eq!(
         store
-            .workflow_changes(alice, 0, 1000, (None, None))
+            .workflow_changes(alice, Some(0), 1000, (None, None))
             .unwrap()
             .len(),
         100,

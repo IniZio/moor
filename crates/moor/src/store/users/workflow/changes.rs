@@ -65,18 +65,24 @@ impl Store {
         Ok(changed == 1)
     }
 
-    /// The changes to `owner`'s workflows after `after`, oldest first, at most `limit`: every
-    /// run recorded or moved on. With `only`, just the changes of the workflow of that name and
+    /// The changes to `owner`'s workflows, oldest first, at most `limit`: every run recorded or
+    /// moved on. With `after`, the first `limit` changes after that number; without it, the
+    /// latest `limit` changes, so a reader with no cursor sees what is recent. With `only`, just the changes of the workflow of that name and
     /// of the runs for that pull request. The filters are in the query, so `limit` counts only
     /// the changes they keep.
     pub(crate) fn workflow_changes(
         &self,
         owner: UserId,
-        after: i64,
+        after: Option<i64>,
         limit: u64,
         only: (Option<&WorkflowName>, Option<&PullTarget>),
     ) -> Result<Vec<WorkflowChange>, StoreError> {
         let reader = self.reader()?;
+        let order = if after.is_some() {
+            Order::Asc
+        } else {
+            Order::Desc
+        };
         let runs = reader.rows(
             Query::select()
                 .column((WorkflowRuns::Table, WorkflowRuns::Seq))
@@ -92,9 +98,11 @@ impl Store {
                         .equals((Workflows::Table, Workflows::Id)),
                 )
                 .and_where(Expr::col((Workflows::Table, Workflows::User)).eq(owner.get()))
-                .and_where(Expr::col((WorkflowRuns::Table, WorkflowRuns::Seq)).gt(after))
+                .and_where(
+                    Expr::col((WorkflowRuns::Table, WorkflowRuns::Seq)).gt(after.unwrap_or(0)),
+                )
                 .cond_where(kept(only))
-                .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), Order::Asc)
+                .order_by((WorkflowRuns::Table, WorkflowRuns::Seq), order)
                 .limit(limit),
             |r| {
                 Ok::<_, db::Error>((
@@ -123,6 +131,9 @@ impl Store {
                 origin: front.map(|front| WorkflowOrigin { front, key }),
                 run: Box::new(run_of(WorkflowId::new(workflow), &run)?),
             });
+        }
+        if after.is_none() {
+            out.reverse();
         }
         Ok(out)
     }

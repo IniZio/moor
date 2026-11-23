@@ -7,7 +7,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::workflow::{CommitSha, NewRun, PullRef, PullTarget, RunCause, WorkflowName};
 use serde_json::Value;
 
-use super::{cmd, daily, me, ok};
+use super::{cmd, daily, me, ok, runs};
 use crate::ops::users::run;
 use crate::ops::users::tests::fixture;
 use crate::testing::runs::{running, skipped};
@@ -76,7 +76,7 @@ fn the_runs_stream_filters_by_pull_request_before_the_limit_and_pages() {
             }),
         )
     };
-    let first = page(None, 1, None);
+    let first = page(Some(0), 1, None);
     assert_eq!(due_ats(&first), [100], "the limit counts only o/n#7's runs");
     let second = page(first["next"].as_i64(), 1, None);
     assert_eq!(
@@ -165,5 +165,65 @@ fn a_change_names_its_run_and_the_title_of_the_step_it_is_at() {
             (ids[0].into(), "Deliver".into()),
             (ids[1].into(), Value::Null),
         ]
+    );
+}
+
+#[test]
+fn without_a_cursor_the_runs_stream_returns_the_latest_changes_oldest_first() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    daily(&f, &who);
+    let store = f.cx.store().unwrap();
+    let user = store.user_of(&who).unwrap().unwrap();
+    let w = store
+        .workflow(user, &WorkflowName::parse("daily").unwrap())
+        .unwrap()
+        .unwrap();
+    let record = |due: i64| {
+        let run = NewRun {
+            workflow: w.id,
+            repo: ForgeRepo::new("o", "n"),
+            due_at: Ts::from_millis(due),
+            state: skipped(),
+            recorded_at: Ts::from_millis(due),
+            plan: None,
+            cause: RunCause::Cron,
+        };
+        store.record_workflow_run(&run).unwrap();
+    };
+    for due in [100, 200, 300, 400, 500] {
+        record(due);
+    }
+
+    let latest = runs(&f, &who, None, Some(3));
+    assert_eq!(
+        due_ats(&latest),
+        [300, 400, 500],
+        "the newest three, oldest first"
+    );
+
+    let quiet = runs(&f, &who, latest["next"].as_i64(), Some(3));
+    assert_eq!(due_ats(&quiet), Vec::<i64>::new(), "nothing is newer yet");
+    assert_eq!(quiet["next"], latest["next"]);
+
+    record(600);
+    let newer = runs(&f, &who, latest["next"].as_i64(), Some(3));
+    assert_eq!(
+        due_ats(&newer),
+        [600],
+        "the cursor reads only newer changes"
+    );
+
+    let from_start = runs(&f, &who, Some(0), Some(2));
+    assert_eq!(
+        due_ats(&from_start),
+        [100, 200],
+        "after 0 still reads from the beginning"
+    );
+    let all = runs(&f, &who, None, None);
+    assert_eq!(
+        due_ats(&all),
+        [100, 200, 300, 400, 500, 600],
+        "fewer than the limit: all"
     );
 }

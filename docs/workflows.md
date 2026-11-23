@@ -433,7 +433,8 @@ Other tools:
 - `list_workflows` shows one compact row per workflow.
   The row has its next due time, the names of its gates and a one-line latest run. `get_workflow` shows one
   workflow in full, with its prompt and plan. `get_workflow_run` shows one run
-  with its result and history. `list_workflow_runs` lists each change oldest first, with an
+  with its result and history. `list_workflow_runs` lists each change, oldest first within the page. Without
+  `after` the page is the latest `limit` changes. Each change has an
   outcome and a `trigger` of `cron`, `manual` or `pull_request`. A run for a
   pull request also shows its `pull` and `head_sha`. A run of a Box with gates
   adds a `verdict` that names what it found.
