@@ -19,7 +19,7 @@ runs:
       with:
         shared-key: ${{ inputs.cache }}
         cache-bin: false
-        save-if: true
+        save-if: ${{ github.event_name == 'push' }}
 
     - id: tools
       shell: bash
