@@ -9,6 +9,9 @@ ARG BUN_IMAGE=oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97
 
 ARG CLAUDE_CODE_VERSION=2.1.312
 
+# `build` compiles moor here from source; `prebuilt` copies the context's prebuilt/ (cd.yaml's x86_64 musl build).
+ARG BINS=build
+
 # Splits the dependency build from moor's own crates, so the dependencies stay a cached layer.
 ARG CARGO_CHEF_VERSION=0.1.78
 
@@ -77,6 +80,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
  && install -D "target/$target/release/moor-egress-forward" /out/moor-egress-forward
 
 
+FROM scratch AS prebuilt
+COPY --chmod=0755 prebuilt/ /out/
+
+
+FROM ${BINS} AS bins
+
+
 FROM ${NODE_IMAGE} AS runtime
 ARG CLAUDE_CODE_VERSION
 # tini reaps the process groups the controller starts and passes SIGTERM on for the drain.
@@ -90,7 +100,7 @@ RUN apt-get update \
  && install -d -o 10001 -g 10001 -m 0700 /var/lib/moor \
  && install -d -m 0755 /etc/moor
 
-COPY --from=build /out/ /usr/local/bin/
+COPY --from=bins /out/ /usr/local/bin/
 
 ENV HOME=/var/lib/moor \
     MOOR_STATE_DIR=/var/lib/moor/state \

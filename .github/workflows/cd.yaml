@@ -69,8 +69,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, image-extra: moor-notify }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, image-extra: '' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
@@ -99,7 +99,7 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q musl-tools
           target=${{ matrix.target }}
           echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
-      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --release --locked --target ${{ matrix.target }}
+      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS ${{ matrix.image-extra }}; do printf -- '-p %s ' "$b"; done) --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist
@@ -108,6 +108,20 @@ jobs:
             tar -czf "dist/$asset" -C target/${{ matrix.target }}/release "$bin"
             (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
           done
+      - name: Collect the controller image's binaries
+        if: matrix.image-extra
+        run: |
+          mkdir prebuilt
+          for b in moor moor-gate moor-egress-forward moor-machine-runner moor-notify; do
+            cp target/${{ matrix.target }}/release/$b prebuilt/
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.image-extra
+        with:
+          name: controller-image-bins
+          path: prebuilt
+          retention-days: 1
+          if-no-files-found: error
       - name: Upload
         if: github.event_name == 'push'
         run: gh release upload "$TAG" dist/* ${{ matrix.target == 'x86_64-unknown-linux-musl' && 'install.sh' || '' }} --clobber --repo "$GITHUB_REPOSITORY"
@@ -120,7 +134,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin, image-extra: '' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
@@ -146,26 +160,12 @@ jobs:
           TAG: ${{ needs.release.outputs.tag }}
         run: |
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          # Every release names its own tag; there is no moving one.
-          tags: ghcr.io/inizio/moor:${{ steps.version.outputs.version }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          build-args: |
-            MOOR_COMMIT=${{ steps.version.outputs.commit }}
-            MOOR_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache
-          cache-to: type=registry,ref=ghcr.io/inizio/moor:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -212,6 +212,46 @@ jobs:
             echo "::warning::ghcr 404 on the chart manifest just pushed (attempt $attempt); retrying in $((attempt * 10))s"
             sleep $((attempt * 10))
           done
+
+  # The controller image holds the binaries the x86_64 leg of build made, so it compiles nothing.
+  image-controller:
+    needs: [release, build]
+    if: needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+      - id: version
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: controller-image-bins
+          path: prebuilt
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # Every release names its own tag; there is no moving one.
+          tags: ghcr.io/inizio/moor:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          build-args: BINS=prebuilt
+          cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache-runtime
+          cache-to: type=registry,ref=ghcr.io/inizio/moor:buildcache-runtime,mode=max,image-manifest=true,oci-mediatypes=true
 
   sign:
     needs: [release, build]
@@ -261,7 +301,7 @@ jobs:
   gitops:
     # The Linux agent tarballs and their signatures must be up before the controller that sends
     # agents to them. The macOS tarballs are for people's CLIs, so the deploy does not wait for them.
-    needs: [release, build, image, sign]
+    needs: [release, build, image, image-controller, sign]
     if: github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
