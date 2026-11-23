@@ -2,10 +2,8 @@
 {{- if .enabled }}
 {{- $class := required "publicIngress.className is required" .className }}
 {{- $host := required "publicIngress.host is required" .host }}
-{{- $egress := $.Values.egress.enabled }}
-{{- $hook := $.Values.githubApp.webhookSecret }}
-{{- if or $egress $hook }}
-# Only the paths a caller outside the private network needs. The gate host stays private.
+{{- if $.Values.githubApp.webhookSecret }}
+# Only the GitHub App webhook, the one caller outside the private network. The gate host stays private.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -20,22 +18,12 @@ spec:
     - host: {{ $host | quote }}
       http:
         paths:
-          {{- if $egress }}
-          - path: /egress
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $.Release.Name }}-egress
-                port: { name: egress }
-          {{- end }}
-          {{- if $hook }}
           - path: /hooks/github
             pathType: Prefix
             backend:
               service:
                 name: {{ $.Release.Name }}-gate
                 port: { name: gate }
-          {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

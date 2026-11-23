@@ -121,7 +121,7 @@ spec:
                 name: {{ $.Release.Name }}-gate
                 port: { name: gate }
           {{- end }}
-          {{- if and .Values.egress.enabled (not .Values.publicIngress.enabled) }}
+          {{- if .Values.egress.enabled }}
           - path: /egress
             pathType: Prefix
             backend:
