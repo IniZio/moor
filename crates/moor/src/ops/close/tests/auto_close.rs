@@ -124,6 +124,13 @@ impl OneOff {
             .unwrap();
     }
 
+    fn slept_unchecked(&self, why: &str) {
+        self.slept_with(None);
+        let at = (self.f.id, HandsInc::FIRST);
+        let store = self.f.cx.store().unwrap();
+        store.set_suspend_unchecked(at, why).unwrap();
+    }
+
     fn woke(&self) -> bool {
         self.f.driver.calls().iter().any(|c| c.starts_with("wake"))
     }
@@ -295,4 +302,57 @@ fn closing_an_asleep_box_unwoken_says_its_caches_were_lost_unless_the_driver_kee
     assert!(kept.closed());
     assert!(!kept.woke());
     assert!(kept.events("caches_not_saved").is_empty());
+}
+
+#[test]
+fn an_asleep_box_whose_sleep_kept_no_answer_is_held_with_the_reason_and_the_way_on() {
+    let t = one_off("ahead=0 dirty=0");
+    t.slept_unchecked("memory on its node was critical");
+    t.pull(Some(PullState::Merged));
+    assert!(t.sweep().is_empty());
+    assert!(!t.closed());
+    assert!(!t.woke());
+    assert_eq!(
+        t.events("auto_close_held")[0]["why"],
+        "its work was not checked when it went to sleep (memory on its node was critical); \
+         waking or closing it checks it"
+    );
+}
+
+#[test]
+fn an_asleep_box_whose_sleep_recorded_nothing_says_so() {
+    let t = one_off("ahead=0 dirty=0");
+    t.slept_with(None);
+    t.pull(Some(PullState::Merged));
+    t.sweep();
+    assert_eq!(
+        t.events("auto_close_held")[0]["why"],
+        "its work was not checked when it went to sleep (no check was recorded); \
+         waking or closing it checks it"
+    );
+}
+
+#[test]
+fn a_held_box_that_wakes_and_sleeps_clean_closes_on_a_later_pass() {
+    let t = one_off("ahead=0 dirty=0");
+    t.slept_unchecked("memory on its node was critical");
+    t.pull(Some(PullState::Merged));
+    assert!(t.sweep().is_empty());
+    let store = t.f.cx.store().unwrap();
+    store
+        .apply(
+            Decision::new(t.f.id)
+                .lifecycle(BoxLifecycleInput::Wake)
+                .hands_input(HandsInc::FIRST, HandsInput::Wake),
+        )
+        .unwrap();
+    assert_eq!(
+        store.suspend_unchecked(t.f.id).unwrap(),
+        None,
+        "a wake clears it"
+    );
+    t.slept_with(Some((0, 0)));
+    let lines = t.pass_secs(3_600);
+    assert_eq!(lines, ["closed t: pr_merged"]);
+    assert!(!t.woke());
 }

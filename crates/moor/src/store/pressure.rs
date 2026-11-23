@@ -133,13 +133,46 @@ impl Store {
         (id, inc): (BoxId, HandsInc),
         check: Option<SuspendCheck>,
     ) -> Result<(), StoreError> {
+        self.write_suspend_check((id, inc), check, None)
+    }
+
+    /// Stores that nothing is known of what Box `id` holds on its hands `inc`, and `why`; refused
+    /// once those hands are replaced.
+    pub(crate) fn set_suspend_unchecked(
+        &self,
+        (id, inc): (BoxId, HandsInc),
+        why: &str,
+    ) -> Result<(), StoreError> {
+        self.write_suspend_check((id, inc), None, Some(why))
+    }
+
+    /// Writes the suspend check of Box `id`'s hands `inc`: the answer, or why none stands.
+    fn write_suspend_check(
+        &self,
+        (id, inc): (BoxId, HandsInc),
+        check: Option<SuspendCheck>,
+        why: Option<&str>,
+    ) -> Result<(), StoreError> {
         let written = self.writer().run(
             update_hands(id, inc)
                 .value(BoxHands::SuspendAhead, check.map(|c| i64::from(c.ahead)))
                 .value(BoxHands::SuspendDirty, check.map(|c| i64::from(c.dirty)))
-                .value(BoxHands::SuspendCheckedAt, check.map(|c| c.at)),
+                .value(BoxHands::SuspendCheckedAt, check.map(|c| c.at))
+                .value(BoxHands::SuspendUnchecked, why.map(str::to_owned)),
         )?;
         fenced(id, inc, written)
+    }
+
+    /// Why the suspend of Box `id` kept no answer of what it holds; none when one stands or it kept
+    /// no reason.
+    pub(crate) fn suspend_unchecked(&self, id: BoxId) -> Result<Option<String>, StoreError> {
+        let conn = self.reader()?;
+        let why: Option<Option<String>> = conn
+            .row(select_current(id, [BoxHands::SuspendUnchecked]), |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(why.flatten())
     }
 
     /// What was stored of Box `id` before it was suspended; none when no answer stands.

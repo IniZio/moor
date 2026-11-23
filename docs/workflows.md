@@ -330,7 +330,9 @@ moor closes it 24 hours after the run ends.
   an `auto_close_held` event on the Box that says why. `box_status` shows it as
   `close_held`. Push or discard the work, and moor closes the Box on a later pass.
 - The close never wakes an asleep Box. It uses the check moor recorded when the
-  Box went to sleep. A Box with no such check is held, not woken.
+  Box went to sleep. A Box with no such check is held, not woken. Its line in
+  the list says `not closed:` and why the sleep skipped the check. Wake it or
+  close it yourself, and the check runs.
 - A close keeps the artifacts, the transcript and the stored diff.
 
 The controller config key `auto_close_run_after_secs` sets the wait. The default is

@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::view::progress::{latest, span, unix, Happened};
+use crate::view::stuck::stuck_of;
 use crate::view::{ApprovalView, BoxView, EventView};
 use failed::closed_failure;
 
@@ -78,6 +79,9 @@ pub struct ProgressView {
     pub pr: Option<PrLink>,
     /// What the agent asks, when it waits at a menu a person can answer.
     pub needs: Option<Needs>,
+    /// Why moor did not close a quiet Box it was due to close, until the Box is used again.
+    #[serde(default)]
+    pub held: Option<String>,
 }
 
 /// The Box `boxed` is at `now_ms` (unix milliseconds), given its events oldest first.
@@ -94,13 +98,17 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
             ts: e.ts.clone(),
         })
         .collect();
+    let held = held_of(state, events, &happened);
+    let line = line_of(state, boxed, events, &happened, silent);
     ProgressView {
         title: title_of(boxed.prompt.as_deref(), &boxed.name),
         state,
         failed: state == Progress::Failed
             || state == Progress::Closed && closed_failure(events).is_some(),
         stale: state == Progress::Working && silent.is_some_and(|s| s > STALE_AFTER_MS),
-        line: line_of(state, boxed, events, &happened, silent),
+        line: held
+            .as_ref()
+            .map_or_else(|| line.clone(), |why| format!("{line} · not closed: {why}")),
         last_event_at: events.last().map(|e| e.ts.clone()),
         pr: pr_of(boxed, events),
         needs: (state == Progress::NeedsYou)
@@ -111,7 +119,17 @@ pub fn derive(boxed: &BoxView, events: &[EventView], now_ms: i64) -> ProgressVie
                 )
             })
             .flatten(),
+        held,
     }
+}
+
+/// Why auto-close left a quiet Box in `state` open, while nothing since has cleared it.
+fn held_of(state: Progress, events: &[EventView], happened: &[Happened]) -> Option<String> {
+    if !matches!(state, Progress::Asleep | Progress::Done) {
+        return None;
+    }
+    stuck_of(happened).filter(|s| s.kind == "close_held")?;
+    newest(events, "auto_close_held", "why").map(str::to_owned)
 }
 
 /// The state the Box's row says. Events never decide it: a window of them can miss the one that

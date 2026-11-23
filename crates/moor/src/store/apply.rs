@@ -320,6 +320,7 @@ fn write_box(
             ] {
                 sets.push((column, None::<i64>.into()));
             }
+            sets.push((BoxHands::SuspendUnchecked, None::<String>.into()));
         }
         sets.extend(input_handle_sets(input, &sets));
     }

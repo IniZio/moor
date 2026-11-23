@@ -50,22 +50,10 @@ pub(super) fn box_check(
         .hands
         .as_ref()
         .is_some_and(|b| b.state == HandsState::Asleep);
-    let stored = if asleep {
-        store.suspend_check(row.id)?
-    } else {
-        None
-    };
-    if let Some(c) = stored.filter(|c| c.ahead > 0 || c.dirty > 0) {
-        return Ok(BoxCheck::Unsaved {
-            ahead: c.ahead,
-            dirty: c.dirty,
-        });
-    }
-    if asleep && (wake == Wake::Never || stored.is_some()) {
-        return Ok(stored.map_or_else(
-            || BoxCheck::Unknown("its work was not checked when it went to sleep".to_owned()),
-            |_| BoxCheck::Clean,
-        ));
+    if asleep {
+        if let Some(answer) = asleep_answer(store, row, wake)? {
+            return Ok(answer);
+        }
     }
     // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
     match wake_to_close(cx, store, row) {
@@ -97,4 +85,29 @@ pub(super) fn box_check(
         BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
     })
+}
+
+/// What asleep Box `row` holds, from the check stored when it went to sleep; none when it must be
+/// woken to tell. A Box that may not be woken and has no stored answer is unknown, with why.
+fn asleep_answer(
+    store: &Store,
+    row: &BoxRow,
+    wake: Wake,
+) -> Result<Option<BoxCheck>, CommandError> {
+    match store.suspend_check(row.id)? {
+        Some(c) if c.ahead > 0 || c.dirty > 0 => Ok(Some(BoxCheck::Unsaved {
+            ahead: c.ahead,
+            dirty: c.dirty,
+        })),
+        Some(_) => Ok(Some(BoxCheck::Clean)),
+        None if wake == Wake::Never => {
+            let why = store
+                .suspend_unchecked(row.id)?
+                .unwrap_or_else(|| "no check was recorded".to_owned());
+            Ok(Some(BoxCheck::Unknown(format!(
+                "its work was not checked when it went to sleep ({why}); waking or closing it checks it"
+            ))))
+        }
+        None => Ok(None),
+    }
 }

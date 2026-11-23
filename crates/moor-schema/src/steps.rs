@@ -45,6 +45,7 @@ mod said_at;
 mod session_archive;
 mod shared_machines;
 mod suspend_check;
+mod suspend_unchecked;
 mod user_inbox;
 pub(crate) mod vm_inc;
 mod wanted_effect;
@@ -120,4 +121,5 @@ pub const STEPS: &[Step] = &[
     step("V98__workflow_gates", workflow_gates::write),
     step("V99__workflow_run_verdict", workflow_run_verdict::write),
     step("V100__inbox_cleared", inbox_cleared::write),
+    step("V101__suspend_unchecked", suspend_unchecked::write),
 ];

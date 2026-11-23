@@ -13,6 +13,10 @@ fn lost(w: &World, id: BoxId) -> bool {
         .is_some()
 }
 
+fn unchecked(w: &World, id: BoxId) -> Option<String> {
+    w.cx.store().unwrap().suspend_unchecked(id).unwrap()
+}
+
 /// Working `a`, and clean idle `b` too big to wake, suspended for room.
 fn suspended_for_room() -> (World, BoxId) {
     let (w, hv) = live_world(32_768);
@@ -227,4 +231,32 @@ fn a_sleep_of_hands_replaced_before_it_began_never_reaches_the_driver() {
     assert_eq!(slept, None);
     assert_eq!(calls(&w, "sleep"), before);
     assert_eq!(stored(&w, b), None);
+}
+
+#[test]
+fn a_sleep_that_keeps_no_answer_keeps_why_and_one_that_checks_keeps_none() {
+    let (w, _) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    let (w, _) = agents_report(w, &[b], &[a]);
+    idle(&w, b);
+    holds(&w, a, CLEAN);
+    holds(&w, b, CLEAN);
+    for id in [a, b] {
+        let box_name = w.cx.store().unwrap().box_row(id).unwrap().unwrap().name;
+        crate::ops::sleep::run(&w.cx, &moor_core::BoxReq { box_name }).unwrap();
+    }
+    assert_eq!(
+        unchecked(&w, a).as_deref(),
+        Some("its agent or a command in it may still have been at work")
+    );
+    assert_eq!(unchecked(&w, b), None);
+}
+
+#[test]
+fn a_last_resort_suspend_keeps_why_it_kept_no_answer() {
+    let (w, b) = suspended_at_work();
+    assert_eq!(
+        unchecked(&w, b).as_deref(),
+        Some("its agent or a command in it may still have been at work")
+    );
 }

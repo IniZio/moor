@@ -244,6 +244,10 @@ fn listed(value: &mut Value, ask: &dyn Fn(ControllerRequest) -> Result<Value, St
             (_, Some(name)) => events_of(name, ask),
         };
         let line = waiting(status(&lifecycle, &events), row.get("agent"));
+        let line = match row.pointer("/progress/held").and_then(Value::as_str) {
+            Some(why) => format!("{line} · not closed: {why}"),
+            None => line,
+        };
         *row = compact(row, &line);
     }
 }

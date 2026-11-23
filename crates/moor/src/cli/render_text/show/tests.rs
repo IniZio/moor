@@ -352,6 +352,7 @@ fn a_real_serialised_gate_and_progress_render_as_the_fronts_get_them() {
         last_event_at: None,
         pr: None,
         needs: None,
+        held: None,
     };
     let mut t = row("alpha", true);
     let fields = t.as_object_mut().unwrap();

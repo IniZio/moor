@@ -71,8 +71,12 @@ moor also closes Boxes nobody needs any more, once a minute:
   closes. It also closes after 7 days with no steer, terminal or finished turn.
 - A Box with unpushed commits or uncommitted files is not closed. moor writes an
   `auto_close_held` event that says why. `box_status` shows the Box as
-  `close_held`. A person pushes or discards the work. Then moor closes the Box,
-  or you close it.
+  `close_held`. The Box's line in the list ends with `not closed:` and the
+  reason. A person pushes or discards the work. Then moor closes the Box, or you
+  close it.
+- An asleep Box whose sleep could not check its work is held the same way. The
+  reason says why the check was skipped, such as memory on its node being
+  critical. Wake the Box or close it yourself. Either one checks it.
 - A Box whose agent is working is left alone.
 
 The `closed` event has `reason` `run_ended`, `pr_merged`, `pr_closed` or `idle`.
