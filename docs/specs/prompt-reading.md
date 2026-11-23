@@ -35,7 +35,7 @@ The owner approved this spec with these answers on 2026-11-23.
 | A12 draft, A13 repo list | Pull request 12 |
 | A14 named checks | Named checks, pull request 2 |
 | A15 network line | Shown dashed. Enforcement is the egress work, out of scope. |
-| B9 Plan first | Open question 4 |
+| B9 Plan first | Decision 4: retired with pull request 7 |
 | C8 inbox clear | Pull request 1 |
 | D2 to D5 yes, stuck and no-check cards | Out of scope. One-off tasks get these cards once pull request 7 gives them gates. |
 | G1 keys on margin notes | Pull request 6 |
