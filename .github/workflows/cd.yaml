@@ -62,23 +62,23 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "${tag:-no release this run}"
 
+  # Agents install the Linux tarballs, so the deploy waits for this job and not for build-macos.
   build:
     needs: release
-    if: always() && (needs.release.outputs.tag != '' || github.event_name == 'pull_request')
+    if: &build-if always() && (needs.release.outputs.tag != '' || github.event_name == 'pull_request')
     strategy:
       matrix:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
-          - { os: macos-latest, target: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: write
-    env:
+    env: &build-env
       TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
       BINS: moor moor-gate moor-egress-forward moor-listen moor-machine-agent moor-machine-runner
-    steps:
+    steps: &build-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release.outputs.tag || github.sha }}
@@ -113,6 +113,20 @@ jobs:
         run: gh release upload "$TAG" dist/* ${{ matrix.target == 'x86_64-unknown-linux-musl' && 'install.sh' || '' }} --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
+
+  build-macos:
+    needs: release
+    if: *build-if
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env: *build-env
+    steps: *build-steps
 
   image:
     needs: release
@@ -201,12 +215,14 @@ jobs:
 
   sign:
     needs: [release, build]
-    if: github.event_name == 'push' && needs.release.outputs.tag != ''
+    if: &sign-if github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
-    steps:
+    env:
+      ASSETS: '*-linux-musl.tar.gz'
+    steps: &sign-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release.outputs.tag }}
@@ -224,16 +240,27 @@ jobs:
           trap 'rm -f "$key"' EXIT
           printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
           mkdir -p "$RUNNER_TEMP/dist" && cd "$RUNNER_TEMP/dist"
-          gh release download "$TAG" --pattern '*.tar.gz' --repo "$GITHUB_REPOSITORY"
+          gh release download "$TAG" --pattern "$ASSETS" --repo "$GITHUB_REPOSITORY"
           for asset in *.tar.gz; do
             minisign -S -s "$key" -m "$asset" -t "$asset $TAG" < /dev/null
             minisign -V -q -p "$GITHUB_WORKSPACE/crates/moor-machine-agent/release.pub" -m "$asset"
           done
           gh release upload "$TAG" ./*.minisig --clobber --repo "$GITHUB_REPOSITORY"
 
+  sign-macos:
+    needs: [release, build-macos]
+    if: *sign-if
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      ASSETS: '*-apple-darwin.tar.gz'
+    steps: *sign-steps
+
   gitops:
-    # The agent tarballs and their signatures must be up before the controller that sends
-    # agents to them.
+    # The Linux agent tarballs and their signatures must be up before the controller that sends
+    # agents to them. The macOS tarballs are for people's CLIs, so the deploy does not wait for them.
     needs: [release, build, image, sign]
     if: github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
