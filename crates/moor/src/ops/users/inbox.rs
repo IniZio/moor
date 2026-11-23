@@ -1,4 +1,4 @@
-//! `inbox`: the caller's inbox with each item's state, and marking items read.
+//! `inbox`: the caller's inbox with each item's state, marking items read, and clearing them.
 
 use std::collections::HashMap;
 
@@ -20,14 +20,20 @@ use crate::store::{Store, UserInboxRow};
 /// The most items a list holds, newest first.
 const LIST_MAX: u32 = 50;
 
-/// Run `op` for `user`; both answer with the inbox as it stands after it.
+/// Run `op` for `user`; each answers with the inbox as it stands after it.
 pub(in crate::ops) fn run(
     store: &Store,
     user: UserId,
     op: &InboxOp,
 ) -> Result<serde_json::Value, CommandError> {
-    if let InboxOp::Read { ids } = op {
-        store.mark_inbox_read(user, ids)?;
+    match op {
+        InboxOp::List => {}
+        InboxOp::Read { ids } => {
+            store.mark_inbox_read(user, ids)?;
+        }
+        InboxOp::Clear(which) => {
+            store.clear_inbox(user, which)?;
+        }
     }
     let rows = store.user_inbox(user, LIST_MAX)?;
     let mut boxes: HashMap<BoxId, (bool, Option<i64>)> = HashMap::new();

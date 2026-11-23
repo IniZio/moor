@@ -26,6 +26,7 @@ mod egress_token;
 mod forward_port;
 mod hands_ended;
 mod held_prompt;
+mod inbox_cleared;
 mod inbox_prompts;
 mod insertion_order;
 mod launch_facts;
@@ -118,4 +119,5 @@ pub const STEPS: &[Step] = &[
     step("V97__box_gates", box_gates::write),
     step("V98__workflow_gates", workflow_gates::write),
     step("V99__workflow_run_verdict", workflow_run_verdict::write),
+    step("V100__inbox_cleared", inbox_cleared::write),
 ];

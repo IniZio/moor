@@ -49,9 +49,10 @@ mod cmd;
 mod user;
 mod workflow;
 pub use user::{
-    ActAsReq, AsReq, EnrollReq, InboxOp, InboxReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
-    ProfileCheckReq, ProfileSetReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq,
-    UserCmd, WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+    ActAsReq, AsReq, EnrollReq, InboxClear, InboxOp, InboxReq, McpAddReq, McpOAuthFinishReq,
+    McpRemoveReq, ProfileCheckReq, ProfileSetReq, SecretDeleteReq, SecretSetReq, SecretValue,
+    StartNeedsReq, UserCmd, WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq,
+    WebhookSetupShowReq,
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,

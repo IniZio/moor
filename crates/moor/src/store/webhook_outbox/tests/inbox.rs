@@ -3,8 +3,9 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions index listed rows")]
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::event::SteerSent;
+use moor_core::domain::event::{Event, SteerSent};
 use moor_core::inbox::InboxKind;
+use moor_core::request::InboxClear;
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{Plan, RunOutcome, RunState};
 
@@ -169,4 +170,112 @@ fn an_approve_wait_adds_one_row_and_stops_waiting_when_answered_and_a_failed_run
     assert_eq!(rows[0].kind, InboxKind::RunFailed);
     assert!(rows[0].text.contains("timeout"), "{}", rows[0].text);
     let _ = new_run;
+}
+
+fn ask_as(w: &super::World, name: &str, who: moor_core::user::UserId) -> (moor_core::BoxId, i64) {
+    let boxed = w.store.apply(insert(name).requester(who)).unwrap().box_id;
+    let asked = ExtraEvent::NeedsInput {
+        question: None,
+        options: vec![],
+    };
+    let event = w
+        .store
+        .apply(Decision::new(boxed).event(asked))
+        .unwrap()
+        .events[0];
+    (boxed, event)
+}
+
+fn listed(w: &super::World, who: moor_core::user::UserId) -> Vec<String> {
+    w.store
+        .user_inbox(who, 10)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.box_name)
+        .collect()
+}
+
+#[test]
+fn clearing_named_items_takes_out_only_the_callers_and_none_when_empty() {
+    let w = world();
+    let (alice, bob) = (w.user("local:2000"), w.user("local:2001"));
+    ask_as(&w, "a", alice);
+    ask_as(&w, "b", alice);
+    ask_as(&w, "c", bob);
+    let theirs = w.store.user_inbox(bob, 10).unwrap()[0].id;
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Ids(vec![theirs]))
+            .unwrap(),
+        0
+    );
+    assert_eq!(listed(&w, bob), ["c"]);
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Ids(vec![]))
+            .unwrap(),
+        0
+    );
+    assert_eq!(listed(&w, alice), ["b", "a"]);
+    let b = w.store.user_inbox(alice, 10).unwrap()[0].id;
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Ids(vec![b]))
+            .unwrap(),
+        1
+    );
+    assert_eq!(listed(&w, alice), ["a"]);
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Ids(vec![b]))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn clearing_through_the_newest_seen_keeps_one_that_lands_later_and_bobs() {
+    let w = world();
+    let (alice, bob) = (w.user("local:2000"), w.user("local:2001"));
+    ask_as(&w, "a", alice);
+    ask_as(&w, "b", alice);
+    ask_as(&w, "c", bob);
+    let seen = w.store.user_inbox(alice, 10).unwrap()[0].id;
+    ask_as(&w, "d", alice);
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Through(seen))
+            .unwrap(),
+        2
+    );
+    assert_eq!(listed(&w, alice), ["d"]);
+    assert_eq!(
+        w.store
+            .clear_inbox(alice, &InboxClear::Through(i64::MAX))
+            .unwrap(),
+        1
+    );
+    assert!(listed(&w, alice).is_empty());
+    assert_eq!(listed(&w, bob), ["c"]);
+}
+
+#[test]
+fn a_cleared_item_stays_out_when_its_event_is_written_again() {
+    let w = world();
+    let alice = w.user("local:2000");
+    let (boxed, event) = ask_as(&w, "a", alice);
+    let id = w.store.user_inbox(alice, 10).unwrap()[0].id;
+    w.store
+        .clear_inbox(alice, &InboxClear::Ids(vec![id]))
+        .unwrap();
+    let again = Event::NeedsInput {
+        question: None,
+        options: vec![],
+    };
+    let mut writer = w.store.writer();
+    let tx = writer.immediate().unwrap();
+    crate::store::user_inbox::note(&tx, boxed, (event, &again), Ts::from_millis(2)).unwrap();
+    tx.commit().unwrap();
+    drop(writer);
+    assert!(listed(&w, alice).is_empty());
 }
