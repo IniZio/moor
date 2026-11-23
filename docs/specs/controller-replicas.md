@@ -23,7 +23,32 @@ Measured on agentic with a 1 GiB idle Longhorn volume and a pod moved between tw
 
 Until the volume goes, a hard node failure can pin it for minutes. That is outside the charter's "done when".
 
-## What a roll does today
+## Rolls on develop, 2026-11-23
+
+Each row says how it was checked. "Run" is a private controller on one host, given SIGTERM in that state, then started again. It used SQLite and kept its state dir, unlike the nightly's Postgres and empty volume. "Code" is read from code and its tests.
+
+| State | What runs where | What a roll does | Checked | Evidence |
+| --- | --- | --- | --- | --- |
+| Acquire | Machine agent makes the container. Controller holds `effect = acquire`. | Drain leaves the Start. Next process adopts the acquire. | Run | [`progress.rs:90-92`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/controller/progress.rs#L90-L92), [`interrupted.rs:80`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/ops/common/provision/interrupted.rs#L80). `step_started acquire` twice, agent said ok. |
+| Proxy, clone | Controller starts the Proxy, then the clone script in the Box. | Next process runs both again. A tree already on the Box branch skips the clone. | Run | [`clone.rs:170`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor-core/src/boxscript/clone.rs#L170). Second clone took 0.7 s. |
+| Setup line | Detached run in the Box. Controller follows its log. | Next process attaches to the same run. Its id comes from the start's `setting_up` event. | Run | [`setup_run.rs:30-34`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/ops/common/provision/setup_run.rs#L30-L34), [`detached.rs:128-129`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor-core/src/boxscript/detached.rs#L128-L129). A 25 s line ended 25 s after it began. |
+| Steps after lines, launch | Controller, under `steps_pending_at` or `effect = launch`. | Next process finishes the steps, then attaches to a live agent or launches one. | Run | [`retry.rs:77`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/ops/common/provision/retry.rs#L77). `step_started launch` twice, one session. |
+| Machine link down | Runner rolls with the controller. | Setup lines, profile, clone and agent install wait for the link. | Code | #1467, #1489, #1497, #1516. Box 180 on the nightly reattached after `machine 1 is not linked`. |
+| Running agent | Agent in the Box. Controller reads it. | Agent keeps working. | Nightly | 8 of 10 turns that spanned a deploy since 11-19 ended idle with no relaunch. The other 2 were memory suspends. |
+| Sleep, wake | Controller asks the machine agent under the Box's turn. | Drain waits for it, up to `drainTimeoutSecs`. Reconcile marks a stopped container on a ready Box asleep. | Run for wake, code for sleep | [`tests.rs:63`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor-core/src/decide/reconcile/tests.rs#L63). Wake finished inside the drain. |
+| Gate check | Thread of its own. The drain does not wait for it. | Next pass runs the check again. A line's number is its compare-and-set. | Code | [`feed.rs:341-349`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/moor/feed.rs#L341-L349), [`checks.rs:1-9`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/ops/gate/checks.rs#L1-L9) |
+| Webhook delivery | moor-notify leases a delivery. | Lease runs out, then the next claim delivers it. At least once. | Code | [`webhook_outbox.rs:147-156`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/store/webhook_outbox.rs#L147-L156) |
+| Two controllers | Chart rolls with `maxSurge: 1` on Postgres. | New pod waits on the Postgres session lock until the old one exits. | Code | [`deployment.yaml:10-15`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/deploy/helm/moor/templates/deployment.yaml#L10-L15), [`controller_lock.rs:62-68`](https://github.com/IniZio/moor/blob/d84d93d16dd9584dde4d113e2a5f307638eadb1f/crates/moor/src/store/controller_lock.rs#L62-L68) |
+
+The nightly events since 11-19 hold no Box a roll failed. Only 2 starts overlapped a deploy there. Box 185 ran its profile step again and reached its agent. Box 180 was refused at its workflow's 60-minute cap. Its first setup line had run 43 minutes before the first roll.
+
+Still visible on a roll:
+
+- A command waiting for a Box's turn gets `controller restarting` and exit 3. Its work never ran, and the client does not send it again.
+- A resumed follower reports a setup line's `ms` from its own attach, not from the line's start.
+- A cut step can leave a `step_started` with no `step_finished`.
+
+## What a roll did on 2026-11-06
 
 | Signal | Value | Source |
 | --- | --- | --- |
