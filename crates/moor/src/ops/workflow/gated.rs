@@ -20,7 +20,7 @@ use super::settle::{broken_detail, fail_death_capped};
 use super::wait::lose_waiting;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::quiet::{box_facts, settled};
+use crate::ops::common::quiet::{box_facts, may_tell};
 use crate::store::{BoxRow, Store, StoreError};
 
 /// A run of a Box with gates, and the step and try it was read at.
@@ -97,7 +97,7 @@ impl Held<'_> {
             }
         );
         let quiet = match &row {
-            Some(r) if asks && open => settled(cx, self.store, r)?,
+            Some(r) if asks && open => may_tell(cx, self.store, r)?,
             _ => false,
         };
         let standing = Standing {

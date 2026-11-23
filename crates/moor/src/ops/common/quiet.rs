@@ -50,6 +50,21 @@ pub(crate) fn settled(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, Stor
     Ok(quiet_for_check(&facts, steered, cx.clock().now()) && store.unsent(row.id)?.is_empty())
 }
 
+/// Whether moor may tell the agent of Box `row`, or its owner, that a gate waits: the agent is
+/// [`settled`], or the Box sleeps with nothing in its inbox. A sleep ends the agent's turn, even
+/// one it cut, and a message waits in the inbox until it wakes the Box. A cut turn is not judged,
+/// though: checks still wait for [`settled`]. One whose places died is left alone, as only a
+/// person resumes it.
+pub(crate) fn may_tell(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, StoreError> {
+    if row.lifecycle == BoxLifecycle::Asleep
+        && store.unsent(row.id)?.is_empty()
+        && !death_capped(store, row.id)?
+    {
+        return Ok(true);
+    }
+    settled(cx, store, row)
+}
+
 /// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the
 /// last steer, or ended, in a Box that is up or asleep.
 pub(crate) fn quiet_for_check(facts: &RunBoxFacts, steered: Option<Ts>, now: Ts) -> bool {
