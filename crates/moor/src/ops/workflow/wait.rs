@@ -33,7 +33,7 @@ pub(super) fn lose_waiting(
     }
     let outcome = RunOutcome::Incomplete {
         at: at.clone(),
-        why: Unfinished::BoxClosed,
+        why: Unfinished::box_closed(store.closed_reason(box_id)?),
     };
     store
         .end_waiting_run(key, (at, try_n), (box_id, outcome), (&[], now))

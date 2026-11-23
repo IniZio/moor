@@ -15,9 +15,7 @@ use std::time::Duration;
 use moor_core::config::AutoClose;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::event::close_reason::{
-    CLOSE_REASON_IDLE, CLOSE_REASON_PR_CLOSED, CLOSE_REASON_PR_MERGED, CLOSE_REASON_RUN_ENDED,
-};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::domain::session_state::SessionState;
 use moor_core::response::{CloseRefusal, ErrorDetail};
 use moor_core::seam::clock::Ts;
@@ -103,17 +101,17 @@ pub(crate) fn pass(
 }
 
 /// What made a close due.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Due {
     /// The clock: a run's Box or an idle one-off Box, judged again under the Box's turn.
-    Clock(&'static str),
+    Clock(CloseReason),
     /// The Box's pull request ended.
-    Pull(&'static str),
+    Pull(CloseReason),
 }
 
 impl Due {
     /// The reason on the `closed` event.
-    const fn reason(self) -> &'static str {
+    const fn reason(&self) -> &CloseReason {
         match self {
             Self::Clock(r) | Self::Pull(r) => r,
         }
@@ -137,7 +135,7 @@ fn close_if_due(
     }
     let kept = Cell::new(false);
     let keep = |store: &Store, r: &BoxRow| -> Option<String> {
-        let why = still_wanted(cx, store, r, cfg, due);
+        let why = still_wanted(cx, store, r, cfg, &due);
         kept.set(why.is_some());
         why
     };
@@ -145,17 +143,18 @@ fn close_if_due(
         target: BoxTarget::from(row.id),
         force: false,
     };
-    let closed = cx.for_box(row.user, || close::run_auto(cx, &req, due.reason(), &keep));
+    let reason = due.reason().clone();
+    let closed = cx.for_box(row.user, || close::run_unless_kept(cx, &req, reason, &keep));
     match closed {
         Ok(_) => Ok(Some(format!(
             "closed {}: {}",
             row.name.as_str(),
-            due.reason()
+            due.reason().code()
         ))),
         Err(_) if kept.get() => Ok(None),
         Err(e) => match e.detail.as_deref() {
             Some(ErrorDetail::CloseRefused(r)) => {
-                hold(cx, store, row, due, held_for(r))?;
+                hold(cx, store, row, &due, held_for(r))?;
                 Ok(None)
             }
             _ => Err(e),
@@ -164,7 +163,13 @@ fn close_if_due(
 }
 
 /// Why Box `row` should still stay open under its turn, or none when it may close.
-fn still_wanted(cx: &Cx, store: &Store, row: &BoxRow, cfg: &AutoClose, due: Due) -> Option<String> {
+fn still_wanted(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &AutoClose,
+    due: &Due,
+) -> Option<String> {
     if matches!(row.session, SessionState::Working | SessionState::Starting) {
         return Some("its agent is working".to_owned());
     }
@@ -209,7 +214,7 @@ fn due_by_clock(
     row: &BoxRow,
     cfg: &AutoClose,
     now: Ts,
-) -> Result<Option<&'static str>, StoreError> {
+) -> Result<Option<CloseReason>, StoreError> {
     let (after, from, reason) = match store.run_of_box(row.id)? {
         RunOfBox::Open => return Ok(None),
         RunOfBox::Ended(ended) => {
@@ -220,7 +225,7 @@ fn due_by_clock(
             (
                 after,
                 touched.map_or(ended, |t| t.max(ended)),
-                CLOSE_REASON_RUN_ENDED,
+                CloseReason::RunEnded,
             )
         }
         RunOfBox::NoRun => {
@@ -230,7 +235,7 @@ fn due_by_clock(
             let Some(last) = store.last_event_at(row.id, &IN_USE)? else {
                 return Ok(None);
             };
-            (after, last, CLOSE_REASON_IDLE)
+            (after, last, CloseReason::Idle)
         }
     };
     Ok((now >= from.saturating_add(after)).then_some(reason))
@@ -238,7 +243,7 @@ fn due_by_clock(
 
 /// The reason Box `row` is due when every pull request from its branch merged or closed, and at
 /// least one exists. Any repo that cannot be read, or has an open pull request, keeps it open.
-fn pull_ended(cx: &Cx, row: &BoxRow) -> Option<&'static str> {
+fn pull_ended(cx: &Cx, row: &BoxRow) -> Option<CloseReason> {
     row.branch.as_ref()?;
     row.user?;
     let req = BoxReq {
@@ -258,9 +263,9 @@ fn pull_ended(cx: &Cx, row: &BoxRow) -> Option<&'static str> {
         return None;
     }
     if states.iter().all(|s| *s == PullState::Merged) {
-        Some(CLOSE_REASON_PR_MERGED)
+        Some(CloseReason::PrMerged)
     } else {
-        Some(CLOSE_REASON_PR_CLOSED)
+        Some(CloseReason::PrClosed)
     }
 }
 
@@ -285,11 +290,11 @@ fn held_lately(store: &Store, id: BoxId, now: Ts, wait: Duration) -> Result<bool
 
 /// Records on Box `row` that its close was due for `due` but held back for `why`, unless its
 /// newest such event already says so.
-fn hold(cx: &Cx, store: &Store, row: &BoxRow, due: Due, why: String) -> Result<(), CommandError> {
+fn hold(cx: &Cx, store: &Store, row: &BoxRow, due: &Due, why: String) -> Result<(), CommandError> {
     let said = store.newest_events_of(row.id, "auto_close_held", 1)?.pop();
     let same = said.is_some_and(|e| {
         e.payload.get("why").and_then(|w| w.as_str()) == Some(why.as_str())
-            && e.payload.get("due").and_then(|w| w.as_str()) == Some(due.reason())
+            && e.payload.get("due").and_then(|w| w.as_str()) == Some(due.reason().code())
     });
     if same {
         return Ok(());
@@ -298,7 +303,7 @@ fn hold(cx: &Cx, store: &Store, row: &BoxRow, due: Due, why: String) -> Result<(
         return Ok(());
     };
     let event = ExtraEvent::AutoCloseHeld {
-        due: due.reason().to_owned(),
+        due: due.reason().code().to_owned(),
         why,
     };
     store.apply(Decision::new(row.id).event(event))?;

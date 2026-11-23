@@ -129,7 +129,7 @@ impl Held<'_> {
             GatedMove::Fail { gate, reason } => self.end(RunOutcome::Failed { at: gate, reason }),
             GatedMove::Incomplete => self.end(RunOutcome::Incomplete {
                 at: self.at.0.clone(),
-                why: Unfinished::BoxClosed,
+                why: Unfinished::box_closed(self.store.closed_reason(self.box_id)?),
             }),
             // The line that put the gate in hand wrote its history, so the move writes none.
             GatedMove::Enter { gate, try_n } => self

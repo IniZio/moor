@@ -122,6 +122,20 @@ fn an_idle_previous_box_is_closed_once_the_new_runs_box_started() {
 }
 
 #[test]
+fn a_previous_box_closed_for_a_newer_run_says_so_on_its_closed_event() {
+    let r = rig_probing(CLEAN);
+    r.answer_repo();
+    let id = r.put(180);
+    let first = finished_first_day(&r, id);
+    put_to_sleep(&r, first);
+    next_day(&r);
+    assert_eq!(
+        r.cx.store().unwrap().closed_reason(first).unwrap(),
+        Some(moor_core::domain::event::close_reason::CloseReason::Superseded)
+    );
+}
+
+#[test]
 fn a_previous_box_whose_agent_is_working_is_kept_with_a_reason_on_the_new_box() {
     let r = rig_probing(CLEAN);
     r.answer_repo();

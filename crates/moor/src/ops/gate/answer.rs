@@ -77,10 +77,7 @@ pub(crate) fn run(cx: &Cx, req: &GateAnswerReq) -> Result<GateAnswerValue, Comma
             "Box {name} has no gates, so nothing asks you"
         )));
     };
-    let by = cx.requester().map_or_else(
-        |_| "a person".to_owned(),
-        |(who, _)| who.as_str().to_owned(),
-    );
+    let by = cx.requester_name();
     for _ in 0..TRIES {
         let lines = store.gate_lines(row.id)?;
         let GateStatus::Open {

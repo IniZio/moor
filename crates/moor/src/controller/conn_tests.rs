@@ -227,3 +227,29 @@ fn the_previous_protocol_is_refused_at_the_hello() {
         moor_core::controller::ServerFrame::Hello { protocol: PROTOCOL }
     );
 }
+
+#[test]
+fn a_close_acts_as_its_caller_so_its_closed_event_can_name_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let peer = super::Peer::local_in(dir.path());
+    let close = Request::Close(moor_core::CloseReq {
+        target: BoxName::parse_allow_bare("b").unwrap().into(),
+        force: false,
+    });
+    assert_eq!(
+        super::requester(&peer, None, &close).unwrap(),
+        Some(Identity::local(1000))
+    );
+}
+
+#[test]
+fn a_close_whose_caller_is_unknown_acts_as_no_one_and_is_not_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut peer = super::Peer::local_in(dir.path());
+    peer.caller = Err("no peer credentials".to_owned());
+    let close = Request::Close(moor_core::CloseReq {
+        target: BoxName::parse_allow_bare("b").unwrap().into(),
+        force: false,
+    });
+    assert_eq!(super::requester(&peer, None, &close).unwrap(), None);
+}

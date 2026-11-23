@@ -130,3 +130,36 @@ fn history_lines_are_tagged_json_and_say_where_the_run_was() {
         assert_eq!(serde_json::from_str::<HistoryEntry>(json).unwrap(), entry);
     }
 }
+
+#[test]
+fn an_old_box_closed_outcome_still_reads_and_says_only_that_the_box_closed() {
+    let old: RunOutcome =
+        serde_json::from_str(r#"{"outcome":"incomplete","at":"report","why":"box_closed"}"#)
+            .unwrap();
+    let RunOutcome::Incomplete { at, why } = old else {
+        panic!("not incomplete: {old:?}");
+    };
+    assert_eq!(why, super::Unfinished::BoxClosed);
+    assert_eq!(
+        why.says(&at),
+        "its Box was closed while the run was at report"
+    );
+}
+
+#[test]
+fn a_box_closed_by_a_person_names_them_and_reads_back() {
+    use crate::domain::event::close_reason::CloseReason;
+    let at = StepId::parse("report").unwrap();
+    let why = super::Unfinished::box_closed(Some(CloseReason::requested("github:ada")));
+    assert_eq!(
+        why.says(&at),
+        "its Box was closed by github:ada while the run was at report"
+    );
+    let outcome = RunOutcome::Incomplete { at, why };
+    let json = serde_json::to_string(&outcome).unwrap();
+    assert_eq!(serde_json::from_str::<RunOutcome>(&json).unwrap(), outcome);
+    assert_eq!(
+        super::Unfinished::box_closed(None),
+        super::Unfinished::BoxClosed
+    );
+}

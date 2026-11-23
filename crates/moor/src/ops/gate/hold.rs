@@ -51,10 +51,7 @@ fn reopen(cx: &Cx, store: &Store, id: BoxId) -> Result<(), StoreError> {
     if matches!(store.run_of_box(id)?, RunOfBox::Ended(_)) {
         return Ok(());
     }
-    let by = cx.requester().map_or_else(
-        |_| "a person".to_owned(),
-        |(who, _)| who.as_str().to_owned(),
-    );
+    let by = cx.requester_name();
     for _ in 0..2 {
         let lines = store.gate_lines(id)?;
         let GateStatus::Stuck { gate, .. } = status(&gates, &lines) else {

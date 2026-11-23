@@ -6,6 +6,7 @@
 //! and its Box stays for follow-ups as any ended run's Box does. An asleep Box runs no agent, so
 //! it is left asleep, never woken to be stopped. A Box whose agent never launched is closed.
 
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::name::ForgeRepo;
 use moor_core::request::EndSessionReq;
 use moor_core::workflow::{CancelCause, Workflow, WorkflowRun};
@@ -53,12 +54,14 @@ pub(super) fn stop_agent(cx: &Cx, store: &Store, run: &WorkflowRun) -> Option<St
     }
     match store.first_launch_at(row.id) {
         Ok(None) => {
-            return close_open_box(cx, store, &row.name).err().map(|why| {
-                format!(
-                    "could not close the unstarted Box {}: {why}",
-                    row.name.as_str()
-                )
-            });
+            return close_open_box(cx, store, &row.name, CloseReason::WorkflowCancelled)
+                .err()
+                .map(|why| {
+                    format!(
+                        "could not close the unstarted Box {}: {why}",
+                        row.name.as_str()
+                    )
+                });
         }
         Err(e) => {
             return Some(format!(

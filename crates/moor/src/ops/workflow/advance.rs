@@ -200,7 +200,7 @@ impl Quiet<'_> {
             {
                 end(RunOutcome::Incomplete {
                     at: self.at.0.clone(),
-                    why: Unfinished::BoxClosed,
+                    why: Unfinished::box_closed(self.store.closed_reason(box_id)?),
                 })
             }
             Move::Incomplete { at } => end(RunOutcome::Incomplete {

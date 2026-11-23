@@ -3,6 +3,7 @@
 use std::fmt;
 
 use super::{CommitSha, Plan, RunCause, StepId, WorkflowId};
+use crate::domain::event::close_reason::CloseReason;
 use crate::name::{BoxId, ForgeRepo};
 use crate::seam::clock::Ts;
 
@@ -179,14 +180,16 @@ pub enum RunOutcome {
 }
 
 /// What stopped a run short of its end.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Unfinished {
     /// The agent stopped without reporting its step, even after a reminder.
     #[default]
     Unreported,
-    /// The run's Box was closed, or is gone, before the run ended.
+    /// The run's Box was closed, or is gone, before the run ended, and nothing says who closed it.
     BoxClosed,
+    /// The run's Box was closed for this reason before the run ended.
+    ClosedBy(CloseReason),
 }
 
 impl Unfinished {
@@ -198,13 +201,22 @@ impl Unfinished {
 
     /// Why a run that stopped at `at` is incomplete, in a sentence.
     #[must_use]
-    pub fn says(self, at: &StepId) -> String {
+    pub fn says(&self, at: &StepId) -> String {
         match self {
             Self::Unreported => {
                 "the agent stopped without reporting the step, even after a reminder".to_owned()
             }
             Self::BoxClosed => format!("its Box was closed while the run was at {at}"),
+            Self::ClosedBy(r) => {
+                format!("its Box was closed {} while the run was at {at}", r.says())
+            }
         }
+    }
+
+    /// Why a run whose Box closed for `reason` stopped; none says only that it closed.
+    #[must_use]
+    pub fn box_closed(reason: Option<CloseReason>) -> Self {
+        reason.map_or(Self::BoxClosed, Self::ClosedBy)
     }
 }
 

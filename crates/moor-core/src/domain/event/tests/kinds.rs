@@ -74,6 +74,34 @@ fn payload_carries_fields() {
 }
 
 #[test]
+fn a_person_close_payload_names_the_reason_and_the_person() {
+    let e = Event::Closed {
+        from: BoxLifecycle::Ready,
+        reason: Some(crate::domain::event::close_reason::CloseReason::requested(
+            "github:ada",
+        )),
+    };
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"from": "ready", "reason": "requested", "by": "github:ada"})
+    );
+    let read: Event = serde_json::from_value(serde_json::json!(
+        {"kind": "closed", "from": "ready", "reason": "requested", "by": "github:ada"}
+    ))
+    .unwrap();
+    assert_eq!(read, e);
+    let old: Event =
+        serde_json::from_value(serde_json::json!({"kind": "closed", "from": "ready"})).unwrap();
+    assert_eq!(
+        old,
+        Event::Closed {
+            from: BoxLifecycle::Ready,
+            reason: None
+        }
+    );
+}
+
+#[test]
 fn stays_up_payload_carries_reason() {
     let e = Event::StaysUp { reason: s("busy") };
     assert_eq!(e.kind(), "stays_up");

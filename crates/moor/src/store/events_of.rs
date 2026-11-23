@@ -1,5 +1,6 @@
 //! Reads of one kind of a Box's events.
 
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use moor_schema::tables::Events;
@@ -45,6 +46,16 @@ impl Store {
             .take();
         let at: Option<i64> = self.reader()?.row(q, |r| r.get(0))?;
         Ok(at.map(Ts::from_millis))
+    }
+
+    /// Why Box `id` closed, as its `closed` event says; none when it has not closed, or closed
+    /// before every close named a reason.
+    pub(crate) fn closed_reason(&self, id: BoxId) -> Result<Option<CloseReason>, StoreError> {
+        let Some(e) = self.newest_event_of(id, "closed")? else {
+            return Ok(None);
+        };
+        let said = |key: &str| e.payload.get(key).and_then(serde_json::Value::as_str);
+        Ok(said("reason").and_then(|r| CloseReason::from_event(r, said("by"))))
     }
 
     /// How many events of `kind` a box has had.

@@ -9,6 +9,7 @@ use moor_core::decide::close::{
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Wanted};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::domain::hands::{HandsInput, HandsState};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::CloseView;
@@ -29,22 +30,30 @@ use crate::ops::common::view::box_view;
 use crate::store::{BoxRow, HandsRow, Store};
 use turn::turn;
 
-/// Closes a Box: gate, transcript save, agent stop, machine teardown and release.
+/// Closes a Box for `reason`, which the `closed` event records: gate, transcript save, agent stop,
+/// machine teardown and release.
 ///
 /// The Box's turn is held from the gate to the release.
 /// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's keeper stops after the turn ends: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. The close starts no waiting Box: the
 /// controller's promotion pass does, so a close never waits out another Box's setup.
-pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
-    run_with_reason(cx, req, None)
+pub(crate) fn run_with_reason(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: CloseReason,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, Some(reason), None, false)
 }
 
-/// [`run`] for a close a person asks for. Once the Box is closed its workflow run ends as the next
-/// tick would end it, so nobody sees the run wait on a Box that is gone. moor's own closes decide
-/// their run's end themselves.
+#[cfg(test)]
+pub(crate) use tests::run;
+
+/// [`run_with_reason`] for a close a person asks for, named by the identity the request acts as.
+/// Once the Box is closed its run ends as the next tick would end it, so nobody sees the run wait
+/// on a Box that is gone. moor's own closes decide their run's end themselves.
 pub(crate) fn requested(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
-    let view = run(cx, req)?;
+    let view = run_with_reason(cx, req, CloseReason::requested(cx.requester_name()))?;
     if view.boxed.lifecycle == BoxLifecycle::Closed {
         let id = moor_core::BoxId::new(view.boxed.id);
         if let Err(e) = crate::ops::workflow::settle_closed_box(cx, cx.store()?, id) {
@@ -57,45 +66,37 @@ pub(crate) fn requested(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandErr
     Ok(view)
 }
 
-/// [`run`] for a close moor starts itself; `reason` lands on the `closed` event.
-pub(crate) fn run_with_reason(
-    cx: &Cx,
-    req: &CloseReq,
-    reason: Option<String>,
-) -> Result<CloseView, CommandError> {
-    close_with(cx, req, reason, None, false)
-}
-
-/// [`run_with_reason`] for the close a Box still wants; giving it up records `close_refused`.
+/// [`run_with_reason`] for the close a Box still wants, for the reason it was wanted for; giving
+/// it up records `close_refused`. Only a close wanted before every close named one has none.
 pub(crate) fn run_wanted(
     cx: &Cx,
     req: &CloseReq,
-    reason: Option<String>,
+    reason: Option<CloseReason>,
 ) -> Result<CloseView, CommandError> {
     close_with(cx, req, reason, None, true)
+}
+
+/// [`run_wanted`] for the close a restart cut off, which it finishes without telling anyone.
+pub(crate) fn resume(
+    cx: &Cx,
+    req: &CloseReq,
+    reason: Option<CloseReason>,
+) -> Result<CloseView, CommandError> {
+    close_with(cx, req, reason, None, false)
 }
 
 /// Why a Box someone may still be using must stay open; `None` when it may close.
 pub(crate) type Keep<'a> = &'a dyn Fn(&Store, &BoxRow) -> Option<String>;
 
-/// [`run`] for a close nobody asked for, which never wakes the Box. `keep` judges the Box as read
-/// under its turn, before anything else; a reason refuses the close.
+/// [`run_with_reason`] for a close moor chooses on its own, which never wakes the Box. `keep`
+/// judges the Box as read under its turn, before anything else; a reason refuses the close.
 pub(crate) fn run_unless_kept(
     cx: &Cx,
     req: &CloseReq,
+    reason: CloseReason,
     keep: Keep<'_>,
 ) -> Result<CloseView, CommandError> {
-    close_with(cx, req, None, Some(keep), false)
-}
-
-/// [`run_unless_kept`] for the close moor chooses on its own: `reason` lands on the `closed` event.
-pub(crate) fn run_auto(
-    cx: &Cx,
-    req: &CloseReq,
-    reason: &str,
-    keep: Keep<'_>,
-) -> Result<CloseView, CommandError> {
-    close_with(cx, req, Some(reason.to_owned()), Some(keep), false)
+    close_with(cx, req, Some(reason), Some(keep), false)
 }
 
 /// The close of `req`; see [`run_unless_kept`] for `keep`. Once the Box's turn is held and `keep`
@@ -104,7 +105,7 @@ pub(crate) fn run_auto(
 fn close_with(
     cx: &Cx,
     req: &CloseReq,
-    reason: Option<String>,
+    reason: Option<CloseReason>,
     keep: Option<Keep<'_>>,
     tell: bool,
 ) -> Result<CloseView, CommandError> {
@@ -112,7 +113,7 @@ fn close_with(
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
-    let turn = turn(cx, &first, req.force)?;
+    let turn = turn(cx, &first, req.force, reason.as_ref())?;
     let row = store.box_row(first.id)?.unwrap_or(first);
     if let Some(why) = keep.and_then(|keep| keep(store, &row)) {
         return Err(CommandError::new(ErrorKind::Refused, why));
@@ -133,7 +134,7 @@ fn close_held(
     store: &Store,
     req: &CloseReq,
     (mut row, turn): (BoxRow, &mut Option<Turn<'_>>),
-    (reason, wake, waits): (Option<String>, check::Wake, &Cell<bool>),
+    (reason, wake, waits): (Option<CloseReason>, check::Wake, &Cell<bool>),
 ) -> Result<CloseView, CommandError> {
     with_planned(store, &mut row)?;
     let box_check = check::box_check(cx, store, &mut row, (req.force, wake, waits))?;

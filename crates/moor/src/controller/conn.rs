@@ -312,29 +312,31 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
 }
 
 /// The identity a `start`, `start-needs` or `env` acts as: the one asserted, checked against
-/// this connection's socket. `env` previews a start, so it reads a repo as the same user. Other
-/// requests act as no one.
+/// this connection's socket. `env` previews a start, so it reads a repo as the same user. A
+/// `close` acts as it too when it resolves, so the `closed` event names who asked, but a close
+/// that does not resolve is refused no more than before. Other requests act as no one.
 fn requester(
     peer: &Peer,
     asserted: Option<&Identity>,
     request: &Request,
 ) -> Result<Option<Identity>, CommandError> {
-    if !matches!(
-        request,
+    let resolved = || {
+        peer.caller
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|caller| caller.resolve(asserted))
+    };
+    match request {
         Request::Start(_)
-            | Request::StartNeeds(_)
-            | Request::Env(_)
-            | Request::RepoConfigGet(_)
-            | Request::RepoConfigSet(_)
-    ) {
-        return Ok(None);
+        | Request::StartNeeds(_)
+        | Request::Env(_)
+        | Request::RepoConfigGet(_)
+        | Request::RepoConfigSet(_) => resolved()
+            .map(Some)
+            .map_err(|why| CommandError::new(ErrorKind::Refused, why)),
+        Request::Close(_) => Ok(resolved().ok()),
+        _ => Ok(None),
     }
-    peer.caller
-        .as_ref()
-        .map_err(Clone::clone)
-        .and_then(|caller| caller.resolve(asserted))
-        .map(Some)
-        .map_err(|why| CommandError::new(ErrorKind::Refused, why))
 }
 
 /// Whom one request acts as, and what it may see.

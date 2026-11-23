@@ -99,7 +99,7 @@ fn wanted_columns(w: Option<&Wanted>, now: Ts) -> Sets<BoxState> {
         ),
         (
             BoxState::WantedReason,
-            w.and_then(Wanted::reason).map(str::to_owned).into(),
+            w.and_then(Wanted::stored_reason).into(),
         ),
         (BoxState::WantedAt, w.map(|_| now.as_millis()).into()),
     ]

@@ -1,5 +1,6 @@
 //! How a `workflow_runs` row reads as a [`WorkflowRun`] and a [`RunState`] is stored as columns.
 
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::gate::Verdict;
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
@@ -40,8 +41,12 @@ pub(super) const REFUSED: &str = "refused";
 const CANCELLED: &str = "cancelled";
 /// The `detail` of a run cancelled by its pull request's close; a newer head stores its SHA.
 const CLOSED: &str = "closed";
-/// The `detail` of a run left incomplete because its Box was closed.
+/// The `detail` of a run left incomplete because its Box was closed, when nothing says who closed it.
 const BOX_CLOSED: &str = "box_closed";
+
+/// The start of an incomplete run's `detail` when its Box closed for a known reason; the
+/// reason's stored form follows.
+const CLOSED_BY: &str = "closed_by:";
 
 /// A `workflow_runs` row as read.
 pub(super) struct RunRow {
@@ -238,7 +243,13 @@ fn incomplete_of(row: &RunRow) -> Result<RunOutcome, StoreError> {
     let why = match row.detail.as_deref() {
         None => Unfinished::Unreported,
         Some(BOX_CLOSED) => Unfinished::BoxClosed,
-        Some(other) => return Err(corrupt("incomplete run detail", other)),
+        Some(other) => match other
+            .strip_prefix(CLOSED_BY)
+            .and_then(CloseReason::from_stored)
+        {
+            Some(reason) => Unfinished::ClosedBy(reason),
+            None => return Err(corrupt("incomplete run detail", other)),
+        },
     };
     Ok(RunOutcome::Incomplete {
         at: step_of(row.ended_step.clone())?,
@@ -345,7 +356,11 @@ pub(super) fn state_cols(state: &RunState) -> StateCols {
                     cols.ended_step = Some(at.to_string());
                 }
                 RunOutcome::Incomplete { at, why } => {
-                    cols.detail = (why == &Unfinished::BoxClosed).then(|| BOX_CLOSED.to_owned());
+                    cols.detail = match why {
+                        Unfinished::Unreported => None,
+                        Unfinished::BoxClosed => Some(BOX_CLOSED.to_owned()),
+                        Unfinished::ClosedBy(r) => Some(format!("{CLOSED_BY}{}", r.stored())),
+                    };
                     cols.ended_step = Some(at.to_string());
                 }
                 RunOutcome::Declined { at } | RunOutcome::TimedOut { at } => {

@@ -1,6 +1,7 @@
 //! The Box of a gated run closed while the run waits or works: the run ends incomplete at its
 //! gate the moment the Box closes, and the workflow can run again.
 
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::gate::{GateDoc, GateLine};
 use moor_core::progress::Progress;
 use moor_core::user::Viewer;
@@ -12,6 +13,9 @@ use super::super::{rig, Rig, DAY, FIRST_DUE};
 use super::{delivered, gone_quiet, proof, reported, ship, step, MIN};
 use crate::ops::gate::checks::{pass, run};
 use crate::testing::cx::REQUESTER_USER;
+
+/// The identity the rig's requests act as, which a person's close names.
+const REQUESTER: &str = "local:1000";
 
 /// Closes Box `id` as a person acting through `cx` does; the rig's Boxes answer no probe, so with force.
 fn close_as(r: &Rig, cx: &crate::cx::Cx, id: BoxId) {
@@ -56,20 +60,20 @@ fn shown(r: &Rig, id: BoxId) -> BoxView {
 }
 
 /// Closes the Box of the newest run and asserts, with no tick between, that the run ended
-/// incomplete at `gate` with a reason that says so, and that the workflow runs again.
+/// incomplete at `gate` with a reason that names who closed it, and that the workflow runs again.
 fn closed_ends_incomplete(r: &Rig, id: WorkflowId, gate: &str) {
     let box_id = r.latest_box(id);
     close_as(r, &r.cx, box_id);
     let incomplete = RunOutcome::Incomplete {
         at: step(gate),
-        why: Unfinished::BoxClosed,
+        why: Unfinished::ClosedBy(CloseReason::requested(REQUESTER)),
     };
     assert_eq!(r.outcome(id), incomplete, "{:?}", r.latest(id).state);
     let told = r.event(id, "run_failed").expect("the owner hears of it");
     let reason = told["reason"].as_str().unwrap();
     assert_eq!(
         reason,
-        format!("its Box was closed while the run was at {gate}")
+        format!("its Box was closed by {REQUESTER} while the run was at {gate}")
     );
     assert_eq!(run_now(r), "started");
     assert_ne!(r.latest_box(id), box_id, "a new run, in a new Box");
@@ -118,7 +122,7 @@ fn the_operator_closing_the_box_ends_its_run_the_same_way() {
     assert!(matches!(
         r.outcome(id),
         RunOutcome::Incomplete {
-            why: Unfinished::BoxClosed,
+            why: Unfinished::ClosedBy(CloseReason::Requested { .. }),
             ..
         }
     ));
@@ -149,7 +153,7 @@ fn the_closed_box_of_a_waiting_run_asks_nobody_and_says_why_it_ended() {
     assert!(
         progress
             .line
-            .contains("its Box was closed while the run was at ship"),
+            .contains("its Box was closed by local:1000 while the run was at ship"),
         "{progress:?}"
     );
 }

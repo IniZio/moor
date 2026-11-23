@@ -10,10 +10,22 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, BoxPath, CloseReq, ErrorKind, ProviderId};
 
-use super::{run, run_with_reason};
+use super::{requested, run_with_reason};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
+
+/// [`run_with_reason`] for a close a test's person asks for, which leaves its run to the next tick.
+pub(crate) fn run(
+    cx: &Cx,
+    req: &CloseReq,
+) -> Result<moor_core::view::CloseView, crate::error::CommandError> {
+    run_with_reason(
+        cx,
+        req,
+        moor_core::domain::event::close_reason::CloseReason::requested("a person"),
+    )
+}
 
 mod agent;
 mod artifacts;

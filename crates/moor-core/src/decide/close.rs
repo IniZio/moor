@@ -2,6 +2,7 @@
 
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use crate::domain::decision::Decision;
+use crate::domain::event::close_reason::CloseReason;
 use crate::domain::hands::{HandsInc, HandsInput, HandsState};
 use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
@@ -55,8 +56,8 @@ pub struct ClosePlan {
     pub release_box: bool,
     /// The decision to apply when no release runs.
     pub decision_close: Decision,
-    /// Why moor closes the Box when a person did not ask; the release verdict records it too.
-    pub reason: Option<String>,
+    /// Why the Box closes; the release verdict records it too.
+    pub reason: Option<CloseReason>,
 }
 
 /// Why a close is refused.
@@ -153,14 +154,14 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     close_gate_with_reason(f, force, None)
 }
 
-/// [`close_gate`] for a close that moor starts for `reason`, which the `closed` event records.
+/// [`close_gate`] for a close for `reason`, which the `closed` event records.
 ///
 /// # Errors
 /// The same refusals as [`close_gate`].
 pub fn close_gate_with_reason(
     f: &CloseFacts,
     force: bool,
-    reason: Option<String>,
+    reason: Option<CloseReason>,
 ) -> Result<ClosePlan, Refusal> {
     if !f.lifecycle.is_live() {
         return Err(Refusal::AlreadyClosed);
@@ -220,13 +221,13 @@ pub fn release_outcome(
     release_outcome_with_reason(box_id, (inc, box_state), r, None)
 }
 
-/// [`release_outcome`] for a close that moor starts for `reason`.
+/// [`release_outcome`] for a close for `reason`.
 #[must_use]
 pub fn release_outcome_with_reason(
     box_id: BoxId,
     (inc, box_state): (HandsInc, HandsState),
     r: ReleaseResult,
-    reason: Option<String>,
+    reason: Option<CloseReason>,
 ) -> ReleaseVerdict {
     let close = Decision::new(box_id)
         .lifecycle(BoxLifecycleInput::Close { reason })

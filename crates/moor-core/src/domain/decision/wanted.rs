@@ -1,6 +1,7 @@
 //! What moor wants a Box to end as, and the external step in flight for it. The Box's owner
 //! writes both under its turn, so a restart reads them instead of the Box's history.
 
+use crate::domain::event::close_reason::CloseReason;
 use crate::name::RunId;
 
 /// What moor should end a Box as once it can. A close outranks a suspend, which outranks a
@@ -18,8 +19,8 @@ pub enum Wanted {
     Close {
         /// Whether the close stops a start or a stuck release rather than wait for it.
         force: bool,
-        /// Why moor closes it, when a person did not ask.
-        reason: Option<String>,
+        /// Why it closes; only a close wanted before every close named one has none.
+        reason: Option<CloseReason>,
     },
 }
 
@@ -76,7 +77,10 @@ impl Wanted {
             "suspend" => Some(Self::Suspend {
                 reason: reason.unwrap_or_default(),
             }),
-            "close" => Some(Self::Close { force, reason }),
+            "close" => Some(Self::Close {
+                force,
+                reason: reason.as_deref().and_then(CloseReason::from_stored),
+            }),
             _ => None,
         }
     }
@@ -87,13 +91,22 @@ impl Wanted {
         matches!(self, Self::Close { force: true, .. })
     }
 
-    /// Its reason, if it has one.
+    /// The reason its stored column holds, if it has one.
     #[must_use]
-    pub fn reason(&self) -> Option<&str> {
+    pub fn stored_reason(&self) -> Option<String> {
         match self {
             Self::Sleep => None,
-            Self::Suspend { reason } => Some(reason),
-            Self::Close { reason, .. } => reason.as_deref(),
+            Self::Suspend { reason } => Some(reason.clone()),
+            Self::Close { reason, .. } => reason.as_ref().map(CloseReason::stored),
+        }
+    }
+
+    /// Why a wanted close closes the Box; none for any other kind.
+    #[must_use]
+    pub const fn close_reason(&self) -> Option<&CloseReason> {
+        match self {
+            Self::Close { reason, .. } => reason.as_ref(),
+            _ => None,
         }
     }
 }

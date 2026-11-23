@@ -7,6 +7,7 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{run_verdict, workflow_due, RunVerdict, WorkflowVerdict};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::gate::{Gates, GatesDoc};
 use moor_core::name::ForgeRepo;
 use moor_core::seam::clock::Ts;
@@ -278,7 +279,9 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     }
     if matches!(settled, Ok(false)) {
         let late = cx.store().map_err(|e| e.error.to_string());
-        if let Err(why) = late.and_then(|s| close_open_box(cx, s, &job.firing.name)) {
+        if let Err(why) =
+            late.and_then(|s| close_open_box(cx, s, &job.firing.name, CloseReason::LateFiring))
+        {
             out.push(format!(
                 "could not close the late Box {}: {why}",
                 job.firing.name.as_str()

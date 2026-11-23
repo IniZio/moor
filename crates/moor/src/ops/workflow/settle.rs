@@ -5,6 +5,7 @@ use moor_core::decide::workflow::{
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::deaths;
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, EndSessionReq};
 use moor_core::seam::clock::Ts;
@@ -117,9 +118,14 @@ pub(super) fn expire_runs(
     Ok(())
 }
 
-/// Closes the open Box called `name`, forcing it, which also stops a start still setting it up.
-/// False when there is no open Box of that name.
-pub(crate) fn close_open_box(cx: &Cx, store: &Store, name: &BoxName) -> Result<bool, String> {
+/// Closes the open Box called `name` for `reason`, forcing it, which also stops a start still
+/// setting it up. False when there is no open Box of that name.
+pub(crate) fn close_open_box(
+    cx: &Cx,
+    store: &Store,
+    name: &BoxName,
+    reason: CloseReason,
+) -> Result<bool, String> {
     let Some(row) = store.open_box_by_name(name).map_err(|e| e.to_string())? else {
         return Ok(false);
     };
@@ -127,7 +133,7 @@ pub(crate) fn close_open_box(cx: &Cx, store: &Store, name: &BoxName) -> Result<b
         target: row.name.clone().into(),
         force: true,
     };
-    cx.for_box(row.user, || close::run(cx, &req))
+    cx.for_box(row.user, || close::run_with_reason(cx, &req, reason))
         .map(|_| true)
         .map_err(|e| e.error.to_string())
 }
@@ -161,17 +167,19 @@ pub(super) fn enforce_start_limit(
              stopped and its Box closed",
             START_LIMIT.as_secs() / 60
         );
-        let close =
-            |out: &mut Vec<String>| match planned.as_ref().map(|n| close_open_box(cx, store, n)) {
-                Some(Err(why)) => {
-                    out.push(format!(
-                        "workflow {}: could not close the late Box of its run: {why}",
-                        w.name
-                    ));
-                    false
-                }
-                _ => true,
-            };
+        let close = |out: &mut Vec<String>| match planned
+            .as_ref()
+            .map(|n| close_open_box(cx, store, n, CloseReason::StartLimit))
+        {
+            Some(Err(why)) => {
+                out.push(format!(
+                    "workflow {}: could not close the late Box of its run: {why}",
+                    w.name
+                ));
+                false
+            }
+            _ => true,
+        };
         if b.claimed_only {
             if store.refuse_run(key, (&detail, true), now)? {
                 close(out);

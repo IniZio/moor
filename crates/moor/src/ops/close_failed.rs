@@ -1,7 +1,7 @@
 //! `close-failed`: close every Box whose setup failed.
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::event::close_reason::CLOSE_REASON_CLOSE_FAILED;
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::request::CloseFailedReq;
 use moor_core::view::close_failed::{CloseFailedError, CloseFailedView};
 use moor_core::CloseReq;
@@ -22,7 +22,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseFailedReq) -> Result<CloseFailedView, Comm
     Ok(close_setup_failed(
         cx,
         &rows,
-        CLOSE_REASON_CLOSE_FAILED,
+        &CloseReason::CloseFailed,
         req.force,
     ))
 }
@@ -33,7 +33,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseFailedReq) -> Result<CloseFailedView, Comm
 pub(crate) fn close_setup_failed(
     cx: &Cx,
     rows: &[BoxRow],
-    reason: &str,
+    reason: &CloseReason,
     force: bool,
 ) -> CloseFailedView {
     let mut view = CloseFailedView {
@@ -45,7 +45,7 @@ pub(crate) fn close_setup_failed(
             target: row.id.into(),
             force,
         };
-        match close::run_with_reason(cx, &req, Some(reason.to_owned())) {
+        match close::run_with_reason(cx, &req, reason.clone()) {
             Ok(_) => view.closed.push(row.name.clone()),
             Err(e) => view.failed.push(CloseFailedError {
                 r#box: row.name.clone(),

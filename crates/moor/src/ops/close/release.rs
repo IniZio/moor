@@ -3,6 +3,7 @@
 use moor_core::decide::close::{release_outcome_with_reason, ReleaseResult};
 use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::domain::decision::{Decision, Effect, EffectChange};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::seam::driver::Released;
 use moor_core::ErrorKind;
 
@@ -38,7 +39,7 @@ pub(super) fn release(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    reason: Option<String>,
+    reason: Option<CloseReason>,
 ) -> Result<bool, CommandError> {
     let Some(b) = row.hands.as_ref() else {
         return Ok(false);
