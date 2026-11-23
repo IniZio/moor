@@ -143,7 +143,9 @@ impl Mcp {
         format!("{origin}{METADATA_PATH}")
     }
 
-    /// Serves `stream`, whose request head (`prefix`) the gate already read, until it closes.
+    /// Serves the one request on `stream` whose head (`prefix`) the gate already read, then
+    /// closes it: the gate routed the connection by that request's path, so a later request on it
+    /// must go back through the gate.
     pub(crate) fn serve(&self, stream: TcpStream, prefix: Vec<u8>, gate: &Gate, streams: &Streams) {
         if stream.set_read_timeout(None).is_err() || stream.set_nonblocking(true).is_err() {
             return;
@@ -158,7 +160,9 @@ impl Mcp {
             let svc = service_fn(|req| async {
                 Ok::<_, Infallible>(self.route(req, gate, streams).await)
             });
-            let conn = http1::Builder::new().serve_connection(io, svc);
+            let conn = http1::Builder::new()
+                .keep_alive(false)
+                .serve_connection(io, svc);
             tokio::pin!(conn);
             tokio::select! {
                 _ = conn.as_mut() => return,

@@ -15,6 +15,7 @@ use super::{claims, mpsc, now, sign, world_with, World};
 
 mod exec;
 mod inspect;
+mod keep_alive;
 mod node_settings;
 mod nodes;
 mod repo_config;
