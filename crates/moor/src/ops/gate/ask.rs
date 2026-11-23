@@ -9,7 +9,7 @@ use moor_core::gate::{status, GateLine, GateNext, GateStatus, Gates};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::quiet::settled;
+use crate::ops::common::quiet::may_tell;
 use crate::store::{BoxRow, Store};
 
 /// Tells the owner of `row` that a gate asks for their answer, when one does and the agent is
@@ -30,7 +30,7 @@ pub(super) fn ask(
     else {
         return Ok(());
     };
-    if !settled(cx, store, row)? {
+    if !may_tell(cx, store, row)? {
         return Ok(());
     }
     Ok(store.note_gate_wait(row.id, cx.clock().now())?)

@@ -177,3 +177,50 @@ fn a_box_whose_places_died_is_sent_nothing() {
     assert_eq!(f.told().len(), 1, "only a person resumes it");
     assert!(!woken(&f));
 }
+
+#[test]
+fn a_check_only_gate_is_not_judged_on_a_cut_turn() {
+    let f = fx(|_| {
+        vec![
+            super::fx::gate("lint", &["true"], 1),
+            evidence_gate("report", &["result.md"], &[], 1),
+        ]
+    });
+    f.steer("Fix the lint.");
+    f.pause(60);
+    stop(&f);
+    f.pass();
+    assert!(f.exits().is_empty(), "{:?}", f.lines());
+}
+
+#[test]
+fn an_anytime_outcome_is_not_tried_on_a_cut_turn_and_the_agent_is_reminded() {
+    let f = super::fx::fx_outcomes(|_| {
+        let anytime = moor_core::gate::OutcomeDoc {
+            name: "nothing to do".to_owned(),
+            says: None,
+            tone: None,
+            checks: vec![moor_core::gate::CheckDoc::from("true")],
+            anytime: true,
+        };
+        let done = moor_core::gate::OutcomeDoc {
+            name: "done".to_owned(),
+            checks: Vec::new(),
+            anytime: false,
+            ..anytime.clone()
+        };
+        (
+            vec![evidence_gate("report", &["result.md"], &[], 1)],
+            vec![anytime, done],
+        )
+    });
+    f.steer("Write the report.");
+    f.pause(60);
+    stop(&f);
+    f.pass();
+    let lines = f.lines();
+    assert!(
+        matches!(lines.as_slice(), [GateLine::Reminded { try_n: 1, .. }]),
+        "{lines:?}"
+    );
+}

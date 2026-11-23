@@ -10,7 +10,7 @@ use moor_core::SteerReq;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::quiet::settled;
+use crate::ops::common::quiet::may_tell;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store};
 
@@ -44,7 +44,7 @@ pub(super) fn hand_over(
     else {
         return Ok(false);
     };
-    if !settled(cx, store, row)? {
+    if !may_tell(cx, store, row)? {
         return Ok(false);
     }
     let wrote = store.gate_line_at(row.id, i64::try_from(lines.len()).unwrap_or(i64::MAX))?;

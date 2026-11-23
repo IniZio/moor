@@ -50,19 +50,30 @@ pub(crate) fn settled(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, Stor
     Ok(quiet_for_check(&facts, steered, cx.clock().now()) && store.unsent(row.id)?.is_empty())
 }
 
+/// Whether moor may tell the agent of Box `row`, or its owner, that a gate waits: the agent is
+/// [`settled`], or the Box sleeps with nothing in its inbox. A sleep ends the agent's turn, even
+/// one it cut, and a message waits in the inbox until it wakes the Box. A cut turn is not judged,
+/// though: checks still wait for [`settled`]. One whose places died is left alone, as only a
+/// person resumes it.
+pub(crate) fn may_tell(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, StoreError> {
+    if row.lifecycle == BoxLifecycle::Asleep
+        && store.unsent(row.id)?.is_empty()
+        && !death_capped(store, row.id)?
+    {
+        return Ok(true);
+    }
+    settled(cx, store, row)
+}
+
 /// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the
-/// last steer, or ended, in a Box that is up, or asleep.
-///
-/// A sleep ends the agent's turn, so the agent of an asleep Box is quiet however it went to
-/// sleep, even with its turn cut: a steer to it waits in the inbox until a wake. One whose places
-/// died is the exception, as only a person resumes it.
+/// last steer, or ended, in a Box that is up or asleep.
 pub(crate) fn quiet_for_check(facts: &RunBoxFacts, steered: Option<Ts>, now: Ts) -> bool {
-    match (facts.lifecycle, facts.session) {
-        (BoxLifecycle::Ready | BoxLifecycle::Asleep, SessionState::Ended) => true,
-        (BoxLifecycle::Asleep, SessionState::Idle) if !facts.death_capped => true,
-        (BoxLifecycle::Ready | BoxLifecycle::Asleep, SessionState::Idle) => {
-            steered.is_none_or(|t| quiet_since(facts, t, now))
-        }
-        _ => false,
+    if !matches!(facts.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep) {
+        return false;
+    }
+    match facts.session {
+        SessionState::Ended => true,
+        SessionState::Idle => steered.is_none_or(|t| quiet_since(facts, t, now)),
+        SessionState::Starting | SessionState::Working => false,
     }
 }

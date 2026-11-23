@@ -167,11 +167,14 @@ fn due_work(
     if hand_over(cx, store, row, (gates, lines))? {
         return Ok(None);
     }
-    let Some(due) = due_outcomes(gates, lines) else {
-        remind(cx, store, row, (gates, lines))?;
-        return Ok(None);
-    };
-    Ok(quiet.then(|| Work::Outcomes(Due::of(&due))))
+    match due_outcomes(gates, lines) {
+        Some(due) if quiet => Ok(Some(Work::Outcomes(Due::of(&due)))),
+        // An agent whose turn a sleep cut is reminded without trying the outcomes on its work.
+        _ => {
+            remind(cx, store, row, (gates, lines))?;
+            Ok(None)
+        }
+    }
 }
 
 /// Whether `line` is one the agent's own doings wrote in try `try_n`, which a failure that ended

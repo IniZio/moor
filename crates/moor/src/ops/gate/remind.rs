@@ -12,7 +12,7 @@ use moor_core::SteerReq;
 use super::checks::taken;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::quiet::settled;
+use crate::ops::common::quiet::may_tell;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store};
 
@@ -38,7 +38,7 @@ pub(super) fn remind(
     let Some(waiting) = gates.iter().find(|g| g.name == gate) else {
         return Ok(());
     };
-    if !settled(cx, store, row)? {
+    if !may_tell(cx, store, row)? {
         return Ok(());
     }
     let reminded = lines
