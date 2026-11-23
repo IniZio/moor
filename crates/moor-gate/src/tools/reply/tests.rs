@@ -195,3 +195,18 @@ fn a_box_that_kept_its_cache_volumes_has_no_cold_cache() {
     detailed(&mut value);
     assert_eq!(value["cache_cold"], Value::Null);
 }
+
+#[test]
+fn a_box_moor_did_not_close_says_why_in_the_list() {
+    let why = "it holds 1 unpushed commit(s) and 0 uncommitted file(s)";
+    let mut value = json!({"boxes": [
+        {"name": "r/a", "lifecycle": "asleep", "progress": {"held": why}},
+        {"name": "r/b", "lifecycle": "asleep", "progress": {"held": null}},
+    ]});
+    listed(&mut value, &|_| Err("unused".to_owned()));
+    assert_eq!(
+        value["boxes"][0]["status"],
+        format!("asleep · not closed: {why}")
+    );
+    assert_eq!(value["boxes"][1]["status"], "asleep");
+}

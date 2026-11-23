@@ -5,6 +5,7 @@ use crate::domain::event::EVENT_KINDS;
 
 mod failed;
 mod gate;
+mod held;
 use crate::domain::hands::HandsState;
 use crate::view::attention::AttentionView;
 use crate::view::{AgentView, BoxSleepView, DriverView, LaunchFailure};
