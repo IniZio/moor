@@ -56,9 +56,9 @@ pub enum Event {
     Closed {
         /// The state the box left.
         from: BoxLifecycle,
-        /// Why moor closed it, when a person did not ask.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
+        /// Why it closed, as `reason` and `by`; only events from older builds lack it.
+        #[serde(flatten, with = "close_reason::wire")]
+        reason: Option<close_reason::CloseReason>,
     },
     /// A box was requested.
     BoxRequested,

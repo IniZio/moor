@@ -1,5 +1,6 @@
 //! The Box lifecycle machine: every state change is `step()`, and every other pair is an error.
 
+use super::event::close_reason::CloseReason;
 use super::session_state::SessionState;
 use super::Illegal;
 
@@ -211,8 +212,8 @@ pub enum BoxLifecycleInput {
     },
     /// The Box closes.
     Close {
-        /// Why moor closed it, when a person did not ask.
-        reason: Option<String>,
+        /// Why it closes; only a Box closed before every close named one has none.
+        reason: Option<CloseReason>,
     },
 }
 

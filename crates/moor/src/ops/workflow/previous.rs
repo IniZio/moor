@@ -4,6 +4,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::CloseReq;
@@ -94,9 +95,11 @@ pub(super) fn keep_or_close(cx: &Cx, row: &BoxRow) -> Option<String> {
         target: row.name.clone().into(),
         force: false,
     };
-    cx.for_box(row.user, || close::run_unless_kept(cx, &req, &kept))
-        .err()
-        .map(|e| e.error.to_string())
+    cx.for_box(row.user, || {
+        close::run_unless_kept(cx, &req, CloseReason::Superseded, &kept)
+    })
+    .err()
+    .map(|e| e.error.to_string())
 }
 
 /// Records on `new_box` that `row` was kept for `why`, counting the runs in a row whose Boxes,

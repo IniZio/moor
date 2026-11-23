@@ -1,6 +1,7 @@
 //! The turn a close takes on its Box, stopping a start in flight first when the close is forced.
 
 use moor_core::domain::decision::{Decision, Effect, WantChange, Wanted, WantedKind};
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::ErrorKind;
 
 use super::cancel_boot;
@@ -14,11 +15,13 @@ use crate::store::BoxRow;
 ///
 /// The stopped start records its setup as failed before it lets go. One that has not stopped
 /// after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still acquiring its
-/// machine has that boot cancelled, and the close is wanted first so a restart honours it.
+/// machine has that boot cancelled, and the close is wanted first, for `reason`, so a restart
+/// honours it.
 pub(super) fn turn<'a>(
     cx: &'a Cx,
     row: &BoxRow,
     force: bool,
+    reason: Option<&CloseReason>,
 ) -> Result<Option<Turn<'a>>, CommandError> {
     if cx.owners().holds(row.id) {
         return Ok(None);
@@ -33,7 +36,7 @@ pub(super) fn turn<'a>(
         if acquiring {
             let closing = Wanted::Close {
                 force: true,
-                reason: None,
+                reason: reason.cloned(),
             };
             store.apply(Decision::new(row.id).want(WantChange::Raise(closing)))?;
         }

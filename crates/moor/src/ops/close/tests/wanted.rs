@@ -311,3 +311,23 @@ fn a_release_that_fails_leaves_a_run_in_flight_its_effect() {
     assert_eq!(e.kind, ErrorKind::Failed, "{}", e.error);
     assert_eq!(row(&f).effect, Some(Effect::Run { run: held }));
 }
+
+#[test]
+fn a_close_a_restart_finishes_still_names_who_asked_for_it() {
+    let f = fx_with(FakeDriver::new());
+    f.driver.on_release(|| {
+        std::panic::resume_unwind(Box::new("process died mid-release"));
+    });
+    let cut = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&f.cx, &req(true)));
+    }));
+    assert!(cut.is_err());
+    f.driver.on_release(|| {});
+    let store = f.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&f.cx, store).unwrap(), [f.id]);
+    resume_setup(&f.cx, store, f.id).unwrap();
+    assert_eq!(
+        store.closed_reason(f.id).unwrap(),
+        Some(moor_core::domain::event::close_reason::CloseReason::requested("a person"))
+    );
+}

@@ -141,3 +141,24 @@ fn session_events_table() {
     assert_eq!(session_events(&I::AgentBusy), vec![Event::Busy]);
     assert_eq!(session_events(&I::RunStarted), vec![Event::Busy]);
 }
+
+#[test]
+fn a_close_a_person_asked_for_names_its_reason_and_the_person() {
+    use BoxLifecycle as L;
+    use BoxLifecycleInput as I;
+    let by_ada_reason = || {
+        Some(crate::domain::event::close_reason::CloseReason::requested(
+            "github:ada",
+        ))
+    };
+    let by_ada = I::Close {
+        reason: by_ada_reason(),
+    };
+    assert_eq!(
+        ev(Some(L::Asleep), L::Closed, &by_ada),
+        vec![Event::Closed {
+            from: L::Asleep,
+            reason: by_ada_reason()
+        }]
+    );
+}

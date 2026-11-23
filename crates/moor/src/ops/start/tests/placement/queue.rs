@@ -357,12 +357,12 @@ fn a_close_that_found_no_room_to_wake_its_box_stays_wanted_silently_and_closes_o
     let wanted = store.box_row(shut).unwrap().unwrap().wanted;
     let unforced = moor_core::domain::decision::Wanted::Close {
         force: false,
-        reason: None,
+        reason: Some(moor_core::domain::event::close_reason::CloseReason::requested("a person")),
     };
     assert_eq!(
         wanted,
         Some(unforced.clone()),
-        "the close it was, not forced"
+        "the close it was, not forced, still naming who asked"
     );
     crate::ops::wanted_pass(&w.cx, store, &|| false).unwrap();
     let events = store.events(shut, 100).unwrap();

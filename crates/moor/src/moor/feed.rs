@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::config::AutoClose;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::event::close_reason::CLOSE_REASON_SETUP_FAILED_EXPIRED;
+use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::{BoxId, SessionId};
 
 use super::Moor;
@@ -260,7 +260,7 @@ impl Moor {
                 ops::close_failed::close_setup_failed(
                     &self.cx,
                     std::slice::from_ref(&row),
-                    CLOSE_REASON_SETUP_FAILED_EXPIRED,
+                    &CloseReason::SetupFailedExpired,
                     true,
                 )
             });

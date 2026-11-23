@@ -184,6 +184,21 @@ fn a_queued_box_past_the_start_limit_is_closed_and_its_run_refused() {
 }
 
 #[test]
+fn a_box_closed_for_the_start_limit_says_so_on_its_closed_event() {
+    let r = rig_with(one_box_node());
+    let (_, second) = two_workflows(&r, 720);
+    r.advance_to(CLAIMED);
+    r.pass();
+    let queued_box = latest_of(&r, second).state.box_id().unwrap();
+    r.advance_to(CLAIMED + 61 * MIN);
+    r.pass();
+    assert_eq!(
+        r.cx.store().unwrap().closed_reason(queued_box).unwrap(),
+        Some(moor_core::domain::event::close_reason::CloseReason::StartLimit)
+    );
+}
+
+#[test]
 fn the_next_firing_runs_after_a_start_limit_breach() {
     let r = rig_with(one_box_node());
     let (_, second) = two_workflows(&r, 720);

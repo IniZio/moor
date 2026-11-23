@@ -61,6 +61,13 @@ impl Cx {
             .ok_or_else(|| controller_only("a Box's Proxy reads its user's secrets"))
     }
 
+    /// The identity this request acts as, as a person reads it: `a person` when it acts as no one.
+    pub(crate) fn requester_name(&self) -> String {
+        self.requester
+            .as_ref()
+            .map_or_else(|| "a person".to_owned(), |who| who.as_str().to_owned())
+    }
+
     /// The identity this request acts as, and its user when it has one.
     ///
     /// # Errors
