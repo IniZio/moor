@@ -169,7 +169,7 @@ impl Cx {
         let store = match self.env.shared::<Store>() {
             Some(shared) => shared.clone(),
             #[cfg(test)]
-            None if self.claimed => Store::open_claimed(dir?, db?.as_ref(), Arc::clone(clock))?,
+            None if self.claimed => crate::testing::template::open(dir?, db?.as_ref(), clock)?,
             None => Store::open_in(dir?, db?.as_ref(), Arc::clone(clock))?,
         };
         #[cfg(test)]
