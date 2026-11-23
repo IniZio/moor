@@ -12,7 +12,7 @@ PG_PORT = $$(docker compose port postgres 5432 2>/dev/null | sed 's/.*://' | gre
 S3_PORT = $$(docker compose port s3 9000 2>/dev/null | sed 's/.*://' | grep . || echo 9000)
 PG_URL ?= postgres://moor:moor@127.0.0.1:$(PG_PORT)/moor
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci ci-gates ci-down ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
+.PHONY: help coverage setup secret audit sccache-basedirs lint prepush hooks format test unit ci ci-gates ci-down ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
 
 help:
 	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
@@ -35,7 +35,10 @@ audit:
 	cargo deny check
 	cargo machete
 
-lint:
+sccache-basedirs:
+	@tools/sccache-basedirs.sh
+
+lint: sccache-basedirs
 	tools/fetch-base.sh $(or $(BASE),origin/develop)
 	cargo fmt --all --check
 	taplo fmt --check
@@ -144,7 +147,7 @@ format:
 
 # One nextest run for every test target of the workspace, so their binaries overlap, and the
 # doc tests (which nextest cannot run) alongside it.
-unit:
+unit: sccache-basedirs
 	$(MAKE) --no-print-directory -j2 -O unit-nextest unit-doc
 
 unit-nextest:
