@@ -9,6 +9,7 @@ pub(crate) mod engine;
 pub(crate) mod forge;
 pub(crate) mod hc;
 pub(crate) mod inbox;
+pub(crate) mod net;
 pub(crate) mod proc;
 pub(crate) mod proxy_host;
 pub(crate) mod rng;

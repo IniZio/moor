@@ -4,6 +4,7 @@ use std::sync::mpsc;
 
 use super::*;
 use crate::proxy::graphql::{EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
+use crate::testing::net::assert_closes;
 
 /// Largest GraphQL body the filter accepts.
 const CAP: usize = 64 * 1024;
@@ -210,12 +211,8 @@ fn stop_promptly(filter: GraphqlFilter) {
 #[test]
 fn stop_returns_promptly_and_port_stops_accepting() {
     let Rig { filter, up, .. } = rig(fixed(json_reply("200 OK", OK_BODY)));
-    let addr = filter.addr();
-    stop_promptly(filter);
-    assert!(
-        TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_err(),
-        "port still accepting"
-    );
+    let port = filter.addr().port();
+    assert_closes(&[port], || stop_promptly(filter));
     drop(up);
 }
 
@@ -230,8 +227,7 @@ fn stop_returns_promptly_with_an_idle_tunnel_open() {
         200
     );
     let Rig { filter, up, .. } = rig;
-    let addr = filter.addr();
-    stop_promptly(filter);
-    assert!(TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_err());
+    let port = filter.addr().port();
+    assert_closes(&[port], || stop_promptly(filter));
     drop(up);
 }

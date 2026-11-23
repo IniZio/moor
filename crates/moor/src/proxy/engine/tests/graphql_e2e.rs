@@ -23,6 +23,7 @@ use ureq::Agent;
 use super::{Host, Running, Wiring};
 use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::tests::upstream::Upstream;
+use crate::testing::net::assert_closes;
 
 /// The credential the fake credential source returns.
 pub(super) const SECRET: &str = "gh-fake-token-77";
@@ -436,14 +437,7 @@ fn unmatched_rest_request_is_forwarded_not_refused() {
 fn stop_closes_every_listener() {
     let rig = rig();
     let ports = [rig.nono_port(), rig.filter_port()];
-    rig.stop();
-    for port in ports {
-        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        assert!(
-            TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_err(),
-            "port {port} still accepts connections"
-        );
-    }
+    assert_closes(&ports, || rig.stop());
 }
 
 mod any_repo;
