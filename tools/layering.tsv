@@ -44,7 +44,7 @@ moor::cli	moor::error,moor::stamp
 moor::client	moor::cli,moor::config_load,moor::env,moor::error
 moor::controller	moor::blobs,moor::Moor,moor::front_dir,moor::ledger_dir,moor::runner_dir,moor::env,moor::error,moor::vault,moor::adapters::github::app,moor::adapters::github::hook
 moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error,moor::vault,moor::keys
-moor::cx	moor::blobs,moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
+moor::cx	moor::blobs,moor::config_load,moor::store,moor::testing::template,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
 moor::ops	moor::blobs,moor::vault,moor::cx,moor::store,moor::error,moor::failpoint,moor::adapters::git,moor::adapters::creds,moor::adapters::proc,moor::proxy::token,moor::adapters::github::app,moor::adapters::github::hook
 moor::moor	moor::vault,moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
 extern:nono_proxy	moor::proxy
