@@ -12,7 +12,7 @@ PG_PORT = $$(docker compose port postgres 5432 2>/dev/null | sed 's/.*://' | gre
 S3_PORT = $$(docker compose port s3 9000 2>/dev/null | sed 's/.*://' | grep . || echo 9000)
 PG_URL ?= postgres://moor:moor@127.0.0.1:$(PG_PORT)/moor
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci ci-gates ci-down ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
+.PHONY: help coverage setup secret audit lint $(LINT_STEPS) prepush hooks format test unit ci ci-gates ci-down ci-tools unit-nextest unit-doc build deploy overlap chart dev-db unit-pg dev-s3 unit-s3 docs-dev docs-build web
 
 help:
 	@echo "targets: setup secret audit lint prepush hooks chart format test unit-pg dev-db unit-s3 dev-s3 docs-dev docs-build ci build deploy"
@@ -35,11 +35,27 @@ audit:
 	cargo deny check
 	cargo machete
 
+# The independent steps run at once. fetch-base goes first because the steps after it read the base.
+# Cargo's build lock still serialises the compiles, so the win is the small steps and the
+# non-cargo ones running beside them. A failing step stops new ones; the running ones finish.
+LINT_STEPS := lint-fmt lint-clippy lint-doc lint-scripts lint-crates lint-selftests
+
 lint:
 	tools/fetch-base.sh $(or $(BASE),origin/develop)
+	$(MAKE) --no-print-directory -j$(words $(LINT_STEPS)) -O $(LINT_STEPS)
+
+lint-fmt:
 	cargo fmt --all --check
 	taplo fmt --check
+	typos
+
+lint-clippy:
 	cargo clippy --workspace --all-targets --locked -- -D warnings
+
+lint-doc:
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
+
+lint-scripts:
 	tools/file-cap.sh
 	tools/case-clash.sh
 	tools/case-clash.sh --selftest
@@ -48,6 +64,8 @@ lint:
 	tools/box-key.sh
 	tools/box-key.sh --selftest
 	tools/exec-env.sh
+
+lint-crates:
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	cargo test -p test-children --locked
@@ -56,11 +74,12 @@ lint:
 	cargo run -q -p migration-numbers --locked -- $(or $(BASE),origin/develop)
 	cargo test -p store-sql --locked
 	cargo run -q -p store-sql --locked
+
+lint-selftests:
 	tools/lint-selftest.sh
-	tools/stack-overlap-selftest.sh
+	# The script runs make itself; a parent jobserver in its environment would pollute the output it checks.
+	env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
-	typos
-	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 
 # The chart with only its required values, then with every optional block on.
 CHART := deploy/helm/moor
@@ -176,10 +195,7 @@ ci-down:
 
 ci-gates:
 	$(MAKE) audit
-	$(MAKE) chart
-	$(MAKE) web
-	$(MAKE) lint
-	$(MAKE) unit
+	$(MAKE) -j4 -O lint unit chart web
 	$(MAKE) dev-db
 	$(MAKE) unit-pg
 	$(MAKE) dev-s3
