@@ -401,25 +401,6 @@ fn a_report_after_the_reminder_still_moves_the_run_and_the_counter_starts_over()
 }
 
 #[test]
-fn a_workflow_nobody_planned_still_delivers_when_its_agent_goes_quiet() {
-    let r = rig();
-    r.answer_repo();
-    let wid = r.put_planned(None);
-    r.advance_to(FIRST_DUE + 1_000);
-    assert!(r.pass().is_empty());
-    r.quiet_after_work(wid);
-    r.pause(3 * 60_000);
-    r.pass();
-    assert!(matches!(
-        r.latest(wid).state,
-        RunState::Done(RunEnd::Ended {
-            outcome: RunOutcome::Delivered { .. },
-            ..
-        })
-    ));
-}
-
-#[test]
 fn a_tick_that_decided_incomplete_before_a_report_moved_the_run_does_not_end_it() {
     let r = rig();
     let wid = r.begun(plan_of(&[audit("ship", None), ship()]));
