@@ -71,6 +71,7 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/box/stop"
                 | "/account/api/box/close"
                 | "/account/api/inbox/read"
+                | "/account/api/inbox/clear"
         )
     )
 }
@@ -126,6 +127,9 @@ pub(super) fn serve(
         }
         ("POST", "/account/api/inbox/read") => {
             inbox::read(stream, gate, session, req.csrf, body.as_deref());
+        }
+        ("POST", "/account/api/inbox/clear") => {
+            inbox::clear(stream, gate, session, req.csrf, body.as_deref());
         }
         ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
         (_, "/account/api/inbox") => inbox::list(stream, gate, session),

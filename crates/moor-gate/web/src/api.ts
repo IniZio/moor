@@ -586,6 +586,16 @@ export async function inboxRead(csrf: string, ids: number[]): Promise<Inbox> {
 	return answer(res, InboxSchema);
 }
 
+/** Takes the items `ids` names out of the inbox, or every item up to `through`; answers the inbox as it is then. */
+export async function inboxClear(csrf: string, which: { ids: number[] } | { through: number }): Promise<Inbox> {
+	const res = await fetch('/account/api/inbox/clear', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify(which),
+	});
+	return answer(res, InboxSchema);
+}
+
 /** Runs setup again on a Box whose setup failed. */
 export async function boxRetry(csrf: string, box: string): Promise<void> {
 	const res = await fetch('/account/api/box/retry', {

@@ -16,4 +16,10 @@ span.inbox-all { text-decoration: none; font-size: 0.8125rem; color: var(--moor-
 .inbox-read, .inbox-resolved { opacity: 0.6; }
 .inbox-read .inbox-title, .inbox-resolved .inbox-title { font-weight: var(--moor-weight-body); }
 .inbox-read .inbox-now, .inbox-resolved .inbox-now { color: var(--moor-color-text-muted); }
+.inbox-row { position: relative; }
+.inbox-rm { position: absolute; right: 6px; top: 5px; width: 1.7rem; height: 1.7rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--moor-radius-sm); background: none; color: var(--moor-color-text-muted); font: inherit; font-size: 1.15rem; line-height: 1; opacity: 0; cursor: pointer; }
+.inbox-row:hover .inbox-rm, .inbox-row:focus-within .inbox-rm, .inbox-rm:focus-visible { opacity: 1; }
+.inbox-rm:hover { background: var(--moor-color-bg-sunken); color: var(--moor-color-text); }
+.inbox-note { margin: 4px 0 0; padding: 8px 8px 4px; border-top: 1px solid var(--moor-color-border); font-size: 0.8125rem; }
 .pop.inbox .t-empty { margin: 0; padding: 8px 8px 4px; color: var(--moor-color-text-muted); }
+@media (max-width: 760px) { .inbox-rm { opacity: 1; } }
