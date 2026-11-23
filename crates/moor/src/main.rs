@@ -15,6 +15,11 @@ use moor::moor_core::view::ExecView;
 use moor::moor_core::{ExecReq, Request, Response};
 use moor::Moor;
 
+/// musl's own allocator is several times slower than glibc's, so the musl builds use mimalloc.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// Runs `moor front-shim`, the controller's wrapper around each front, `moor front-run`, the
 /// wrapper of a front the controller does not start, or `moor proxy serve-egress`, the shared
 /// egress Proxy; none is a user command.

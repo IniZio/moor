@@ -13,6 +13,11 @@ use moor_client::tls::TlsPki;
 use moor_client::Client;
 use moor_gate::{Boxes, Gate, Login, Mcp, Verifier, DEFAULT_BOX_LISTEN, SERVICE_KEY_ENV};
 
+/// musl's own allocator is several times slower than glibc's, so the musl builds use mimalloc.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// The remote front: OIDC access tokens in, the controller out.
 #[derive(Parser)]
 #[command(version)]

@@ -67,6 +67,9 @@ tokio = { version = "1", features = [
 name = "runner"
 path = "tests/runner/main.rs"
 
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = "0.1.52"
+
 [dev-dependencies]
 moor-machine-agent = { path = "../moor-machine-agent", features = [
   "fake-boxes",
