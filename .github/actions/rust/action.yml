@@ -15,13 +15,11 @@ runs:
 
     - uses: ./.github/actions/bun
 
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
       with:
-        path: target
-        key: cargo-target-${{ inputs.cache }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-        restore-keys: |
-          cargo-target-${{ inputs.cache }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
-          cargo-target-${{ inputs.cache }}-${{ runner.os }}-
+        shared-key: ${{ inputs.cache }}
+        cache-bin: false
+        save-if: ${{ github.event_name == 'push' }}
 
     - id: tools
       shell: bash
