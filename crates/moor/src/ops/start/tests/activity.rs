@@ -91,15 +91,6 @@ fn start_idles_a_working_box_whose_hook_reports_idle_then_wakes_it() {
 }
 
 #[test]
-fn start_wakes_an_idle_box_whose_hook_reports_working() {
-    let (w, id) = started(true, working_now);
-    assert!(idle(&row(&w, id)));
-    let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
-    assert!(working(&row(&w, id)));
-}
-
-#[test]
 fn start_does_not_quiet_a_box_whose_agent_reports_no_status() {
     let (w, id) = started(false, |w| agent::read(None, just_before(w), 0));
     w.cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));

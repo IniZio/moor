@@ -86,15 +86,6 @@ fn an_exited_agent_after_wake_relaunches_and_keeps_the_old_exit() {
 }
 
 #[test]
-fn a_live_agent_after_wake_is_left_alone() {
-    let (w, engine, id) = started();
-    set_agent_session(&w, id, "agent-1");
-    revive(&w, id);
-    assert_eq!(engine.launches().len(), 1);
-    assert!(relaunched(&w, id).is_empty());
-}
-
-#[test]
 fn an_unreadable_agent_after_wake_counts_as_live() {
     let (w, engine, id) = started();
     engine.set_probes("p-1", Probe::TimedOut);

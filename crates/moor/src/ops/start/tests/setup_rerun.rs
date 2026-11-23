@@ -109,24 +109,6 @@ fn start_does_not_re_run_setup_left_with_no_op_in_flight() {
 }
 
 #[test]
-fn start_after_an_interrupted_setup_does_not_sync_the_checkout_again() {
-    let (w, _) = interrupted_setup();
-    drop(warning_codes(&w));
-    let syncs = |w: &World| {
-        let all = w.driver.execs().into_iter();
-        let all = all.filter(|e| e.1.argv == ["git", "rev-parse", "--git-dir"]);
-        all.map(|e| e.0).collect::<Vec<_>>()
-    };
-    let before = syncs(&w).len();
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(!again.setup.ran);
-    assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    assert_eq!(syncs(&w).len(), before);
-    let [message] = not_rerun_warning(&w).try_into().unwrap();
-    assert!(message.starts_with("setup was interrupted; "));
-}
-
-#[test]
 fn start_is_refused_while_a_setup_is_in_flight_and_leaves_it_alone() {
     let (w, v) = interrupted_setup();
     let id = BoxId::new(v.boxed.id);

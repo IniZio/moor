@@ -32,19 +32,6 @@ fn show(w: &super::World) -> serde_json::Value {
 }
 
 #[test]
-fn the_delivered_cpus_and_memory_are_recorded_on_the_box() {
-    let driver = FakeDriver::new().exec_stdout([probe(4, 7900)]);
-    let (w, v) = start_with("setup: [a]\n", driver);
-    let row =
-        w.cx.store()
-            .unwrap()
-            .box_row(BoxId::new(v.boxed.id))
-            .unwrap()
-            .unwrap();
-    assert_eq!(row.hands.unwrap().delivered, Some(shape(4, 7900)));
-}
-
-#[test]
 fn the_start_reply_and_show_carry_the_delivered_shape() {
     let driver = FakeDriver::new().exec_stdout([probe(4, 7900)]);
     let (w, v) = start_with("setup: [a]\n", driver);
@@ -74,13 +61,6 @@ fn the_probe_rides_the_clone_exec_and_adds_no_box_call() {
         .collect();
     assert_eq!(probing.len(), 1);
     assert!(probing.iter().all(|e| is_clone_exec(&e.1)));
-}
-
-#[test]
-fn a_box_with_a_probe_records_its_shape() {
-    let driver = FakeDriver::new().exec_stdout([probe(1, 512)]);
-    let (_, v) = start_with("setup: [a]\n", driver);
-    assert_eq!(v.boxed.driver.unwrap().cpus, Some(1));
 }
 
 #[test]

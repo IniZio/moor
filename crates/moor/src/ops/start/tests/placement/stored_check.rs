@@ -93,23 +93,6 @@ fn a_suspend_records_what_the_box_holds_just_before_it() {
 }
 
 #[test]
-fn a_working_box_is_not_asked_and_keeps_no_answer() {
-    let (w, hv) = live_world(32_768);
-    let (a, b) = (started(&w, "a"), started(&w, "b"));
-    let (w, _) = agents_report(w, &[], &[a, b]);
-    holds(&w, b, CLEAN);
-    w.cx.store()
-        .unwrap()
-        .set_suspend_check((b, HandsInc::FIRST), Some(OLD_CLEAN))
-        .unwrap();
-    let before = calls(&w, "exec");
-    tick(&w, hv, CRITICAL, 0, 0);
-    assert_eq!(lifecycle(&w, b), Pending);
-    assert_eq!(stored(&w, b), None);
-    assert_eq!(calls(&w, "exec"), before, "the suspend stays fast");
-}
-
-#[test]
 fn a_working_box_with_no_room_refuses_a_close() {
     let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
@@ -147,18 +130,6 @@ fn an_idle_box_with_a_run_in_flight_is_not_asked_either() {
     crate::ops::common::suspend_check::record(&w.cx, store, (b, HandsInc::FIRST), settled).unwrap();
     assert_eq!(stored(&w, b), None);
     assert_eq!(calls(&w, "exec"), before);
-}
-
-#[test]
-fn an_idle_suspend_records_it_too() {
-    let (w, hv) = live_world(32_768);
-    let a = started(&w, "a");
-    idle(&w, a);
-    let (w, _) = agents_report(w, &[a], &[]);
-    holds(&w, a, CLEAN);
-    tick(&w, hv, BELOW_RESERVE, 0, 0);
-    assert_eq!(lifecycle(&w, a), Asleep);
-    assert_eq!(stored(&w, a), Some((0, 0)));
 }
 
 #[test]

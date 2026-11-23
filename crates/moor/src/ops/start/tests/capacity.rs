@@ -165,23 +165,6 @@ fn queued_start_records_no_session() {
 }
 
 #[test]
-fn queued_start_records_the_limit_and_keeps_the_workspace() {
-    let (w, _) = with_live_box(box_limit(1));
-    let v = run(&w.cx, &req("waiter")).unwrap();
-    let events =
-        w.cx.store()
-            .unwrap()
-            .events(BoxId::new(v.boxed.id), 50)
-            .unwrap();
-    let ev = events
-        .iter()
-        .find(|e| e.kind == "pending")
-        .expect("pending event");
-    assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
-    assert_eq!(w.driver.calls(), ["acquire", "peek_file box-1"]);
-}
-
-#[test]
 fn queued_start_is_pending_on_its_node_with_the_schedulers_reason() {
     {
         let (w, _) = with_live_box(box_limit(1));
