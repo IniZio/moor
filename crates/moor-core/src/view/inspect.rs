@@ -25,6 +25,8 @@ pub struct InspectView {
     pub lifecycle: String,
     /// Session state.
     pub session: String,
+    /// The full prompt the Box was started with; `list_boxes` leaves it out.
+    pub prompt: Option<String>,
     /// Agent activity.
     pub agent: Option<AgentView>,
     /// The tail of the agent's pane.

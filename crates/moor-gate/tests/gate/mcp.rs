@@ -16,6 +16,7 @@ use super::{claims, mpsc, now, sign, world_with, World};
 mod exec;
 mod inspect;
 mod keep_alive;
+mod list;
 mod node_settings;
 mod nodes;
 mod repo_config;
@@ -66,12 +67,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         "webhook-remove" => json!({"id": inner["id"]}),
                         "webhook-list" => webhook::listed(),
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
-                        "show" => {
-                            json!({"boxes": [{"name": format!("repo/{}", who.replace(':', "-")),
-                                "state": "ready"},
-                                {"name": "repo/failed", "lifecycle": "setup_failed"},
-                                {"name": "repo/starting", "lifecycle": "setting_up"}]})
-                        }
+                        "show" => list::boxes(who),
                         "start" => json!({"started": inner["name"]}),
                         _ => Value::Null,
                     };
