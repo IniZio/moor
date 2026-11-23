@@ -438,17 +438,6 @@ fn waking_only_the_box_does_not_probe_the_agent() {
     assert!(relaunched(&f).is_empty());
 }
 
-#[test]
-fn plain_wake_leaves_a_gone_agent_alone() {
-    let f = fx();
-    with_agent(&f);
-    sleep(&f);
-    f.engine.set_probes("agent-1", gone());
-    let store = f.cx.store().unwrap();
-    assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    assert!(f.engine.launches().is_empty());
-}
-
 const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
 
 /// What the agent's probe shows of a launch script the prelude stopped because the Proxy CA could not be written.

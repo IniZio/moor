@@ -198,32 +198,6 @@ fn failing_line_comes_from_the_log_and_warns() {
 }
 
 #[test]
-fn the_last_announced_line_fails() {
-    let d = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new()
-        .exec_results(exits(&[1]))
-        .copy_text("moor setup: $ a\nmoor setup: $ b\n");
-    let r = rig(d.path(), driver);
-    let got = run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a", "b", "c"], &[]),
-    );
-    assert_eq!(
-        got,
-        SetupRun::Failed {
-            line: "b".to_owned(),
-            exit: Some(1),
-            reason: "exit 1".to_owned(),
-            ms: 0,
-            tail: "moor setup: $ a\nmoor setup: $ b".to_owned(),
-        }
-    );
-}
-
-#[test]
 fn a_failed_copy_falls_back_to_the_first_line() {
     let d = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new()

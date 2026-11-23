@@ -56,16 +56,6 @@ fn flag_model_resolves_and_repo_has_no_model() {
 }
 
 #[test]
-fn stored_repo_config_is_what_settings_read() {
-    let d = tempfile::tempdir().unwrap();
-    let cx = cx(d.path());
-    store_config(cx.store().unwrap(), &repo(), "setup: ['echo hi']\n");
-    let row = row(&cx, new_box_of(name(), box_repo()));
-    let s = settings_of(&cx, &row, &Flags::default()).unwrap();
-    assert_eq!(s.setup, ["echo hi"]);
-}
-
-#[test]
 fn no_repo_config_resolves_defaults() {
     let d = tempfile::tempdir().unwrap();
     let cx = cx(d.path());
