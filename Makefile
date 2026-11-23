@@ -35,9 +35,7 @@ audit:
 	cargo deny check
 	cargo machete
 
-# The independent steps run at once. fetch-base goes first because the steps after it read the base.
-# Cargo's build lock still serialises the compiles, so the win is the small steps and the
-# non-cargo ones running beside them. A failing step stops new ones; the running ones finish.
+# fetch-base goes first because the steps after it read the base.
 LINT_STEPS := lint-fmt lint-clippy lint-doc lint-scripts lint-crates lint-selftests
 
 lint:
@@ -77,7 +75,6 @@ lint-crates:
 
 lint-selftests:
 	tools/lint-selftest.sh
-	# The script runs make itself; a parent jobserver in its environment would pollute the output it checks.
 	env -u MAKEFLAGS -u MFLAGS -u MAKELEVEL tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
 
