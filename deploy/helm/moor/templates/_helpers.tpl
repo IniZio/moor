@@ -41,15 +41,15 @@ app.kubernetes.io/name: moor-egress
 app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end -}}
 
-{{/* Where Boxes dial the egress Proxy: egress.url, else /egress on egress.ingress.host, else on the gate ingress, which must then exist. */}}
+{{/* Where Boxes dial the egress Proxy: egress.url, else /egress on publicIngress.host, else on the gate ingress, which must then exist. */}}
 {{- define "moor.egressUrl" -}}
 {{- if .Values.egress.url -}}
 {{- if not (hasPrefix "wss://" .Values.egress.url) -}}
 {{ fail (printf "egress.url %q must be a wss:// address (the controller refuses any other scheme and crash-loops); leave it empty to use wss://<host>/egress" .Values.egress.url) }}
 {{- end -}}
 {{ .Values.egress.url }}
-{{- else if .Values.egress.ingress.enabled -}}
-wss://{{ required "egress.ingress.host is required" .Values.egress.ingress.host }}/egress
+{{- else if .Values.publicIngress.enabled -}}
+wss://{{ required "publicIngress.host is required" .Values.publicIngress.host }}/egress
 {{- else if and .Values.gate.enabled .Values.gate.ingress.enabled -}}
 wss://{{ required "host is required" .Values.host }}/egress
 {{- else -}}

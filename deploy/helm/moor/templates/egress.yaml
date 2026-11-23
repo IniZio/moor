@@ -236,30 +236,4 @@ spec:
   ports:
     - { name: machine, port: 7700, targetPort: machine }
 {{- end }}
-{{- with .Values.egress.ingress }}
-{{- if .enabled }}
----
-# Only /egress, on a host Boxes outside the gate's network can reach. The gate host stays private.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ $.Release.Name }}-egress
-  labels: {{- include "moor.labels" $ | nindent 4 }}
-  {{- with .annotations }}
-  annotations: {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  ingressClassName: {{ required "egress.ingress.className is required" .className | quote }}
-  rules:
-    - host: {{ required "egress.ingress.host is required" .host | quote }}
-      http:
-        paths:
-          - path: /egress
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $.Release.Name }}-egress
-                port: { name: egress }
-{{- end }}
-{{- end }}
 {{- end }}

@@ -57,10 +57,9 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled`, `egress.ingress.enabled` or `egress.url`. |
+| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled`, `publicIngress.enabled` or `egress.url`. |
 | `egress.replicas` | 2 | Replicas, rolled one at a time. |
-| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. With `egress.ingress.enabled`, the default is `wss://EGRESS_HOST/egress`. |
-| `egress.ingress.enabled`, `.className`, `.host`, `.annotations` | off | A second Ingress that serves only `/egress` on `.host`, for Boxes outside the gate's network. The gate Ingress then drops `/egress`. |
+| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. With `publicIngress.enabled`, the default is `wss://PUBLIC_HOST/egress`. |
 | `egress.graceSecs` | 300 | How long open tunnels get after SIGTERM. |
 | `egress.ledgerPort` | 7443 | The controller's ledger port for the egress pods. |
 | `egress.key` | made on first install | Secret. The key Box tokens are signed with. |
@@ -84,6 +83,16 @@ helm upgrade ...
 kubectl -n NAMESPACE rollout restart deployment/RELEASE deployment/RELEASE-egress
 ```
 
+## Public Ingress
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `publicIngress.enabled`, `.className`, `.host`, `.annotations` | off | A second Ingress, `<release>-public`, for callers outside the private network. `.className` and `.host` are required. |
+
+It serves `/egress` when `egress.enabled` and `/hooks/github` when `githubApp.webhookSecret` is set. Both are `Prefix` paths. The gate Ingress then drops both and keeps the private host.
+
+With `publicIngress.enabled`, set the GitHub App's webhook URL to `https://<publicIngress.host>/hooks/github`.
+
 ## Database and blobs
 
 | Key | Default | Meaning |
@@ -100,7 +109,7 @@ kubectl -n NAMESPACE rollout restart deployment/RELEASE deployment/RELEASE-egres
 | --- | --- | --- |
 | `githubApp.id` | empty | The App id. Empty turns every App feature off. See [`github_app`](config.md#github_app). |
 | `githubApp.privateKey` | empty | Secret. The PEM GitHub generated for the App. Required with `githubApp.id`. |
-| `githubApp.webhookSecret` | empty | Secret. The App's webhook secret. With it the gate Ingress routes `/hooks/github`. Without it the gate takes no deliveries. |
+| `githubApp.webhookSecret` | empty | Secret. The App's webhook secret. With it the gate Ingress routes `/hooks/github`, or the public Ingress does when `publicIngress.enabled`. Without it the gate takes no deliveries. |
 
 With `database.url` and `blobs.s3` both set, the controller mounts no volume
 and rolls with `maxSurge: 1`.
