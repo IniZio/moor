@@ -13,6 +13,7 @@ use std::sync::Arc;
 use super::target;
 
 mod webhook;
+mod workflow;
 
 /// What a tool adds to the controller's answer so a model can tell the user what is going on.
 #[derive(Clone)]
@@ -29,6 +30,14 @@ pub(super) enum Reply {
     WebhookAdded(Option<Arc<str>>),
     /// Each webhook's state and health in words, and setup links given the public origin.
     WebhooksListed(Option<Arc<str>>),
+    /// Each workflow as a compact row.
+    WorkflowsListed,
+    /// One workflow, in full, by name.
+    WorkflowOne(String),
+    /// Each run change as a compact row.
+    RunsListed,
+    /// One run, in full, by id.
+    RunOne(i64),
 }
 
 impl Reply {
@@ -37,7 +46,7 @@ impl Reply {
         self,
         value: &mut Value,
         ask: &dyn Fn(ControllerRequest) -> Result<Value, String>,
-    ) {
+    ) -> Result<(), String> {
         match self {
             Self::AsIs => {}
             Self::Started(_) => started(value),
@@ -45,7 +54,12 @@ impl Reply {
             Self::Listed => listed(value, ask),
             Self::WebhookAdded(origin) => webhook::added(value, origin.as_deref()),
             Self::WebhooksListed(origin) => webhook::listed(value, origin.as_deref(), now()),
+            Self::WorkflowsListed => workflow::listed(value),
+            Self::WorkflowOne(name) => return workflow::one(value, &name),
+            Self::RunsListed => workflow::runs(value),
+            Self::RunOne(run) => return workflow::whole_run(value, run),
         }
+        Ok(())
     }
 
     /// The controller's refusal `why` in this tool's words: a start missing secrets sends the

@@ -30,6 +30,8 @@ fn the_tools_are_listed() {
             "get_artifact",
             "get_node_settings",
             "get_repo_config",
+            "get_workflow",
+            "get_workflow_run",
             "inspect_box",
             "list_boxes",
             "list_events",

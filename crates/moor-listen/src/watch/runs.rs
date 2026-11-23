@@ -24,6 +24,31 @@ struct Place {
     step: Option<String>,
 }
 
+/// How to reach the gate while reading changes.
+struct Hear<'a> {
+    /// The gate.
+    gate: &'a Gate,
+    /// The caller's token.
+    token: &'a str,
+    /// Whether an ended run's result is worth a call: not while reading history.
+    read_result: bool,
+}
+
+impl Hear<'_> {
+    /// What run `id` of `workflow` said it delivered. The change rows leave the result out, so
+    /// this asks `get_workflow_run`; none when it said nothing or the read failed.
+    fn result_of(&self, workflow: &str, id: i64) -> Option<String> {
+        if !self.read_result {
+            return None;
+        }
+        let args = json!({"workflow": workflow, "run": id});
+        let params = json!({"name": "get_workflow_run", "arguments": args});
+        let result = self.gate.call(self.token, "tools/call", params).ok()?;
+        let run = result.get("structuredContent")?;
+        run.get("result")?.as_str().map(str::to_owned)
+    }
+}
+
 /// The workflows followed and what was read of them.
 pub(super) struct Runs {
     /// Each workflow followed, with the `next` of its last read; none before the first.
@@ -73,7 +98,15 @@ impl Runs {
             };
             let full = changes.len() as u64 >= PAGE;
             for change in &changes {
-                let said = self.moved(name, change);
+                let said = self.moved(
+                    &Hear {
+                        gate,
+                        token,
+                        read_result: !first,
+                    },
+                    name,
+                    change,
+                );
                 if !first {
                     lines.extend(said);
                 }
@@ -89,7 +122,7 @@ impl Runs {
     }
 
     /// Notes where the run in `change` stands and returns the lines for how it got there.
-    fn moved(&mut self, workflow: &str, change: &Value) -> Vec<String> {
+    fn moved(&mut self, hear: &Hear, workflow: &str, change: &Value) -> Vec<String> {
         let Some(id) = change.get("id").and_then(Value::as_i64) else {
             return Vec::new();
         };
@@ -115,7 +148,8 @@ impl Runs {
             "waiting" if !was("waiting") => lines.push(line("waiting", step)),
             "done" if !was("done") => {
                 let outcome = text("outcome").unwrap_or("ended");
-                let about = text("result").or_else(|| text("detail"));
+                let result = hear.result_of(workflow, id);
+                let about = result.as_deref().or_else(|| text("detail"));
                 lines.push(line(&format!("ended:{outcome}"), about));
             }
             _ => {}

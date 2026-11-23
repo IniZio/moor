@@ -148,6 +148,15 @@ pub(super) struct RunsArgs {
     pub(super) pull: Option<String>,
 }
 
+/// Arguments of `get_workflow_run`.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct RunArgs {
+    /// The workflow's name, as `list_workflows` shows it.
+    pub(super) workflow: String,
+    /// The run's `id`, as a row of `list_workflow_runs` shows it.
+    pub(super) run: i64,
+}
+
 /// The pull request `arg` names, or why it names none.
 pub(super) fn pull_arg(arg: Option<&str>) -> Result<Option<PullTarget>, String> {
     arg.map(PullTarget::parse)

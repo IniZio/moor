@@ -3,7 +3,7 @@
 
 use moor_core::request::{
     AsReq, Request as ControllerRequest, WorkflowAddReq, WorkflowAnswerReq, WorkflowEnableReq,
-    WorkflowRemoveReq, WorkflowRunNowReq, WorkflowRunsReq,
+    WorkflowRemoveReq, WorkflowRunListReq, WorkflowRunNowReq, WorkflowRunsReq,
 };
 use moor_core::workflow::Answer;
 use rmcp::handler::server::wrapper::Parameters;
@@ -14,7 +14,9 @@ use rmcp::{tool, tool_router, RoleServer};
 use super::reply::Reply;
 use super::Tools;
 use crate::mcp::{READ, WRITE};
-use args::{pull_arg, AddArgs, AnswerArg, AnswerArgs, EnableArgs, NameArgs, RunNowArgs, RunsArgs};
+use args::{
+    pull_arg, AddArgs, AnswerArg, AnswerArgs, EnableArgs, NameArgs, RunArgs, RunNowArgs, RunsArgs,
+};
 
 #[tool_router(router = workflow_router, vis = "pub(super)")]
 impl Tools {
@@ -141,15 +143,37 @@ impl Tools {
 
     /// Lists the caller's workflows.
     #[tool(
-        description = "List your workflows: cron and time zone (none for a workflow with no cron), repos, config (which may hold the extra Proxy \
-                       `allow` entries the workflow's Boxes get, and only theirs), prompt, plan (with \
-                       plan_stale when the prompt changed after it was made), revision, timeout, whether each \
-                       is enabled, its next due time and its latest run with its outcome and Box. Needs \
-                       the moor:read scope."
+        description = "List your workflows, one compact row each: name, enabled, cron and time \
+                       zone (none for a workflow with no cron), repos, next_due, last_run (one \
+                       line: when, outcome, Box), the names of its gates and a title when its prompt \
+                       opens with a heading. The rows leave out the prompt, plan, config, gates, \
+                       outcomes, revision and run detail: call get_workflow with a workflow's \
+                       name for those. Needs the moor:read scope."
     )]
     async fn list_workflows(&self, context: RequestContext<RoleServer>) -> CallToolResult {
         let request = ControllerRequest::WorkflowList(AsReq { identity: None });
-        self.run(&context, READ, Ok(request), Reply::AsIs).await
+        self.run(&context, READ, Ok(request), Reply::WorkflowsListed)
+            .await
+    }
+
+    /// Reads one workflow in full.
+    #[tool(
+        description = "Read one of your workflows in full: cron and time zone, repos, config \
+                       (which may hold the extra Proxy `allow` entries the workflow's Boxes get, \
+                       and only theirs), prompt, plan (with plan_stale when the prompt changed \
+                       after it was made), revision, timeout, whether it is enabled, its gates and \
+                       outcomes, its next due time and its latest run with its outcome, Box and \
+                       history. Read it before changing it with add_workflow. Needs the moor:read \
+                       scope."
+    )]
+    async fn get_workflow(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<NameArgs>,
+    ) -> CallToolResult {
+        let request = ControllerRequest::WorkflowList(AsReq { identity: None });
+        self.run(&context, READ, Ok(request), Reply::WorkflowOne(args.name))
+            .await
     }
 
     /// Removes a workflow.
@@ -269,8 +293,11 @@ impl Tools {
     /// Reads changes to the caller's workflow runs.
     #[tool(
         description = "Read what your workflow runs did, oldest change first: each entry is a \
-                       run (due time, outcome, refusal detail, Box). A run appears again each time it \
-                       moves on, from started to finished or timed out. For a run of a Box \
+                       compact row for a run (id, workflow, due_at, outcome, a one-line detail \
+                       when it was refused or failed, Box). A run appears again each time it \
+                       moves on, from started to finished or timed out. The rows leave out the \
+                       run's history and result: call get_workflow_run with the workflow and the \
+                       run's id for those. For a run of a Box \
                        with gates, `verdict` names what it found, such as `check failed`, while \
                        `outcome` stays `finished`. Pass the previous \
                        `next` as `after` to get only newer changes, `workflow` to read one \
@@ -295,7 +322,30 @@ impl Tools {
                 pull,
             })
         });
-        self.run(&context, READ, request, Reply::AsIs).await
+        self.run(&context, READ, request, Reply::RunsListed).await
+    }
+
+    /// Reads one workflow run in full.
+    #[tool(
+        description = "Read one run of one of your workflows in full: due time, outcome, verdict, \
+                       trigger, pull request, step, result, the whole refusal or failure detail, \
+                       Box, the plan frozen into it and its history, oldest line first. Pass the \
+                       workflow's name and the `id` of a row of list_workflow_runs. Needs the \
+                       moor:read scope."
+    )]
+    async fn get_workflow_run(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<RunArgs>,
+    ) -> CallToolResult {
+        let request = ControllerRequest::WorkflowRunList(WorkflowRunListReq {
+            identity: None,
+            workflow: args.workflow,
+            run: Some(args.run),
+            limit: None,
+        });
+        self.run(&context, READ, Ok(request), Reply::RunOne(args.run))
+            .await
     }
 }
 
