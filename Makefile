@@ -105,13 +105,16 @@ chart:
 	  --set gate.ingress.enabled=false --set egress.url= 2>&1 | grep -q 'egress.enabled needs gate.ingress.enabled'
 	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
-	  | awk '/^---/{k=0;p=0} /^kind: Ingress/{k=1} k&&/name: moor-public$$/{p=1} p&&/path:/' | tr -d ' ' | tr '\n' ' ')" = '-path:/egress -path:/hooks/github '
+	  | awk '/^---/{k=0;p=0} /^kind: Ingress/{k=1} k&&/name: moor-public$$/{p=1} p&&/path:/' | tr -d ' ' | tr '\n' ' ')" = '-path:/hooks/github '
 	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
-	  | awk '/name: moor-gate$$/{g=1} /^---/{g=0} g&&/path: \/(egress|hooks\/github)/' | wc -l)" = 0
+	  | awk '/name: moor-gate$$/{g=1} /^---/{g=0} g&&/path: \/hooks\/github/' | wc -l)" = 0
+	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
+	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
+	  | awk '/name: moor-gate$$/{g=1} /^---/{g=0} g&&/path: \/egress/' | wc -l)" = 1
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url= --set publicIngress.enabled=true --set publicIngress.className=cloudflare-tunnel --set publicIngress.host=pub.example.com --set githubApp.webhookSecret=s \
-	  | grep -q 'value: "wss://pub.example.com/egress"'
+	  | grep -q 'value: "wss://moor.example.com/egress"'
 	helm template moor $(CHART) $(CHART_VALUES) --set publicIngress.enabled=true --set publicIngress.className=c 2>&1 | grep -q 'publicIngress.host is required'
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml \
 	  --set egress.url=ws://egress.test/egress 2>&1 | grep -q 'egress.url .* must be a wss://'

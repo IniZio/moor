@@ -57,9 +57,9 @@ encrypted values file. The chart puts them in the Secret `<release>-secrets`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled`, `publicIngress.enabled` or `egress.url`. |
+| `egress.enabled` | `false` | Run the shared egress Proxy as the Deployment `<release>-egress`. Needs `gate.ingress.enabled` or `egress.url`. |
 | `egress.replicas` | 2 | Replicas, rolled one at a time. |
-| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. With `publicIngress.enabled`, the default is `wss://PUBLIC_HOST/egress`. |
+| `egress.url` | `wss://HOST/egress` | Where Boxes dial the Proxy. Must be `wss://`. |
 | `egress.graceSecs` | 300 | How long open tunnels get after SIGTERM. |
 | `egress.ledgerPort` | 7443 | The controller's ledger port for the egress pods. |
 | `egress.key` | made on first install | Secret. The key Box tokens are signed with. |
@@ -87,9 +87,9 @@ kubectl -n NAMESPACE rollout restart deployment/RELEASE deployment/RELEASE-egres
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `publicIngress.enabled`, `.className`, `.host`, `.annotations` | off | A second Ingress, `<release>-public`, for callers outside the private network. `.className` and `.host` are required. |
+| `publicIngress.enabled`, `.className`, `.host`, `.annotations` | off | A second Ingress, `<release>-public`, for the GitHub App webhook, the one caller outside the private network. `.className` and `.host` are required. |
 
-It serves `/egress` when `egress.enabled` and `/hooks/github` when `githubApp.webhookSecret` is set. Both are `Prefix` paths. The gate Ingress then drops both and keeps the private host.
+It exists only when `githubApp.webhookSecret` is set. It serves `/hooks/github`, a `Prefix` path, and nothing else. The gate Ingress then drops `/hooks/github` and keeps `/egress` on the private host.
 
 With `publicIngress.enabled`, set the GitHub App's webhook URL to `https://<publicIngress.host>/hooks/github`.
 
