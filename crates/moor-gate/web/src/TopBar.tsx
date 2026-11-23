@@ -159,7 +159,6 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 	const markRead = (ids: number[]) => {
 		void inboxRead(csrf, ids).then(inbox.reload, inbox.reload);
 	};
-	// Where focus goes once the list a clear leaves is shown: the item now at that place, else the Inbox button.
 	const focusAt = useRef<number | null>(null);
 	useEffect(() => {
 		const at = focusAt.current;
