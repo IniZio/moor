@@ -13,7 +13,7 @@ mod mcp;
 mod profile_check;
 mod secret_value;
 mod webhook;
-pub use inbox::{InboxOp, InboxReq};
+pub use inbox::{InboxClear, InboxOp, InboxReq};
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
 pub use profile_check::ProfileCheckReq;
 pub use secret_value::SecretValue;
@@ -144,7 +144,7 @@ pub enum UserCmd {
     ProfileRemove,
     /// A workflow request.
     Workflow(WorkflowCmd),
-    /// List the caller's inbox, or mark items in it read.
+    /// List the caller's inbox, mark items in it read, or clear them.
     Inbox(InboxOp),
     /// Add a webhook for the caller's user.
     WebhookAdd {

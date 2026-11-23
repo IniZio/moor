@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { type BoxRow, type Inbox, inboxRead, type Progress } from './api';
+import { type BoxRow, type Inbox, inboxClear, inboxRead, type Progress } from './api';
 import { Glyph, STATES } from './Glyph';
 import { pathOf } from './hashQuery';
 import { InboxView } from './Inbox';
@@ -159,6 +159,18 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 	const markRead = (ids: number[]) => {
 		void inboxRead(csrf, ids).then(inbox.reload, inbox.reload);
 	};
+	const focusAt = useRef<number | null>(null);
+	useEffect(() => {
+		const at = focusAt.current;
+		if (at === null) return;
+		focusAt.current = null;
+		const left = document.querySelectorAll<HTMLElement>('#inbox .inbox-item');
+		(left[Math.min(at, left.length - 1)] ?? document.querySelector<HTMLElement>('.nav.inbox'))?.focus();
+	}, [inbox.value]);
+	const clear = (which: { ids: number[] } | { through: number }, at: number) => {
+		focusAt.current = at;
+		void inboxClear(csrf, which).then(inbox.reload, inbox.reload);
+	};
 	const flip = () => {
 		const next: Theme = theme === 'dark' ? 'light' : 'dark';
 		setTheme(next);
@@ -202,6 +214,8 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 					now={inbox.now}
 					unread={unread}
 					onReadAll={() => markRead([])}
+					onRemove={(item, at) => clear({ ids: [item.id] }, at)}
+					onClearAll={(through) => clear({ through }, 0)}
 					onOpen={(item, e) => {
 						if (item.state === 'unread') markRead([item.id]);
 						shut(e);

@@ -1,10 +1,11 @@
 //! Each person's inbox rows: one per event that needed them, written in the event's own
-//! transaction, with the read mark the person sets. Whether the wait an item stands for is over
+//! transaction, with the read and cleared marks the person sets. Whether the wait an item stands for is over
 //! is decided when the list is built, by [`moor_core::inbox`].
 
 use moor_core::domain::event::Event;
 use moor_core::inbox::{entry_of, InboxKind};
 use moor_core::progress::title_of;
+use moor_core::request::InboxClear;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
@@ -108,7 +109,7 @@ pub(super) fn note(
 }
 
 impl Store {
-    /// The newest `limit` inbox rows of `user`, newest first.
+    /// The newest `limit` inbox rows of `user` they have not cleared, newest first.
     pub(crate) fn user_inbox(
         &self,
         user: UserId,
@@ -138,6 +139,7 @@ impl Store {
                     Expr::col((Events::Table, Events::Id)).equals(i(UserInbox::Event)),
                 )
                 .and_where(Expr::col(i(UserInbox::User)).eq(user.get()))
+                .and_where(Expr::col(i(UserInbox::ClearedAt)).is_null())
                 .order_by(i(UserInbox::Id), Order::Desc)
                 .limit(u64::from(limit)),
             |r| {
@@ -192,6 +194,33 @@ impl Store {
         if !ids.is_empty() {
             update.and_where(Expr::col(UserInbox::Id).is_in(ids.iter().copied()));
         }
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        let changed = tx.run(update)?;
+        tx.commit()?;
+        drop(writer);
+        Ok(changed)
+    }
+
+    /// Clears the listed items `which` names of `user`. The rows stay, so the event an item was
+    /// written for cannot add it again. The number it cleared; another person's id clears nothing.
+    pub(crate) fn clear_inbox(
+        &self,
+        user: UserId,
+        which: &InboxClear,
+    ) -> Result<usize, StoreError> {
+        let mut update = Query::update();
+        update
+            .table(UserInbox::Table)
+            .value(UserInbox::ClearedAt, self.now().as_millis())
+            .and_where(Expr::col(UserInbox::User).eq(user.get()))
+            .and_where(Expr::col(UserInbox::ClearedAt).is_null());
+        match which {
+            InboxClear::Ids(ids) => {
+                update.and_where(Expr::col(UserInbox::Id).is_in(ids.iter().copied()))
+            }
+            InboxClear::Through(id) => update.and_where(Expr::col(UserInbox::Id).lte(*id)),
+        };
         let mut writer = self.writer();
         let tx = writer.immediate()?;
         let changed = tx.run(update)?;

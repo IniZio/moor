@@ -16,6 +16,19 @@ pub enum InboxOp {
         #[serde(default)]
         ids: Vec<i64>,
     },
+    /// Take items out of the list. Their rows stay, so an event written again cannot bring
+    /// one back, and the task each is about is unchanged.
+    Clear(InboxClear),
+}
+
+/// Which items a clear takes out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InboxClear {
+    /// These items; none when empty.
+    Ids(Vec<i64>),
+    /// Every item up to this id, the newest the person saw, so one that lands later stays.
+    Through(i64),
 }
 
 /// Arguments of `inbox`.

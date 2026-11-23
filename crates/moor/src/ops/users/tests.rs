@@ -137,3 +137,5 @@ fn identities_with_one_email_see_the_same_secrets() {
     .unwrap();
     assert_ne!(third["user"], first["user"]);
 }
+
+mod inbox;

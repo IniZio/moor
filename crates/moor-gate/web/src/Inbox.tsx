@@ -23,10 +23,14 @@ export type InboxProps = {
 	unread: number;
 	onReadAll: () => void;
 	onOpen: (item: InboxItem, e: Event) => void;
+	/** Takes `item` out of the list; `at` is where it sat, so focus can move to the item after it. */
+	onRemove: (item: InboxItem, at: number) => void;
+	/** Takes every item up to `through`, the newest listed, out of the list. */
+	onClearAll: (through: number) => void;
 };
 
 /** The inbox dropdown's content: one dense line per item, as the Tasks home shows a task, unread first. */
-export function InboxView({ items, rows, now, unread, onReadAll, onOpen }: InboxProps) {
+export function InboxView({ items, rows, now, unread, onReadAll, onOpen, onRemove, onClearAll }: InboxProps) {
 	return (
 		<>
 			<div class="pop-h">
@@ -38,12 +42,26 @@ export function InboxView({ items, rows, now, unread, onReadAll, onOpen }: Inbox
 				) : (
 					items.length > 0 && <span class="muted inbox-all">All read</span>
 				)}
+				{items.length > 0 && (
+					<button type="button" class="inbox-all" onClick={() => onClearAll(Math.max(...items.map((i) => i.id)))}>
+						Clear all
+					</button>
+				)}
 			</div>
-			{inboxOrder(items).map((item) => {
+			{inboxOrder(items).map((item, at) => {
 				const m = mark(item);
 				const task = rows.find((r) => r.box === item.box);
 				return (
-					<a class={`inbox-item inbox-${item.state}`} href={`#/box/${encodeURIComponent(item.box)}`} onClick={(e) => onOpen(item, e)} key={item.id}>
+					<div
+						class="inbox-row"
+						key={item.id}
+						onKeyDown={(e) => {
+							if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+							e.preventDefault();
+							onRemove(item, at);
+						}}
+					>
+					<a class={`inbox-item inbox-${item.state}`} href={`#/box/${encodeURIComponent(item.box)}`} onClick={(e) => onOpen(item, e)}>
 						<span class={`t-glyph t-${m.tone}`} role="img" aria-label={m.word} title={m.word}>
 							{m.glyph}
 						</span>
@@ -56,9 +74,13 @@ export function InboxView({ items, rows, now, unread, onReadAll, onOpen }: Inbox
 							{item.state === 'resolved' ? `Answered: ${item.text}` : ((task?.state === 'needs_you' && gateLine(task.gate)) || item.text)}
 						</span>
 					</a>
+					<button type="button" class="inbox-rm" aria-label="Remove" title="Remove" onClick={() => onRemove(item, at)}>
+						×
+					</button>
+					</div>
 				);
 			})}
-			{!items.length && <p class="t-empty">Nothing has needed you yet.</p>}
+			{items.length > 0 ? <p class="inbox-note muted">Removing an item does not change its task.</p> : <p class="t-empty">Nothing new.</p>}
 		</>
 	);
 }

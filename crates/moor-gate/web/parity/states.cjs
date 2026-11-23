@@ -8,10 +8,7 @@ const FIXED = { mock: [PHRASE, ENDS], product: [{ sel: '.t-th1 .t-stop', why: 'S
 const WORKING = { mock: [PHRASE, ENDS, { sel: '.gl.hand .glx', why: "a working gate's rule: a one-off task carries no gate docs, only the wait of a gate that asks" }] };
 const INBOX = {
   mock: [
-    { sel: '[data-act=inclear]', why: 'Clear all needs the inbox backend (spec #1628 PR 1)' },
-    { sel: '.irm', why: 'removing one item needs the inbox backend (spec #1628 PR 1)' },
-    { sel: '.iitem:has(.irow.read)', why: 'done tasks in the inbox need the inbox backend (spec #1628 PR 1)' },
-    { sel: '.inote', why: 'the note about removing items goes with Clear all (spec #1628 PR 1)' },
+    { sel: '.iitem:has(.irow.read)', why: 'done tasks in the inbox: the inbox lists only what needed the person, and no spec PR adds a finished task yet' },
   ],
 };
 const STATES = [
