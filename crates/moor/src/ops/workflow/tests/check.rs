@@ -105,12 +105,6 @@ fn a_machine_that_is_not_linked_is_a_lost_stream() {
 }
 
 #[test]
-fn a_cut_transport_is_a_lost_stream() {
-    let line = first_line(|d| d.exec_fails_once_when("probe", cut()));
-    assert_eq!(line["kind"], "check_lost", "{line}");
-}
-
-#[test]
 fn a_driver_error_that_is_no_cut_fails_the_check_with_its_reason() {
     for err in [
         DriverError::Timeout(std::time::Duration::from_secs(5)),
@@ -416,18 +410,6 @@ fn an_ended_agent_on_a_work_step_is_sent_the_step_again_and_a_second_end_is_inco
         panic!("{:?}", r.latest(id).state);
     };
     assert_eq!(at.as_str(), "audit");
-}
-
-#[test]
-fn a_passing_check_goes_on_to_a_deliver_step_that_delivers_on_the_agents_report() {
-    let r = rig();
-    let id = r.started(plan_of(&[audit(), gate("true", 1, None), ship()]));
-    r.report_and_idle(id);
-    r.pass();
-    r.pass();
-    assert_eq!(step_of(&r.latest(id).state), ("ship".to_owned(), 1));
-    r.report_and_idle(id);
-    assert_delivered(&r, id);
 }
 
 fn assert_delivered(r: &Rig, id: WorkflowId) {

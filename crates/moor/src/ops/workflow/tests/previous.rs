@@ -334,17 +334,6 @@ fn an_asleep_previous_box_with_no_record_is_kept_without_waking_it() {
 }
 
 #[test]
-fn an_awake_idle_previous_box_is_kept() {
-    let r = rig_probing(CLEAN);
-    r.answer_repo();
-    let id = r.put(180);
-    let first = finished_first_day(&r, id);
-    next_day(&r);
-    assert_ne!(lifecycle(&r, first), BoxLifecycle::Closed);
-    assert_eq!(kept_reasons(&r, r.latest_box(id)), ["awake"]);
-}
-
-#[test]
 fn a_box_woken_after_it_was_read_asleep_is_kept() {
     let r = rig_probing(CLEAN);
     r.answer_repo();

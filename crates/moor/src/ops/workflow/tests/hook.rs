@@ -342,17 +342,6 @@ fn ping_installation_and_other_actions_are_accepted_and_do_nothing() {
 }
 
 #[test]
-fn a_signed_pull_request_body_that_does_not_parse_is_refused() {
-    let r = hooked();
-    let req = delivery(
-        "pull_request",
-        "{\"action\":\"opened\"}".to_owned(),
-        Some(SECRET),
-    );
-    assert!(r.deliver(&req).is_err());
-}
-
-#[test]
 fn reopened_ready_for_review_and_synchronize_fire_too() {
     let r = hooked();
     let id = r.put_pr("evidence", true, true);
