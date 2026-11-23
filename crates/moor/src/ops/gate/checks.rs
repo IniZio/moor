@@ -169,7 +169,6 @@ fn due_work(
     }
     match due_outcomes(gates, lines) {
         Some(due) if quiet => Ok(Some(Work::Outcomes(Due::of(&due)))),
-        // An agent whose turn a sleep cut is reminded without trying the outcomes on its work.
         _ => {
             remind(cx, store, row, (gates, lines))?;
             Ok(None)
