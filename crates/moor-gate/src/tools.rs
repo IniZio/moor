@@ -53,9 +53,12 @@ pub(crate) struct Tools {
 impl Tools {
     /// Lists the caller's Boxes.
     #[tool(
-        description = "List your Boxes. Each carries a one-line status, including why it \
-                       failed or what it is waiting on while it starts. Needs the moor:read \
-                       scope."
+        description = "List your Boxes, one compact row each: name, repo (other_repos counts \
+                       the rest), status, node, pr when known, updated_at. The status is one \
+                       line, including why it failed or what it is waiting on while it starts. \
+                       The rows leave out the prompt and the agent and gate detail: call \
+                       inspect_box (prompt, pane tail, recent messages) or box_status (gates, \
+                       steps, artifacts) with a Box's name for those. Needs the moor:read scope."
     )]
     async fn list_boxes(&self, context: RequestContext<RoleServer>) -> CallToolResult {
         self.run(&context, READ, Ok(show_all()), Reply::Listed)

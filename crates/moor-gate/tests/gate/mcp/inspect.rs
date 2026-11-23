@@ -5,6 +5,9 @@ use serde_json::{json, Value};
 
 use super::mcp;
 
+/// The full prompt the fake Box was started with.
+const PROMPT: &str = "fix the flaky login test, then open a PR that links the issue";
+
 /// The reply the fake controller gives without further checks: an `inspect` answer or a
 /// webhook refusal; none for any other request.
 pub(super) fn early(cmd: &str, inner: &Value, id: &Value) -> Option<Value> {
@@ -28,6 +31,7 @@ fn answer(cmd: &str, inner: &Value, id: &Value) -> Option<Value> {
         Response::err("inspect", error)
     } else {
         let view = json!({"box": inner["box"], "lifecycle": "ready", "session": "working",
+            "prompt": PROMPT,
             "agent": null, "pane": {"tail": "$ cargo test\nrunning", "status": "live"},
             "said": [{"text": "running the tests", "at": "2026-10-29T10:00:00Z"}],
             "stuck": {"kind": "stalled", "since": "2026-10-29T10:20:00Z",
@@ -54,6 +58,14 @@ fn inspect_box_is_listed_with_its_three_arguments() {
     args.sort_unstable();
     assert_eq!(args, ["box", "lines", "said"]);
     assert_eq!(schema["required"], json!(["box"]));
+}
+
+#[test]
+fn inspect_box_returns_the_full_prompt_list_boxes_leaves_out() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let result = m.call(&token, "inspect_box", json!({"box": "repo/web"}));
+    assert_eq!(result["structuredContent"]["prompt"], PROMPT, "{result}");
 }
 
 #[test]

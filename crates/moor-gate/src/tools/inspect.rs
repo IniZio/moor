@@ -28,7 +28,7 @@ impl Tools {
     /// Looks at a Box that may be stuck.
     #[tool(
         description = "Look at one of your Boxes to tell a working agent from a stuck one: \
-                       the tail of its terminal (pane), the agent's recent messages (said, \
+                       its full prompt, the tail of its terminal (pane), the agent's recent messages (said, \
                        oldest first), its state, and `stuck` when the Box shows a sign of it \
                        (no progress for ten minutes, a refused egress, a withheld or failed \
                        credential, a rate limit, a lost link). Reads only; it never changes \

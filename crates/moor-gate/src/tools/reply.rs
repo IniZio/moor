@@ -215,7 +215,7 @@ fn detailed(value: &mut Value) {
     }
 }
 
-/// Adds each Box's status to `show`'s list, asking for the events of those not settled.
+/// Shrinks `show`'s list to one compact row per Box with its status, asking for the events of those not settled.
 fn listed(value: &mut Value, ask: &dyn Fn(ControllerRequest) -> Result<Value, String>) {
     let Some(Value::Array(rows)) = value.get_mut("boxes") else {
         return;
@@ -229,12 +229,38 @@ fn listed(value: &mut Value, ask: &dyn Fn(ControllerRequest) -> Result<Value, St
             (Stage::Settled, _) | (_, None) => Vec::new(),
             (_, Some(name)) => events_of(name, ask),
         };
-        let agent = row.get("agent").cloned();
-        if let Some(row) = row.as_object_mut() {
-            let line = waiting(status(&lifecycle, &events), agent.as_ref());
-            row.insert("status".to_owned(), json!(line));
-        }
+        let line = waiting(status(&lifecycle, &events), row.get("agent"));
+        *row = compact(row, &line);
     }
+}
+
+/// The row `list_boxes` sends for the `show` row `row`: what a person scans for. The prompt,
+/// driver, agent, gate and progress stay with `box_status` and `inspect_box`.
+fn compact(row: &Value, status: &str) -> Value {
+    let field = |name: &str| row.get(name).cloned().unwrap_or(Value::Null);
+    let mut out = serde_json::Map::new();
+    out.insert("name".to_owned(), field("name"));
+    out.insert("repo".to_owned(), field("repo"));
+    let others = row.get("other_repos").and_then(Value::as_array);
+    if let Some(others) = others.filter(|o| !o.is_empty()) {
+        out.insert("other_repos".to_owned(), json!(others.len()));
+    }
+    out.insert("status".to_owned(), json!(status));
+    out.insert(
+        "node".to_owned(),
+        row.get("driver")
+            .and_then(|d| d.get("provider"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    let pr = row.get("progress").and_then(|p| p.get("pr"));
+    if let Some((repo, number)) =
+        pr.and_then(|p| Some((p.get("repo")?.as_str()?, p.get("number")?.as_u64()?)))
+    {
+        out.insert("pr".to_owned(), json!(format!("{repo}#{number}")));
+    }
+    out.insert("updated_at".to_owned(), field("updated_at"));
+    Value::Object(out)
 }
 
 /// The latest events of Box `name`; none when the controller will not say.

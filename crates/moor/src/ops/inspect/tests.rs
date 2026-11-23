@@ -282,3 +282,24 @@ fn another_users_box_is_refused() {
     assert!(authorize(&cx, &Ok(Caller::Local(1000)), None, &request).is_err());
     assert!(authorize(&cx, &Ok(Caller::Local(2000)), None, &request).is_ok());
 }
+
+#[test]
+fn the_view_carries_the_full_prompt_the_box_started_with() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let prompt = "fix the flaky login test. ".repeat(200);
+    cx.store()
+        .unwrap()
+        .apply(Decision::insert(NewBox {
+            name: BoxName::parse_allow_bare("a").unwrap(),
+            repo: None,
+            spec: SpecFields {
+                prompt: Some(prompt.clone()),
+                ..SpecFields::default()
+            },
+        }))
+        .unwrap();
+    let view = run(&cx, &req("a", None, None)).unwrap();
+    assert_eq!(view.prompt, Some(prompt));
+}

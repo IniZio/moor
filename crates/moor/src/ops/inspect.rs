@@ -68,6 +68,7 @@ pub(crate) fn run(cx: &Cx, req: &InspectReq) -> Result<InspectView, CommandError
         box_name: row.name.as_str().to_owned(),
         lifecycle: row.lifecycle.as_str().to_owned(),
         session: row.session.as_str().to_owned(),
+        prompt: row.prompt.clone(),
         agent: agent_view(&reading),
         pane: pane_tail(&reading, count(req.lines, PANE_LINES, MAX_PANE_LINES)),
         said,

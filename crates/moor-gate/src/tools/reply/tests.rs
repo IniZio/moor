@@ -116,6 +116,37 @@ fn a_waiting_agent_names_what_it_waits_on_in_detail() {
 }
 
 #[test]
+fn a_listing_of_eighteen_boxes_is_a_fraction_of_the_rows_it_came_from() {
+    let row = |n: usize| {
+        json!({"id": n, "name": format!("acme/box-{n}"), "repo": "acme/web", "lifecycle": "ready",
+            "prompt": "implement the thing and keep going. ".repeat(100),
+            "driver": {"state": "ready", "provider": "engine-03", "handle": "h", "workdir": "/w",
+                "sleep": {"after": "10m", "blocked_by": null}},
+            "agent": {"state": "idle", "waiting_on": []},
+            "gate": {"gates": ["proof"], "status": "open", "wait": null, "note": "n"},
+            "updated_at": "2026-10-29T10:00:00Z"})
+    };
+    let mut value = json!({"boxes": (0..18).map(row).collect::<Vec<_>>()});
+    let before = value.to_string().len();
+    listed(&mut value, &|_| Err("unused".to_owned()));
+    let after = value.to_string().len();
+    assert!(after * 20 < before, "{before} chars became {after}");
+}
+
+#[test]
+fn a_listed_box_keeps_its_name_repo_node_pr_and_time_only() {
+    let mut value = json!({"boxes": [{"name": "r/a", "repo": "o/r", "lifecycle": "ready",
+        "other_repos": ["o/x"], "prompt": "p", "driver": {"provider": "n1"},
+        "progress": {"pr": {"repo": "o/r", "number": 4}}, "updated_at": "t"}]});
+    listed(&mut value, &|_| Err("unused".to_owned()));
+    assert_eq!(
+        value["boxes"][0],
+        json!({"name": "r/a", "repo": "o/r", "other_repos": 1, "node": "n1",
+            "pr": "o/r#4", "status": "ready", "updated_at": "t"})
+    );
+}
+
+#[test]
 fn a_waiting_agent_names_what_it_waits_on_in_the_list() {
     let mut value = json!({"boxes": [
         {"name": "r/a", "lifecycle": "ready",
