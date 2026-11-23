@@ -32,7 +32,6 @@ githubApp:
   privateKey: ""
   webhookSecret: ""
 
-# For the GitHub App webhook only. It serves /hooks/github, because GitHub sits outside the private network.
 publicIngress: {enabled: false, className: "", host: "", annotations: {}}
 
 controller:
