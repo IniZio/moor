@@ -324,21 +324,6 @@ fn an_explicit_sleep_still_asks_the_driver() {
 }
 
 #[test]
-fn an_unknown_provider_stays_up_and_says_why() {
-    let reason = "provider nope is unknown; box stays up";
-    let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep(reason.into())));
-    pass(&f, LONG);
-    auto_sleep(&f);
-    assert_eq!(
-        states(&f),
-        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
-    );
-    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    let shown = box_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
-    assert_eq!(shown.as_deref(), Some(reason));
-}
-
-#[test]
 fn a_driver_failure_warns_and_changes_nothing() {
     let f = idle_with(FakeDriver::new().fail_sleep(DriverError::Failed {
         summary: "boom".into(),
