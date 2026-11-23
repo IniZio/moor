@@ -120,6 +120,8 @@ pub enum ErrorDetail {
     ArtifactMissing,
     /// The Artifact's stored bytes do not match its recorded sha256.
     ArtifactMismatch,
+    /// The controller began its drain before the command got its Box's turn, so it never ran.
+    Restarting,
 }
 
 /// The envelope every command returns.

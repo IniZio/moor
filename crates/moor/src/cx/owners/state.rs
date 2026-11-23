@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::thread::{self, ThreadId};
 
 use moor_core::name::BoxId;
-use moor_core::ErrorKind;
+use moor_core::{ErrorDetail, ErrorKind};
 
 use super::policy::{admit, Admit, Cmd};
 use crate::env::Cancel;
@@ -80,6 +80,7 @@ pub(super) struct State {
 /// The error every waiter and later call gets after a drain.
 fn restarting() -> CommandError {
     CommandError::new(ErrorKind::Refused, "controller restarting")
+        .with_detail(ErrorDetail::Restarting)
 }
 
 impl State {

@@ -8,7 +8,7 @@ use moor_core::controller::{
 };
 use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{ErrorKind, Request, Response, RunReq};
+use moor_core::{ErrorDetail, ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
@@ -269,7 +269,10 @@ fn request_reply(
     match conn
         .answering()
         .and_then(|_answering| answer(&id, request, duplex))
-    {
+        .filter(|envelope| {
+            let detail = envelope.error.as_ref().and_then(|e| e.detail.as_ref());
+            detail != Some(&ErrorDetail::Restarting)
+        }) {
         Some(envelope) => (ServerFrame::Response { id, envelope }, attach),
         None => (
             ServerFrame::Error {
