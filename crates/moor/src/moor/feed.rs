@@ -237,7 +237,9 @@ impl Moor {
         })
     }
 
-    /// Closes each open Box whose setup failed at least `after` ago, once per call.
+    /// Closes each open Box whose setup failed at least `after` ago, once per call. A failed
+    /// agent place no task has claimed stays until a person closes it, as the place keeper starts
+    /// no other for its user while it stands.
     ///
     /// Setup never handed such a Box to anyone, so the close is forced. A Box with no failure
     /// time is left alone, and one that will not close is reported, not retried until the next
@@ -257,6 +259,7 @@ impl Moor {
         let mut out = Vec::new();
         for row in rows {
             let expired = row.lifecycle == BoxLifecycle::SetupFailed
+                && !row.kind.is_idle_place()
                 && row
                     .setup_failed_at
                     .is_some_and(|at| at.as_millis().saturating_add(after_ms) <= now);
@@ -362,5 +365,6 @@ fn spawn_gate_check(env: &Env, job: ops::GateJob) {
 /// A controller pass over the store that stops once its `draining` says so.
 type StorePass = fn(&Cx, &Store, &dyn Fn() -> bool) -> Result<(), CommandError>;
 
+mod place;
 #[cfg(test)]
 mod tests;

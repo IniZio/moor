@@ -12,6 +12,8 @@ pub enum CloseReason {
     },
     /// A Box stayed in `setup_failed` past the grace period and the controller closed it.
     SetupFailedExpired,
+    /// An agent place no task had claimed lost its machine; the keeper closed it to start another.
+    PlaceLost,
     /// A workflow run ended, and its Box saw no steer or terminal for the grace period after.
     RunEnded,
     /// The Box's pull request merged.
@@ -45,6 +47,7 @@ impl CloseReason {
         match self {
             Self::Requested { .. } => "requested",
             Self::SetupFailedExpired => "setup_failed_expired",
+            Self::PlaceLost => "place_lost",
             Self::RunEnded => "run_ended",
             Self::PrMerged => "pr_merged",
             Self::PrClosed => "pr_closed",
@@ -73,6 +76,7 @@ impl CloseReason {
         Some(match reason {
             "requested" => Self::requested(by?),
             "setup_failed_expired" => Self::SetupFailedExpired,
+            "place_lost" => Self::PlaceLost,
             "run_ended" => Self::RunEnded,
             "pr_merged" => Self::PrMerged,
             "pr_closed" => Self::PrClosed,
@@ -112,6 +116,7 @@ impl CloseReason {
         match self {
             Self::Requested { by } => return format!("by {by}"),
             Self::SetupFailedExpired => "by moor, as its setup failed and nobody retried it",
+            Self::PlaceLost => "by moor, as its machine was lost before any task took it",
             Self::RunEnded => "by moor, as its run had ended",
             Self::PrMerged => "by moor, as its pull request merged",
             Self::PrClosed => "by moor, as its pull request closed",

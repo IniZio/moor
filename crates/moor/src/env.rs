@@ -205,6 +205,11 @@ impl Env {
         self
     }
 
+    /// The emails of the users who may have an agent place, lowercased.
+    pub(crate) fn agent_place_users(&self) -> impl Iterator<Item = &str> {
+        self.agent_place_users.iter().map(String::as_str)
+    }
+
     /// Whether `email` is on the list of users who may have an agent place.
     pub(crate) fn agent_place_user(&self, email: &str) -> bool {
         self.agent_place_users
