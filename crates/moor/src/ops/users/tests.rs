@@ -59,6 +59,20 @@ fn whoami_names_the_identity_before_and_after_it_has_a_user() {
 }
 
 #[test]
+fn whoami_says_whether_the_caller_is_on_the_agent_places_list() {
+    let f = fixture();
+    let me = id("local:2000");
+    let email = Email::parse("ann@example.com").unwrap();
+    f.cx.store().unwrap().enroll(&me, Some(&email)).unwrap();
+    let off = run(&f.cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
+    assert!(off.get("asks").is_none(), "{off}");
+    let cx =
+        f.cx.with_env(|e| e.with_agent_place_users(["ann@example.com".to_owned()].into()));
+    let on = run(&cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
+    assert_eq!(on["asks"], json!(true));
+}
+
+#[test]
 fn only_the_controller_socket_serves_user_requests() {
     let f = fixture();
     let err = dispatch(&f.cx, Request::Whoami(AsReq { identity: None })).unwrap_err();

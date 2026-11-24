@@ -2,8 +2,9 @@
 //! Each Box's agent is read once per command; a named Box reads only its own.
 
 use moor_core::domain::hands::HandsState;
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::progress::transcript::Transcript;
-use moor_core::progress::TimelineEntry;
+use moor_core::progress::{Class, TimelineEntry};
 use moor_core::seam::clock::Ts;
 use moor_core::view::gate::GateView;
 use moor_core::view::{
@@ -20,7 +21,7 @@ use crate::ops::authz;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::{agent_view, box_view_with_run, event_view, rfc3339};
 use crate::ops::common::{activity, autosleep, reconcile, transcript};
-use crate::store::{EventRow, Store};
+use crate::store::{BoxRow, EventRow, Store};
 
 /// Events a Box's state and line are derived from.
 const PROGRESS_EVENTS: usize = 200;
@@ -219,7 +220,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let events: Option<Vec<EventView>> = rows.as_ref().map(|r| r.iter().map(event_view).collect());
     let timeline = rows
         .as_deref()
-        .map(|rows| timeline_of(cx, store, row.id, rows, req.transcript));
+        .map(|rows| timeline_of(cx, store, &row, rows, req.transcript));
     let artifacts = if req.artifacts {
         Some(artifacts_of(store, row.id)?)
     } else {
@@ -245,19 +246,33 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
 fn timeline_of(
     cx: &Cx,
     store: &Store,
-    id: BoxId,
+    row: &BoxRow,
     rows: &[EventRow],
     transcript: bool,
 ) -> Vec<TimelineEntry> {
     let said = transcript
-        .then(|| transcript::lines::of(cx, store, id))
+        .then(|| transcript::lines::of(cx, store, row.id))
         .flatten();
     let (lines, saved_ms) = said.as_ref().map_or((&[][..], 0), |(l, at)| (&l[..], *at));
+    let claimed_at = match &row.kind {
+        BoxKind::Place(PlaceState::Claimed(claim)) => claim.at,
+        _ => i64::MIN,
+    };
     let timed: Vec<(i64, EventView)> = rows
         .iter()
+        .filter(|r| r.ts.as_millis() >= claimed_at)
         .map(|r| (r.ts.as_millis(), event_view(r)))
         .collect();
-    progress::timeline_with(&timed, Transcript { lines, saved_ms })
+    let mut timeline = progress::timeline_with(&timed, Transcript { lines, saved_ms });
+    if let BoxKind::Place(PlaceState::Claimed(claim)) = &row.kind {
+        let sent = claim.first_message();
+        for entry in &mut timeline {
+            if entry.class == Class::You && entry.text == sent {
+                entry.text.clone_from(&claim.prompt);
+            }
+        }
+    }
+    timeline
 }
 
 /// Who a Box that acts for `owner` acts for, when the viewer may not act on it: the user's email,

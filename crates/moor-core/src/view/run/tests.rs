@@ -35,6 +35,7 @@ fn sample_box() -> BoxView {
         progress: None,
         ties: crate::view::BoxTies::default(),
         owner: None,
+        task_at: None,
     }
 }
 

@@ -24,6 +24,8 @@ export type Menu = '' | 'repo' | 'machine';
 
 /** What the field shows. */
 export type FieldState = {
+	/** Whether a send is a question an agent place answers: there is no base, machine or plan to pick. */
+	asks: boolean;
 	open: boolean;
 	prompt: string;
 	repos: string[];
@@ -141,16 +143,20 @@ function MachinePanel({ nodes, value, now, onPick, onClose }: { nodes: Node[]; v
 /** "in acme/web · from main · on any free machine": each part opens its own control. */
 export function TargetSentence({ s, act }: { s: FieldState; act: FieldActs }) {
 	const flip = (m: Menu) => act.menu(s.menu === m ? '' : m);
+	const repo = (
+		<RepoSlot
+			repos={s.repos}
+			open={s.menu === 'repo'}
+			onToggle={() => flip('repo')}
+			panel={s.menu === 'repo' && <RepoPanel repos={s.repos} known={s.known} rows={s.rows} onChange={act.repos} onClose={() => act.menu('')} />}
+		/>
+	);
+	if (s.asks) {
+		return <p class="t-target">in {repo}</p>;
+	}
 	return (
 		<p class="t-target">
-			in{' '}
-			<RepoSlot
-				repos={s.repos}
-				open={s.menu === 'repo'}
-				onToggle={() => flip('repo')}
-				panel={s.menu === 'repo' && <RepoPanel repos={s.repos} known={s.known} rows={s.rows} onChange={act.repos} onClose={() => act.menu('')} />}
-			/>{' '}
-			· from{' '}
+			in {repo} · from{' '}
 			<input
 				class="t-tw t-mono t-base"
 				size={s.base ? s.base.length + 1 : 14}
@@ -200,17 +206,19 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 					if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) act.settle();
 				}}
 			>
-				<div class="t-whead">
-					<span class="grow" />
-					<span class="muted t-small">Try an example:</span>{' '}
-					<button type="button" class="t-lnk" onClick={() => act.example('bug')}>
-						{EXAMPLES.bug.label}
-					</button>{' '}
-					·{' '}
-					<button type="button" class="t-lnk" onClick={() => act.example('pr')}>
-						{EXAMPLES.pr.label}
-					</button>
-				</div>
+				{!s.asks && (
+					<div class="t-whead">
+						<span class="grow" />
+						<span class="muted t-small">Try an example:</span>{' '}
+						<button type="button" class="t-lnk" onClick={() => act.example('bug')}>
+							{EXAMPLES.bug.label}
+						</button>{' '}
+						·{' '}
+						<button type="button" class="t-lnk" onClick={() => act.example('pr')}>
+							{EXAMPLES.pr.label}
+						</button>
+					</div>
+				)}
 				<label class="t-sr" for="t-prompt">
 					What should the agent do?
 				</label>
@@ -232,12 +240,14 @@ export function WriteFieldView({ s, act }: { s: FieldState; act: FieldActs }) {
 				<TargetSentence s={s} act={act} />
 				<div class="t-wact">
 					<button class="btn primary" type="submit" disabled={s.busy}>
-						{s.busy ? 'Starting…' : 'Start'}
+						{s.asks ? (s.busy ? 'Asking…' : 'Ask') : s.busy ? 'Starting…' : 'Start'}
 					</button>
-					<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
-						<input type="checkbox" class="pf-check" checked={s.planFirst} onChange={(e) => act.plan(e.currentTarget.checked)} />
-						Plan first
-					</label>
+					{!s.asks && (
+						<label class="t-chip" title="The agent proposes a plan and waits for your approval before it changes anything.">
+							<input type="checkbox" class="pf-check" checked={s.planFirst} onChange={(e) => act.plan(e.currentTarget.checked)} />
+							Plan first
+						</label>
+					)}
 					<span class="grow" />
 					<span class="muted t-wesc">{s.prompt.trim() ? 'Esc keeps the draft' : 'Esc to close'}</span>
 				</div>
@@ -346,12 +356,13 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 		setBusy(true);
 		setError('');
 		try {
-			await boxStart(account.csrf, { repos, prompt, base, node, plan_first: planFirst });
+			const started = await boxStart(account.csrf, { repos, prompt, base, node, plan_first: planFirst });
 			localStorage.setItem(LAST_REPOS, JSON.stringify(repos));
 			dropPrompt();
 			setBusy(false);
 			close();
 			onStarted();
+			if (account.asks) location.hash = `#/box/${encodeURIComponent(started)}`;
 		} catch (e) {
 			setError(failure(toError(e)));
 			setBusy(false);
@@ -385,7 +396,7 @@ export function WriteField({ account, rows, asked, onStarted }: { account: Accou
 		start: () => void start(),
 		settle,
 	};
-	const s: FieldState = { open, prompt, repos, base, node, planFirst, busy, error, menu, machines: account.machines.nodes, known, rows, now: Date.now() };
+	const s: FieldState = { asks: account.asks, open, prompt, repos, base, node, planFirst, busy, error, menu, machines: account.machines.nodes, known, rows, now: Date.now() };
 	return (
 		<div onMouseDown={() => (pressing.current = true)}>
 			<WriteFieldView s={s} act={act} />

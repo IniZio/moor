@@ -192,6 +192,10 @@ pub struct BoxView {
     /// Who the Box acts for, by email, when that is not the viewer: set by `show` for everyone.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// When the task was asked, RFC3339 UTC, for a place a question claimed: that task has no
+    /// work Box.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_at: Option<String>,
 }
 
 /// Outcome of the agent launch.

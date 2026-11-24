@@ -40,6 +40,9 @@ pub(super) struct Row {
     /// Who the Box acts for, when it is not the person reading it.
     #[serde(default)]
     pub(super) owner: Option<String>,
+    /// When the task was asked, for a task with no work Box behind it.
+    #[serde(default)]
+    pub(super) task_at: Option<String>,
 }
 
 /// A Box as a list row or the head of a Box page.
@@ -68,6 +71,7 @@ pub(super) fn summary(row: &Row) -> Option<Value> {
         "gate": row.gate,
         "retryable": row.lifecycle.as_deref() == Some("setup_failed"),
         "owner": row.owner,
+        "task_at": row.task_at,
     }))
 }
 
@@ -96,6 +100,13 @@ mod tests {
             "ana@example.com"
         );
         assert_eq!(shown(&json!({}))["owner"], Value::Null);
+    }
+
+    #[test]
+    fn a_task_a_question_started_carries_when_it_was_asked() {
+        let asked = shown(&json!({"task_at": "2026-11-24T10:58:00Z"}));
+        assert_eq!(asked["task_at"], "2026-11-24T10:58:00Z");
+        assert_eq!(shown(&json!({}))["task_at"], Value::Null);
     }
 
     #[test]

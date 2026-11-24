@@ -22,6 +22,8 @@ pub(super) enum Reply {
     AsIs,
     /// How to follow the start, and where to store missing secrets given the public origin.
     Started(Option<Arc<str>>),
+    /// A question's answer as it is, and where to store missing secrets given the public origin.
+    Asked(Option<Arc<str>>),
     /// One Box's status, failure and steps.
     Detailed,
     /// Each Box's status.
@@ -48,7 +50,7 @@ impl Reply {
         ask: &dyn Fn(ControllerRequest) -> Result<Value, String>,
     ) -> Result<(), String> {
         match self {
-            Self::AsIs => {}
+            Self::AsIs | Self::Asked(_) => {}
             Self::Started(_) => started(value),
             Self::Detailed => detailed(value),
             Self::Listed => listed(value, ask),
@@ -65,7 +67,7 @@ impl Reply {
     /// The controller's refusal `why` in this tool's words: a start missing secrets sends the
     /// person to the account page instead of a command only the controller's host can run.
     pub(super) fn refused(&self, why: String, answered: &ControllerResponse) -> String {
-        let Self::Started(Some(origin)) = self else {
+        let (Self::Started(Some(origin)) | Self::Asked(Some(origin))) = self else {
             return why;
         };
         let detail = answered.error.as_ref().and_then(|e| e.detail.as_ref());

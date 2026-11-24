@@ -6,7 +6,7 @@ import { exactTime, RepoName, reposOf } from './HomeList';
 
 export type HeadFields = Pick<
 	BoxDetail,
-	'repo' | 'other_repos' | 'issue' | 'pr' | 'title' | 'state' | 'stale' | 'branch' | 'box' | 'machine' | 'workflow' | 'last_event_at' | 'updated_at' | 'line' | 'gate' | 'owner'
+	'repo' | 'other_repos' | 'issue' | 'pr' | 'title' | 'state' | 'stale' | 'branch' | 'box' | 'machine' | 'workflow' | 'last_event_at' | 'updated_at' | 'line' | 'gate' | 'owner' | 'task_at'
 >;
 
 /** The number of a pull request named `OWNER/NAME#NUMBER`. */
@@ -46,28 +46,30 @@ export function TaskHead({ t, now, actions, pr, asked }: { t: HeadFields; now: n
 				<span class="grow" />
 				{actions}
 			</div>
-			<p class="t-th-meta">
-				<span class="t-mono">{t.branch ?? t.box}</span>
-				{t.machine && <span>on {t.machine}</span>}
-				{flow && (
-					<span>
-						started by <a href={`#/workflows/${encodeURIComponent(flow.name)}`}>{flow.name}</a>
-						{pull && pull !== String(t.pr?.number) && ` · PR #${pull}`}
-					</span>
-				)}
-				{!flow && asked ? (
-					<span>
-						asked by {t.owner ?? 'you'} at <time dateTime={asked}>{exactTime(asked, now)}</time>
-					</span>
-				) : (
-					at && (
+			{!t.task_at && (
+				<p class="t-th-meta">
+					<span class="t-mono">{t.branch ?? t.box}</span>
+					{t.machine && <span>on {t.machine}</span>}
+					{flow && (
 						<span>
-							last event <time dateTime={at}>{exactTime(at, now)}</time>
+							started by <a href={`#/workflows/${encodeURIComponent(flow.name)}`}>{flow.name}</a>
+							{pull && pull !== String(t.pr?.number) && ` · PR #${pull}`}
 						</span>
-					)
-				)}
-			</p>
-			{!t.gate?.gates.length && <p class="t-th-meta">{t.line}</p>}
+					)}
+					{!flow && asked ? (
+						<span>
+							asked by {t.owner ?? 'you'} at <time dateTime={asked}>{exactTime(asked, now)}</time>
+						</span>
+					) : (
+						at && (
+							<span>
+								last event <time dateTime={at}>{exactTime(at, now)}</time>
+							</span>
+						)
+					)}
+				</p>
+			)}
+			{!t.task_at && !t.gate?.gates.length && <p class="t-th-meta">{t.line}</p>}
 		</header>
 	);
 }

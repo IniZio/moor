@@ -45,6 +45,23 @@ pub(super) fn start(
         let error = json!({"error": "say what the agent should do, and on which repos"});
         return json(stream, "400 Bad Request", &error);
     };
+    let origin: std::sync::Arc<str> = login.public().into();
+    if tools::asks(&gate.controller, &session.person) {
+        let repos = new.repos.iter().map(|r| r.trim().to_owned()).collect();
+        let sent = tools::ask_from_portal(
+            &gate.controller,
+            &session.person,
+            (repos, new.prompt),
+            origin,
+        );
+        return match sent {
+            Ok(asked) => {
+                let name = asked.get("box").and_then(Value::as_str);
+                json(stream, "200 OK", &json!({"box": name}));
+            }
+            Err(why) => json(stream, "400 Bad Request", &json!({"error": why})),
+        };
+    }
     let keep = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let asked = tools::NewBox {
         repos: new.repos.iter().map(|r| r.trim().to_owned()).collect(),
@@ -56,7 +73,6 @@ pub(super) fn start(
         base: keep(new.base),
         node: keep(new.node),
     };
-    let origin: std::sync::Arc<str> = login.public().into();
     match tools::start_from_portal(&gate.controller, &session.person, asked, origin) {
         Ok(started) => {
             let name = started.pointer("/box/name").and_then(Value::as_str);

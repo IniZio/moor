@@ -8,21 +8,24 @@ import { Markdown } from './Markdown';
 import { MoorLine, routine, ToolFold, ToolLine } from './Transcript';
 
 /** How often an open page asks again. */
-const POLL_MS = 4000;
+export const POLL_MS = 4000;
 
 
 /** Loads on mount and every few seconds while the page is open; keeps the last answer on a failed poll. */
-export function usePoll<T>(load: () => Promise<T>, key: string) {
+export function usePoll<T>(load: () => Promise<T>, key: string, every: (value: T | null, now: number) => number = () => POLL_MS) {
 	const [value, setValue] = useState<T | null>(null);
 	const [error, setError] = useState('');
 	const [now, setNow] = useState(Date.now());
 	const again = useRef<() => void>(() => undefined);
 	useEffect(() => {
 		let live = true;
+		let last: T | null = null;
+		let timer = 0;
 		const run = async () => {
 			try {
 				const next = await load();
 				if (live) {
+					last = next;
 					setValue(next);
 					setError('');
 					setNow(Date.now());
@@ -31,15 +34,18 @@ export function usePoll<T>(load: () => Promise<T>, key: string) {
 				if (live) setError(failure(toError(e)));
 			}
 		};
+		const wait = () => {
+			timer = window.setTimeout(async () => {
+				if (!document.hidden) await run();
+				if (live) wait();
+			}, every(last, Date.now()));
+		};
 		setValue(null);
 		again.current = () => void run();
-		void run();
-		const timer = setInterval(() => {
-			if (!document.hidden) void run();
-		}, POLL_MS);
+		void run().then(() => live && wait());
 		return () => {
 			live = false;
-			clearInterval(timer);
+			clearTimeout(timer);
 		};
 	}, [key]);
 	return { value, error, now, reload: () => again.current() };

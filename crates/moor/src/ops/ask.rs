@@ -50,7 +50,7 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         served: None,
         steered: None,
     };
-    let text = first_message(&claim);
+    let text = claim.first_message();
     for row in store.idle_places_of(user)?.iter().filter(|r| ready(r)) {
         let Some(turn) = cx.try_turn(row.id, Cmd::Steer) else {
             continue;
@@ -63,12 +63,6 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         return value(store, row.id, true);
     }
     cold(cx, store, claim, &text)
-}
-
-/// The first message a claimed place's agent reads: the repos, a blank line, then the question.
-fn first_message(claim: &Claim) -> String {
-    let repos: Vec<String> = claim.repos().map(ToString::to_string).collect();
-    format!("Repos: {}\n\n{}", repos.join(", "), claim.prompt)
 }
 
 /// Refuses a user who is not on the controller's `agent_places` list.

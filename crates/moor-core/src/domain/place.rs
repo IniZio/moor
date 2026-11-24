@@ -62,6 +62,14 @@ impl Claim {
     pub fn repos(&self) -> impl Iterator<Item = &ForgeRepo> {
         std::iter::once(&self.repo).chain(&self.also)
     }
+
+    /// The first message the claimed place's agent reads: the repos, a blank line, then the
+    /// person's words.
+    #[must_use]
+    pub fn first_message(&self) -> String {
+        let repos: Vec<String> = self.repos().map(ToString::to_string).collect();
+        format!("Repos: {}\n\n{}", repos.join(", "), self.prompt)
+    }
 }
 
 #[cfg(test)]
@@ -84,6 +92,11 @@ mod tests {
         assert!(BoxKind::Place(PlaceState::Idle).is_idle_place());
         assert!(!BoxKind::Work.is_idle_place());
         assert!(!BoxKind::Place(PlaceState::Claimed(claim())).is_idle_place());
+    }
+
+    #[test]
+    fn the_first_message_names_the_repos_and_then_the_words() {
+        assert_eq!(claim().first_message(), "Repos: o/a, o/b\n\nwhere");
     }
 
     #[test]

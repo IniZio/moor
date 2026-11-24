@@ -3,6 +3,7 @@
 use moor_core::activity::{AgentState, BlockKind};
 use moor_core::config::UserConfig;
 use moor_core::domain::hands::HandsState;
+use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::seam::clock::Ts;
 use moor_core::view::{AgentView, BoxSleepView, BoxView, DriverView, EventView, RunView};
 use time::format_description::well_known::Rfc3339;
@@ -143,17 +144,28 @@ pub(crate) fn box_view_with_run(
     run: Option<&RunRow>,
     config: &UserConfig,
 ) -> BoxView {
+    // A place a question claimed has no repo of its own: the claim is the task.
+    let claim = match &row.kind {
+        BoxKind::Place(PlaceState::Claimed(claim)) => Some(claim),
+        _ => None,
+    };
     BoxView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
-        repo: row.repo.as_ref().map(|r| r.repo.clone()),
-        other_repos: row
-            .repo
-            .iter()
-            .flat_map(|r| r.others.iter().map(|o| o.repo.clone()))
-            .collect(),
+        repo: claim
+            .map(|c| c.repo.clone())
+            .or_else(|| row.repo.as_ref().map(|r| r.repo.clone())),
+        other_repos: claim.map_or_else(
+            || {
+                row.repo
+                    .iter()
+                    .flat_map(|r| r.others.iter().map(|o| o.repo.clone()))
+                    .collect()
+            },
+            |c| c.also.clone(),
+        ),
         issue: row.issue.clone(),
-        prompt: row.prompt.clone(),
+        prompt: claim.map_or_else(|| row.prompt.clone(), |c| Some(c.prompt.clone())),
         lifecycle: row.lifecycle,
         session_state: row.session,
         unfinished_turn: moor_core::view::unfinished_turn(row.lifecycle, row.session),
@@ -172,6 +184,7 @@ pub(crate) fn box_view_with_run(
         gate: None,
         ties: moor_core::view::BoxTies::default(),
         owner: None,
+        task_at: claim.map(|c: &Claim| rfc3339(Ts::from_millis(c.at))),
     }
 }
 

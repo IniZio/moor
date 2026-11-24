@@ -4,7 +4,8 @@ use moor_client::Client;
 use moor_core::config::override_text;
 use moor_core::gate::GatesDoc;
 use moor_core::name::{BoxName, ForgeRepo};
-use moor_core::request::{Request as ControllerRequest, ShowReq, StartReq};
+use moor_core::request::{AsReq, AskReq, Request as ControllerRequest, ShowReq, StartReq};
+use moor_core::view::user::WhoamiValue;
 use serde_json::Value;
 
 use super::reply::Reply;
@@ -132,6 +133,38 @@ pub(super) fn send_early(
 /// Whether `shown` is a Box whose setup no longer stands failed: a retry took it up.
 fn setup_restarted(shown: &Value) -> bool {
     shown.pointer("/box/lifecycle") != Some(&Value::from("setup_failed"))
+}
+
+/// Whether the controller lists `person` for agent places, so a send of theirs is a question.
+/// A controller that does not say, or cannot be asked, means it is not.
+pub(crate) fn asks(controller: &Client, person: &Person) -> bool {
+    super::act_as(
+        controller,
+        person,
+        ControllerRequest::Whoami(AsReq { identity: None }),
+    )
+    .ok()
+    .and_then(|v| serde_json::from_value::<WhoamiValue>(v).ok())
+    .is_some_and(|who| who.asks)
+}
+
+/// Asks `prompt` about `repos`, the first one the task's own, as `person`: the same request
+/// `moor ask` sends. Answers the place that took it, with no work Box behind it. `origin` is
+/// where a refusal sends the person for missing secrets.
+pub(crate) fn ask_from_portal(
+    controller: &Client,
+    person: &Person,
+    (repos, prompt): (Vec<String>, String),
+    origin: std::sync::Arc<str>,
+) -> Result<Value, String> {
+    let repos = repos
+        .iter()
+        .map(|r| {
+            ForgeRepo::parse(r).map_err(|_| format!("{r} is not a repo; give it as owner/name"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let request = ControllerRequest::Ask(AskReq { repos, prompt });
+    send(controller, person, request, Reply::Asked(Some(origin)))
 }
 
 /// What a person asks of the portal to start.
