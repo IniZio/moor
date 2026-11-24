@@ -22,6 +22,7 @@ pub mod setup;
 pub mod sleep;
 pub mod steer;
 pub mod stuck;
+pub mod task_box;
 pub mod ties;
 pub mod user;
 pub mod workflow;
@@ -34,6 +35,7 @@ pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
 pub use setup::{DotfilesView, SetupView};
 pub use sleep::unfinished_turn;
+pub use task_box::{TaskBoxState, TaskBoxView};
 pub use ties::BoxTies;
 
 /// Why the agent could not be launched.
@@ -332,6 +334,9 @@ pub struct ShowView {
     /// The selected Box's events as a timeline, when events were requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeline: Option<Vec<crate::progress::TimelineEntry>>,
+    /// The work Boxes a claimed place's agent started, oldest first; empty for any other Box.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub task_boxes: Vec<TaskBoxView>,
 }
 
 /// `value` of `close`.

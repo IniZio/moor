@@ -176,6 +176,7 @@ fn show_view_keys_match_wire_shape() {
         }]),
         artifacts: None,
         timeline: None,
+        task_boxes: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -199,6 +200,7 @@ fn show_view_absent_sections_are_null() {
         reports: None,
         artifacts: None,
         timeline: None,
+        task_boxes: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -218,6 +220,7 @@ fn show_view_single_box_omits_boxes() {
         reports: None,
         artifacts: None,
         timeline: None,
+        task_boxes: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -533,4 +536,34 @@ fn a_machine_keys_answer_without_shared_machines_is_the_old_wire_and_reads_as_no
     let value: MachineKeysValue = serde_json::from_value(wire.clone()).unwrap();
     assert!(value.shared.is_empty());
     assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+}
+
+#[test]
+fn a_task_box_is_one_line_of_the_wire_and_its_lifecycle_maps_to_five_states() {
+    let open = TaskBoxView {
+        name: "w".into(),
+        repo: "o/r".into(),
+        started_at: "2026-11-24T10:00:00Z".into(),
+        ready_ms: None,
+        state: BoxLifecycle::SettingUp.into(),
+        closed_at: None,
+        artifacts: Vec::new(),
+    };
+    assert_eq!(
+        serde_json::to_value(&open).unwrap(),
+        json!({"name": "w", "repo": "o/r", "started_at": "2026-11-24T10:00:00Z",
+               "state": "starting", "artifacts": []})
+    );
+    let states: Vec<TaskBoxState> = BoxLifecycle::ALL.map(TaskBoxState::from).to_vec();
+    assert_eq!(
+        states
+            .iter()
+            .filter(|s| **s == TaskBoxState::Failed)
+            .count(),
+        2
+    );
+    assert_eq!(
+        TaskBoxState::from(BoxLifecycle::Ready),
+        TaskBoxState::Running
+    );
 }
