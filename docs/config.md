@@ -416,6 +416,17 @@ agent_places:
 | --- | --- | --- |
 | `users` | none | The emails of the users who may start a place, as `moor start --place`. |
 
+The controller keeps one place waiting for each listed user. Every 10 seconds it starts a place for
+a listed user who has none. So a place appears soon after the controller starts, and a new one
+follows each claim. It closes a place whose machine is gone or stopped, and starts another. It never starts a
+place for a user who is not listed. A restarted controller finds the place that stands.
+
+A start that fails is not retried. If a place fails in setup or when its agent launches, it stays
+open and no other place starts for its user. The controller log names it once. A person closes
+it, then the next place starts. A start that is rejected, or that makes no Box, is left alone in
+the same way. It stays so until the user has a new place or the controller restarts. A person can
+start the next place with `moor start --place`.
+
 Each place holds one machine slot while it waits.
 
 ### `github_app`

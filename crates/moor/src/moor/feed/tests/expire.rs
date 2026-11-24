@@ -7,6 +7,7 @@ use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, Fields, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput};
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -48,13 +49,27 @@ fn world(driver: FakeDriver) -> World {
 impl World {
     /// A `setup_failed` Box `n`; `failed_at` is when setup failed, `machine` gives it a machine.
     fn setup_failed(&self, n: &str, failed_at: Option<i64>, machine: bool) -> BoxId {
+        self.setup_failed_as(n, failed_at, machine, BoxKind::Work)
+    }
+
+    /// [`World::setup_failed`] of a Box born as `kind`.
+    fn setup_failed_as(
+        &self,
+        n: &str,
+        failed_at: Option<i64>,
+        machine: bool,
+        kind: BoxKind,
+    ) -> BoxId {
         let store = self.moor.cx.store().unwrap();
         let name = BoxName::parse_allow_bare(n).unwrap();
         let id = store
             .apply(Decision::insert(NewBox {
                 name: name.clone(),
                 repo: None,
-                spec: SpecFields::default(),
+                spec: SpecFields {
+                    kind,
+                    ..SpecFields::default()
+                },
             }))
             .unwrap()
             .box_id;
@@ -73,24 +88,7 @@ impl World {
             )
             .unwrap();
         if machine {
-            let got = self
-                .driver
-                .acquire(&AcquireReq {
-                    pool_machine: None,
-                    provider: ProviderId::new("p"),
-                    box_id: id,
-                    name,
-                    class: None,
-                    nonce: "n".to_owned(),
-                    cache: moor_core::cache::CachePlan::none(),
-                })
-                .unwrap();
-            store
-                .apply(
-                    Decision::new(id)
-                        .hands_input(HandsInc::FIRST, HandsInput::Acquired { handle: got.handle }),
-                )
-                .unwrap();
+            self.acquire(id, name);
         }
         store
             .apply(
@@ -106,6 +104,25 @@ impl World {
             )
             .unwrap();
         id
+    }
+
+    /// Gives Box `id` a machine from the driver.
+    fn acquire(&self, id: BoxId, name: BoxName) {
+        let req = AcquireReq {
+            pool_machine: None,
+            provider: ProviderId::new("p"),
+            box_id: id,
+            name,
+            class: None,
+            nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
+        };
+        let handle = self.driver.acquire(&req).unwrap().handle;
+        let input = HandsInput::Acquired { handle };
+        let store = self.moor.cx.store().unwrap();
+        store
+            .apply(Decision::new(id).hands_input(HandsInc::FIRST, input))
+            .unwrap();
     }
 
     fn lifecycle(&self, id: BoxId) -> BoxLifecycle {
@@ -184,4 +201,16 @@ fn a_box_that_will_not_close_is_reported_once_per_pass() {
         .all(|m| m.contains("Box a") && m.contains("stuck")));
     assert_eq!(w.lifecycle(id), BoxLifecycle::SetupFailed);
     assert_eq!(w.pass(Some(DAY)).len(), 1);
+}
+
+#[test]
+fn a_failed_idle_place_stays_open_past_the_grace_period() {
+    let w = world(FakeDriver::new());
+    let now = w.moor.cx.clock().now().as_millis();
+    let place = w.setup_failed_as("p", Some(now), true, BoxKind::Place(PlaceState::Idle));
+    let work = w.setup_failed("w", Some(now), true);
+    w.clock.sleep(DAY);
+    assert!(w.pass(Some(DAY)).is_empty());
+    assert_eq!(w.lifecycle(place), BoxLifecycle::SetupFailed);
+    assert_eq!(w.lifecycle(work), BoxLifecycle::Closed);
 }

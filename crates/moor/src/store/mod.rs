@@ -65,6 +65,7 @@ pub(crate) mod lease;
 mod open;
 pub(crate) use open::Database;
 mod place;
+mod places;
 mod pressure;
 pub(crate) use pressure::SuspendCheck;
 mod box_config;

@@ -42,6 +42,7 @@ mod identity;
 mod install_link;
 mod interrupted;
 mod interrupted_steps;
+mod keeper;
 mod launch_deadline;
 mod launch_skipped;
 mod lease;

@@ -13,7 +13,7 @@ use crate::testing::cx::requester;
 use crate::testing::driver::FakeDriver;
 
 /// A start of place `name`.
-fn place_req(name: &str) -> StartReq {
+pub(super) fn place_req(name: &str) -> StartReq {
     StartReq {
         place: true,
         ..req(name)
@@ -21,7 +21,7 @@ fn place_req(name: &str) -> StartReq {
 }
 
 /// A world whose requester is on the `agent_places` list as `ann@example.com`.
-fn listed() -> World {
+pub(super) fn listed() -> World {
     let mut w = world(FakeDriver::new());
     w.cx.store()
         .unwrap()

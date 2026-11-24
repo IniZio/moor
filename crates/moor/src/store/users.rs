@@ -106,6 +106,21 @@ impl Store {
         user_of_in(&self.reader()?, identity)
     }
 
+    /// The user whose verified email is `email`, compared in lowercase.
+    pub(crate) fn user_of_email(&self, email: &str) -> Result<Option<UserId>, StoreError> {
+        let id: Option<i64> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(Users::Id)
+                    .from(Users::Table)
+                    .and_where(Expr::col(Users::Email).eq(email.trim().to_lowercase())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(id.map(UserId::new))
+    }
+
     /// The verified email of `user`, when it has one.
     pub(crate) fn email_of(&self, user: UserId) -> Result<Option<String>, StoreError> {
         let email: Option<Option<String>> = self

@@ -4,6 +4,7 @@ fn every() -> Vec<CloseReason> {
     vec![
         CloseReason::requested("github:ada"),
         CloseReason::SetupFailedExpired,
+        CloseReason::PlaceLost,
         CloseReason::RunEnded,
         CloseReason::PrMerged,
         CloseReason::PrClosed,
