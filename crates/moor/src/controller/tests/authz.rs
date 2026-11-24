@@ -200,6 +200,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "webhook-setup-finish"
         | "close-failed"
         | "start-needs"
+        | "ask"
         | "session-binding"
         | "gate"
         | "env"

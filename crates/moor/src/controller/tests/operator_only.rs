@@ -26,6 +26,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         }
         "inbox" => json!({"cmd": kind, "op": "list"}),
         "repo-config-get" => json!({"cmd": kind, "repo": "o/n"}),
+        "ask" => json!({"cmd": kind, "repos": ["o/n"], "prompt": "q"}),
         "repo-config-set" => json!({"cmd": kind, "repo": "o/n", "text": "setup: [make]\n"}),
         "node-settings-set" => json!({"cmd": kind, "name": "n", "max_boxes": "clear"}),
         "machine-links" => json!({"cmd": kind, "runner": "/run/runner.sock", "links": []}),

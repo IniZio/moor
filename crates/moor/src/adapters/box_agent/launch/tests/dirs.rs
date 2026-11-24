@@ -31,6 +31,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 
 fn req() -> LaunchReq {
     LaunchReq {
+        place: false,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),

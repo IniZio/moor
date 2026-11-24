@@ -11,6 +11,7 @@ use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq};
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
+use ask::AskArgs;
 use box_ops::{BoxArg, BoxConfigArgs, CloseArgs, CloseFailedArgs, CpArgs};
 use events::EventsArgs;
 use exec::ExecArgs;
@@ -25,6 +26,7 @@ use user::UserCli;
 use wait::WaitArgs;
 use wait_events::WaitEventsArgs;
 
+mod ask;
 mod box_ops;
 mod events;
 mod exec;
@@ -132,6 +134,8 @@ struct Cli {
 enum Cmd {
     /// Create or attach a Box.
     Start(StartArgs),
+    /// Ask your idle agent place a question about some repos; it starts one when none is idle.
+    Ask(AskArgs),
     /// Run a command in the Box.
     Run(RunArgs),
     /// Run a command in the Box with stdin, stdout and stderr passed byte for byte.
@@ -201,6 +205,7 @@ impl Cmd {
     fn into_action(self) -> Action {
         match self {
             Self::Start(a) => Action::Request(Request::Start(a.into())),
+            Self::Ask(a) => Action::Request(Request::Ask(a.into())),
             Self::Run(a) => Action::Request(Request::Run(a.into())),
             Self::Forward(a) => Action::Forward(a.into()),
             Self::Exec(a) => {

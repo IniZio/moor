@@ -10,6 +10,7 @@ use moor_core::domain::decision::Field;
 use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::{Delivery, InboxKind};
+use moor_core::domain::place::BoxKind;
 use moor_core::domain::session_state::SessionState;
 use moor_core::gate::Gates;
 use moor_core::seam::engine::{EngineError, HeldRepo, LaunchPrompt, LaunchReq, SessionRef};
@@ -346,6 +347,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         proxy: None,
         strip_env,
         prompt: LaunchPrompt::None,
+        place: matches!(row.kind, BoxKind::Place(_)),
     })
 }
 

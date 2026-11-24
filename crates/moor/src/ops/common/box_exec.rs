@@ -6,6 +6,7 @@ use std::time::Duration;
 use moor_core::box_key::is_machine_handle;
 use moor_core::config::BoxSettings;
 use moor_core::domain::hands::HandsInc;
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec, Place};
@@ -17,6 +18,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, plan, ProxyPlan};
+use crate::store::BoxRow;
 
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
@@ -183,21 +185,28 @@ fn box_plan(
     Ok((user, plan(cx, &repos, &mcp.servers, has_profile, extra)?))
 }
 
-/// The user the Box acts for and the repos it lists after its primary, read from its row.
+/// The user the Box acts for and the repos it lists after its primary, read from its row. A
+/// claimed place has no primary, so it lists its claim's repos, the task's first.
 fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String> {
     let row = cx
         .store()
         .map_err(|e| e.error.to_string())?
         .box_row(box_id)
         .map_err(|e| e.to_string())?;
-    let user = row
-        .as_ref()
-        .and_then(|r| r.user)
-        .ok_or_else(|| format!("Box {} acts for no user", box_id.get()))?;
-    let others = row
-        .and_then(|r| r.repo)
-        .map(|r| r.others.into_iter().map(|l| l.repo).collect())
-        .unwrap_or_default();
+    let Some(BoxRow {
+        user: Some(user),
+        repo,
+        kind,
+        ..
+    }) = row
+    else {
+        return Err(format!("Box {} acts for no user", box_id.get()));
+    };
+    let others = match (repo, kind) {
+        (Some(r), _) => r.others.into_iter().map(|l| l.repo).collect(),
+        (None, BoxKind::Place(PlaceState::Claimed(claim))) => claim.repos().cloned().collect(),
+        (None, _) => Vec::new(),
+    };
     Ok((user, others))
 }
 

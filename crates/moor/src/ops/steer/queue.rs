@@ -152,6 +152,7 @@ pub(crate) fn deliver(
         let Some(sref) = session_ref(&row, &launch).filter(|_| ready(&reading)) else {
             break;
         };
+        crate::ops::ask::serve(cx, store, &row)?;
         store.mark_sending(id, item.id, launch.id)?;
         failpoint::hit(failpoint::INBOX_BEFORE_SEND);
         let steer = Steer::Text(item.text.clone());
@@ -169,6 +170,7 @@ pub(crate) fn deliver(
                     record(store, id, &launch, &item.text, mark, item.id)?,
                 ));
                 open_turn(store, &row)?;
+                crate::ops::ask::steered(cx, store, &row)?;
             }
             Err(EngineError::AgentGone) => {
                 store.refuse(id, item.id)?;
