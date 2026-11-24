@@ -368,6 +368,7 @@ same directory.
 | `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 | `github_app` | none | The GitHub App the operator created for this install. See [`github_app`](#github_app). |
+| `agent_places` | none | The users who may have an agent place. See [`agent_places`](#agent_places). |
 
 ### `fronts`
 
@@ -398,6 +399,24 @@ gets its own user, mount, PID, and network namespaces and a root built from an
 allow-list. It reaches the network only through an egress proxy that refuses
 private addresses. A host that forbids unprivileged user namespaces or lacks
 Landlock starts no front, and the controller logs `fronts not started`.
+
+### `agent_places`
+
+A place is a Box with no repo that the agent waits in, started before any task. It never shows in
+`moor ls`, the portal, `list_boxes` or the event stream, and it never sleeps or closes, until a
+task claims it. `agent_places` lists the users who may start one. It is also the switch. With no
+one listed, no place starts for anyone.
+
+```yaml
+agent_places:
+  users: [alice@example.com]
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `users` | none | The emails of the users who may start a place, as `moor start --place`. |
+
+Each place holds one machine slot while it waits.
 
 ### `github_app`
 

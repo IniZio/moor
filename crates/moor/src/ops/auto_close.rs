@@ -80,7 +80,7 @@ pub(crate) fn pass(
             break;
         }
         let open = matches!(row.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep);
-        if !open || row.wanted.is_some() || cx.owners().busy(row.id) {
+        if !open || row.kind.is_idle_place() || row.wanted.is_some() || cx.owners().busy(row.id) {
             continue;
         }
         match hold::holds(store, row.id) {

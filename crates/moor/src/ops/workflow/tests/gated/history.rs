@@ -209,6 +209,7 @@ fn a_recovered_run_of_a_gated_workflow_starts_at_its_first_gate() {
     });
     let job = job.into_inner().unwrap();
     let req = moor_core::StartReq {
+        place: false,
         gates: job.firing.gates.clone().map(Box::new),
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

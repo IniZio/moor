@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::decision::{BoxRepo, Decision, NewBox, SpecFields};
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
@@ -130,6 +131,19 @@ pub(crate) fn new_box(name: BoxName) -> Decision {
         name,
         repo: None,
         spec: SpecFields::default(),
+    })
+    .requester(REQUESTER_USER)
+}
+
+/// Inserts place `name`, which no task has claimed, acting for [`REQUESTER_USER`].
+pub(crate) fn new_idle_place(name: BoxName) -> Decision {
+    Decision::insert(NewBox {
+        name,
+        repo: None,
+        spec: SpecFields {
+            kind: BoxKind::Place(PlaceState::Idle),
+            ..SpecFields::default()
+        },
     })
     .requester(REQUESTER_USER)
 }

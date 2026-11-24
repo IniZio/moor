@@ -77,6 +77,7 @@ struct Facts {
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
+    super::place::check_start(cx, store, req, user)?;
     super::box_config::check(req.config.as_deref())?;
     gates::check(req)?;
     if let Some(parent) = req.parent {
@@ -356,6 +357,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
         name: req.name.clone(),
         repo: facts.repo.clone(),
         spec: SpecFields {
+            kind: super::place::kind_of(req),
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),

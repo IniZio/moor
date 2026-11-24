@@ -8,6 +8,7 @@ use moor_core::config::AutoClose;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CloseReason;
+use moor_core::domain::place::BoxKind;
 use moor_core::{BoxId, SessionId};
 
 use super::Moor;
@@ -32,6 +33,15 @@ impl Moor {
             .events_after(after, limit)
             .map_err(|e| e.to_string())?;
         Ok(events.into_iter().map(NamedEvent::into_frame).collect())
+    }
+
+    /// What Box `id` was started as; none when it does not exist.
+    ///
+    /// # Errors
+    /// The store failure, as text.
+    pub(crate) fn box_kind(&self, id: BoxId) -> Result<Option<BoxKind>, String> {
+        let store = self.cx.store().map_err(|e| e.error.to_string())?;
+        store.box_kind(id).map_err(|e| e.to_string())
     }
 
     /// The parent of Session `id`; none when it has no parent or does not exist.

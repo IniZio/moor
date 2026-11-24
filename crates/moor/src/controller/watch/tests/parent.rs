@@ -126,6 +126,7 @@ fn an_event_with_no_session_never_matches_a_parent_filter() {
         ask: &asked,
         seen: std::collections::HashMap::new(),
         parents: std::collections::HashMap::new(),
+        works: std::collections::HashSet::new(),
     };
     let frame = moor_core::controller::ServerFrame::Event {
         cursor: 1,

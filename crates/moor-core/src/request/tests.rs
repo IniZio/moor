@@ -20,6 +20,7 @@ fn with_args() -> Vec<Request> {
     vec![
         Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
+            place: false,
             gates: None,
             placement: crate::decide::schedule::Placement::FirstOnly,
             cold: false,
@@ -429,6 +430,7 @@ fn a_start_from_an_older_client_that_asks_for_cold_still_parses_and_is_never_sen
 #[test]
 fn parent_is_omitted_when_none() {
     let start = StartReq {
+        place: false,
         gates: None,
         placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,

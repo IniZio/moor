@@ -86,6 +86,21 @@ fn ledger_tls_parses_its_address_cert_key_and_client_ca() {
 }
 
 #[test]
+fn agent_places_lists_the_users_who_may_have_one_and_is_off_by_default() {
+    let c = parse_controller(
+        "c.yaml",
+        "agent_places:\n  users: [Ann@Example.com, ' bob@example.com ']\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let users: Vec<String> = c.agent_place_users().into_iter().collect();
+    assert_eq!(users, ["ann@example.com", "bob@example.com"]);
+    assert!(ControllerConfig::default().agent_place_users().is_empty());
+    assert!(err("agent_places:\n  everyone: true\n")
+        .to_string()
+        .contains("everyone"));
+}
+
+#[test]
 fn github_app_parses_its_id_and_key_files() {
     let c = parse_controller(
         "c.yaml",

@@ -282,6 +282,7 @@ fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, Com
     let open: Vec<_> = store
         .open_boxes()?
         .into_iter()
+        .filter(|row| !row.kind.is_idle_place())
         .filter(|row| authz::may_read(cx.viewer(), row.user, everyone))
         .collect();
     let ids: Vec<BoxId> = open.iter().map(|row| row.id).collect();

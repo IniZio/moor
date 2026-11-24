@@ -14,6 +14,14 @@ pub(super) struct StartArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     name: BoxName,
+    /// Start a place: a Box with no repo that the agent waits in until a task claims it. It
+    /// stays out of every list until then. Only a user on the controller's `agent_places` list
+    /// may start one.
+    #[arg(
+        long,
+        conflicts_with_all = ["prompt", "issue", "base", "repo", "config", "no_agent", "resume"]
+    )]
+    place: bool,
     /// Prompt for the agent.
     #[arg(long)]
     prompt: Option<String>,
@@ -62,6 +70,7 @@ impl From<StartArgs> for StartReq {
             gates: None,
             cold: false,
             placement: Placement::FirstOnly,
+            place: a.place,
             name: a.name,
             prompt: a.prompt,
             issue: a.issue,

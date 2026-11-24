@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::{HandsInc, HandsState};
+use moor_core::domain::place::BoxKind;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Place};
@@ -104,6 +105,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         created_at: Ts::from_millis(0),
         updated_at: Ts::from_millis(0),
         hands: Some(boxed.clone()),
+        kind: BoxKind::Work,
     };
     (row, boxed)
 }

@@ -1,6 +1,5 @@
 //! `watch` streaming: replays stored events after a cursor, then follows new ones.
 
-use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
@@ -10,8 +9,8 @@ use std::time::Duration;
 
 use moor_core::controller::{FrameErrorKind, ServerFrame, WatchFilter};
 use moor_core::user::Viewer;
-use moor_core::{BoxId, SessionId};
 
+use self::passes::Passes;
 use super::drain::Drain;
 use super::hangup::Hangup;
 use crate::env::{Cancel, Env};
@@ -271,12 +270,7 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
         Ok(moor) => moor.viewing_as(ask.viewer),
         Err(e) => return shared.fail(e.error.to_string()),
     };
-    let mut passes = Passes {
-        moor: &moor,
-        ask,
-        seen: HashMap::new(),
-        parents: HashMap::new(),
-    };
+    let mut passes = Passes::new(&moor, ask);
     let follow = ask.follow;
     let mut cursor = ask.since;
     shared.scanned.store(cursor, Ordering::Release);
@@ -328,62 +322,7 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
     }
 }
 
-/// Which stored events one stream sends: those its filter matches, of Boxes its viewer may
-/// see. An event with no Box is the operator's alone.
-struct Passes<'a> {
-    /// The engine seeing as the stream's viewer.
-    moor: &'a Moor,
-    /// What the client asked for.
-    ask: &'a Ask,
-    /// Whether the viewer may see each Box met so far; a Box's user never changes.
-    seen: HashMap<BoxId, bool>,
-    /// The parent of each Session met so far; a Session's parent never changes.
-    parents: HashMap<SessionId, Option<SessionId>>,
-}
-
-impl Passes<'_> {
-    /// Whether `frame` goes to the client.
-    fn check(&mut self, frame: &ServerFrame) -> Result<bool, String> {
-        let ServerFrame::Event {
-            r#box,
-            box_id,
-            session,
-            kind,
-            ..
-        } = frame
-        else {
-            return Ok(true);
-        };
-        if !self.ask.filter.matches(r#box.as_deref(), kind) {
-            return Ok(false);
-        }
-        if let Some(parent) = self.ask.filter.parent {
-            if self.parent_of(*session)? != Some(parent) {
-                return Ok(false);
-            }
-        }
-        let Some(id) = *box_id else {
-            return Ok(self.ask.viewer.may_act_on(None));
-        };
-        if let Some(&visible) = self.seen.get(&id) {
-            return Ok(visible);
-        }
-        let visible = self.moor.may_see(id)?;
-        self.seen.insert(id, visible);
-        Ok(visible)
-    }
-
-    /// The parent of `session`; none for an event with no Session.
-    fn parent_of(&mut self, session: Option<SessionId>) -> Result<Option<SessionId>, String> {
-        let Some(id) = session else { return Ok(None) };
-        if let Some(&parent) = self.parents.get(&id) {
-            return Ok(parent);
-        }
-        let parent = self.moor.session_parent(id)?;
-        self.parents.insert(id, parent);
-        Ok(parent)
-    }
-}
+mod passes;
 
 #[cfg(test)]
 mod tests;

@@ -310,20 +310,11 @@ fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
     let req = StartReq {
         gates: job.gates.clone().map(Box::new),
         placement: moor_core::decide::schedule::Placement::FirstOnline,
-        cold: false,
         config: job.config.clone(),
-        name: job.name.clone(),
         prompt: Some(job.prompt.clone()),
-        issue: None,
-        base: None,
-        model: None,
-        node: None,
-        no_agent: false,
-        resume: false,
         repo: Some(job.repo.clone()),
         also: Some(job.also.clone()),
-        parent: None,
-        identity: None,
+        ..StartReq::named(job.name.clone())
     };
     match start::run(cx, &req) {
         Ok(view) => RunState::Running {

@@ -43,6 +43,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         })),
     };
     Ok(ControllerRequest::Start(StartReq {
+        place: false,
         gates,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

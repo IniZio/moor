@@ -493,3 +493,4 @@ fn a_following_watch_ends_with_restarting_once_the_drain_begins() {
 
 mod gone;
 mod parent;
+mod place;

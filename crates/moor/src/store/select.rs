@@ -1,15 +1,16 @@
 //! The selects the Box and event reads share.
 
 use moor_core::BoxId;
-use moor_schema::tables::{BoxHands, BoxState, Boxes, Events, Sessions};
+use moor_schema::tables::{BoxHands, BoxState, Boxes, Events, PlaceClaims, Sessions};
 use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement, UpdateStatement};
 
 use super::hands::join_current;
+use super::place;
 use super::{db, event_from_row, EventRow, StoreError};
 use crate::store::db::DbExt as _;
 
 /// The `boxes` columns a Box read takes first.
-const BOX_COLS: [Boxes; 13] = [
+const BOX_COLS: [Boxes; 14] = [
     Boxes::Id,
     Boxes::Name,
     Boxes::Repo,
@@ -23,6 +24,7 @@ const BOX_COLS: [Boxes; 13] = [
     Boxes::AuthorEmail,
     Boxes::OtherRepos,
     Boxes::BaseRef,
+    Boxes::Kind,
 ];
 /// The `box_state` columns a Box read takes next.
 const STATE_COLS: [BoxState; 16] = [
@@ -59,6 +61,15 @@ const HANDS_COLS: [BoxHands; 12] = [
     BoxHands::MemMib,
     BoxHands::StateAt,
     BoxHands::WokeAt,
+];
+
+/// The claim's columns a Box read ends with, null for a Box no task has claimed.
+pub(super) const PLACE_COLS: [PlaceClaims; 5] = [
+    PlaceClaims::Repos,
+    PlaceClaims::Prompt,
+    PlaceClaims::ClaimedAt,
+    PlaceClaims::ServedAt,
+    PlaceClaims::SteeredAt,
 ];
 
 /// A const fn giving a column's position in a Box read row: its place in `$cols`, after `$skip`.
@@ -98,6 +109,12 @@ position!(
     hands_at: BoxHands, HANDS_COLS, BOX_COLS.len() + STATE_COLS.len() + SESSION_COLS.len()
 );
 
+position!(
+    /// The position of a claim column in a Box read row.
+    place_at: PlaceClaims, PLACE_COLS,
+    BOX_COLS.len() + STATE_COLS.len() + SESSION_COLS.len() + HANDS_COLS.len()
+);
+
 /// `q`, a select from `boxes`, with each Box's `box_state` row joined.
 pub(super) fn join_state(q: &mut SelectStatement) -> &mut SelectStatement {
     q.inner_join(
@@ -130,6 +147,7 @@ pub(super) fn box_select() -> SelectStatement {
         .columns(STATE_COLS.map(|c| (BoxState::Table, c)))
         .columns(SESSION_COLS.map(s))
         .columns(HANDS_COLS.map(|c| (BoxHands::Table, c)))
+        .columns(PLACE_COLS.map(|c| (PlaceClaims::Table, c)))
         .from(Boxes::Table)
         .left_join(
             Sessions::Table,
@@ -140,6 +158,7 @@ pub(super) fn box_select() -> SelectStatement {
         .take();
     join_state(&mut q);
     join_current(&mut q);
+    place::join_claim(&mut q);
     q
 }
 

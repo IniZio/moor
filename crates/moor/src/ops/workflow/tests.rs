@@ -16,7 +16,7 @@ use moor_core::workflow::{
 };
 use moor_core::{BoxId, BoxPath};
 
-use super::{resolve_interrupted, run_check, run_start, tick};
+use super::{resolve_interrupted, run_check, run_start, tick, Firing};
 use crate::cx::Cx;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -219,6 +219,15 @@ fn a_claim_a_crash_left_is_settled_and_never_started_again() {
         .is_empty());
 }
 
+/// The start of the Box `firing` names, as a front that won the race to start it would send.
+fn firing_start(firing: &Firing) -> moor_core::StartReq {
+    moor_core::StartReq {
+        prompt: Some(firing.prompt.clone()),
+        repo: Some(firing.repo.clone()),
+        ..moor_core::StartReq::named(firing.name.clone())
+    }
+}
+
 #[test]
 fn a_claim_whose_box_was_made_becomes_that_run() {
     let r = rig();
@@ -230,28 +239,7 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
         false
     });
     let job = job.into_inner().unwrap();
-    let started = crate::ops::start::run(
-        &r.cx,
-        &moor_core::StartReq {
-            gates: None,
-            placement: moor_core::decide::schedule::Placement::FirstOnly,
-            cold: false,
-            config: None,
-            name: job.firing.name.clone(),
-            prompt: Some(job.firing.prompt.clone()),
-            issue: None,
-            base: None,
-            model: None,
-            node: None,
-            no_agent: false,
-            resume: false,
-            repo: Some(job.firing.repo),
-            also: None,
-            parent: None,
-            identity: None,
-        },
-    )
-    .unwrap();
+    let started = crate::ops::start::run(&r.cx, &firing_start(&job.firing)).unwrap();
     resolve_interrupted(&r.cx);
     assert_eq!(r.latest(id).state, running(started.boxed.id));
 }
@@ -267,28 +255,7 @@ fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
         false
     });
     let job = job.into_inner().unwrap();
-    let started = crate::ops::start::run(
-        &r.cx,
-        &moor_core::StartReq {
-            gates: None,
-            placement: moor_core::decide::schedule::Placement::FirstOnly,
-            cold: false,
-            config: None,
-            name: job.firing.name.clone(),
-            prompt: Some(job.firing.prompt.clone()),
-            issue: None,
-            base: None,
-            model: None,
-            node: None,
-            no_agent: false,
-            resume: false,
-            repo: Some(job.firing.repo),
-            also: None,
-            parent: None,
-            identity: None,
-        },
-    )
-    .unwrap();
+    let started = crate::ops::start::run(&r.cx, &firing_start(&job.firing)).unwrap();
     let failed = BoxLifecycleInput::WorkingSetupFailed {
         cause: "clone failed".to_owned(),
     };

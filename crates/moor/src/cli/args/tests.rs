@@ -17,6 +17,7 @@ mod box_term;
 mod down;
 mod events;
 mod node;
+mod place;
 mod repo;
 
 /// Parse `moor <args>` into opts and action.
@@ -68,6 +69,7 @@ fn start_with_all_flags() {
     assert_eq!(
         r,
         Request::Start(StartReq {
+            place: false,
             gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,

@@ -6,6 +6,7 @@ mod wanted;
 
 use super::box_state::BoxLifecycleInput;
 use super::hands::{HandsInc, HandsInput};
+use super::place::BoxKind;
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, LaunchId, ProviderId};
 use crate::name::{ForgeRepo, GitAuthor};
@@ -87,6 +88,8 @@ pub struct HandsWrite {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SpecFields {
+    /// What the Box is born as; a place has no repo.
+    pub kind: BoxKind,
     /// Issue reference.
     pub issue: Option<String>,
     /// The prompt the Box starts with.

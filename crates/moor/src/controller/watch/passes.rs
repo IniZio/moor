@@ -1,0 +1,99 @@
+//! Which stored events a watch stream sends.
+
+use std::collections::{HashMap, HashSet};
+
+use moor_core::controller::ServerFrame;
+use moor_core::domain::place::BoxKind;
+use moor_core::{BoxId, SessionId};
+
+use super::Ask;
+use crate::Moor;
+
+/// Which stored events one stream sends: those its filter matches, of Boxes its viewer may
+/// see. An event with no Box is the operator's alone.
+pub(super) struct Passes<'a> {
+    /// The engine seeing as the stream's viewer.
+    pub(super) moor: &'a Moor,
+    /// What the client asked for.
+    pub(super) ask: &'a Ask,
+    /// Whether the viewer may see each Box met so far; a Box's user never changes.
+    pub(super) seen: HashMap<BoxId, bool>,
+    /// The parent of each Session met so far; a Session's parent never changes.
+    pub(super) parents: HashMap<SessionId, Option<SessionId>>,
+    /// The Boxes met so far that were born work Boxes.
+    pub(super) works: HashSet<BoxId>,
+}
+
+impl<'a> Passes<'a> {
+    /// The passes of one stream, which have met no Box yet.
+    pub(super) fn new(moor: &'a Moor, ask: &'a Ask) -> Self {
+        Self {
+            moor,
+            ask,
+            seen: HashMap::new(),
+            parents: HashMap::new(),
+            works: HashSet::new(),
+        }
+    }
+
+    /// Whether `frame` goes to the client.
+    pub(super) fn check(&mut self, frame: &ServerFrame) -> Result<bool, String> {
+        let ServerFrame::Event {
+            r#box,
+            box_id,
+            session,
+            kind,
+            ..
+        } = frame
+        else {
+            return Ok(true);
+        };
+        if !self.ask.filter.matches(r#box.as_deref(), kind) {
+            return Ok(false);
+        }
+        if let Some(parent) = self.ask.filter.parent {
+            if self.parent_of(*session)? != Some(parent) {
+                return Ok(false);
+            }
+        }
+        let Some(id) = *box_id else {
+            return Ok(self.ask.viewer.may_act_on(None));
+        };
+        if self.hidden(id)? {
+            return Ok(false);
+        }
+        if let Some(&visible) = self.seen.get(&id) {
+            return Ok(visible);
+        }
+        let visible = self.moor.may_see(id)?;
+        self.seen.insert(id, visible);
+        Ok(visible)
+    }
+
+    /// Whether Box `id` is an idle place, whose events no stream sends. A Box born a work Box stays
+    /// one, so that answer is kept; a place may be claimed at any time, so it is asked again.
+    fn hidden(&mut self, id: BoxId) -> Result<bool, String> {
+        if self.works.contains(&id) {
+            return Ok(false);
+        }
+        match self.moor.box_kind(id)? {
+            Some(BoxKind::Work) => {
+                self.works.insert(id);
+                Ok(false)
+            }
+            Some(kind) => Ok(kind.is_idle_place()),
+            None => Ok(false),
+        }
+    }
+
+    /// The parent of `session`; none for an event with no Session.
+    fn parent_of(&mut self, session: Option<SessionId>) -> Result<Option<SessionId>, String> {
+        let Some(id) = session else { return Ok(None) };
+        if let Some(&parent) = self.parents.get(&id) {
+            return Ok(parent);
+        }
+        let parent = self.moor.session_parent(id)?;
+        self.parents.insert(id, parent);
+        Ok(parent)
+    }
+}
