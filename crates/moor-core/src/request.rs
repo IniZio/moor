@@ -7,6 +7,8 @@ use crate::user::Identity;
 
 mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
+mod ask;
+pub use ask::AskReq;
 mod attach;
 pub use attach::AttachReq;
 mod basic;
@@ -78,6 +80,9 @@ pub use webhook_outbox::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 pub enum Request {
     /// Create a box.
     Start(StartReq),
+    /// Ask a question about some repos: claim the caller's idle place, give it the repos'
+    /// rules, then send the question; a place is started for it when none is idle.
+    Ask(AskReq),
     /// The secrets a start would need from the caller's user, and which it lacks.
     StartNeeds(StartNeedsReq),
     /// Run a command in a box.

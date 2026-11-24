@@ -9,6 +9,7 @@ impl Request {
     pub const fn cmd(&self) -> &'static str {
         match self {
             Self::Start(_) => "start",
+            Self::Ask(_) => "ask",
             Self::StartNeeds(_) => "start-needs",
             Self::Run(_) => "run",
             Self::Wait(_) => "wait",

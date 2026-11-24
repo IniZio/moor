@@ -1,6 +1,7 @@
 //! Facts every Box op needs, built once per command.
 
 use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig, RepoOverride};
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::seam::driver::DriverCaps;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::ProviderId;
@@ -29,7 +30,16 @@ pub(crate) fn settings_of(
 /// A stored text that does not parse.
 pub(crate) fn repo_config(cx: &Cx, row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
     let over = cx.store()?.box_config_override(row.id)?;
-    repo_config_of(cx, row.repo.as_ref().map(|r| &r.repo), over.as_deref())
+    repo_config_of(cx, task_repo(row), over.as_deref())
+}
+
+/// The repo whose config Box `row` takes: its own, else the task repo of the claim that took it.
+fn task_repo(row: &BoxRow) -> Option<&ForgeRepo> {
+    match (&row.repo, &row.kind) {
+        (Some(r), _) => Some(&r.repo),
+        (None, BoxKind::Place(PlaceState::Claimed(claim))) => Some(&claim.repo),
+        (None, _) => None,
+    }
 }
 
 /// The repo config of `repo` as the store holds it now, parsed, with `over` laid over it, so an

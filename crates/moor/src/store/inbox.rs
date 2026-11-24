@@ -49,27 +49,7 @@ impl Store {
         sender: &str,
     ) -> Result<InboxId, StoreError> {
         self.check_insert(&BoxInbox::Table, box_id);
-        let id: i64 = self.writer().row(
-            Query::insert()
-                .into_table(BoxInbox::Table)
-                .columns([
-                    BoxInbox::Box,
-                    BoxInbox::Kind,
-                    BoxInbox::Text,
-                    BoxInbox::Sender,
-                    BoxInbox::CreatedAt,
-                ])
-                .values_panic([
-                    box_id.get().into(),
-                    kind.as_str().into(),
-                    text.into(),
-                    sender.into(),
-                    self.now().as_millis().into(),
-                ])
-                .returning_col(BoxInbox::Id),
-            |r| r.get(0),
-        )?;
-        Ok(InboxId::new(id))
+        insert(&self.writer(), box_id, (kind, text, sender), self.now())
     }
 
     /// Box `box_id`'s oldest inbox row, the one its owner delivers or waits on next.
@@ -385,6 +365,37 @@ mod queue;
 pub(super) use cut::name_cut;
 pub(super) use queue::send_with_launch;
 use queue::steered_by;
+
+/// Appends `text` of `kind` from `sender` to Box `box_id`'s inbox at `now`, queued, on `conn`,
+/// which a write's own transaction may be.
+pub(super) fn insert(
+    conn: &dyn Db,
+    box_id: BoxId,
+    (kind, text, sender): (InboxKind, &str, &str),
+    now: Ts,
+) -> Result<InboxId, StoreError> {
+    let id: i64 = conn.row(
+        Query::insert()
+            .into_table(BoxInbox::Table)
+            .columns([
+                BoxInbox::Box,
+                BoxInbox::Kind,
+                BoxInbox::Text,
+                BoxInbox::Sender,
+                BoxInbox::CreatedAt,
+            ])
+            .values_panic([
+                box_id.get().into(),
+                kind.as_str().into(),
+                text.into(),
+                sender.into(),
+                now.as_millis().into(),
+            ])
+            .returning_col(BoxInbox::Id),
+        |r| r.get(0),
+    )?;
+    Ok(InboxId::new(id))
+}
 
 #[cfg(test)]
 mod tests;

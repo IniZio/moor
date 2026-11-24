@@ -41,7 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &StartNeedsReq) -> Result<StartNeedsValue, Comma
 ///
 /// # Errors
 /// As [`run`], and Refused when the user is missing or lacks a secret.
-pub(super) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, CommandError> {
+pub(crate) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, CommandError> {
     let req = StartNeedsReq {
         identity: None,
         repo: repo.cloned(),

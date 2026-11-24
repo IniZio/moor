@@ -11,6 +11,7 @@ use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, NewBox, SpecFie
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::inbox::InboxKind;
+use moor_core::domain::place::BoxKind;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
@@ -52,7 +53,7 @@ pub(crate) use launch::{
     begin_seeded, queued_or, record as record_launch_failure, to_json as launch_failure_json,
     TAIL_LINES as LAUNCH_TAIL_LINES,
 };
-pub(crate) use needs::run as needs;
+pub(crate) use needs::{require, run as needs};
 pub(crate) use revive::{
     capped, launch_after_retry, revivable, revive_after_wake, revive_for_steer, AfterWake,
 };
@@ -75,6 +76,14 @@ struct Facts {
 /// # Errors
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
+    run_as(cx, req, super::place::kind_of(req))
+}
+
+/// [`run`], making a new Box of `kind`: an ask starts a place that holds its claim from the insert.
+///
+/// # Errors
+/// As [`run`].
+pub(crate) fn run_as(cx: &Cx, req: &StartReq, kind: BoxKind) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
     super::place::check_start(cx, store, req, user)?;
@@ -107,7 +116,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
-    let new = new_box(req, &facts, spec.labels.clone());
+    let new = new_box(req, &facts, spec.labels.clone(), kind);
     let id = match insert(store, (req, user), new, preflight::checked(&cfg)) {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
@@ -169,7 +178,7 @@ fn reject(
 ) -> Result<StartView, CommandError> {
     let id = store
         .apply(
-            Decision::insert(new_box(req, facts, Vec::new()))
+            Decision::insert(new_box(req, facts, Vec::new(), super::place::kind_of(req)))
                 .parent_session(req.parent.map(SessionId::get))
                 .requester(user),
         )?
@@ -351,13 +360,13 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     })
 }
 
-/// The Box `req` starts, asking its node for `labels`.
-fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>) -> NewBox {
+/// The Box of `kind` that `req` starts, asking its node for `labels`.
+fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>, kind: BoxKind) -> NewBox {
     NewBox {
         name: req.name.clone(),
         repo: facts.repo.clone(),
         spec: SpecFields {
-            kind: super::place::kind_of(req),
+            kind,
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),

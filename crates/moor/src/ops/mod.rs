@@ -7,6 +7,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 
 pub(crate) mod artifacts;
+mod ask;
 pub(crate) mod attach;
 pub(crate) mod authz;
 mod auto_close;
@@ -75,6 +76,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
     match req {
         Request::Version {} => version_value(),
         Request::Start(r) => to_value(&start::run(cx, &r)?),
+        Request::Ask(r) => to_value(&ask::run(cx, &r)?),
         Request::StartNeeds(r) => to_value(&start::needs(cx, &r)?),
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::Inspect(r) => to_value(&inspect::run(cx, &r)?),

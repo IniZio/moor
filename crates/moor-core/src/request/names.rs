@@ -94,6 +94,7 @@ impl Request {
             Self::BindSession(r) => session(r.session),
             Self::As(r) => r.request.names(),
             Self::StartNeeds(_)
+            | Self::Ask(_)
             | Self::CloseFailed(_)
             | Self::SessionBinding(_)
             | Self::Gate(_)

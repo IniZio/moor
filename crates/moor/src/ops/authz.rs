@@ -152,6 +152,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::MachineBox(_) => Some(BOXES_OPERATOR_ONLY),
         Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),
         Request::Start(_)
+        | Request::Ask(_)
         | Request::StartNeeds(_)
         | Request::Run(_)
         | Request::Wait(_)
