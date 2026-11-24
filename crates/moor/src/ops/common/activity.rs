@@ -22,6 +22,7 @@ use crate::ops::common::stale::unless_stale;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Launch, LaunchEnd, Store};
 
+pub(crate) use follow::{follow, steered, Steered};
 use launch::launch_overdue;
 pub(crate) use turn::turn_open;
 
@@ -361,6 +362,7 @@ const fn liveness(activity: &Activity) -> PaneLiveness {
 }
 
 mod doing;
+mod follow;
 mod launch;
 mod needs_input;
 mod quiet;

@@ -116,6 +116,36 @@ impl Moor {
         out
     }
 
+    /// `env` keeping the Boxes steered on it, for [`Moor::steered`] to hand out.
+    pub(crate) fn queue_steers(env: Env) -> Env {
+        env.sharing(Arc::new(ops::common::activity::Steered::default()))
+    }
+
+    /// What takes the next Box steered on `env`, waiting up to the time it is given; none when
+    /// `env` keeps no steered Boxes.
+    pub(crate) fn steered(
+        env: &Env,
+    ) -> Option<impl Fn(Duration) -> Option<BoxId> + Send + 'static> {
+        let steered = Arc::clone(env.shared::<Arc<ops::common::activity::Steered>>()?);
+        Some(move |wait| steered.next(wait))
+    }
+
+    /// Reads steered Box `id`'s agent quickly until it takes the steer up; returns what to log.
+    pub(crate) fn follow(env: &Env, id: BoxId) -> Vec<String> {
+        match Self::from_env(env) {
+            Ok(moor) => crate::cx::owners::checked(|| {
+                let mut out = Vec::new();
+                match moor.cx.store() {
+                    Ok(store) => ops::common::activity::follow(&moor.cx, store, id),
+                    Err(e) => out.push(e.error.to_string()),
+                }
+                out.extend(moor.cx.take_warnings().into_iter().map(|w| w.message));
+                out
+            }),
+            Err(e) => vec![e.error.to_string()],
+        }
+    }
+
     /// The pass that moves each Box's queued inbox rows towards its agent; returns what to log.
     pub(crate) fn inbox_pass(
         env: &Env,
