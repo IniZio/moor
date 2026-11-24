@@ -120,8 +120,8 @@ fn box_tool(frame: &Value, out: &mut dyn Write) -> Response {
     if req["from"] == 9 {
         let view = ErrorView {
             kind: ErrorKind::Refused,
-            message: "exec_in_box and start_box serve only an agent place that a task has \
-                      claimed, and this is a work Box."
+            message: "exec_in_box, start_box and close_box serve only an agent place that a \
+                      task has claimed, and this is a work Box."
                 .to_owned(),
             hints: vec![],
             context: vec![],
@@ -132,6 +132,12 @@ fn box_tool(frame: &Value, out: &mut dyn Write) -> Response {
     if req["call"]["tool"] == "exec" {
         write_bytes(out, frame["id"].as_str().unwrap(), b"hi\n").unwrap();
         return Response::ok("exec", Some(json!({"exit": 0})));
+    }
+    if req["call"]["tool"] == "close" {
+        return Response::ok(
+            "close",
+            Some(json!({"box": {"name": req["call"]["target"]}})),
+        );
     }
     Response::ok("start", Some(json!({"name": req["call"]["name"]})))
 }
@@ -231,7 +237,7 @@ fn only_the_moor_server_with_report_step_and_the_place_tools_is_served() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["exec_in_box", "report_step", "start_box"],
+        ["close_box", "exec_in_box", "report_step", "start_box"],
         "{tools:?}"
     );
     let report = tools.iter().find(|t| t["name"] == "report_step").unwrap();
@@ -490,6 +496,31 @@ fn start_box_sends_the_stamped_box_and_its_repos() {
 }
 
 #[test]
+fn close_box_sends_the_stamped_box_and_the_target_with_no_force() {
+    let l = listener(true);
+    let result = l.call(Some("41"), "close_box", json!({"box": "w"}));
+    assert_ne!(result["isError"], true, "{result}");
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "box-tool", "from": 41, "call": {"tool": "close", "target": "w"}})
+    );
+    let tools = l.rpc(Some("41"), "tools/list", json!({}));
+    let close = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "close_box")
+        .unwrap();
+    let args: Vec<&str> = close["inputSchema"]["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(args, ["box"], "{close}");
+}
+
+#[test]
 fn a_place_tool_call_the_gate_cannot_send_reaches_no_controller() {
     let l = listener(true);
     let calls = [
@@ -511,6 +542,8 @@ fn a_place_tool_call_the_gate_cannot_send_reaches_no_controller() {
             json!({"name": "n", "repos": ["not a repo"]}),
         ),
         (None, "start_box", json!({"name": "n", "repos": ["o/a"]})),
+        (None, "close_box", json!({"box": "w"})),
+        (Some("7"), "close_box", json!({"box": "Not A Name!"})),
     ];
     for (header, tool, args) in calls {
         let result = l.call(header, tool, args.clone());
@@ -525,6 +558,7 @@ fn a_work_box_agent_sees_the_place_tools_and_is_refused_by_the_controller() {
     for (tool, args) in [
         ("exec_in_box", json!({"box": "w", "command": "ls"})),
         ("start_box", json!({"name": "n", "repos": ["o/a"]})),
+        ("close_box", json!({"box": "w"})),
     ] {
         let result = l.call(Some("9"), tool, args);
         assert_eq!(result["isError"], true, "{result}");

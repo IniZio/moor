@@ -1,5 +1,5 @@
-//! The tools of a claimed agent place: `exec_in_box` and `start_box`, each sent as `box-tool`
-//! for the Box the Proxy named.
+//! The tools of a claimed agent place: `exec_in_box`, `start_box` and `close_box`, each sent as
+//! `box-tool` for the Box the Proxy named.
 
 use moor_client::Client;
 use moor_core::name::{BoxName, ForgeRepo};
@@ -35,6 +35,13 @@ struct StartArgs {
     name: String,
     /// The repos, each `owner/name`, the Box's own first. Only your task's repos.
     repos: Vec<String>,
+}
+
+/// Arguments of `close_box`.
+#[derive(Deserialize, JsonSchema)]
+struct CloseArgs {
+    /// The work Box's name, one of your user's open Boxes.
+    r#box: String,
 }
 
 #[tool_router(router = place_router, vis = "pub(super)")]
@@ -79,7 +86,30 @@ impl BoxTools {
         let call = start_call(&args);
         let controller = self.controller.clone();
         let sent = box_of(&context).and_then(|from| {
-            call.map(|call| move || run_start(&controller, BoxToolReq { from, call }))
+            call.map(|call| move || run_answered(&controller, BoxToolReq { from, call }))
+        });
+        match sent {
+            Ok(run) => done(tokio::task::spawn_blocking(run).await),
+            Err(why) => failed(why),
+        }
+    }
+
+    /// Closes one of the caller place's user's work Boxes.
+    #[tool(
+        description = "Close one of your user's work Boxes when its work is done. Only from an \
+                       agent place a task has claimed. It is refused while the Box holds work \
+                       that is not pushed: push it with exec_in_box, then close again. There is \
+                       no force. Answers once the Box is closed."
+    )]
+    async fn close_box(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<CloseArgs>,
+    ) -> CallToolResult {
+        let call = close_call(&args);
+        let controller = self.controller.clone();
+        let sent = box_of(&context).and_then(|from| {
+            call.map(|call| move || run_answered(&controller, BoxToolReq { from, call }))
         });
         match sent {
             Ok(run) => done(tokio::task::spawn_blocking(run).await),
@@ -110,6 +140,13 @@ fn start_call(args: &StartArgs) -> Result<BoxCall, String> {
         name: BoxName::parse_allow_bare(&args.name).map_err(|e| e.to_string())?,
         repo,
         also: repos.collect::<Result<_, _>>()?,
+    })
+}
+
+/// The `close` call `args` ask for.
+fn close_call(args: &CloseArgs) -> Result<BoxCall, String> {
+    Ok(BoxCall::Close {
+        target: BoxName::parse_allow_bare(&args.r#box).map_err(|e| e.to_string())?,
     })
 }
 
@@ -155,8 +192,8 @@ fn run_exec(controller: &Client, req: BoxToolReq) -> Result<Value, String> {
     }))
 }
 
-/// Runs the `start` `req`; the controller's answer.
-fn run_start(controller: &Client, req: BoxToolReq) -> Result<Value, String> {
+/// Runs the `start` or `close` `req`; the controller's answer.
+fn run_answered(controller: &Client, req: BoxToolReq) -> Result<Value, String> {
     let reply = controller
         .request(ControllerRequest::BoxTool(req), |_| {})
         .map_err(|e| format!("moor could not be reached ({e})"))?;

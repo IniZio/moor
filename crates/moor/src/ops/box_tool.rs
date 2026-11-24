@@ -1,17 +1,17 @@
 //! The Box tools of an agent place: `exec_in_box` runs a command in one of its user's work Boxes,
-//! and `start_box` starts a Box for that user on its task's repos, tied to the task and running
-//! no agent.
+//! `start_box` starts a Box for that user on its task's repos, tied to the task and running no
+//! agent, and `close_box` closes one of that user's work Boxes.
 //!
 //! The gate's Box listener sends them as `box-tool`, naming the place from the Proxy's
 //! `X-Moor-Box` and asserting no identity. They answer only a place a task has claimed, act as
 //! that place's user and no one else, and reach only that user's work Boxes. Anything else is
-//! refused before a command runs or a Box starts.
+//! refused before a command runs, a Box starts or a Box closes.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::request::{BoxCall, BoxToolReq};
 use moor_core::user::{Caller, Identity, UserId};
-use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, ExecReq, StartReq};
+use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind, ExecReq, StartReq};
 
 use super::authz::NOT_YOURS;
 use crate::cx::Cx;
@@ -26,15 +26,15 @@ pub(crate) const FRONT_ONLY: &str =
 const NO_IDENTITY: &str = "box-tool acts for the place the Proxy named, so it asserts no identity";
 
 /// The refusal for a call from a work Box's agent.
-const FROM_WORK_BOX: &str = "exec_in_box and start_box serve only an agent place that a task \
-     has claimed, and this is a work Box. Run the command here instead.";
+const FROM_WORK_BOX: &str = "exec_in_box, start_box and close_box serve only an agent place \
+     that a task has claimed, and this is a work Box. Run the command here instead.";
 
 /// The refusal for a call from a place no task has claimed yet.
-const FROM_IDLE_PLACE: &str =
-    "exec_in_box and start_box serve an agent place once a task claims it, and none has yet";
+const FROM_IDLE_PLACE: &str = "exec_in_box, start_box and close_box serve an agent place once a \
+     task claims it, and none has yet";
 
 /// The refusal for a target that is an agent place.
-const ONLY_WORK_BOXES: &str = "exec_in_box reaches only work Boxes, not an agent place";
+const ONLY_WORK_BOXES: &str = "exec_in_box and close_box reach only work Boxes, not an agent place";
 
 /// What a place's call runs, once it is allowed.
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +43,8 @@ pub(crate) enum Plan {
     Exec(ExecReq),
     /// A start for the place's user on the claim's repos, tied to the place and running no agent.
     Start(Box<StartReq>),
+    /// The close of a work Box of the place's user, named by id. It carries no `force`.
+    Close(CloseReq),
 }
 
 /// A call the place may make, and whom it acts as.
@@ -117,6 +119,10 @@ pub(crate) fn admit(
                 ..StartReq::named(name.clone())
             }))
         }
+        BoxCall::Close { target } => Plan::Close(CloseReq {
+            target: BoxTarget::Id(closable_box(store, user, target)?),
+            force: false,
+        }),
     };
     Ok(Admitted { user, who, plan })
 }
@@ -147,6 +153,28 @@ fn work_box(store: &Store, user: UserId, target: &BoxName) -> Result<BoxId, Comm
         BoxKind::Work => Ok(row.id),
         BoxKind::Place(_) => Err(refused(ONLY_WORK_BOXES)),
     }
+}
+
+/// The id of `target`, an open work Box of `user` that a close may reach. One that closed
+/// already is named so, since the end state the caller asked for is the one it finds.
+fn closable_box(store: &Store, user: UserId, target: &BoxName) -> Result<BoxId, CommandError> {
+    let open = work_box(store, user, target);
+    if open.is_err() && closed_work_box(store, user, target)? {
+        return Err(refused(format!(
+            "Box {} is already closed",
+            target.as_str()
+        )));
+    }
+    open
+}
+
+/// Whether the newest Box named `target` is a closed work Box of `user`.
+fn closed_work_box(store: &Store, user: UserId, target: &BoxName) -> Result<bool, CommandError> {
+    Ok(store.latest_box_by_name(target)?.is_some_and(|row| {
+        row.user == Some(user)
+            && matches!(row.kind, BoxKind::Work)
+            && row.lifecycle == BoxLifecycle::Closed
+    }))
 }
 
 #[cfg(test)]

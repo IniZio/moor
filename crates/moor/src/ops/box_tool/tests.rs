@@ -2,15 +2,18 @@
 
 use std::collections::BTreeSet;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
 use moor_core::domain::place::Claim;
 use moor_core::request::{BoxCall, BoxExecSecs, BoxToolReq, Grant, Pins};
+use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Pipes;
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind};
+use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind, ExitClass, Request};
 
 use super::{admit, Admitted, Plan};
+use crate::ops::common::boxwork;
 use crate::ops::run_fixture::{ready_with, Fx};
 use crate::testing::cx::{new_idle_place, requester, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
@@ -94,7 +97,31 @@ fn start(from: BoxId, repo: &str, also: &[&str]) -> BoxToolReq {
     }
 }
 
+/// A close of `target`, from Box `from`.
+fn close(from: BoxId, target: &str) -> BoxToolReq {
+    BoxToolReq {
+        from,
+        call: BoxCall::Close {
+            target: name(target),
+        },
+    }
+}
+
 impl World {
+    /// What the work Box's probe reads at close: `text`, as `moor close` would find it.
+    fn probe(&self, text: &str) {
+        let store = self.f.cx.store().unwrap();
+        let row = store.box_row(self.f.id).unwrap().unwrap();
+        let hands = row.hands.as_ref().unwrap();
+        let plan = boxwork::plan(&self.f.cx, &row, hands).ok().unwrap();
+        let handle = hands.handle.as_ref().unwrap();
+        for step in &plan.steps {
+            if let BoxStep::Peek(path) = step {
+                self.f.driver.set_peek_text(handle.as_str(), path, text);
+            }
+        }
+    }
+
     fn admit(&self, req: &BoxToolReq) -> Result<Admitted, String> {
         self.admit_as(&Ok(gate()), None, req)
     }
@@ -126,7 +153,7 @@ fn a_box_tool_from_a_claimed_place_execs_in_its_user_s_work_box() {
     assert_eq!(admitted.who, requester());
     let req = match admitted.plan {
         Plan::Exec(req) => Some(req),
-        Plan::Start(_) => None,
+        Plan::Start(_) | Plan::Close(_) => None,
     }
     .unwrap();
     assert_eq!(req.target, BoxTarget::Id(w.f.id));
@@ -212,7 +239,7 @@ fn a_start_from_a_place_ties_the_box_to_the_task_and_starts_no_agent() {
     let admitted = w.admit(&start(w.place, "o/n", &[])).unwrap();
     let req = match admitted.plan {
         Plan::Start(req) => Some(req),
-        Plan::Exec(_) => None,
+        Plan::Exec(_) | Plan::Close(_) => None,
     }
     .unwrap();
     assert_eq!(req.task, Some(w.place));
@@ -226,7 +253,7 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
     let admitted = w.admit(&start(w.place, "o/m", &["o/n"])).unwrap();
     let req = match admitted.plan {
         Plan::Start(req) => Some(req),
-        Plan::Exec(_) => None,
+        Plan::Exec(_) | Plan::Close(_) => None,
     }
     .unwrap();
     assert_eq!(req.repo, Some(ForgeRepo::new("o", "m")));
@@ -239,4 +266,95 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
         "only this task's repos (o/n, o/m), not o/x",
     );
     refused_with(w.admit(&start(w.place, "o/n", &["o/x"])), "not o/x");
+}
+
+/// The close `admitted` runs.
+fn close_req(admitted: Admitted) -> CloseReq {
+    match admitted.plan {
+        Plan::Close(req) => Some(req),
+        Plan::Exec(_) | Plan::Start(_) => None,
+    }
+    .unwrap()
+}
+
+#[test]
+fn a_close_from_the_place_closes_its_user_s_work_box() {
+    let w = world();
+    w.probe("ahead=0 dirty=0");
+    let admitted = w.admit(&close(w.place, "t")).unwrap();
+    assert_eq!(admitted.user, REQUESTER_USER);
+    let who = admitted.who.clone();
+    let grant = Grant {
+        viewer: Viewer::User(admitted.user),
+        pins: Pins::new(),
+    };
+    let req = close_req(admitted);
+    assert_eq!(req.target, BoxTarget::Id(w.f.id));
+    assert!(!req.force);
+    let reply = Moor::from_cx(w.f.cx)
+        .granted(grant)
+        .acting_as(who)
+        .call(Request::Close(req));
+    assert_eq!(reply.class, ExitClass::Ok, "{:?}", reply.error);
+    let value = reply.value.unwrap();
+    assert_eq!(
+        value.pointer("/box/lifecycle"),
+        Some(&serde_json::json!("closed")),
+        "{value}"
+    );
+}
+
+#[test]
+fn a_close_of_another_user_s_box_is_refused_as_not_yours() {
+    let w = world();
+    refused_with(w.admit(&close(w.place, "theirs")), "not your Box");
+    refused_with(w.admit(&close(w.place, "nowhere")), "not your Box");
+}
+
+#[test]
+fn a_close_of_a_place_is_refused() {
+    let w = world();
+    refused_with(w.admit(&close(w.place, "idle")), "only work Boxes");
+    refused_with(w.admit(&close(w.place, "p")), "only work Boxes");
+}
+
+#[test]
+fn a_close_from_a_work_box_is_refused() {
+    let w = world();
+    refused_with(w.admit(&close(w.f.id, "t")), "this is a work Box");
+}
+
+#[test]
+fn a_close_from_an_idle_place_is_refused() {
+    let w = world();
+    refused_with(w.admit(&close(w.idle, "t")), "once a task claims it");
+}
+
+#[test]
+fn unpushed_work_is_refused_and_force_is_not_offered() {
+    let w = world();
+    w.probe("ahead=1 dirty=2");
+    let req = close_req(w.admit(&close(w.place, "t")).unwrap());
+    assert!(!req.force);
+    let e = crate::ops::close::requested(&w.f.cx, &req).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused);
+    assert!(
+        e.error.to_string().contains("1 unpushed commit"),
+        "{}",
+        e.error
+    );
+    let row = w.f.cx.store().unwrap().box_row(w.f.id).unwrap().unwrap();
+    assert_ne!(row.lifecycle, BoxLifecycle::Closed);
+    let wire = r#"{"from":3,"call":{"tool":"close","target":"t","force":true}}"#;
+    assert!(serde_json::from_str::<BoxToolReq>(wire).is_err());
+}
+
+#[test]
+fn a_second_close_names_the_box_as_already_closed() {
+    let w = world();
+    w.probe("ahead=0 dirty=0");
+    let req = close_req(w.admit(&close(w.place, "t")).unwrap());
+    crate::ops::close::requested(&w.f.cx, &req).unwrap();
+    refused_with(w.admit(&close(w.place, "t")), "Box t is already closed");
+    refused_with(w.admit(&close(w.place, "theirs")), "not your Box");
 }

@@ -71,7 +71,7 @@ impl Moor {
     }
 
     /// Allows the `box-tool` `req` from `caller`, asserting `asserted`: what the request may
-    /// see, whom it acts as, and the `exec` or `start` it runs.
+    /// see, whom it acts as, and the `exec`, `start` or `close` it runs.
     ///
     /// # Errors
     /// The refusal or store failure the request answers with instead.
@@ -89,6 +89,7 @@ impl Moor {
         let request = match admitted.plan {
             Plan::Exec(exec) => Request::Exec(exec),
             Plan::Start(start) => Request::Start(*start),
+            Plan::Close(close) => Request::Close(close),
         };
         Ok((grant, admitted.who, request))
     }

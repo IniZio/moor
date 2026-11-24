@@ -1,7 +1,7 @@
 //! The Box-facing listener: one MCP server, `moor`, with `report_step` for the agent in a Box to
-//! report the step of its workflow run, and `exec_in_box` and `start_box` for the agent in a
-//! claimed agent place to use its user's work Boxes. Every Box lists all three; the controller
-//! refuses the place tools to any Box but a claimed place.
+//! report the step of its workflow run, and `exec_in_box`, `start_box` and `close_box` for the agent
+//! in a claimed agent place to use its user's work Boxes. Every Box lists all four; the
+//! controller refuses the place tools to any Box but a claimed place.
 //!
 //! A Box holds no token. The shared Proxy routes `moor.moor.internal` to this listener and
 //! stamps `X-Moor-Box: <box id>`, dropping any such header the Box sent. Only the Proxy reaches
