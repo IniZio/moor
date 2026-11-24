@@ -515,6 +515,18 @@ const EvidenceSchema = v.object({
 	href: v.string(),
 });
 
+/** A work Box the place of a question's task started: what the task page says of it in one line, and the files it left. A state this page does not know is shown as sent. */
+const TaskBoxSchema = v.object({
+	name: v.string(),
+	repo: v.string(),
+	started_at: v.string(),
+	/** Milliseconds from start until the Box was ready; none before it is. */
+	ready_ms: v.nullish(v.number()),
+	state: v.string(),
+	closed_at: v.nullish(v.string()),
+	artifacts: v.optional(v.array(EvidenceSchema), []),
+});
+
 const BoxDetailFields = v.object({
 	...BoxRowFields.entries,
 	timeline: v.array(EntrySchema),
@@ -525,6 +537,8 @@ const BoxDetailFields = v.object({
 	plan_first: v.optional(v.boolean(), false),
 	/** Whether a workflow run made this Box. */
 	from_workflow: v.optional(v.boolean(), false),
+	/** The work Boxes a question's place started, oldest first; none from a controller that predates them. */
+	task_boxes: v.optional(v.array(TaskBoxSchema), []),
 });
 
 const BoxDetailSchema = v.pipe(BoxDetailFields, v.transform(spoken));
@@ -538,6 +552,7 @@ export type Entry = v.InferOutput<typeof EntrySchema>;
 export type Tool = v.InferOutput<typeof ToolSchema>;
 export type Clipped = v.InferOutput<typeof BodySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
+export type TaskBox = v.InferOutput<typeof TaskBoxSchema>;
 export type Tally = v.InferOutput<typeof TallySchema>;
 
 /** The person's open tasks, or every person's with `everyone`. */

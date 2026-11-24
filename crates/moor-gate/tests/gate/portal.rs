@@ -70,6 +70,21 @@ fn workflows() -> Response {
     Response::ok("x", Some(json!({"workflows": [flow]})))
 }
 
+/// A question's task whose place started a work Box, as `show` sends it.
+fn place(name: &str) -> Response {
+    let mut boxed = row(name, "ready", "done", "answered", Value::Null);
+    boxed["task_at"] = json!("2026-11-24T10:58:00Z");
+    let work = json!({"name": "web/mcp-1a2b3c4d", "repo": "acme/web",
+        "started_at": "2026-11-24T11:05:10Z", "ready_ms": 38000, "state": "closed",
+        "closed_at": "2026-11-24T11:11:12Z",
+        "artifacts": [{"name": "fee line.png", "version": 1, "kind": "screenshot",
+            "content_type": "image/png", "size": 10, "sha256": "0",
+            "created_at": "2026-11-24T11:10:00Z"}]});
+    let shown = json!({"box": boxed, "events": [], "timeline": [], "artifacts": [],
+        "task_boxes": [work]});
+    Response::ok("x", Some(shown))
+}
+
 /// What the fake controller answers `show` and `artifacts`.
 pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
     let mine = who.contains(OWNER);
@@ -115,6 +130,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
                          "created_at": "2026-11-18T10:00:00Z"}]})),
             )
         }
+        ("show", Some(name)) if mine && name == "web/place" => place(name),
         ("show", Some(name)) if mine && name == "nightly/w1-202611190600" => failed_box(name),
         ("show", Some(name)) => refusal(&format!("no Box {name}")),
         ("retry", Some("nightly/w1-202611190600")) if mine => {
@@ -180,6 +196,36 @@ fn one_box_has_its_timeline_and_artifacts_and_hostile_text_stays_inert_json() {
         "an SVG can carry script, so it is never inline"
     );
     assert!(art[1]["href"].as_str().unwrap().contains("x+y%26z.svg"));
+}
+
+#[test]
+fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-9");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fplace", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let detail = json_of(&reply);
+    let work = &detail["task_boxes"][0];
+    assert_eq!(work["name"], "web/mcp-1a2b3c4d");
+    assert_eq!(work["repo"], "acme/web");
+    assert_eq!(work["ready_ms"], 38000);
+    assert_eq!(work["state"], "closed");
+    assert_eq!(work["closed_at"], "2026-11-24T11:11:12Z");
+    let art = &work["artifacts"][0];
+    assert_eq!(art["image"], true);
+    assert_eq!(
+        art["href"], "/account/api/box/artifact?box=web%2Fmcp-1a2b3c4d&name=fee+line.png&version=1",
+        "the picture is served by the work Box, not by the place"
+    );
+    assert_eq!(detail["artifacts"], json!([]));
+}
+
+#[test]
+fn a_box_with_no_work_boxes_sends_an_empty_list() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-10");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fask", Some(&cookie));
+    assert_eq!(json_of(&reply)["task_boxes"], json!([]));
 }
 
 #[test]

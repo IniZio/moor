@@ -23,6 +23,7 @@ use crate::artifact::{self, Refusal, Wanted};
 use crate::artifacts_http::Body;
 use crate::{log, tools, Gate};
 use row::{summary, Row};
+use task_boxes::TaskBox;
 
 mod again;
 mod answer;
@@ -35,6 +36,7 @@ mod retry;
 mod row;
 mod start;
 mod steer;
+mod task_boxes;
 
 /// The events a Box page reads: the most the controller keeps in one window.
 const EVENTS: u32 = 500;
@@ -152,6 +154,9 @@ struct Shown {
     timeline: Option<Value>,
     /// The latest version of each artifact, when asked for.
     artifacts: Option<Vec<ArtifactView>>,
+    /// The work Boxes a question's place started; none sent for any other Box.
+    #[serde(default)]
+    task_boxes: Vec<TaskBox>,
 }
 
 /// The pull request's page, rebuilt from the repo the controller knows and a number.
@@ -225,6 +230,15 @@ fn href(boxed: &str, name: &str, version: u32) -> String {
     format!("/account/api/box/artifact?{query}")
 }
 
+/// One artifact of Box `boxed` as a page reads it, with the path that serves it.
+fn evidence(boxed: &str, a: &ArtifactView) -> Value {
+    json!({"name": a.name, "version": a.version, "kind": a.kind,
+           "content_type": a.content_type, "size": a.size,
+           "created_at": a.created_at,
+           "image": IMAGES.contains(&a.content_type.as_str()),
+           "href": href(boxed, &a.name, a.version)})
+}
+
 /// Answers one Box: its head, timeline and artifacts.
 pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query: &str) {
     let Some(name) = param(query, "box").and_then(|b| BoxName::parse_allow_bare(&b).ok()) else {
@@ -258,17 +272,15 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         .artifacts
         .iter()
         .flatten()
-        .map(|a| {
-            json!({"name": a.name, "version": a.version, "kind": a.kind,
-                   "content_type": a.content_type, "size": a.size,
-                   "created_at": a.created_at,
-                   "image": IMAGES.contains(&a.content_type.as_str()),
-                   "href": href(boxed, &a.name, a.version)})
-        })
+        .map(|a| evidence(boxed, a))
         .collect();
     if let Some(map) = view.as_object_mut() {
         map.insert("timeline".to_owned(), shown.timeline.unwrap_or(json!([])));
         map.insert("artifacts".to_owned(), json!(artifacts));
+        map.insert(
+            "task_boxes".to_owned(),
+            task_boxes::shown(&shown.task_boxes),
+        );
         let run_again = again::failed_run_of(gate, session, shown.boxed.as_ref());
         map.insert("run_again".to_owned(), run_again);
         map.insert("from_workflow".to_owned(), json!(again::names_a_run(boxed)));
