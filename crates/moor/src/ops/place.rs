@@ -73,7 +73,7 @@ enum Standing {
     Waiting,
     /// Its setup or its agent's launch failed; it waits for a person.
     Failed,
-    /// Its machine is gone.
+    /// Its machine is gone or stopped.
     Lost,
 }
 
@@ -88,6 +88,10 @@ impl Standing {
             Self::Lost
         } else if row.lifecycle == BoxLifecycle::SetupFailed || row.launch_failure.is_some() {
             Self::Failed
+        } else if row.asleep() {
+            // Only a person or a stop behind moor sleeps an unclaimed place, as the sleep pass
+            // never does, and a task would wait for the wake.
+            Self::Lost
         } else {
             Self::Waiting
         }
@@ -202,7 +206,7 @@ fn close_lost(cx: &Cx, row: &BoxRow) -> String {
     });
     match closed {
         Ok(_) => format!(
-            "closed agent place {}: its machine was lost",
+            "closed agent place {}: its machine was lost or stopped",
             row.name.as_str()
         ),
         Err(e) => format!(

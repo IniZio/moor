@@ -129,6 +129,21 @@ fn a_lost_idle_place_is_closed_and_replaced() {
 }
 
 #[test]
+fn an_idle_place_stopped_behind_moor_is_closed_and_replaced() {
+    let w = listed();
+    let keeper = Keeper::default();
+    pass(&w, &keeper);
+    let stopped = the_place(&w).id;
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(stopped).hands_input(HandsInc::FIRST, HandsInput::Sleep))
+        .unwrap();
+    pass(&w, &keeper);
+    assert_ne!(the_place(&w).id, stopped);
+    assert_eq!(closed_reason(&w, stopped), "place_lost");
+}
+
+#[test]
 fn a_failed_place_start_is_not_retried_until_it_is_closed() {
     let w = listed();
     let keeper = Keeper::default();

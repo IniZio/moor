@@ -418,7 +418,7 @@ agent_places:
 
 The controller keeps one place waiting for each listed user. Every 10 seconds it starts a place for
 a listed user who has none. So a place appears soon after the controller starts, and a new one
-follows each claim. It closes a place whose machine is gone and starts another. It never starts a
+follows each claim. It closes a place whose machine is gone or stopped, and starts another. It never starts a
 place for a user who is not listed. A restarted controller finds the place that stands.
 
 A start that fails is not retried. If a place fails in setup or when its agent launches, it stays
