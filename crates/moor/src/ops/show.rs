@@ -9,7 +9,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::view::gate::GateView;
 use moor_core::view::{
     ApprovalView, ArtifactView, AttentionView, BoxView, EventView, HeldMachineView,
-    MachineHoldState, PaneView, ReportView, SaidView, ShowView,
+    MachineHoldState, PaneView, ReportView, SaidView, ShowView, TaskBoxView,
 };
 use moor_core::workflow::{RunState, StepKind};
 use moor_core::{progress, BoxId, ErrorKind, ShowReq};
@@ -96,6 +96,35 @@ fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, Comma
         .iter()
         .map(artifact_view)
         .collect())
+}
+
+/// The work Boxes the agent of place `place` started, oldest first, as the task shows them.
+fn task_boxes_of(store: &Store, place: &BoxRow) -> Result<Vec<TaskBoxView>, CommandError> {
+    if !matches!(place.kind, BoxKind::Place(PlaceState::Claimed(_))) {
+        return Ok(Vec::new());
+    }
+    store
+        .task_boxes(place.id)?
+        .into_iter()
+        .map(|t| {
+            let millis = |at: Option<Ts>| at.map(Ts::as_millis);
+            let ready = millis(t.ready_at).zip(Some(t.row.created_at.as_millis()));
+            Ok(TaskBoxView {
+                name: t.row.name.as_str().to_owned(),
+                repo: t
+                    .row
+                    .repo
+                    .as_ref()
+                    .map(|r| r.repo.to_string())
+                    .unwrap_or_default(),
+                started_at: rfc3339(t.row.created_at),
+                ready_ms: ready.and_then(|(ready, start)| u64::try_from(ready - start).ok()),
+                state: t.row.lifecycle.into(),
+                closed_at: t.closed_at.map(rfc3339),
+                artifacts: artifacts_of(store, t.row.id)?,
+            })
+        })
+        .collect()
 }
 
 /// The latest version of each of the Box's Reports as views.
@@ -221,16 +250,12 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let timeline = rows
         .as_deref()
         .map(|rows| timeline_of(cx, store, &row, rows, req.transcript));
-    let artifacts = if req.artifacts {
-        Some(artifacts_of(store, row.id)?)
-    } else {
-        None
-    };
-    let reports = if req.reports {
-        Some(reports_of(store, row.id)?)
-    } else {
-        None
-    };
+    let artifacts = req
+        .artifacts
+        .then(|| artifacts_of(store, row.id))
+        .transpose()?;
+    let reports = req.reports.then(|| reports_of(store, row.id)).transpose()?;
+    let task_boxes = task_boxes_of(store, &row)?;
     Ok(ShowView {
         boxes: None,
         boxed: Some(detail),
@@ -239,6 +264,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         reports,
         artifacts,
         timeline,
+        task_boxes,
     })
 }
 
@@ -328,6 +354,7 @@ fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, Com
         reports: None,
         artifacts: None,
         timeline: None,
+        task_boxes: Vec::new(),
     })
 }
 

@@ -79,6 +79,7 @@ mod runs;
 mod sealed;
 mod select;
 mod sessions;
+mod task_boxes;
 #[cfg(test)]
 mod tests;
 mod ties;

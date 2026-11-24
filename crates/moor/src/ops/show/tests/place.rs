@@ -67,7 +67,7 @@ fn a_claimed_place_is_listed_like_any_task() {
 }
 
 /// Claimed place `name` of the task that asked `where` of `o/n` and `o/m` at 2023-11-14 22:13:20.
-fn claimed(cx: &crate::cx::Cx, name: &str) -> moor_core::BoxId {
+pub(super) fn claimed(cx: &crate::cx::Cx, name: &str) -> moor_core::BoxId {
     let claim = Claim {
         repo: ForgeRepo::new("o", "n"),
         also: vec![ForgeRepo::new("o", "m")],
@@ -102,7 +102,7 @@ fn steered(cx: &crate::cx::Cx, id: moor_core::BoxId, message: &str) {
 }
 
 /// Records that `kind` happened to Box `id` at `ts`.
-fn event(
+pub(super) fn event(
     cx: &crate::cx::Cx,
     id: moor_core::BoxId,
     (kind, payload): (&str, serde_json::Value),
