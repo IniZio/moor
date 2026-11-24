@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { type BoxDetail, boxAnswer, boxGet, type Needs, type Pick, runAnswer, failure, toError, workflowGet } from './api';
+import { AskedTask, askedPollMs } from './AskedTask';
 import { ChangesTab, changesLabel } from './Changes';
 import { HeaderActions } from './Ending';
 import { GateCard } from './Gates';
@@ -205,7 +206,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 }
 
 export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: string }) {
-	const { value, error, now, reload } = usePoll(() => boxGet(box), `box:${box}`);
+	const { value, error, now, reload } = usePoll(() => boxGet(box), `box:${box}`, askedPollMs);
 	if (!value) {
 		return (
 			<div class="t-box">
@@ -241,6 +242,19 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 	const { needs, owner } = detail;
 	const asked = detail.timeline.find((e) => e.class === 'you')?.at;
 	if (owner) return <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
+	const card =
+		detail.state !== 'needs_you' ? null : needs?.plan ? (
+			<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
+		) : needs ? (
+			<NeedsCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
+		) : (
+			<div class="t-wait" role="region" aria-label="Your input is needed">
+				<div class="t-wait-h">Your input is needed</div>
+				<p class="t-wait-q">{detail.line}</p>
+				<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
+			</div>
+		);
+	if (detail.task_at) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} />;
 	return (
 		<div class="t-box">
 			<TaskHead
@@ -251,18 +265,7 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 				pr={<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />}
 			/>
 			{error && <p class="notice danger" role="alert">{error}</p>}
-			{detail.state === 'needs_you' &&
-				(needs?.plan ? (
-					<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
-				) : needs ? (
-					<NeedsCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
-				) : (
-					<div class="t-wait" role="region" aria-label="Your input is needed">
-						<div class="t-wait-h">Your input is needed</div>
-						<p class="t-wait-q">{detail.line}</p>
-						<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
-					</div>
-				))}
+			{card}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			{detail.stale && <p class="t-stalebar">No event for over 30 minutes. {detail.line}</p>}
 			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} wait={detail.state === 'needs_you' ? needs?.gate : null} /> : null}

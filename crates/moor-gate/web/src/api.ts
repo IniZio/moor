@@ -33,6 +33,8 @@ const AccountSchema = v.object({
 	connect: v.object({ mcp_url: v.nullable(v.string()), server_url: v.string() }),
 	/** The agent profile repo, `https://github.com/OWNER/NAME[#REF]`, when one is set. */
 	profile: v.nullish(v.string()),
+	/** Whether the person's sends are questions an agent place answers, with no work Box. */
+	asks: v.optional(v.boolean(), false),
 });
 
 const RepoConfigSchema = v.object({
@@ -454,6 +456,8 @@ const BoxRowFields = v.object({
 	retryable: v.optional(v.boolean(), false),
 	/** Who the task is for, when it is another person's: read-only here. */
 	owner: v.nullish(v.string()),
+	/** When the task was asked, for a question's task, which has no work Box behind it. */
+	task_at: v.nullish(v.string()),
 });
 
 const BoxRowSchema = v.pipe(BoxRowFields, v.transform(spoken));
