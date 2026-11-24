@@ -3,9 +3,11 @@ import type { ComponentChildren } from 'preact';
 import type { BoxDetail } from './api';
 import { HeaderActions } from './Ending';
 import { FailedCard } from './Retry';
-import { POLL_MS, Timeline } from './Portal';
+import { PlaceStory } from './PlaceStory';
+import { POLL_MS } from './Portal';
 import { Composer } from './Steer';
 import { TaskHead } from './TaskHead';
+import './place.css';
 
 /** How often the page of a task asked a moment ago looks again: the person is waiting on the answer. */
 const FAST_MS = 1000;
@@ -19,10 +21,10 @@ export function askedPollMs(detail: Pick<BoxDetail, 'task_at'> | null, now: numb
 	return now - asked < YOUNG_MS ? FAST_MS : POLL_MS;
 }
 
-/** A question's task: what it was asked and what the agent said, and a box to write more in. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show. */
-export function AskedTask({ detail, error, now, csrf, reload, card = null }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren }) {
+/** A question's task: the conversation, and a box to write more in, with `you` as the name over the person's messages. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show. */
+export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You' }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string }) {
 	return (
-		<div class="t-box">
+		<div class="t-box t-place">
 			<TaskHead t={detail} now={now} actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />} />
 			{error && (
 				<p class="notice danger" role="alert">
@@ -32,9 +34,9 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null }: { d
 			{card}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			<section>
-				<Timeline detail={detail} />
+				<PlaceStory detail={detail} you={you} />
 			</section>
-			<Composer detail={detail} csrf={csrf} onSent={reload} />
+			<Composer detail={detail} csrf={csrf} onSent={reload} plain />
 		</div>
 	);
 }

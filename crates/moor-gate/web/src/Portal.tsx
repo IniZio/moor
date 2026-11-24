@@ -106,7 +106,7 @@ function blocks(entries: Entry[]): Block[] {
 	return out;
 }
 
-function clock(iso: string): string {
+export function clock(iso: string): string {
 	const d = new Date(iso);
 	return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
