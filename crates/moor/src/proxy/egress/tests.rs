@@ -562,6 +562,7 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
 mod holder;
 mod logs;
 mod plain;
+mod rebuild;
 mod served;
 mod synced;
 
