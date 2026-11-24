@@ -64,6 +64,19 @@ fn the_clone_a_place_brief_names_passes_the_places_git_rule() {
 }
 
 #[test]
+fn a_place_brief_names_start_box_close_box_and_the_artifacts_dir() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    let place = out.split("Reports are how").next().unwrap_or_default();
+    for word in ["start_box", "exec_in_box", ".moor/artifacts/", "close_box"] {
+        assert!(place.contains(word), "{word} in {place}");
+    }
+    assert!(!render(&input(None)).contains("start_box"));
+}
+
+#[test]
 fn names_no_prompt_or_goal_line() {
     let out = render(&input(None));
     assert!(

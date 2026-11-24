@@ -64,6 +64,12 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     the repos the task names carry the owner's credential through moor's Proxy; any other \
     repo answers 401 or 404. When HTTPS_PROXY is set, do not unset or bypass it. Write only \
     in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
+    When the task needs code run, start a work Box with `start_box` and run commands in it \
+    with `exec_in_box`; they run in the Box's checkout. Save a file the person should see (a \
+    screenshot, a log) in that Box's `.moor/artifacts/`; it shows on the task when the Box \
+    closes. Commit and push from the Box with `git push origin HEAD`, open the pull request \
+    there, and end your final message with its URL. Then close the Box with `close_box`, which \
+    refuses unpushed work.\n\n\
     You may receive follow-up messages (steers) typed into this session.\n\n\
     Decide on your own when you reasonably can, and ask a question only when the choice is \
     the owner's.\n\n";
