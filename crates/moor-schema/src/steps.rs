@@ -47,6 +47,7 @@ mod session_archive;
 mod shared_machines;
 mod suspend_check;
 mod suspend_unchecked;
+mod task_boxes;
 mod user_inbox;
 pub(crate) mod vm_inc;
 mod wanted_effect;
@@ -124,4 +125,5 @@ pub const STEPS: &[Step] = &[
     step("V100__inbox_cleared", inbox_cleared::write),
     step("V101__suspend_unchecked", suspend_unchecked::write),
     step("V102__box_places", box_places::write),
+    step("V103__task_boxes", task_boxes::write),
 ];

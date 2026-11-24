@@ -28,6 +28,7 @@ mod postgres;
 mod session_archive;
 mod shared_machines;
 mod sqlite;
+mod task_boxes;
 mod user_inbox;
 mod vm_inc;
 mod workflow_gates;
