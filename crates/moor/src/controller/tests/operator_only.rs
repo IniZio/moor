@@ -63,8 +63,19 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
         "machine-pair" => json!({"cmd": kind, "op": {"do": "show", "code": "BCDF-GHJK"}}),
         "github-hook" => json!({"cmd": kind, "event": "ping", "body": "{}"}),
+        "box-tool" => json!({"cmd": kind, "from": 1, "call": {
+            "tool": "exec", "target": "b", "command": "ls", "timeout": 30}}),
         _ => return None,
     })
+}
+
+/// The controller config flag a front needs for `kind`, a request it sends for a Box.
+fn front_flag(kind: &str) -> Option<&'static str> {
+    match kind {
+        "step-report" => Some("`step_reports: true`"),
+        "box-tool" => Some("`box_tools: true`"),
+        _ => None,
+    }
 }
 
 /// What a front gets for `kind`, a front-only request it may send with no identity.
@@ -98,8 +109,8 @@ fn every_front_request_but_version_the_webhook_outbox_step_reports_and_pairing_m
             assert_eq!(got["class"], "ok", "{got}");
         } else if kind.starts_with("webhook-claim") || kind.starts_with("webhook-report") {
             refused(&got, "`webhooks: true`");
-        } else if kind == "step-report" {
-            refused(&got, "`step_reports: true`");
+        } else if let Some(flag) = front_flag(kind) {
+            refused(&got, flag);
         } else if let Some(want) = front_value(kind) {
             assert_eq!(got["value"], want, "{got}");
         } else {

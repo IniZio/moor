@@ -172,7 +172,8 @@ machines:
 ### `moor_service`
 
 `moor_service` gives every Box an MCP server named `moor`, where its agent calls
-`report_step` for a workflow step. The Proxy routes `host` to `upstream`, the
+`report_step` for a workflow step. The agent in a claimed agent place also calls
+`exec_in_box` and `start_box` there (see [fronts](fronts.md)). The Proxy routes `host` to `upstream`, the
 gate's Box-facing listener, and stamps `X-Moor-Box`. The Box holds no token.
 `host` defaults to `moor.moor.internal`. The key is off when absent.
 
@@ -392,6 +393,7 @@ fronts:
 | `ports` | empty | TCP ports forwarded from the host's `127.0.0.1` to the front. |
 | `webhooks` | `false` | Whether the front delivers users' webhooks. |
 | `step_reports` | `false` | Whether the front reports a workflow step for the agent in a Box. Only a gate behind the Proxy should have it. |
+| `box_tools` | `false` | Whether the front runs `exec_in_box` and `start_box` for the agent in a claimed agent place, as that place's user. Only a gate behind the Proxy should have it. |
 | `remote.key_file` | none | For a front in another pod, the key its hello presents to `ledger_tls`. |
 
 The gate uses the `authgear` namespace. On Linux, a front the controller runs

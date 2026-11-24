@@ -102,16 +102,16 @@ fn send_exec(
 
 /// One output stream: its first [`OUTPUT_CAP`] bytes, and whether more came.
 #[derive(Default)]
-struct Capped {
+pub(crate) struct Capped {
     /// The bytes kept.
     kept: Vec<u8>,
     /// True once a byte past the cap arrived.
-    cut: bool,
+    pub(crate) cut: bool,
 }
 
 impl Capped {
     /// The kept bytes as text, with invalid UTF-8 replaced.
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         String::from_utf8_lossy(&self.kept).into_owned()
     }
 }

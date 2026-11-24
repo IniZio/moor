@@ -74,6 +74,8 @@ pub struct Env {
     front_webhooks: Arc<BTreeSet<String>>,
     /// The fronts that report steps for the agents in Boxes, by namespace.
     front_step_reports: Arc<BTreeSet<String>>,
+    /// The fronts that run the Box tools for the agents in claimed places, by namespace.
+    front_box_tools: Arc<BTreeSet<String>>,
     /// The emails of the users who may have an agent place, lowercased.
     agent_place_users: Arc<BTreeSet<String>>,
     /// The shortest gap a workflow's cron may have between firings.
@@ -198,6 +200,13 @@ impl Env {
         self
     }
 
+    /// Set the fronts that run the Box tools for the agents in claimed places, by namespace.
+    #[must_use]
+    pub fn with_front_box_tools(mut self, fronts: BTreeSet<String>) -> Self {
+        self.front_box_tools = Arc::new(fronts);
+        self
+    }
+
     /// Set the users who may have an agent place, by lowercased email.
     #[must_use]
     pub fn with_agent_place_users(mut self, users: BTreeSet<String>) -> Self {
@@ -237,6 +246,11 @@ impl Env {
     /// Whether front `ns` reports steps for the agents in Boxes.
     pub(crate) fn front_step_reports(&self, ns: &str) -> bool {
         self.front_step_reports.contains(ns)
+    }
+
+    /// Whether front `ns` runs the Box tools for the agents in claimed places.
+    pub(crate) fn front_box_tools(&self, ns: &str) -> bool {
+        self.front_box_tools.contains(ns)
     }
 
     /// Whether any front reports steps for the agents in Boxes.

@@ -114,6 +114,11 @@ pub struct FrontEntry {
     /// transport. Only a gate behind the Proxy should have it.
     #[serde(default)]
     pub step_reports: bool,
+    /// Whether the front may run `exec_in_box` and `start_box` for the agent in a claimed agent
+    /// place, naming the place from its own transport. Only a gate behind the Proxy should have
+    /// it.
+    #[serde(default)]
+    pub box_tools: bool,
     /// TCP ports a client on the host reaches the front on at `127.0.0.1`, where the front
     /// listens on the same port inside its own network namespace.
     #[serde(default)]
@@ -197,6 +202,16 @@ impl ControllerConfig {
         self.fronts
             .iter()
             .filter(|(_, front)| front.step_reports)
+            .map(|(ns, _)| ns.clone())
+            .collect()
+    }
+
+    /// The namespaces of the fronts that run the Box tools for the agents in claimed places.
+    #[must_use]
+    pub fn box_tool_fronts(&self) -> BTreeSet<String> {
+        self.fronts
+            .iter()
+            .filter(|(_, front)| front.box_tools)
             .map(|(ns, _)| ns.clone())
             .collect()
     }
