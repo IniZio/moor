@@ -60,7 +60,7 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     checkout and no branch, and waits for a task. Each task's first message starts with a \
     `Repos:` line naming the GitHub repos it is about, then a blank line, then the person's \
     message. Read those repos through GitHub: `gh api`, or \
-    `git clone --filter=blob:none https://github.com/OWNER/NAME /tmp/NAME`. Requests for \
+    `git clone --filter=blob:none https://github.com/OWNER/NAME.git /tmp/NAME`. Requests for \
     the repos the task names carry the owner's credential through moor's Proxy; any other \
     repo answers 401 or 404. When HTTPS_PROXY is set, do not unset or bypass it. Write only \
     in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
