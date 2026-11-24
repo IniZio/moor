@@ -1,3 +1,4 @@
+import type { Ref } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, type Needs, type Progress, failure, toError } from './api';
@@ -44,8 +45,92 @@ function queuedWhy(sent: Sent): string {
 	return cause === 'asleep' ? 'Waking the Box. The agent gets it once it is up.' : `Queued while the Box is ${cause}.`;
 }
 
-/** The message box at the bottom of a Box page: Steer or Interrupt, Enter to send, Shift+Enter for a new line. */
-export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: string; onSent: () => void }) {
+type SayState = {
+	/** One field and Send, with no hint or Steer and Interrupt: for a task that has no Box to steer. */
+	plain: boolean;
+	text: string;
+	busy: boolean;
+	error: string;
+	waiting: Waiting[];
+	refusal: string | undefined;
+	how: Mode;
+	asleep: boolean;
+	placeholder: string;
+	hint: string;
+	area: Ref<HTMLTextAreaElement>;
+};
+
+type SayActs = { text: (value: string) => void; mode: (m: Mode) => void; send: () => void };
+
+/** What the message box shows. */
+export function SayView({ s, act }: { s: SayState; act: SayActs }) {
+	return (
+		<div class="t-say" role="region" aria-label="Message the agent">
+			{s.waiting.map((m) => (
+				<div class="t-ev t-you t-queued" key={m.at}>
+					<span class="t-who">You</span>
+					<span class="t-when">queued</span>
+					<span class="t-what">
+						{m.text}
+						<span class="t-queued-why">{m.why}</span>
+					</span>
+				</div>
+			))}
+			{s.refusal ? (
+				<p class="muted t-say-off">{s.refusal}</p>
+			) : (
+				<form
+					onSubmit={(e) => {
+						e.preventDefault();
+						act.send();
+					}}
+				>
+					<div class="t-say-row">
+						<textarea
+							ref={s.area}
+							rows={Math.min(6, Math.max(1, s.text.split('\n').length))}
+							value={s.text}
+							disabled={s.busy}
+							placeholder={s.placeholder}
+							aria-label="Message to the agent"
+							onInput={(e) => act.text(e.currentTarget.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+									e.preventDefault();
+									act.send();
+								}
+							}}
+						/>
+						<button type="submit" class="btn primary" disabled={s.busy}>
+							{s.busy ? 'Sending…' : 'Send'}
+						</button>
+					</div>
+					{!s.plain && (
+						<div class="t-say-foot">
+							<p class="muted t-say-hint">{s.hint}</p>
+							<div class="t-seg" role="radiogroup" aria-label="How to send">
+								{(['steer', 'interrupt'] as const).map((m) => (
+									<label class="t-seg-opt" key={m} title={m === 'steer' ? 'After its current tool call' : 'Stop its turn now'}>
+										<input type="radio" name="say-mode" value={m} checked={s.how === m} disabled={s.busy || (s.asleep && m === 'interrupt')} onChange={() => act.mode(m)} />
+										<span>{m === 'steer' ? 'Steer' : 'Interrupt'}</span>
+									</label>
+								))}
+							</div>
+						</div>
+					)}
+				</form>
+			)}
+			{s.error && (
+				<p class="notice danger" role="alert">
+					{s.error}
+				</p>
+			)}
+		</div>
+	);
+}
+
+/** The message box at the bottom of a Box page: Steer or Interrupt, Enter to send, Shift+Enter for a new line. A `plain` one, for a question's task, is one field and Send. */
+export function Composer({ detail, csrf, onSent, plain = false }: { detail: BoxDetail; csrf: string; onSent: () => void; plain?: boolean }) {
 	const [mode, setMode] = useState<Mode>('steer');
 	const [text, setText] = useDraft(`steer:${detail.box}`);
 	const [busy, setBusy] = useState(false);
@@ -83,65 +168,18 @@ export function Composer({ detail, csrf, onSent }: { detail: BoxDetail; csrf: st
 		}
 	};
 
-	return (
-		<div class="t-say" role="region" aria-label="Message the agent">
-			{waiting.map((m) => (
-				<div class="t-ev t-you t-queued" key={m.at}>
-					<span class="t-who">You</span>
-					<span class="t-when">queued</span>
-					<span class="t-what">
-						{m.text}
-						<span class="t-queued-why">{m.why}</span>
-					</span>
-				</div>
-			))}
-			{refusal ? (
-				<p class="muted t-say-off">{refusal}</p>
-			) : (
-				<form
-					onSubmit={(e) => {
-						e.preventDefault();
-						void send();
-					}}
-				>
-					<div class="t-say-row">
-						<textarea
-							ref={area}
-							rows={Math.min(6, Math.max(1, text.split('\n').length))}
-							value={text}
-							disabled={busy}
-							placeholder={over ? 'Say what to do instead…' : how === 'interrupt' ? 'Interrupt the agent…' : 'Write to the agent…'}
-							aria-label="Message to the agent"
-							onInput={(e) => setText(e.currentTarget.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-									e.preventDefault();
-									void send();
-								}
-							}}
-						/>
-						<button type="submit" class="btn primary" disabled={busy}>
-							{busy ? 'Sending…' : 'Send'}
-						</button>
-					</div>
-					<div class="t-say-foot">
-						<p class="muted t-say-hint">{hint(how, detail.state, detail.needs, over)}</p>
-						<div class="t-seg" role="radiogroup" aria-label="How to send">
-							{(['steer', 'interrupt'] as const).map((m) => (
-								<label class="t-seg-opt" key={m} title={m === 'steer' ? 'After its current tool call' : 'Stop its turn now'}>
-									<input type="radio" name="say-mode" value={m} checked={how === m} disabled={busy || (asleep && m === 'interrupt')} onChange={() => setMode(m)} />
-									<span>{m === 'steer' ? 'Steer' : 'Interrupt'}</span>
-								</label>
-							))}
-						</div>
-					</div>
-				</form>
-			)}
-			{error && (
-				<p class="notice danger" role="alert">
-					{error}
-				</p>
-			)}
-		</div>
-	);
+	const s: SayState = {
+		plain,
+		text,
+		busy,
+		error,
+		waiting,
+		refusal,
+		how,
+		asleep,
+		placeholder: over ? 'Say what to do instead…' : how === 'interrupt' ? 'Interrupt the agent…' : 'Write to the agent…',
+		hint: hint(how, detail.state, detail.needs, over),
+		area,
+	};
+	return <SayView s={s} act={{ text: setText, mode: setMode, send: () => void send() }} />;
 }

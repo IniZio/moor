@@ -92,7 +92,7 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 							Link your {unlinked.join(' and ')} {unlinked.length === 1 ? 'token' : 'tokens'} in <a href="#/settings">Settings</a> before a task can start.
 						</p>
 					)}
-					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} /> : (
+					{open ? <BoxPage box={open.box} tab={tabOf(open.tab)} csrf={account.csrf} me={account.email.split('@')[0] ?? account.email} /> : (
 						<>
 							<WriteField account={account} rows={boxes.value ?? []} asked={composing} onStarted={boxes.reload} />
 							{fresh && <Checklist account={account} />}

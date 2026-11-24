@@ -205,7 +205,7 @@ function ApproveCard({ needs, run, csrf, onSent }: { needs: Needs; run: { workfl
 	);
 }
 
-export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: string }) {
+export function BoxPage({ box, tab, csrf, me }: { box: string; tab: Tab; csrf: string; me: string }) {
 	const { value, error, now, reload } = usePoll(() => boxGet(box), `box:${box}`, askedPollMs);
 	if (!value) {
 		return (
@@ -215,7 +215,7 @@ export function BoxPage({ box, tab, csrf }: { box: string; tab: Tab; csrf: strin
 			</div>
 		);
 	}
-	return <TaskPage detail={value} error={error} now={now} tab={tab} csrf={csrf} reload={reload} />;
+	return <TaskPage detail={value} error={error} now={now} tab={tab} csrf={csrf} me={me} reload={reload} />;
 }
 
 /** The plain sentence per gate lives in the workflow that made the Box; a one-off has none, and a workflow that cannot be read leaves the story to names and states. */
@@ -223,7 +223,7 @@ function useWorkflowDocs(name: string | undefined) {
 	return useLoad(() => (name ? workflowGet(name).catch(() => null) : Promise.resolve(null)), `flow:${name ?? ''}`).value;
 }
 
-function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail; error: string; now: number; tab: Tab; csrf: string; reload: () => void }) {
+function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDetail; error: string; now: number; tab: Tab; csrf: string; me: string; reload: () => void }) {
 	const docs = useWorkflowDocs(detail.workflow?.name);
 	const box = detail.box;
 	const base = `#/box/${encodeURIComponent(box)}`;
@@ -254,7 +254,7 @@ function TaskPage({ detail, error, now, tab, csrf, reload }: { detail: BoxDetail
 				<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
 			</div>
 		);
-	if (detail.task_at) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} />;
+	if (detail.task_at) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} you={me} />;
 	return (
 		<div class="t-box">
 			<TaskHead
