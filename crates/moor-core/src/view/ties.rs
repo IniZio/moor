@@ -12,7 +12,8 @@ pub struct WorkflowRef {
     pub pull: Option<String>,
 }
 
-/// The run behind a Box and the node it runs on, each none when the Box has no such tie.
+/// The run behind a Box, the node it runs on and the place that started it, each none when the Box
+/// has no such tie.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoxTies {
     /// The workflow of the Box's latest run.
@@ -22,12 +23,16 @@ pub struct BoxTies {
     /// placed on none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
+    /// The name of the claimed place whose agent started the Box; none for a Box a person or a
+    /// workflow started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
 }
 
 impl BoxTies {
-    /// Whether the Box is tied to neither.
+    /// Whether the Box is tied to none of them.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.workflow.is_none() && self.machine.is_none()
+        self.workflow.is_none() && self.machine.is_none() && self.task.is_none()
     }
 }

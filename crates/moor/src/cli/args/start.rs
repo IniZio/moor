@@ -84,6 +84,7 @@ impl From<StartArgs> for StartReq {
             parent: a.parent.map(SessionId::new),
             also: (!also.is_empty()).then_some(also),
             identity: None,
+            task: None,
         }
     }
 }

@@ -90,6 +90,7 @@ mod shared_node;
 mod size;
 mod state;
 mod step_timing;
+mod task_box;
 mod transcript;
 mod user_mcp;
 mod vrace;
@@ -180,6 +181,7 @@ fn req(name: &str) -> StartReq {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     }
 }
 

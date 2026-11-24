@@ -254,6 +254,7 @@ fn a_pending_box_admitted_in_time_gets_its_full_timeout_from_its_agent() {
             also: None,
             parent: None,
             identity: None,
+            task: None,
         },
     )
     .unwrap();
@@ -322,6 +323,7 @@ fn a_box_still_setting_up_past_the_limit_is_closed_and_its_run_refused() {
         also: None,
         parent: None,
         identity: None,
+        task: None,
     };
     let made = crate::ops::start::run(&r.cx, &req).unwrap();
     assert_eq!(r.open_boxes(), 1);
@@ -364,6 +366,7 @@ fn a_claim_settled_at_boot_keeps_its_claim_time_and_counts_the_run_from_its_agen
             also: None,
             parent: None,
             identity: None,
+            task: None,
         },
     )
     .unwrap();

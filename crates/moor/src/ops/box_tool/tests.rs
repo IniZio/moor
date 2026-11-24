@@ -90,7 +90,6 @@ fn start(from: BoxId, repo: &str, also: &[&str]) -> BoxToolReq {
             name: name("n2"),
             repo: parse(repo),
             also: also.iter().map(|r| parse(r)).collect(),
-            prompt: Some("go".to_owned()),
         },
     }
 }
@@ -208,6 +207,20 @@ fn a_box_tool_that_asserts_an_identity_is_refused() {
 }
 
 #[test]
+fn a_start_from_a_place_ties_the_box_to_the_task_and_starts_no_agent() {
+    let w = world();
+    let admitted = w.admit(&start(w.place, "o/n", &[])).unwrap();
+    let req = match admitted.plan {
+        Plan::Start(req) => Some(req),
+        Plan::Exec(_) => None,
+    }
+    .unwrap();
+    assert_eq!(req.task, Some(w.place));
+    assert!(req.no_agent && req.prompt.is_none());
+    assert_eq!(req.name, name("n2"));
+}
+
+#[test]
 fn start_from_a_place_may_name_only_its_claim_repos() {
     let w = world();
     let admitted = w.admit(&start(w.place, "o/m", &["o/n"])).unwrap();
@@ -218,8 +231,7 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
     .unwrap();
     assert_eq!(req.repo, Some(ForgeRepo::new("o", "m")));
     assert_eq!(req.also, Some(vec![ForgeRepo::new("o", "n")]));
-    assert_eq!(req.prompt.as_deref(), Some("go"));
-    assert!(!req.place && req.config.is_none() && req.identity.is_none());
+    assert!(req.prompt.is_none() && !req.place && req.config.is_none() && req.identity.is_none());
     let only_repo = w.admit(&start(w.place, "o/n", &[])).unwrap();
     assert!(matches!(only_repo.plan, Plan::Start(ref r) if r.also == Some(vec![])));
     refused_with(

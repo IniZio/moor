@@ -2,7 +2,7 @@
 
 use moor_core::progress::ProgressView;
 use moor_core::view::BoxTies;
-use moor_core::workflow::split_plan_first;
+use moor_core::workflow::{is_draft_prompt, split_plan_first};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -43,6 +43,14 @@ pub(super) struct Row {
     /// When the task was asked, for a task with no work Box behind it.
     #[serde(default)]
     pub(super) task_at: Option<String>,
+}
+
+impl Row {
+    /// Whether the Box is a row of Tasks home: not a draft, and not a work Box a place started,
+    /// which shows in its task instead.
+    pub(super) fn on_home(&self) -> bool {
+        !self.prompt.as_deref().is_some_and(is_draft_prompt) && self.ties.task.is_none()
+    }
 }
 
 /// A Box as a list row or the head of a Box page.
@@ -91,6 +99,24 @@ mod tests {
             row[key] = value.clone();
         }
         summary(&serde_json::from_value(row).unwrap()).unwrap()
+    }
+
+    /// A Box row as `show` sends it, with `extra` set over it, before it is summarised.
+    fn row_with(extra: &Value) -> Row {
+        let mut row = json!({
+            "name": "web/mcp-1a2b3c4d", "repo": "acme/web", "issue": null, "prompt": "Fix the typo",
+            "lifecycle": "ready", "updated_at": "2026-11-18T10:00:00Z", "progress": null});
+        for (key, value) in extra.as_object().into_iter().flatten() {
+            row[key] = value.clone();
+        }
+        serde_json::from_value(row).unwrap()
+    }
+
+    #[test]
+    fn portal_list_drops_a_row_tied_to_a_task() {
+        assert!(row_with(&json!({})).on_home());
+        assert!(row_with(&json!({"ties": {"machine": "big"}})).on_home());
+        assert!(!row_with(&json!({"ties": {"task": "p"}})).on_home());
     }
 
     #[test]

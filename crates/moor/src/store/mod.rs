@@ -185,6 +185,9 @@ pub(crate) struct BoxRow {
     pub(crate) hands: Option<HandsRow>,
     /// What the Box was started as; a claimed place carries its claim.
     pub(crate) kind: BoxKind,
+    /// The claimed place whose agent started the Box; none for a Box a person or a workflow
+    /// started. A Box with a task runs no agent.
+    pub(crate) task: Option<BoxId>,
 }
 
 impl BoxRow {

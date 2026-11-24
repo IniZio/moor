@@ -35,7 +35,7 @@ pub enum BoxCall {
         /// When the command is killed.
         timeout: BoxExecSecs,
     },
-    /// Start a Box for the user on the task's repos.
+    /// Start a Box for the user on the task's repos, tied to the task and running no agent.
     Start {
         /// The new Box's name.
         name: BoxName,
@@ -44,9 +44,6 @@ pub enum BoxCall {
         /// Repos it clones beside `repo`, in order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         also: Vec<ForgeRepo>,
-        /// What the new Box's agent does first.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        prompt: Option<String>,
     },
 }
 

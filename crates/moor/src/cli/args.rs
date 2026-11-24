@@ -51,6 +51,10 @@ pub(super) use super::NodeAddSpec;
 
 /// What a parsed command line asks for.
 #[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one value per command line, built and matched once; boxing the request would touch every command"
+)]
 pub(super) enum Action {
     /// A plain request for the library.
     Request(Request),

@@ -60,5 +60,8 @@ pub(super) fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             .transpose()?,
         hands: hands_from_row(row)?,
         kind: place::kind_from_row(row)?,
+        task: row
+            .get::<_, Option<i64>>(const { at(Boxes::Task) })?
+            .map(BoxId::new),
     })
 }

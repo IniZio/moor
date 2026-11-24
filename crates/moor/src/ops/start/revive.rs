@@ -152,6 +152,7 @@ fn revive(
         parent: None,
         also: None,
         identity: None,
+        task: None,
     };
     let settings = || settings_of(cx, row, &Flags::default());
     let view = match ended {
@@ -223,6 +224,7 @@ fn relaunch_after_retry(
         parent: None,
         also: None,
         identity: None,
+        task: None,
     };
     let settings = || settings_of(cx, &row, &Flags::default());
     let view = launch::run(cx, store, &req, id, None, &settings)?;
@@ -283,13 +285,15 @@ fn recent_relaunches(cx: &Cx, store: &Store, id: BoxId) -> Result<usize, Command
     Ok(store.caused_launches_since(id, since)?)
 }
 
-/// Whether `row` holds a prompt or an agent session to start again.
+/// Whether `row` holds a prompt or an agent session to start again; a Box with a task runs no
+/// agent, so it holds none to start.
 pub(crate) fn revivable(row: &BoxRow) -> bool {
-    row.prompt.is_some()
-        || row
-            .agent_session_id
-            .as_deref()
-            .is_some_and(|s| !s.is_empty())
+    row.task.is_none()
+        && (row.prompt.is_some()
+            || row
+                .agent_session_id
+                .as_deref()
+                .is_some_and(|s| !s.is_empty()))
 }
 
 /// Waits until the Box's tunnel is up and has not restarted for `TUNNEL_SETTLE`.

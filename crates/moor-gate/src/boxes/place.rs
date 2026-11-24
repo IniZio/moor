@@ -35,8 +35,6 @@ struct StartArgs {
     name: String,
     /// The repos, each `owner/name`, the Box's own first. Only your task's repos.
     repos: Vec<String>,
-    /// What the new Box's agent does first.
-    prompt: Option<String>,
 }
 
 #[tool_router(router = place_router, vis = "pub(super)")]
@@ -69,15 +67,16 @@ impl BoxTools {
     /// Starts a Box for the caller place's user on its task's repos.
     #[tool(
         description = "Start a Box for your user on your task's repos: the first is the Box's \
-                       own, the rest are cloned beside it. Only from an agent place a task has \
-                       claimed. Answers once the start ends."
+                       own, the rest are cloned beside it. The Box runs no agent: run commands in it with \
+                       exec_in_box. Only from an agent place a task has claimed. Answers once \
+                       the start ends."
     )]
     async fn start_box(
         &self,
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<StartArgs>,
     ) -> CallToolResult {
-        let call = start_call(args);
+        let call = start_call(&args);
         let controller = self.controller.clone();
         let sent = box_of(&context).and_then(|from| {
             call.map(|call| move || run_start(&controller, BoxToolReq { from, call }))
@@ -99,7 +98,7 @@ fn exec_call(args: ExecArgs) -> Result<BoxCall, String> {
 }
 
 /// The `start` call `args` ask for.
-fn start_call(args: StartArgs) -> Result<BoxCall, String> {
+fn start_call(args: &StartArgs) -> Result<BoxCall, String> {
     let mut repos = args
         .repos
         .iter()
@@ -111,7 +110,6 @@ fn start_call(args: StartArgs) -> Result<BoxCall, String> {
         name: BoxName::parse_allow_bare(&args.name).map_err(|e| e.to_string())?,
         repo,
         also: repos.collect::<Result<_, _>>()?,
-        prompt: args.prompt,
     })
 }
 

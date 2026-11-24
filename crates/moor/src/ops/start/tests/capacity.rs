@@ -98,6 +98,7 @@ fn req(name: &str) -> StartReq {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     }
 }
 

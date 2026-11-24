@@ -30,6 +30,7 @@ fn config_is_left_out_when_absent_and_kept_when_given() {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     };
     let bare = serde_json::to_value(Request::Start(start(None))).expect("ser");
     assert!(bare.get("config").is_none(), "{bare}");
@@ -83,6 +84,7 @@ fn gates_are_left_out_when_absent_and_kept_when_given() {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     };
     let bare = serde_json::to_value(Request::Start(start(None))).expect("ser");
     assert!(bare.get("gates").is_none(), "{bare}");

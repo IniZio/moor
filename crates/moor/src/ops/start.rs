@@ -213,7 +213,7 @@ fn attach(
     row: &BoxRow,
     user: UserId,
 ) -> Result<StartView, CommandError> {
-    preflight::check_owner(row, user)?;
+    preflight::check_owner(row, (req, user))?;
     repo::check_kept(req, row)?;
     super::box_config::check_kept(cx, req, row)?;
     gates::check_kept(store, req, row)?;
@@ -364,6 +364,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>, kind: BoxKind) ->
         repo: facts.repo.clone(),
         spec: SpecFields {
             kind,
+            task: req.task,
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),

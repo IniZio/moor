@@ -7,6 +7,7 @@ use serde_json::json;
 
 mod config;
 mod links_skew;
+mod task;
 
 /// Valid Box name.
 fn n(s: &str) -> BoxName {
@@ -37,6 +38,7 @@ fn with_args() -> Vec<Request> {
             parent: None,
             also: None,
             identity: None,
+            task: None,
         }),
         Request::Run(RunReq {
             box_name: n("a"),
@@ -429,25 +431,7 @@ fn a_start_from_an_older_client_that_asks_for_cold_still_parses_and_is_never_sen
 
 #[test]
 fn parent_is_omitted_when_none() {
-    let start = StartReq {
-        place: false,
-        gates: None,
-        placement: crate::decide::schedule::Placement::FirstOnly,
-        cold: false,
-        config: None,
-        name: n("x"),
-        prompt: None,
-        issue: None,
-        base: None,
-        model: None,
-        node: None,
-        no_agent: false,
-        resume: false,
-        repo: None,
-        parent: None,
-        also: None,
-        identity: None,
-    };
+    let start = StartReq::named(n("x"));
     assert!(!serde_json::to_string(&start)
         .expect("ser")
         .contains("parent"));

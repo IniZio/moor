@@ -207,7 +207,7 @@ fn box_columns(
     new: &NewBox,
     requester: Option<UserId>,
     now: Ts,
-) -> Result<[(Boxes, Value); 14], StoreError> {
+) -> Result<[(Boxes, Value); 15], StoreError> {
     let repo = new.repo.as_ref();
     place::check_repo(&new.spec.kind, repo.is_some())?;
     let labels = serde_json::to_string(&new.spec.labels)
@@ -234,6 +234,7 @@ fn box_columns(
         (Boxes::ConfigOverride, new.spec.config.as_deref().into()),
         (Boxes::Gates, new.spec.gates.as_deref().into()),
         (Boxes::Kind, new.spec.kind.as_str().into()),
+        (Boxes::Task, new.spec.task.map(BoxId::get).into()),
         (Boxes::User, requester.map(UserId::get).into()),
         (Boxes::CreatedAt, now.as_millis().into()),
     ])

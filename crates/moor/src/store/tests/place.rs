@@ -44,6 +44,52 @@ fn a_box_is_work_unless_its_start_made_it_a_place() {
 }
 
 #[test]
+fn a_box_reads_back_its_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store_of(dir.path());
+    let place = store.apply(new_idle_place(box_name("p"))).unwrap().box_id;
+    let tied = NewBox {
+        name: box_name("w"),
+        repo: None,
+        spec: SpecFields {
+            task: Some(place),
+            ..SpecFields::default()
+        },
+    };
+    let tied = store
+        .apply(Decision::insert(tied).requester(REQUESTER_USER))
+        .unwrap()
+        .box_id;
+    let manual = store.apply(new_box(box_name("v"))).unwrap().box_id;
+    assert_eq!(store.box_row(tied).unwrap().unwrap().task, Some(place));
+    assert_eq!(store.box_row(manual).unwrap().unwrap().task, None);
+    assert_eq!(store.box_row(place).unwrap().unwrap().task, None);
+}
+
+#[test]
+fn a_task_box_names_its_place_in_its_ties() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store_of(dir.path());
+    let place = store.apply(new_idle_place(box_name("p"))).unwrap().box_id;
+    let tied = NewBox {
+        name: box_name("w"),
+        repo: None,
+        spec: SpecFields {
+            task: Some(place),
+            ..SpecFields::default()
+        },
+    };
+    let tied = store
+        .apply(Decision::insert(tied).requester(REQUESTER_USER))
+        .unwrap()
+        .box_id;
+    let manual = store.apply(new_box(box_name("v"))).unwrap().box_id;
+    let named = store.ties_of(&[place, tied, manual]).unwrap();
+    assert_eq!(named.get(&tied).and_then(|t| t.task.as_deref()), Some("p"));
+    assert!(!named.contains_key(&place) && !named.contains_key(&manual));
+}
+
+#[test]
 fn a_claim_on_a_place_reads_back_with_the_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = store_of(dir.path());

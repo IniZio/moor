@@ -147,6 +147,17 @@ fn a_listed_box_keeps_its_name_repo_node_pr_and_time_only() {
 }
 
 #[test]
+fn a_work_box_a_place_started_names_the_place_in_the_list() {
+    let mut value = json!({"boxes": [
+        {"name": "r/a", "lifecycle": "ready", "ties": {"task": "place-1"}},
+        {"name": "r/b", "lifecycle": "ready", "ties": {"machine": "n1"}},
+    ]});
+    listed(&mut value, &|_| Err("unused".to_owned()));
+    assert_eq!(value["boxes"][0]["task"], "place-1");
+    assert!(value["boxes"][1].get("task").is_none());
+}
+
+#[test]
 fn a_waiting_agent_names_what_it_waits_on_in_the_list() {
     let mut value = json!({"boxes": [
         {"name": "r/a", "lifecycle": "ready",
