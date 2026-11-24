@@ -6,6 +6,8 @@
 //! the controller cannot be reached, the last answer for a token is used, as a Box's own Proxy
 //! uses its last answers.
 
+#[cfg(test)]
+mod inspect;
 pub(super) mod warm;
 
 use std::collections::HashMap;
@@ -72,7 +74,13 @@ struct Held {
 }
 
 /// The proxy of one Box, replaced when its spec changes.
-type Slot = Mutex<Option<Held>>;
+#[derive(Default)]
+struct Slot {
+    /// The proxy new tunnels go to.
+    held: Mutex<Option<Held>>,
+    /// Held while a proxy of the Box is built: every build writes the Box's CA directory.
+    building: Mutex<()>,
+}
 
 /// Every Box this replica serves.
 pub(super) struct Boxes {
@@ -156,18 +164,18 @@ impl Boxes {
     /// is not the one the proxy last followed, the proxy is first rebuilt if the spec changed.
     fn served(&self, box_id: BoxId, spec: Option<&str>) -> Result<Arc<Served>, String> {
         let slot = Arc::clone(lock(&self.served).entry(box_id).or_default());
-        let mut current = lock(&slot);
+        let mut current = lock(&slot.held);
         let mut replaced = None;
         let served = if let Some(held) = current.as_mut() {
             if spec.is_some() && held.followed.as_deref() != spec {
                 replaced = self
-                    .rebuilt(box_id, &held.served)
+                    .rebuilt(&slot, box_id, &held.served)
                     .map(|fresh| std::mem::replace(&mut held.served, Arc::new(fresh)));
                 held.followed = spec.map(str::to_owned);
             }
             Arc::clone(&held.served)
         } else {
-            let started = Arc::new(self.start(box_id, None)?);
+            let started = Arc::new(self.start(&slot, box_id, None)?);
             *current = Some(Held {
                 served: Arc::clone(&started),
                 followed: spec.map(str::to_owned),
@@ -248,8 +256,10 @@ impl Boxes {
         })
     }
 
-    /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps.
-    fn start(&self, box_id: BoxId, spec: Option<ProxySpec>) -> Result<Served, String> {
+    /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps, once no
+    /// other proxy of the Box is being built.
+    fn start(&self, slot: &Slot, box_id: BoxId, spec: Option<ProxySpec>) -> Result<Served, String> {
+        let _building = lock(&slot.building);
         let ledger = Arc::new(BoxLedger::egress(
             self.ledger.clone(),
             box_id,
@@ -286,7 +296,7 @@ impl Boxes {
             .map(|(id, slot)| (*id, Arc::clone(slot)))
             .collect();
         for (box_id, slot) in slots {
-            let Some(served) = lock(&slot).as_ref().map(|h| Arc::clone(&h.served)) else {
+            let Some(served) = lock(&slot.held).as_ref().map(|h| Arc::clone(&h.served)) else {
                 continue;
             };
             served.drain();
@@ -305,7 +315,7 @@ impl Boxes {
     /// Stops the proxy of a Box that closed, forgets its tokens and removes its CA.
     fn close(&self, box_id: BoxId, slot: &Arc<Slot>, served: &Served) {
         lock(&self.served).remove(&box_id);
-        lock(slot).take();
+        lock(&slot.held).take();
         served.stop();
         lock(&self.known).retain(|_, k| k.box_id != box_id);
         if let Err(e) = ca::remove(&self.work_dir, box_id) {
@@ -314,14 +324,15 @@ impl Boxes {
     }
 
     /// Swaps in [`Boxes::rebuilt`] unless a tunnel already replaced `served`. The ledger is read
-    /// before the slot is locked, so a silent controller never holds up a tunnel. A proxy it
-    /// rebuilds has followed no digest, so the next tunnel checks it once more.
+    /// before the slot is locked, so a silent controller holds up only a tunnel that needs a
+    /// rebuild too. A proxy it rebuilds has followed no digest, so the next tunnel checks it once
+    /// more.
     fn tend_spec(&self, box_id: BoxId, slot: &Slot, served: &Arc<Served>) {
-        let Some(fresh) = self.rebuilt(box_id, served) else {
+        let Some(fresh) = self.rebuilt(slot, box_id, served) else {
             return;
         };
         let fresh = Arc::new(fresh);
-        let mut current = lock(slot);
+        let mut current = lock(&slot.held);
         let unused = match current.as_mut() {
             Some(held) if Arc::ptr_eq(&held.served, served) => {
                 held.followed = None;
@@ -335,10 +346,10 @@ impl Boxes {
 
     /// A proxy built from the spec the controller holds for `box_id`, when it is not the spec
     /// `served` runs. A failed read or rebuild keeps `served` and is only logged.
-    fn rebuilt(&self, box_id: BoxId, served: &Served) -> Option<Served> {
+    fn rebuilt(&self, slot: &Slot, box_id: BoxId, served: &Served) -> Option<Served> {
         match served.ledger.spec() {
             Ok(Some(spec)) if spec != served.spec => self
-                .start(box_id, Some(spec))
+                .start(slot, box_id, Some(spec))
                 .map_err(|e| self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get())))
                 .ok(),
             Ok(_) => None,
@@ -353,7 +364,7 @@ impl Boxes {
     pub(super) fn stop(&self) {
         let slots: Vec<Arc<Slot>> = lock(&self.served).drain().map(|(_, s)| s).collect();
         for slot in slots {
-            let taken = lock(&slot).take();
+            let taken = lock(&slot.held).take();
             if let Some(held) = taken {
                 held.served.stop();
             }
@@ -372,28 +383,4 @@ impl Boxes {
 /// Whether `view` says the Box closed; a failed read never does.
 pub(super) const fn closed(view: &Result<Option<BoxView>, LedgerError>) -> bool {
     matches!(view, Ok(None)) || matches!(view, Ok(Some(v)) if !v.open)
-}
-
-#[cfg(test)]
-impl Boxes {
-    /// How many tokens are kept.
-    pub(super) fn tracked(&self) -> usize {
-        lock(&self.known).len()
-    }
-
-    /// Where each running engine takes its tunnels.
-    pub(super) fn engines(&self) -> Vec<std::net::SocketAddr> {
-        lock(&self.served)
-            .values()
-            .filter_map(|slot| lock(slot).as_ref().map(|h| h.served.addr))
-            .collect()
-    }
-
-    /// How many Boxes have a running proxy.
-    pub(super) fn serving(&self) -> usize {
-        lock(&self.served)
-            .values()
-            .filter(|slot| lock(slot).as_ref().is_some_and(|h| h.served.running()))
-            .count()
-    }
 }
