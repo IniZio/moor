@@ -7,9 +7,10 @@ use moor_core::{ErrorKind, Request, Response};
 use super::Moor;
 use crate::error::CommandError;
 use crate::ops;
-use crate::ops::box_tool::{runs, Admitted};
+use crate::ops::box_tool::{runs, Plan};
 use crate::vault::Vault;
 use moor_core::request::BoxRunId;
+use moor_core::request::{BoxCall, BoxToolReq as ToolReq};
 use moor_core::user::UserId;
 use moor_core::view::BoxRunView;
 use moor_core::ExecReq;
@@ -75,8 +76,12 @@ impl Moor {
         }
     }
 
+    /// How long a place's `exec_in_box` or `exec_wait` waits before it answers.
+    pub(crate) const BOX_RUN_WINDOW: Duration = runs::WINDOW;
+
     /// Allows the `box-tool` `req` from `caller`, asserting `asserted`: what the request may
-    /// see, and whom it acts as and what it runs.
+    /// see, whom it acts as, and what it runs: an `exec` that runs on as a place's run, a
+    /// `start` or `close`, or, for a wait on a run, the `box-tool` itself.
     ///
     /// # Errors
     /// The refusal or store failure the request answers with instead.
@@ -85,13 +90,27 @@ impl Moor {
         caller: &Result<Caller, String>,
         asserted: Option<&Identity>,
         req: &BoxToolReq,
-    ) -> Result<(Grant, Admitted), CommandError> {
+    ) -> Result<(Grant, Identity, Request), CommandError> {
         let admitted = ops::box_tool::admit(&self.cx, caller, asserted, req)?;
         let grant = Grant {
             viewer: Viewer::User(admitted.user),
             pins: Pins::new(),
         };
-        Ok((grant, admitted))
+        let request = match admitted.plan {
+            Plan::Exec(exec) => Request::Exec(exec),
+            Plan::Start(start) => Request::Start(*start),
+            Plan::Close(close) => Request::Close(close),
+            Plan::Wait(run) => Request::BoxTool(ToolReq {
+                from: req.from,
+                call: BoxCall::Wait { run },
+            }),
+        };
+        Ok((grant, admitted.who, request))
+    }
+
+    /// A place's close reply as its agent can act on it; see [`ops::box_tool::for_place`].
+    pub(crate) fn for_place(reply: Response) -> Response {
+        ops::box_tool::for_place(reply)
     }
 
     /// Starts `req` as a run of `user` on a thread of its own, stopping it once `stop` says so;
