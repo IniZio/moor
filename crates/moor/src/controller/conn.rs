@@ -311,7 +311,7 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
     }
 }
 
-/// The identity a `start`, `start-needs` or `env` acts as: the one asserted, checked against
+/// The identity a `start`, `ask`, `start-needs` or `env` acts as: the one asserted, checked against
 /// this connection's socket. `env` previews a start, so it reads a repo as the same user. A
 /// `close` acts as it too when it resolves, so the `closed` event names who asked, but a close
 /// that does not resolve is refused no more than before. Other requests act as no one.
@@ -328,6 +328,7 @@ fn requester(
     };
     match request {
         Request::Start(_)
+        | Request::Ask(_)
         | Request::StartNeeds(_)
         | Request::Env(_)
         | Request::RepoConfigGet(_)
@@ -341,7 +342,7 @@ fn requester(
 
 /// Whom one request acts as, and what it may see.
 pub(crate) struct Acting {
-    /// The identity a `start`, `start-needs`, `env` or `repo-config-*` acts as; none for other
+    /// The identity a `start`, `ask`, `start-needs`, `env` or `repo-config-*` acts as; none for other
     /// requests.
     pub(crate) who: Option<Identity>,
     /// What the request may see.
