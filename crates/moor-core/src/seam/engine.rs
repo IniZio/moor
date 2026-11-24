@@ -108,6 +108,9 @@ pub struct LaunchReq {
     pub mcp: BTreeMap<String, McpServer>,
     /// The Box's person profile, checked out on the Box; `None` when the Box has none.
     pub profile: Option<Manifest>,
+    /// Whether the Box is an agent place, which holds no checkout and takes each task's repos
+    /// from its first message.
+    pub place: bool,
 }
 
 impl LaunchReq {
@@ -153,6 +156,7 @@ impl PartialEq for LaunchReq {
             && self.strip_env == other.strip_env
             && self.prompt == other.prompt
             && self.mcp == other.mcp
+            && self.place == other.place
     }
 }
 

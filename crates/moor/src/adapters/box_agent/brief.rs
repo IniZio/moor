@@ -23,16 +23,54 @@ pub(super) struct BriefInput<'a> {
     pub(super) shape: Option<Shape>,
     /// Every repo the Box holds and its work tree, the agent's own first.
     pub(super) repos: &'a [HeldRepo],
+    /// Whether the Box is an agent place, which holds no checkout and takes its repos from each
+    /// task's first message.
+    pub(super) place: bool,
 }
 
 /// The brief text for a Box.
 pub(super) fn render(b: &BriefInput) -> String {
-    let (name, branch) = (b.name, b.branch);
+    let name = b.name;
     let mut out = format!("# Box {name}\n\n");
     if let Some(i) = b.issue {
         _ = write!(out, "Issue: {i}\n\n");
     }
     project_facts(b, &mut out);
+    if b.place {
+        out.push_str(PLACE);
+    } else {
+        work(b, &mut out);
+    }
+    out.push_str(
+        "Reports are how you show work to a human: a spec, a checkpoint, a result. \
+         Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
+         a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
+         commit it. Writing again with the same kind adds a new version. Name that path in \
+         your final message. A Report never means the Box is finished; keep working \
+         until the work is done, and do not stop after reporting.\n\n",
+    );
+    out.push_str(PUBLISH);
+    out.push_str(ATTACH);
+    out.push_str(GH_INSTALL);
+    out
+}
+
+/// How an agent place works: no checkout, and the repos of each task named in its first message.
+const PLACE: &str = "You are running inside the machine, in an agent place: it holds no \
+    checkout and no branch, and waits for a task. Each task's first message starts with a \
+    `Repos:` line naming the GitHub repos it is about, then a blank line, then the person's \
+    message. Read those repos through GitHub: `gh api`, or \
+    `git clone --filter=blob:none https://github.com/OWNER/NAME /tmp/NAME`. Requests for \
+    the repos the task names carry the owner's credential through moor's Proxy; any other \
+    repo answers 401 or 404. When HTTPS_PROXY is set, do not unset or bypass it. Write only \
+    in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
+    You may receive follow-up messages (steers) typed into this session.\n\n\
+    Decide on your own when you reasonably can, and ask a question only when the choice is \
+    the owner's.\n\n";
+
+/// How a work Box works: its checkout, its branch and its repos.
+fn work(b: &BriefInput, out: &mut String) {
+    let branch = b.branch;
     _ = write!(
         out,
         "You are running inside the machine, in the project working directory. Run builds, \
@@ -63,22 +101,10 @@ pub(super) fn render(b: &BriefInput) -> String {
          Decide on your own when you reasonably can, and ask a question only when the \
          choice is the owner's.\n\n"
     );
-    repos::section(b.repos, branch, &mut out);
+    repos::section(b.repos, branch, out);
     if let Some(n) = b.setup_exit {
-        setup_failed(n, &mut out);
+        setup_failed(n, out);
     }
-    out.push_str(
-        "Reports are how you show work to a human: a spec, a checkpoint, a result. \
-         Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
-         a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
-         commit it. Writing again with the same kind adds a new version. Name that path in \
-         your final message. A Report never means the Box is finished; keep working \
-         until the work is done, and do not stop after reporting.\n\n",
-    );
-    out.push_str(PUBLISH);
-    out.push_str(ATTACH);
-    out.push_str(GH_INSTALL);
-    out
 }
 
 /// How to show a human a file.
@@ -156,7 +182,21 @@ mod tests {
             repo_notes: None,
             shape: None,
             repos: &[],
+            place: false,
         }
+    }
+
+    #[test]
+    fn a_place_brief_names_no_checkout_or_branch() {
+        let out = render(&BriefInput {
+            place: true,
+            ..input(None)
+        });
+        assert!(out.contains("`Repos:` line"), "{out}");
+        assert!(
+            !out.contains("moor/t1") && !out.contains("The checkout is on branch"),
+            "{out}"
+        );
     }
 
     #[test]

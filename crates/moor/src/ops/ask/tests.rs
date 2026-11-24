@@ -349,6 +349,7 @@ fn no_idle_place_starts_a_place_with_the_claim_and_the_prompt() {
     assert!(claim.served.is_some() && claim.steered.is_some());
     let launch = w.engine.launches().pop().unwrap();
     assert_eq!(launch.prompt, LaunchPrompt::Text(ASKED.to_owned()));
+    assert!(launch.place, "a place launches with the place brief");
     let spec = specs(&w).pop().unwrap();
     assert_eq!(spec.box_repo, Some(repo()));
 }

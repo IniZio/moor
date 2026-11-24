@@ -24,6 +24,7 @@ fn launch_errors_display() {
 
 fn req() -> LaunchReq {
     LaunchReq {
+        place: false,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(7),
@@ -67,6 +68,7 @@ fn the_tmp_dir_is_where_both_places_of_a_box_see_it() {
 
 fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
     LaunchReq {
+        place: false,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(ProxyAddr {
