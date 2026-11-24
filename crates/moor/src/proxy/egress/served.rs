@@ -63,8 +63,10 @@ impl Served {
 }
 
 impl Drop for Served {
+    /// The last tunnel of a replaced proxy ends on a runtime worker, where stopping the proxy's
+    /// own runtime and delivering its audit must not block the worker.
     fn drop(&mut self) {
-        self.stop();
+        tokio::task::block_in_place(|| self.stop());
     }
 }
 
