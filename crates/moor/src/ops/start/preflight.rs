@@ -6,7 +6,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::event::CheckedCred;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
-use moor_core::ErrorKind;
+use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -54,6 +54,21 @@ pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
             resolves: true,
         })
         .collect()
+}
+
+/// Refuses a start for a place's task that names an open Box another start made: it attaches only
+/// to a Box that task already started.
+pub(super) fn check_task(row: &BoxRow, req: &StartReq) -> Result<(), CommandError> {
+    if req.task.is_none() || req.task == row.task {
+        return Ok(());
+    }
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "{} is already open and this task did not start it; name a new Box",
+            row.name.as_str()
+        ),
+    ))
 }
 
 /// Refuses an open Box that acts for a user other than `user`.

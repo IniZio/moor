@@ -6,7 +6,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::hands::{HandsInc, HandsInput};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::{BoxId, BoxName, StartReq};
+use moor_core::{BoxId, BoxName, ErrorKind, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::revive::revivable;
@@ -46,6 +46,31 @@ fn asleep_task_box() -> (World, Arc<FakeEngine>, BoxId) {
         )
         .unwrap();
     (w, engine, id)
+}
+
+#[test]
+fn a_start_for_a_task_attaches_only_to_a_box_that_task_started() {
+    let (w, _engine, _id) = asleep_task_box();
+    let store = w.cx.store().unwrap();
+    let place = store.box_row(BoxId::new(1)).unwrap().unwrap().id;
+    let again = StartReq {
+        no_agent: true,
+        task: Some(place),
+        ..req("w")
+    };
+    assert!(run(&w.cx, &again).unwrap().attached);
+    let other = store
+        .apply(new_idle_place(BoxName::parse_allow_bare("q").unwrap()))
+        .unwrap()
+        .box_id;
+    let theirs = StartReq {
+        task: Some(other),
+        ..again
+    };
+    let why = run(&w.cx, &theirs).unwrap_err();
+    assert_eq!(why.kind, ErrorKind::Refused);
+    let said = why.error.to_string();
+    assert!(said.contains("this task did not start it"), "{said}");
 }
 
 #[test]

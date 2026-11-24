@@ -279,6 +279,9 @@ fn compact(row: &Value, status: &str) -> Value {
     {
         out.insert("pr".to_owned(), json!(format!("{repo}#{number}")));
     }
+    if let Some(task) = row.pointer("/ties/task").and_then(Value::as_str) {
+        out.insert("task".to_owned(), json!(task));
+    }
     out.insert("updated_at".to_owned(), field("updated_at"));
     Value::Object(out)
 }
