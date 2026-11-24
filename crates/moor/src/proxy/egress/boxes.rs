@@ -160,7 +160,9 @@ impl Boxes {
         let mut replaced = None;
         let served = if let Some(held) = current.as_mut() {
             if spec.is_some() && held.followed.as_deref() != spec {
-                replaced = self.follow_spec(box_id, held);
+                replaced = self
+                    .rebuilt(box_id, &held.served)
+                    .map(|fresh| std::mem::replace(&mut held.served, Arc::new(fresh)));
                 held.followed = spec.map(str::to_owned);
             }
             Arc::clone(&held.served)
@@ -311,35 +313,34 @@ impl Boxes {
         }
     }
 
-    /// [`Boxes::follow_spec`] for the tender, unless a tunnel already replaced `served`. A
-    /// proxy it rebuilds has followed no digest, so the next tunnel checks it once more.
+    /// Swaps in [`Boxes::rebuilt`] unless a tunnel already replaced `served`. The ledger is read
+    /// before the slot is locked, so a silent controller never holds up a tunnel. A proxy it
+    /// rebuilds has followed no digest, so the next tunnel checks it once more.
     fn tend_spec(&self, box_id: BoxId, slot: &Slot, served: &Arc<Served>) {
+        let Some(fresh) = self.rebuilt(box_id, served) else {
+            return;
+        };
+        let fresh = Arc::new(fresh);
         let mut current = lock(slot);
-        let replaced = match current.as_mut() {
+        let unused = match current.as_mut() {
             Some(held) if Arc::ptr_eq(&held.served, served) => {
-                let replaced = self.follow_spec(box_id, held);
-                if replaced.is_some() {
-                    held.followed = None;
-                }
-                replaced
+                held.followed = None;
+                std::mem::replace(&mut held.served, fresh)
             }
-            _ => None,
+            _ => fresh,
         };
         drop(current);
-        drop(replaced);
+        drop(unused);
     }
 
-    /// Rebuilds the proxy in `held` when the controller holds another spec for `box_id`, and
-    /// returns the one it replaced. A failed rebuild keeps the old proxy and is only logged.
-    fn follow_spec(&self, box_id: BoxId, held: &mut Held) -> Option<Arc<Served>> {
-        match held.served.ledger.spec() {
-            Ok(Some(spec)) if spec != held.served.spec => match self.start(box_id, Some(spec)) {
-                Ok(fresh) => Some(std::mem::replace(&mut held.served, Arc::new(fresh))),
-                Err(e) => {
-                    self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get()));
-                    None
-                }
-            },
+    /// A proxy built from the spec the controller holds for `box_id`, when it is not the spec
+    /// `served` runs. A failed read or rebuild keeps `served` and is only logged.
+    fn rebuilt(&self, box_id: BoxId, served: &Served) -> Option<Served> {
+        match served.ledger.spec() {
+            Ok(Some(spec)) if spec != served.spec => self
+                .start(box_id, Some(spec))
+                .map_err(|e| self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get())))
+                .ok(),
             Ok(_) => None,
             Err(e) => {
                 self.say(format_args!("cannot read Box {}'s spec: {e}", box_id.get()));
