@@ -213,8 +213,7 @@ fn attach(
     row: &BoxRow,
     user: UserId,
 ) -> Result<StartView, CommandError> {
-    preflight::check_owner(row, user)?;
-    preflight::check_task(row, req)?;
+    preflight::check_owner(row, (req, user))?;
     repo::check_kept(req, row)?;
     super::box_config::check_kept(cx, req, row)?;
     gates::check_kept(store, req, row)?;

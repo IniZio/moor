@@ -7,6 +7,7 @@ use serde_json::json;
 
 mod config;
 mod links_skew;
+mod task;
 
 /// Valid Box name.
 fn n(s: &str) -> BoxName {
@@ -174,17 +175,6 @@ fn a_start_naming_a_worktree_is_an_unknown_field() {
     let r = serde_json::from_str::<Request>(r#"{"cmd":"start","name":"a","worktree":"/w"}"#);
     let err = r.expect_err("worktree is not a start field").to_string();
     assert!(err.contains("unknown field `worktree`"), "{err}");
-}
-
-#[test]
-fn a_wire_start_naming_a_task_is_refused() {
-    let r = serde_json::from_str::<Request>(r#"{"cmd":"start","name":"a","task":3}"#);
-    let err = r.expect_err("task is set only by box-tool").to_string();
-    assert!(err.contains("unknown field `task`"), "{err}");
-    let mut start = StartReq::named(n("a"));
-    start.task = Some(BoxId::new(3));
-    let wire = serde_json::to_string(&start).unwrap();
-    assert!(!wire.contains("task"), "{wire}");
 }
 
 #[test]
@@ -441,26 +431,7 @@ fn a_start_from_an_older_client_that_asks_for_cold_still_parses_and_is_never_sen
 
 #[test]
 fn parent_is_omitted_when_none() {
-    let start = StartReq {
-        place: false,
-        gates: None,
-        placement: crate::decide::schedule::Placement::FirstOnly,
-        cold: false,
-        config: None,
-        name: n("x"),
-        prompt: None,
-        issue: None,
-        base: None,
-        model: None,
-        node: None,
-        no_agent: false,
-        resume: false,
-        repo: None,
-        parent: None,
-        also: None,
-        identity: None,
-        task: None,
-    };
+    let start = StartReq::named(n("x"));
     assert!(!serde_json::to_string(&start)
         .expect("ser")
         .contains("parent"));
