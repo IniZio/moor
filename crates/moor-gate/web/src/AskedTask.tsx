@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 
 import type { BoxDetail } from './api';
-import { HeaderActions } from './Ending';
+import { HeaderActions, RUNNING } from './Ending';
 import { FailedCard } from './Retry';
 import { PlaceStory } from './PlaceStory';
 import { POLL_MS } from './Portal';
@@ -21,11 +21,11 @@ export function askedPollMs(detail: Pick<BoxDetail, 'task_at'> | null, now: numb
 	return now - asked < YOUNG_MS ? FAST_MS : POLL_MS;
 }
 
-/** A question's task: the conversation, and a box to write more in, with `you` as the name over the person's messages. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show. */
+/** A question's task: the conversation, and a box to write more in, with `you` as the name over the person's messages. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show, and Stop shows only while the agent works: it ends the agent and leaves the Box. */
 export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You' }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string }) {
 	return (
 		<div class="t-box t-place">
-			<TaskHead t={detail} now={now} actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />} />
+			<TaskHead t={detail} now={now} actions={RUNNING.includes(detail.state) ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null} />
 			{error && (
 				<p class="notice danger" role="alert">
 					{error}

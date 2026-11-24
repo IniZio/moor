@@ -3,8 +3,10 @@ import { type ComponentChild, isValidElement } from 'preact';
 
 import { type BoxDetail, boxGet, type Entry } from './api';
 import { AskedTask } from './AskedTask';
+import { HeaderActions } from './Ending';
 import { PlaceStory } from './PlaceStory';
 import { Composer, SayView } from './Steer';
+import { TaskHead } from './TaskHead';
 import { all, textOf, walk, type El } from './testkit';
 
 const at = (m: number) => new Date(2026, 10, 24, 17, 40 + m, 0).toISOString();
@@ -132,6 +134,63 @@ test('a second question starts a second turn with its own bubble, answer and fol
 	expect(byClass(view, 't-pl-you')).toHaveLength(2);
 	expect(byClass(view, 't-pl-say')).toHaveLength(2);
 	expect(byClass(view, 't-pl-fold')).toHaveLength(2);
+});
+
+test('only the last words of a turn are a diamond line; the lines before them sit in the turn\'s fold with its calls, in order', async () => {
+	const view = await story([
+		...ASKED,
+		said(2, 3, 'Need gh; install it.'),
+		call(3, 3, 'Ran apt-get install gh'),
+		said(4, 4, 'Let me confirm.'),
+		call(5, 4, 'Ran gh --version'),
+		said(6, 5, 'It is **src/main.rs**.'),
+	]);
+	const lines = byClass(view, 't-pl-say');
+	expect(lines).toHaveLength(1);
+	expect(textOf(lines[0])).toContain('src/main.rs');
+	const [fold] = byClass(view, 't-pl-fold') as [El];
+	expect(textOf(fold)).toContain('Ran 2 commands');
+	const body = textOf(byClass(fold, 't-pl-body')[0]);
+	expect(body).toContain('Need gh; install it.');
+	expect(body).toContain('Let me confirm.');
+	expect(body.indexOf('Need gh')).toBeLessThan(body.indexOf('apt-get'));
+	expect(body.indexOf('apt-get')).toBeLessThan(body.indexOf('Let me confirm.'));
+	expect(body.indexOf('Let me confirm.')).toBeLessThan(body.indexOf('gh --version'));
+	expect(outside((view as El).props.children)).not.toMatch(/Need gh|Let me confirm/);
+});
+
+test('a turn of words alone is one diamond line and no fold', async () => {
+	const view = await story([...ASKED, said(2, 4, 'It is src/main.rs.')]);
+	expect(byClass(view, 't-pl-say')).toHaveLength(1);
+	expect(byClass(view, 't-pl-fold')).toHaveLength(0);
+});
+
+test('two lines of words and no calls show the last as the answer and fold the first', async () => {
+	const view = await story([...ASKED, said(2, 3, 'Looking.'), said(3, 4, 'Found it.')]);
+	expect(textOf(byClass(view, 't-pl-say')[0])).toContain('Found it.');
+	expect(textOf(byClass(view, 't-pl-fold')[0])).toContain('1 note');
+	expect(textOf(byClass(view, 't-pl-body')[0])).toContain('Looking.');
+});
+
+test('a failure after the last words still ends the task when interim lines are folded', async () => {
+	const view = await story([...ASKED, said(2, 3, 'Trying.'), said(3, 4, 'Cloning.'), failed(6, 5, 'Ran git clone (exit 128)')], 'failed');
+	expect(byClass(view, 't-pl-ended')).toHaveLength(1);
+	expect(textOf(byClass(view, 't-pl-say')[0])).toContain('Cloning.');
+});
+
+/** What the task page puts at the right of its header. */
+async function headerActions(state: string) {
+	const detail = await detailOf([...ASKED, said(2, 4, 'x')], state);
+	const view = AskedTask({ detail, error: '', now: 0, csrf: 'c', reload: () => {}, you: 'ann' });
+	const head = [view.props.children].flat(3).find((c) => isValidElement(c) && c.type === TaskHead);
+	return isValidElement(head) ? (head.props as { actions: ComponentChild }).actions : undefined;
+}
+const isStop = (a: ComponentChild) => isValidElement(a) && a.type === HeaderActions;
+
+test('Stop shows while the agent works or waits on the person, and not once the task is done', async () => {
+	expect(isStop(await headerActions('working'))).toBe(true);
+	expect(isStop(await headerActions('needs_you'))).toBe(true);
+	for (const state of ['done', 'failed', 'asleep', 'closed']) expect(isStop(await headerActions(state))).toBe(false);
 });
 
 const say = (over: Partial<Parameters<typeof SayView>[0]['s']> = {}) => ({
