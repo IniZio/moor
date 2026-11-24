@@ -46,7 +46,8 @@ tables! {
     UserWebhooks { Id, User, Url, Events, Key, CreatedAt, LastOkAt, FailingSince, LastError, State,
         Header, HeaderValue }
     Boxes { Id, Name, Repo, RepoConfig, AuthorName, AuthorEmail, User, Issue, Base, Branch,
-        CreatedAt, NodeLabels, OtherRepos, ConfigOverride, BaseRef, Gates }
+        CreatedAt, NodeLabels, OtherRepos, ConfigOverride, BaseRef, Gates, Kind }
+    PlaceClaims { Box, User, Repos, Prompt, ClaimedAt, ServedAt, SteeredAt }
     BoxGateLines { Box, N, At, Entry }
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
