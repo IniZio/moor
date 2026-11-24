@@ -133,26 +133,27 @@ fn any_repo_cannot_push() {
 }
 
 #[test]
-fn github_api_reads_any_repo_with_get_alone() {
+fn github_api_reads_only_box_repos() {
     let rules = resolve_rules(&ProxyConfig::default(), &app_and_lib(), false).expect("resolves");
     let api = rules.iter().find(|r| r.name == "github-api").expect("api");
-    let any_repo: Vec<String> = api
-        .endpoint_rules
-        .iter()
-        .filter(|e| e.path.starts_with("/repos/*/*"))
-        .map(|e| format!("{} {}", e.method, e.path))
-        .collect();
-    assert_eq!(
-        any_repo,
-        [
-            "GET /repos/*/*",
-            "GET /repos/*/*/releases",
-            "GET /repos/*/*/releases/**",
-            "GET /repos/*/*/tags",
-            "GET /repos/*/*/contents",
-            "GET /repos/*/*/contents/**",
-        ]
-    );
+    let allows = |path: &str| {
+        api.endpoint_rules
+            .iter()
+            .any(|e| e.method == "GET" && path_matches(&e.path, path))
+    };
+    for read in [
+        "",
+        "/releases",
+        "/releases/latest",
+        "/tags",
+        "/contents",
+        "/contents/src/a.rs",
+    ] {
+        for (repo, allowed) in [("a/app", true), ("a/lib", true), ("other/thing", false)] {
+            let path = format!("/repos/{repo}{read}");
+            assert_eq!(allows(&path), allowed, "GET {path}");
+        }
+    }
 }
 
 #[test]

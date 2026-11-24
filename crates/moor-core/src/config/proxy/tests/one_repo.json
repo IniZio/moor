@@ -32,27 +32,23 @@
     "endpoint_rules": [
       {
         "method": "GET",
-        "path": "/repos/*/*"
+        "path": "/repos/acme/widgets/releases"
       },
       {
         "method": "GET",
-        "path": "/repos/*/*/releases"
+        "path": "/repos/acme/widgets/releases/**"
       },
       {
         "method": "GET",
-        "path": "/repos/*/*/releases/**"
+        "path": "/repos/acme/widgets/tags"
       },
       {
         "method": "GET",
-        "path": "/repos/*/*/tags"
+        "path": "/repos/acme/widgets/contents"
       },
       {
         "method": "GET",
-        "path": "/repos/*/*/contents"
-      },
-      {
-        "method": "GET",
-        "path": "/repos/*/*/contents/**"
+        "path": "/repos/acme/widgets/contents/**"
       },
       {
         "method": "GET",
