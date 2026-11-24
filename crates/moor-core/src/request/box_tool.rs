@@ -1,5 +1,5 @@
 //! Arguments of `box-tool`, which the gate sends for the agent in an agent place: a command in
-//! one of its user's work Boxes, or a new Box on its task's repos.
+//! one of its user's work Boxes, a new Box on its task's repos, or the close of a work Box.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,12 @@ pub enum BoxCall {
         /// Repos it clones beside `repo`, in order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         also: Vec<ForgeRepo>,
+    },
+    /// Close one of the user's open work Boxes. It has no `force`: a Box that holds work not
+    /// pushed stays open, as a person's `moor close` leaves it.
+    Close {
+        /// The work Box.
+        target: BoxName,
     },
 }
 
@@ -100,5 +106,14 @@ mod tests {
         let wire =
             r#"{"from":3,"call":{"tool":"exec","target":"w","command":"ls","timeout":1801}}"#;
         assert!(serde_json::from_str::<BoxToolReq>(wire).is_err());
+    }
+
+    #[test]
+    fn a_close_names_a_box_and_offers_no_force() {
+        let wire = r#"{"from":3,"call":{"tool":"close","target":"w"}}"#;
+        let req: BoxToolReq = serde_json::from_str(wire).unwrap();
+        assert!(matches!(req.call, BoxCall::Close { .. }));
+        let forced = r#"{"from":3,"call":{"tool":"close","target":"w","force":true}}"#;
+        assert!(serde_json::from_str::<BoxToolReq>(forced).is_err());
     }
 }
