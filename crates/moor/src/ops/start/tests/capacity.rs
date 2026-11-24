@@ -81,6 +81,7 @@ fn box_limit(n: u32) -> UserConfig {
 
 fn req(name: &str) -> StartReq {
     StartReq {
+        place: false,
         gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

@@ -28,6 +28,7 @@ mod launch_facts;
 mod launch_fence;
 mod node_count;
 mod open_boxes;
+mod place;
 mod poison;
 mod repos;
 mod sleep_reason;

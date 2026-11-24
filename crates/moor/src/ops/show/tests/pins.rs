@@ -70,6 +70,7 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
     let mine = add_for(&setup, "a", &Identity::local(1000));
     let caller = Ok(Caller::Local(1000));
     let start = Request::Start(StartReq {
+        place: false,
         gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

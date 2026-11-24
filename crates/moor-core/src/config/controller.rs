@@ -49,6 +49,17 @@ pub struct ControllerConfig {
     pub blobs: BlobsConfig,
     /// The GitHub App the operator created for this install; none turns every App feature off.
     pub github_app: Option<GitHubAppConfig>,
+    /// The users who may have an agent place, which is also the switch: with no one listed, no
+    /// place starts for anyone.
+    pub agent_places: AgentPlaces,
+}
+
+/// The `agent_places` entry: who gets a place, a repo-less Box the agent waits in before any task.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct AgentPlaces {
+    /// The emails of the users on the list.
+    pub users: Vec<String>,
 }
 
 /// The `github_app` entry: the id and key files of a GitHub App the operator created on GitHub.
@@ -187,6 +198,16 @@ impl ControllerConfig {
             .iter()
             .filter(|(_, front)| front.step_reports)
             .map(|(ns, _)| ns.clone())
+            .collect()
+    }
+
+    /// The emails of the users who may have an agent place, lowercased.
+    #[must_use]
+    pub fn agent_place_users(&self) -> BTreeSet<String> {
+        self.agent_places
+            .users
+            .iter()
+            .map(|email| email.trim().to_lowercase())
             .collect()
     }
 

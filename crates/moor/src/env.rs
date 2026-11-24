@@ -74,6 +74,8 @@ pub struct Env {
     front_webhooks: Arc<BTreeSet<String>>,
     /// The fronts that report steps for the agents in Boxes, by namespace.
     front_step_reports: Arc<BTreeSet<String>>,
+    /// The emails of the users who may have an agent place, lowercased.
+    agent_place_users: Arc<BTreeSet<String>>,
     /// The shortest gap a workflow's cron may have between firings.
     workflow_min_interval: Option<Duration>,
     /// What the controller opened once for every request and tick, such as the state store, by type.
@@ -194,6 +196,19 @@ impl Env {
     pub fn with_front_step_reports(mut self, fronts: BTreeSet<String>) -> Self {
         self.front_step_reports = Arc::new(fronts);
         self
+    }
+
+    /// Set the users who may have an agent place, by lowercased email.
+    #[must_use]
+    pub fn with_agent_place_users(mut self, users: BTreeSet<String>) -> Self {
+        self.agent_place_users = Arc::new(users);
+        self
+    }
+
+    /// Whether `email` is on the list of users who may have an agent place.
+    pub(crate) fn agent_place_user(&self, email: &str) -> bool {
+        self.agent_place_users
+            .contains(&email.trim().to_lowercase())
     }
 
     /// Set the shortest gap a workflow's cron may have between firings.

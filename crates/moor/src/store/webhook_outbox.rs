@@ -9,7 +9,7 @@ use moor_core::BoxId;
 use moor_schema::tables::{Boxes, Events, UserWebhooks, WebhookDeliveries};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query, SelectStatement};
 
-use super::{Store, StoreError};
+use super::{place, Store, StoreError};
 use crate::store::db::{self, DbExt as _, OptionalExtension as _, Tx};
 
 /// Longest `last_error` kept, in characters.
@@ -74,7 +74,7 @@ pub(super) fn enqueue(tx: &Tx<'_>, id: BoxId, event: i64, kind: &str) -> Result<
             named.push(webhook);
         }
     }
-    if named.is_empty() {
+    if named.is_empty() || place::kind_of(tx, id)?.is_some_and(|kind| kind.is_idle_place()) {
         return Ok(());
     }
     let mut insert = Query::insert();

@@ -13,6 +13,7 @@ mod box_deaths;
 mod box_gates;
 mod box_hands;
 mod box_inbox;
+mod box_places;
 mod box_state;
 mod checkpoint_base;
 mod checkpoint_depth;
@@ -122,4 +123,5 @@ pub const STEPS: &[Step] = &[
     step("V99__workflow_run_verdict", workflow_run_verdict::write),
     step("V100__inbox_cleared", inbox_cleared::write),
     step("V101__suspend_unchecked", suspend_unchecked::write),
+    step("V102__box_places", box_places::write),
 ];

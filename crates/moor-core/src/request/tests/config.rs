@@ -13,6 +13,7 @@ fn n(s: &str) -> BoxName {
 #[test]
 fn config_is_left_out_when_absent_and_kept_when_given() {
     let start = |config: Option<&str>| StartReq {
+        place: false,
         gates: None,
         placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,
@@ -65,6 +66,7 @@ fn gates_are_left_out_when_absent_and_kept_when_given() {
         max_tries: None,
     };
     let start = |gates: Option<Box<crate::gate::GatesDoc>>| StartReq {
+        place: false,
         gates,
         placement: crate::decide::schedule::Placement::FirstOnly,
         cold: false,

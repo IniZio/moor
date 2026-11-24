@@ -13,6 +13,7 @@ mod box_deaths;
 mod box_gates;
 mod box_hands;
 mod box_inbox;
+mod box_places;
 mod box_state;
 mod drop_box_deaths;
 mod drop_checkpoints;
@@ -131,7 +132,7 @@ fn plain_default(raw: &str) -> String {
 #[test]
 fn sqlite_reads_back_every_table_with_its_keys() {
     let schema = sqlite::schema(&sql(Backend::Sqlite));
-    assert_eq!(schema.tables.len(), 41, "{:?}", schema.tables.keys());
+    assert_eq!(schema.tables.len(), 42, "{:?}", schema.tables.keys());
     let sessions = schema.tables.get("sessions").unwrap();
     assert_eq!(sessions.primary_key, ["id"]);
     assert!(sessions.indexes.contains(&Index {

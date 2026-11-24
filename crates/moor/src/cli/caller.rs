@@ -34,7 +34,7 @@ pub fn resolve(request: Request, cwd: &Path, git: &dyn Checkout) -> Result<Resol
         warning: None,
     };
     Ok(match request {
-        Request::Start(r) if r.repo.is_none() => {
+        Request::Start(r) if r.repo.is_none() && !r.place => {
             let repo = repo()?;
             let warning = repo
                 .as_ref()

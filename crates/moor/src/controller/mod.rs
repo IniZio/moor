@@ -149,7 +149,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
 fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
     let env = env
         .with_workflow_min_interval(cfg.workflow_min_interval())
-        .with_front_step_reports(cfg.step_report_fronts());
+        .with_front_step_reports(cfg.step_report_fronts())
+        .with_agent_place_users(cfg.agent_place_users());
     let env = match &cfg.github_app {
         Some(app) => {
             let client = AppClient::load(app, |p| env.expand_home(p))?;

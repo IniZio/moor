@@ -28,6 +28,7 @@ pub use inspect::{ChangesReq, InspectReq};
 mod placement;
 pub use placement::Placement;
 mod host_session;
+mod start;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
 pub use machine::{
@@ -295,6 +296,10 @@ pub struct StartReq {
     /// strict, so an older controller that refuses unknown fields still takes a manual start.
     #[serde(default, skip_serializing_if = "Placement::is_first_only")]
     pub placement: Placement,
+    /// Start a place: a repo-less Box the agent waits in until a task claims it. Left out of the
+    /// JSON when false, so an older controller that refuses unknown fields still takes a start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub place: bool,
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,

@@ -10,11 +10,12 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::AccessEvent;
 use moor_core::domain::hands::{HandsInc, HandsInput};
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::forge::{BranchPull, Pull, PullState};
 use moor_core::BoxPath;
 
-use super::{admit_on, proc, req, row, run, Fx};
+use super::{admit_as, proc, req, row, run, Fx};
 use crate::cx::Cx;
 use crate::ops::{auto_close_pass, AutoCloseLooked};
 use crate::store::SuspendCheck;
@@ -37,13 +38,19 @@ fn one_off(boxwork: &str) -> OneOff {
 }
 
 fn one_off_on(driver: FakeDriver, boxwork: &str) -> OneOff {
+    one_off_as(driver, boxwork, BoxKind::Work)
+}
+
+/// A quiet Box of `kind` that the pass would close once it has been idle long enough.
+fn one_off_as(driver: FakeDriver, boxwork: &str, kind: BoxKind) -> OneOff {
     let dir = tempfile::tempdir().unwrap();
     let path = BoxPath::under("/work/box-1", ".moor/boxwork").unwrap();
     let driver = Arc::new(driver.peek_text("box-1", &path, boxwork));
     let forge = Arc::new(FakeForge::new());
     let proc = proc();
     let cx = Cx::fake(dir.path(), driver.clone(), proc.clone()).with_forge(forge.clone());
-    let id = admit_on(&cx, &driver, None, ("t", Some(BRANCH)));
+    let branch = (kind == BoxKind::Work).then_some(BRANCH);
+    let id = admit_as(&cx, &driver, None, ("t", branch), kind);
     cx.store()
         .unwrap()
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
@@ -182,6 +189,20 @@ fn a_one_off_box_closes_after_seven_idle_days_and_not_before() {
     t.pass_secs(240);
     assert!(t.closed());
     assert_eq!(t.events("closed")[0]["reason"], "idle");
+}
+
+#[test]
+fn an_idle_place_is_left_alone() {
+    let place = one_off_as(
+        FakeDriver::new(),
+        "ahead=0 dirty=0",
+        BoxKind::Place(PlaceState::Idle),
+    );
+    let work = one_off("ahead=0 dirty=0");
+    assert!(place.pass_secs(30 * DAY).is_empty());
+    work.pass_secs(30 * DAY);
+    assert!(work.closed(), "the same wait closes a work Box");
+    assert!(!place.closed());
 }
 
 #[test]

@@ -34,6 +34,7 @@ mod node_add;
 mod node_settings;
 mod nodes;
 mod open_session;
+mod place;
 pub(crate) mod pulls;
 mod repo_config;
 mod retry;

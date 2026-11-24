@@ -4,6 +4,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
+use moor_core::domain::place::BoxKind;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::forge::ForgeRepo;
@@ -122,14 +123,26 @@ fn admit_on(
     yaml: Option<&str>,
     (name, branch): (&str, Option<&str>),
 ) -> BoxId {
+    admit_as(cx, driver, yaml, (name, branch), BoxKind::Work)
+}
+
+/// Like [`admit_on`], for a Box of `kind`; a place has no repo.
+fn admit_as(
+    cx: &Cx,
+    driver: &FakeDriver,
+    yaml: Option<&str>,
+    (name, branch): (&str, Option<&str>),
+    kind: BoxKind,
+) -> BoxId {
     let store = cx.store().unwrap();
     if let Some(yaml) = yaml {
         crate::testing::cx::store_config(store, &ForgeRepo::new("o", "n"), yaml);
     }
     let new = Decision::insert(moor_core::domain::decision::NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: Some(crate::testing::cx::box_repo()),
+        repo: (kind == BoxKind::Work).then(crate::testing::cx::box_repo),
         spec: moor_core::domain::decision::SpecFields {
+            kind,
             branch: branch.map(str::to_owned),
             ..moor_core::domain::decision::SpecFields::default()
         },
