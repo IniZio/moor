@@ -1,7 +1,8 @@
 //! Each token's Box, and the proxy this replica runs for each Box it serves.
 //!
 //! A token is looked up on the ledger on every new tunnel, so a Box that closed is refused at
-//! once. Only tokens the ledger confirmed are kept, each with its tunnel bucket and count. While
+//! once, and a Box whose spec changed gets a proxy built from the new spec before that tunnel
+//! starts. Only tokens the ledger confirmed are kept, each with its tunnel bucket and count. While
 //! the controller cannot be reached, the last answer for a token is used, as a Box's own Proxy
 //! uses its last answers.
 
@@ -24,7 +25,7 @@ use super::limit::{Bucket, Rate};
 use super::served::{lock, Served, Tunnel};
 use super::Config;
 use crate::proxy::engine::{engine, Parts};
-use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, Endpoint, LedgerError};
+use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, Endpoint, LedgerError, Owner};
 use crate::proxy::nono::ca;
 use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::{token, Sink};
@@ -62,8 +63,16 @@ struct Known {
     open: Arc<AtomicUsize>,
 }
 
+/// A Box's proxy and the spec digest it last followed.
+struct Held {
+    /// The proxy new tunnels go to.
+    served: Arc<Served>,
+    /// The controller's spec digest this proxy was last checked against; none when unknown.
+    followed: Option<String>,
+}
+
 /// The proxy of one Box, replaced when its spec changes.
-type Slot = Mutex<Option<Arc<Served>>>;
+type Slot = Mutex<Option<Held>>;
 
 /// Every Box this replica serves.
 pub(super) struct Boxes {
@@ -129,30 +138,43 @@ impl Boxes {
     /// The route for the Box whose token hashes to `token_hash`, starting its proxy on first use.
     pub(super) fn admit(&self, token_hash: &str) -> Result<Route, Refused> {
         self.spend(token_hash)?;
-        let box_id = self.owner(token_hash)?;
+        let (box_id, spec) = self.owner(token_hash)?;
         let open = lock(&self.known)
             .get(token_hash)
             .map(|k| Arc::clone(&k.open))
             .ok_or(Refused::Unknown)?;
         let tunnel = Tunnel::claim(&open, self.tunnels).ok_or(Refused::Limited)?;
         Ok(Route {
-            served: self.served(box_id).map_err(Refused::Unavailable)?,
+            served: self
+                .served(box_id, spec.as_deref())
+                .map_err(Refused::Unavailable)?,
             _tunnel: tunnel,
         })
     }
 
-    /// The proxy of `box_id`, started on first use.
-    fn served(&self, box_id: BoxId) -> Result<Arc<Served>, String> {
+    /// The proxy of `box_id`, started on first use. When `spec`, the controller's spec digest,
+    /// is not the one the proxy last followed, the proxy is first rebuilt if the spec changed.
+    fn served(&self, box_id: BoxId, spec: Option<&str>) -> Result<Arc<Served>, String> {
         let slot = Arc::clone(lock(&self.served).entry(box_id).or_default());
         let mut current = lock(&slot);
-        let served = if let Some(served) = current.as_ref() {
-            Arc::clone(served)
+        let mut replaced = None;
+        let served = if let Some(held) = current.as_mut() {
+            if spec.is_some() && held.followed.as_deref() != spec {
+                replaced = self.follow_spec(box_id, held);
+                held.followed = spec.map(str::to_owned);
+            }
+            Arc::clone(&held.served)
         } else {
             let started = Arc::new(self.start(box_id, None)?);
-            *current = Some(Arc::clone(&started));
+            *current = Some(Held {
+                served: Arc::clone(&started),
+                followed: spec.map(str::to_owned),
+            });
             started
         };
         drop(current);
+        // A replaced proxy delivers its audit as it stops, which never holds up the slot.
+        drop(replaced);
         Ok(served)
     }
 
@@ -169,17 +191,18 @@ impl Boxes {
         allowed.then_some(()).ok_or(Refused::Limited)
     }
 
-    /// The open Box of `token_hash`, or the last answer while the controller is away.
-    fn owner(&self, token_hash: &str) -> Result<BoxId, Refused> {
+    /// The open Box of `token_hash` and its spec digest, or the last answer, with no digest,
+    /// while the controller is away.
+    fn owner(&self, token_hash: &str) -> Result<(BoxId, Option<String>), Refused> {
         let cached = lock(&self.known).contains_key(token_hash);
         let answer = if cached {
             self.lookup_within(token_hash, CACHED_LOOKUP)
         } else {
-            self.lookup.token_box(token_hash)
+            self.lookup.token_spec(token_hash)
         };
         let mut known = lock(&self.known);
         match answer {
-            Ok(Some(box_id)) => {
+            Ok(Some(Owner { box_id, spec })) => {
                 // The first tunnel counts against the token's own bucket too.
                 let first = (self.token_rate.burst - 1.0).max(0.0);
                 let now = self.clock.instant();
@@ -191,7 +214,7 @@ impl Boxes {
                         open: Arc::default(),
                     })
                     .box_id = box_id;
-                Ok(box_id)
+                Ok((box_id, spec))
             }
             Ok(None) => {
                 known.remove(token_hash);
@@ -199,7 +222,7 @@ impl Boxes {
             }
             Err(e @ LedgerError::Unavailable(_)) => known
                 .get(token_hash)
-                .map(|k| k.box_id)
+                .map(|k| (k.box_id, None))
                 .ok_or_else(|| Refused::Unavailable(e.to_string())),
             Err(e) => Err(Refused::Unavailable(e.to_string())),
         }
@@ -211,10 +234,10 @@ impl Boxes {
         &self,
         token_hash: &str,
         wait: Duration,
-    ) -> Result<Option<BoxId>, LedgerError> {
+    ) -> Result<Option<Owner>, LedgerError> {
         let (tx, rx) = std::sync::mpsc::channel();
         let (lookup, hash) = (Arc::clone(&self.lookup), token_hash.to_owned());
-        std::thread::spawn(move || drop(tx.send(lookup.token_box(&hash))));
+        std::thread::spawn(move || drop(tx.send(lookup.token_spec(&hash))));
         rx.recv_timeout(wait).unwrap_or_else(|_| {
             Err(LedgerError::Unavailable(format!(
                 "no answer within {}ms",
@@ -261,7 +284,7 @@ impl Boxes {
             .map(|(id, slot)| (*id, Arc::clone(slot)))
             .collect();
         for (box_id, slot) in slots {
-            let Some(served) = lock(&slot).clone() else {
+            let Some(served) = lock(&slot).as_ref().map(|h| Arc::clone(&h.served)) else {
                 continue;
             };
             served.drain();
@@ -272,7 +295,7 @@ impl Boxes {
             if closed(&view) {
                 self.close(box_id, &slot, &served);
             } else if view.is_ok() {
-                self.follow_spec(box_id, &slot, &served);
+                self.tend_spec(box_id, &slot, &served);
             }
         }
     }
@@ -288,15 +311,40 @@ impl Boxes {
         }
     }
 
-    /// Rebuilds the proxy of `box_id` when the controller holds another spec for it.
-    fn follow_spec(&self, box_id: BoxId, slot: &Slot, served: &Served) {
-        match served.ledger.spec() {
-            Ok(Some(spec)) if spec != served.spec => match self.start(box_id, Some(spec)) {
-                Ok(fresh) => *lock(slot) = Some(Arc::new(fresh)),
-                Err(e) => self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get())),
+    /// [`Boxes::follow_spec`] for the tender, unless a tunnel already replaced `served`. A
+    /// proxy it rebuilds has followed no digest, so the next tunnel checks it once more.
+    fn tend_spec(&self, box_id: BoxId, slot: &Slot, served: &Arc<Served>) {
+        let mut current = lock(slot);
+        let replaced = match current.as_mut() {
+            Some(held) if Arc::ptr_eq(&held.served, served) => {
+                let replaced = self.follow_spec(box_id, held);
+                if replaced.is_some() {
+                    held.followed = None;
+                }
+                replaced
+            }
+            _ => None,
+        };
+        drop(current);
+        drop(replaced);
+    }
+
+    /// Rebuilds the proxy in `held` when the controller holds another spec for `box_id`, and
+    /// returns the one it replaced. A failed rebuild keeps the old proxy and is only logged.
+    fn follow_spec(&self, box_id: BoxId, held: &mut Held) -> Option<Arc<Served>> {
+        match held.served.ledger.spec() {
+            Ok(Some(spec)) if spec != held.served.spec => match self.start(box_id, Some(spec)) {
+                Ok(fresh) => Some(std::mem::replace(&mut held.served, Arc::new(fresh))),
+                Err(e) => {
+                    self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get()));
+                    None
+                }
             },
-            Ok(_) => {}
-            Err(e) => self.say(format_args!("cannot read Box {}'s spec: {e}", box_id.get())),
+            Ok(_) => None,
+            Err(e) => {
+                self.say(format_args!("cannot read Box {}'s spec: {e}", box_id.get()));
+                None
+            }
         }
     }
 
@@ -305,8 +353,8 @@ impl Boxes {
         let slots: Vec<Arc<Slot>> = lock(&self.served).drain().map(|(_, s)| s).collect();
         for slot in slots {
             let taken = lock(&slot).take();
-            if let Some(served) = taken {
-                served.stop();
+            if let Some(held) = taken {
+                held.served.stop();
             }
         }
     }
@@ -336,7 +384,7 @@ impl Boxes {
     pub(super) fn engines(&self) -> Vec<std::net::SocketAddr> {
         lock(&self.served)
             .values()
-            .filter_map(|slot| lock(slot).as_ref().map(|s| s.addr))
+            .filter_map(|slot| lock(slot).as_ref().map(|h| h.served.addr))
             .collect()
     }
 
@@ -344,7 +392,7 @@ impl Boxes {
     pub(super) fn serving(&self) -> usize {
         lock(&self.served)
             .values()
-            .filter(|slot| lock(slot).as_ref().is_some_and(|s| s.running()))
+            .filter(|slot| lock(slot).as_ref().is_some_and(|h| h.served.running()))
             .count()
     }
 }

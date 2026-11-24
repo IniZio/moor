@@ -84,7 +84,7 @@ impl Boxes {
 
     /// Starts the proxy of `box_id` and reads each secret its rules name and what it holds.
     fn warm_box(&self, box_id: BoxId) -> Result<(), String> {
-        let served = self.served(box_id)?;
+        let served = self.served(box_id, None)?;
         for rule in &served.spec.rules {
             let name = SecretName::parse(&rule.credential)?;
             served.ledger.secret(&name).map_err(|e| e.to_string())?;

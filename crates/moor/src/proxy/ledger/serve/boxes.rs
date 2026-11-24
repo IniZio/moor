@@ -8,7 +8,7 @@ use serde::Serialize;
 use zeroize::Zeroizing;
 
 use super::super::hold::hold_of;
-use super::super::{AwakeTokens, BoxView, Call, Fault};
+use super::super::{AwakeTokens, BoxView, Call, Fault, Owner};
 use super::encode;
 use super::start;
 use crate::store::{Store, StoreError};
@@ -77,6 +77,17 @@ pub(super) fn token_box(store: &Store, token_hash: &str) -> Result<Option<BoxId>
         return Ok(None);
     };
     Ok(view(store, box_id)?.filter(|v| v.open).map(|_| box_id))
+}
+
+/// [`token_box`], with a digest of the spec the Box's Proxy runs from.
+pub(super) fn token_spec(store: &Store, token_hash: &str) -> Result<Option<Owner>, StoreError> {
+    let Some(box_id) = token_box(store, token_hash)? else {
+        return Ok(None);
+    };
+    Ok(Some(Owner {
+        box_id,
+        spec: store.proxy_spec_digest(box_id)?,
+    }))
 }
 
 /// The token hash and Box of every open, awake Box with an egress token. A Box whose row cannot
