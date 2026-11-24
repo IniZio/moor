@@ -151,6 +151,7 @@ fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
         .with_workflow_min_interval(cfg.workflow_min_interval())
         .with_front_step_reports(cfg.step_report_fronts())
         .with_agent_place_users(cfg.agent_place_users());
+    let env = Moor::queue_steers(env);
     let env = match &cfg.github_app {
         Some(app) => {
             let client = AppClient::load(app, |p| env.expand_home(p))?;

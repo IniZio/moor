@@ -261,6 +261,7 @@ fn attempt(
     };
     let shown = shown_of(&steer, req, before.as_ref());
     let steer_id = record(store, id, &session, &shown, mark, inbox)?;
+    activity::steered(cx, id);
     if starts_turn {
         open_turn(store, &row)?;
     }

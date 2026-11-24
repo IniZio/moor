@@ -62,6 +62,7 @@ pub(super) fn serve_started(
     settle::spawn_places(&running.env, &drain, sink);
     settle::spawn_inbox(&running.env, running.settle_every, &drain, sink);
     settle::spawn_watch_count(&running.env, &drain, sink);
+    settle::spawn_follow(&running.env, &drain, sink);
     settle::spawn_wanted(&running.env, running.settle_every, &drain, sink);
     settle::spawn_promote(&running.env, running.settle_every, &drain, sink);
     settle::spawn_gates(&running.env, running.settle_every, &drain, sink);

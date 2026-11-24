@@ -98,6 +98,32 @@ pub(super) fn spawn_inbox(env: &Env, every: Duration, drain: &Arc<Drain>, sink: 
     passes(every, drain, sink, Moor::inbox_pass(env));
 }
 
+/// Longest the follow thread waits for a steered Box before it looks at the drain again.
+const FOLLOW_WAIT: Duration = Duration::from_secs(1);
+
+/// Follows each steered Box on a thread of its own, reading its agent quickly until it takes the
+/// steer up, so its first line is on record before the next settle pass.
+pub(super) fn spawn_follow(env: &Env, drain: &Arc<Drain>, sink: &Sink) {
+    let Some(next) = Moor::steered(env) else {
+        return;
+    };
+    let (env, drain, sink) = (env.clone(), Arc::clone(drain), Sink::clone(sink));
+    thread::spawn(move || {
+        while !drain.begun() {
+            let Some(id) = next(FOLLOW_WAIT) else {
+                continue;
+            };
+            let (env, drain, sink) = (env.clone(), Arc::clone(&drain), Sink::clone(&sink));
+            thread::spawn(move || {
+                let Some(_held) = drain.hold() else { return };
+                for msg in Moor::checked(|| Moor::follow(&env, id)) {
+                    log(&sink, &format!("follow: {msg}"));
+                }
+            });
+        }
+    });
+}
+
 /// How often the controller says how many watch streams are open, when the count changed.
 const WATCH_COUNT_EVERY: Duration = Duration::from_secs(60);
 

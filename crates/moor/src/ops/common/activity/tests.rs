@@ -446,6 +446,7 @@ fn a_new_note_session_id_is_stored_once() {
 
 mod doing;
 mod exit;
+mod follow;
 mod link;
 mod needs_input;
 mod said;

@@ -169,6 +169,7 @@ pub(crate) fn deliver(
                     item.id,
                     record(store, id, &launch, &item.text, mark, item.id)?,
                 ));
+                activity::steered(cx, id);
                 open_turn(store, &row)?;
                 crate::ops::ask::steered(cx, store, &row)?;
             }
