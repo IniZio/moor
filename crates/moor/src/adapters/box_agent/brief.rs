@@ -200,6 +200,41 @@ mod tests {
     }
 
     #[test]
+    fn the_clone_a_place_brief_names_passes_the_places_git_rule() {
+        use moor_core::config::proxy::{resolve_rules, ProxyConfig};
+        use nono_proxy::config::{CompiledEndpointRules, EndpointRule};
+
+        let out = render(&BriefInput {
+            place: true,
+            ..input(None)
+        });
+        let url = out
+            .split_whitespace()
+            .find(|w| w.starts_with("https://github.com/OWNER/NAME"))
+            .expect("the place brief names a clone URL")
+            .trim_end_matches('`')
+            .replace("OWNER/NAME", "o/n");
+        let refs = format!("{}/info/refs", url.trim_start_matches("https://github.com"));
+        let rules = resolve_rules(
+            &ProxyConfig::default(),
+            &[moor_core::seam::forge::ForgeRepo::new("o", "n")],
+            false,
+        )
+        .unwrap();
+        let git = rules.iter().find(|r| r.name == "github-git").unwrap();
+        let allow: Vec<EndpointRule> = git
+            .endpoint_rules
+            .iter()
+            .map(|r| EndpointRule {
+                method: r.method.clone(),
+                path: r.path.clone(),
+            })
+            .collect();
+        let allow = CompiledEndpointRules::compile(&allow).unwrap();
+        assert!(allow.is_allowed("GET", &refs), "{refs}");
+    }
+
+    #[test]
     fn names_no_prompt_or_goal_line() {
         let out = render(&input(None));
         assert!(
