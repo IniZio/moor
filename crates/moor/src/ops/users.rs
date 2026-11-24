@@ -28,7 +28,7 @@ pub(crate) fn run(
 ) -> Result<serde_json::Value, CommandError> {
     let store = cx.store()?;
     match cmd {
-        UserCmd::Whoami => whoami(store, who),
+        UserCmd::Whoami => whoami(cx, store, who),
         UserCmd::Enroll { email } => {
             let (user, created) = store.enroll(who, email.as_ref())?;
             to_value(&EnrollValue { user, created })
@@ -118,16 +118,23 @@ pub(crate) fn run(
 }
 
 /// `whoami`: `who`, its user, and every identity linked to that user.
-fn whoami(store: &Store, who: &Identity) -> Result<serde_json::Value, CommandError> {
+fn whoami(cx: &Cx, store: &Store, who: &Identity) -> Result<serde_json::Value, CommandError> {
     let user = store.user_of(who)?;
     let identities = match user {
         Some(user) => store.identities(user)?,
         None => Vec::new(),
     };
+    let asks = match user {
+        Some(user) => store
+            .email_of(user)?
+            .is_some_and(|email| cx.env().agent_place_user(&email)),
+        None => false,
+    };
     to_value(&WhoamiValue {
         identity: who.clone(),
         user,
         identities,
+        asks,
     })
 }
 
