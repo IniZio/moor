@@ -78,8 +78,9 @@ struct Held {
 struct Slot {
     /// The proxy new tunnels go to.
     held: Mutex<Option<Held>>,
-    /// Held while a proxy of the Box is built: every build writes the Box's CA directory.
-    building: Mutex<()>,
+    /// Held while a proxy of the Box is built or its CA removed, both of which touch the Box's
+    /// CA directory; true once the Box's proxy is closing, when no proxy of it is built again.
+    building: Mutex<bool>,
 }
 
 /// Every Box this replica serves.
@@ -258,8 +259,15 @@ impl Boxes {
 
     /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps, once no
     /// other proxy of the Box is being built.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "the build holds the CA directory"
+    )]
     fn start(&self, slot: &Slot, box_id: BoxId, spec: Option<ProxySpec>) -> Result<Served, String> {
-        let _building = lock(&slot.building);
+        let closing = lock(&slot.building);
+        if *closing {
+            return Err(format!("Box {} is closing", box_id.get()));
+        }
         let ledger = Arc::new(BoxLedger::egress(
             self.ledger.clone(),
             box_id,
@@ -312,15 +320,20 @@ impl Boxes {
         }
     }
 
-    /// Stops the proxy of a Box that closed, forgets its tokens and removes its CA.
+    /// Removes the CA of a Box that closed, stops its proxy and forgets its tokens. The slot
+    /// stays in the map, refusing builds, until the CA is gone, so no build of the Box overlaps
+    /// the removal.
     fn close(&self, box_id: BoxId, slot: &Arc<Slot>, served: &Served) {
-        lock(&self.served).remove(&box_id);
-        lock(&slot.held).take();
-        served.stop();
-        lock(&self.known).retain(|_, k| k.box_id != box_id);
+        let mut closing = lock(&slot.building);
+        *closing = true;
         if let Err(e) = ca::remove(&self.work_dir, box_id) {
             self.say(format_args!("cannot remove Box {}'s CA: {e}", box_id.get()));
         }
+        drop(closing);
+        lock(&slot.held).take();
+        served.stop();
+        lock(&self.known).retain(|_, k| k.box_id != box_id);
+        lock(&self.served).remove(&box_id);
     }
 
     /// Swaps in [`Boxes::rebuilt`] unless a tunnel already replaced `served`. The ledger is read
