@@ -113,6 +113,7 @@ fn cold(cx: &Cx, store: &Store, claim: Claim, text: &str) -> Result<AskValue, Co
         parent: None,
         gates: None,
         identity: None,
+        task: None,
     };
     let v = start::run_as(cx, &req, BoxKind::Place(PlaceState::Claimed(claim)))?;
     let id = BoxId::new(v.boxed.id);

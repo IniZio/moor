@@ -68,6 +68,10 @@ pub struct NodeAddSpec {
 
 /// Result of parsing argv.
 #[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one value per command line, built and matched once; boxing the invocation would touch every caller"
+)]
 pub enum Parsed {
     /// Run this request.
     Request(Invocation),

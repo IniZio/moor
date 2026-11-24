@@ -84,7 +84,7 @@ fn launch_or_skip(
         .agent_session_id
         .clone()
         .filter(|s| req.prompt.is_none() && !s.is_empty());
-    if req.no_agent || store.live_launch(id)?.is_some() {
+    if req.no_agent || row.task.is_some() || store.live_launch(id)?.is_some() {
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {

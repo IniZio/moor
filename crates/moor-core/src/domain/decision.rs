@@ -90,6 +90,9 @@ pub struct HandsWrite {
 pub struct SpecFields {
     /// What the Box is born as; a place has no repo.
     pub kind: BoxKind,
+    /// The claimed place whose agent started the Box; none for a Box a person or a workflow
+    /// started. A Box with a task runs no agent.
+    pub task: Option<BoxId>,
     /// Issue reference.
     pub issue: Option<String>,
     /// The prompt the Box starts with.

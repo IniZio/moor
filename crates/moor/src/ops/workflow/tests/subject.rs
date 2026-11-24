@@ -209,6 +209,7 @@ fn a_newer_head_closes_an_older_box_whose_agent_never_launched() {
         also: None,
         parent: None,
         identity: None,
+        task: None,
     };
     let made = crate::ops::start::run(&r.cx, &req).unwrap();
     let old_box = BoxId::new(made.boxed.id);

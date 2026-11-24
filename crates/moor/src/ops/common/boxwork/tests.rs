@@ -106,6 +106,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         updated_at: Ts::from_millis(0),
         hands: Some(boxed.clone()),
         kind: BoxKind::Work,
+        task: None,
     };
     (row, boxed)
 }

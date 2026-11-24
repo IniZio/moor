@@ -479,13 +479,13 @@ fn start_box_sends_the_stamped_box_and_its_repos() {
     let result = l.call(
         Some("41"),
         "start_box",
-        json!({"name": "n", "repos": ["o/a", "o/b"], "prompt": "go"}),
+        json!({"name": "n", "repos": ["o/a", "o/b"]}),
     );
     assert_ne!(result["isError"], true, "{result}");
     assert_eq!(
         l.seen.recv().unwrap(),
         json!({"cmd": "box-tool", "from": 41, "call": {
-            "tool": "start", "name": "n", "repo": "o/a", "also": ["o/b"], "prompt": "go"}})
+            "tool": "start", "name": "n", "repo": "o/a", "also": ["o/b"]}})
     );
 }
 

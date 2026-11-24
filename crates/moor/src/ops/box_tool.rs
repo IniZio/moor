@@ -1,5 +1,6 @@
 //! The Box tools of an agent place: `exec_in_box` runs a command in one of its user's work Boxes,
-//! and `start_box` starts a Box for that user on its task's repos.
+//! and `start_box` starts a Box for that user on its task's repos, tied to the task and running
+//! no agent.
 //!
 //! The gate's Box listener sends them as `box-tool`, naming the place from the Proxy's
 //! `X-Moor-Box` and asserting no identity. They answer only a place a task has claimed, act as
@@ -40,7 +41,7 @@ const ONLY_WORK_BOXES: &str = "exec_in_box reaches only work Boxes, not an agent
 pub(crate) enum Plan {
     /// A command in a work Box of the place's user, named by id.
     Exec(ExecReq),
-    /// A start for the place's user on the claim's repos.
+    /// A start for the place's user on the claim's repos, tied to the place and running no agent.
     Start(Box<StartReq>),
 }
 
@@ -96,12 +97,7 @@ pub(crate) fn admit(
             argv: vec![command.clone()],
             timeout_secs: Some(timeout.get()),
         }),
-        BoxCall::Start {
-            name,
-            repo,
-            also,
-            prompt,
-        } => {
+        BoxCall::Start { name, repo, also } => {
             if let Some(other) = std::iter::once(repo)
                 .chain(also)
                 .find(|r| !claim.repos().any(|c| c == *r))
@@ -113,8 +109,9 @@ pub(crate) fn admit(
                 )));
             }
             Plan::Start(Box::new(StartReq {
-                prompt: prompt.clone(),
                 repo: Some(repo.clone()),
+                no_agent: true,
+                task: Some(req.from),
                 // Named even when empty, so the user config's `box.also` adds no repo.
                 also: Some(also.clone()),
                 ..StartReq::named(name.clone())

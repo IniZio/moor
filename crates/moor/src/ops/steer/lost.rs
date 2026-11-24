@@ -35,6 +35,7 @@ pub(super) fn bring_back(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     };
     start::run(cx, &req).map(drop)
 }

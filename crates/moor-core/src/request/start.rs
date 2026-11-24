@@ -25,6 +25,7 @@ impl StartReq {
             parent: None,
             gates: None,
             identity: None,
+            task: None,
         }
     }
 }

@@ -12,7 +12,6 @@ use moor_core::progress::PrLink;
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
 use moor_core::view::ArtifactView;
-use moor_core::workflow::is_draft_prompt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -200,8 +199,7 @@ pub(super) fn list(stream: &mut TcpStream, gate: &Gate, session: &Session, query
     };
     match show(gate, session, all) {
         Ok(shown) => {
-            let own = |r: &&Row| !r.prompt.as_deref().is_some_and(is_draft_prompt);
-            let rows = shown.boxes.iter().flatten().filter(own);
+            let rows = shown.boxes.iter().flatten().filter(|r| r.on_home());
             let rows: Vec<Value> = rows.filter_map(summary).collect();
             json(stream, "200 OK", &json!({"boxes": rows}));
         }

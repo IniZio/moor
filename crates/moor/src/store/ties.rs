@@ -1,22 +1,22 @@
-//! What Boxes are tied to, read for many Boxes at once: the workflow run that made each and the
-//! node it runs on. One read per tie, however many Boxes are asked about.
+//! What Boxes are tied to, read for many Boxes at once: the workflow run that made each, the node
+//! it runs on and the place that started it. One read per tie, however many Boxes are asked about.
 
 use std::collections::HashMap;
 
 use moor_core::view::ties::WorkflowRef;
 use moor_core::view::BoxTies;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxState, WorkflowRuns, Workflows};
-use sea_query::{Expr, ExprTrait as _, Order, Query};
+use moor_schema::tables::{BoxState, Boxes, WorkflowRuns, Workflows};
+use sea_query::{Expr, ExprTrait as _, JoinType, Order, Query};
 
-use super::db::DbExt as _;
+use super::db::{Db, DbExt as _};
 use super::{Store, StoreError};
 
 impl Store {
     /// The ties of each Box in `ids` that has any. A Box's workflow is the one of its latest run,
     /// the highest run id, so a Box a later run reused names that run's workflow. A workflow that was
     /// deleted took its runs with it, so its Boxes name none. A Box's machine is the node it runs on,
-    /// none while it is on none.
+    /// none while it is on none. A Box's task is the place whose agent started it.
     pub(crate) fn ties_of(&self, ids: &[BoxId]) -> Result<HashMap<BoxId, BoxTies>, StoreError> {
         let mut ties: HashMap<BoxId, BoxTies> = HashMap::new();
         if ids.is_empty() {
@@ -60,6 +60,30 @@ impl Store {
             let (box_id, machine) = node?;
             ties.entry(BoxId::new(box_id)).or_default().machine = Some(machine);
         }
+        for (box_id, place) in task_names(&reader, ids)? {
+            ties.entry(BoxId::new(box_id)).or_default().task = Some(place);
+        }
         Ok(ties)
     }
+}
+
+/// The name of the place that started each Box in `ids` that a place started, by the Box's id.
+fn task_names(conn: &dyn Db, ids: &[BoxId]) -> Result<Vec<(i64, String)>, StoreError> {
+    let started = Query::select()
+        .column(("w", Boxes::Id))
+        .column(("p", Boxes::Name))
+        .from_as(Boxes::Table, "w")
+        .join_as(
+            JoinType::InnerJoin,
+            Boxes::Table,
+            "p",
+            Expr::col(("p", Boxes::Id)).equals(("w", Boxes::Task)),
+        )
+        .and_where(Expr::col(("w", Boxes::Id)).is_in(ids.iter().map(|id| id.get())))
+        .take();
+    conn.rows(started, |r| {
+        Ok::<_, super::db::Error>((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?
+    .collect::<Result<_, _>>()
+    .map_err(Into::into)
 }

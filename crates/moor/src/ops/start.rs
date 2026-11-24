@@ -364,6 +364,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>, kind: BoxKind) ->
         repo: facts.repo.clone(),
         spec: SpecFields {
             kind,
+            task: req.task,
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),

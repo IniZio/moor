@@ -260,6 +260,7 @@ fn agentless_start() -> StartReq {
         parent: None,
         also: None,
         identity: None,
+        task: None,
     }
 }
 

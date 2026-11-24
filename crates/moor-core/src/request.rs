@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::{BoxName, ForgeRepo, SessionId};
+use crate::name::{BoxId, BoxName, ForgeRepo, SessionId};
 use crate::user::Identity;
 
 mod artifacts;
@@ -344,6 +344,11 @@ pub struct StartReq {
     /// The identity the Box acts for; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
+    /// The claimed place whose agent asked for this Box. Only `box-tool` sets it, from the place
+    /// it admitted; a wire start that names a `task` is refused, since no front may tie a Box to
+    /// a place.
+    #[serde(skip)]
+    pub task: Option<BoxId>,
 }
 
 /// Arguments of `show`.
