@@ -15,6 +15,9 @@
 .t-pl-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .t-pl-text > :first-child { margin-top: 0; }
 .t-pl-text > :last-child { margin-bottom: 0; }
+.t-pl-note { margin: 0; padding: 2px 0; }
+.t-pl-note > :first-child { margin-top: 0; }
+.t-pl-note > :last-child { margin-bottom: 0; }
 .t-pl-fold { margin: -4px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--moor-color-text-muted); }
 .t-pl-fold > summary { display: block; width: max-content; cursor: pointer; list-style: none; }
 .t-pl-fold > summary::-webkit-details-marker { display: none; }

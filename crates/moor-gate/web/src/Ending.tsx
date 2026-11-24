@@ -4,8 +4,11 @@ import { type BoxDetail, failure } from './api';
 import { boxClose, boxStop, Refused, type Unsaved } from './steerApi';
 import './steer.css';
 
-/** The states in which the agent runs, so Stop has something to end. */
-const STOPPABLE = ['working', 'needs_you', 'done'];
+/** The states in which the agent runs. */
+export const RUNNING = ['working', 'needs_you'];
+
+/** The states of a Box task in which Stop has something to end: its agent may idle after it is done. */
+const STOPPABLE = [...RUNNING, 'done'];
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
