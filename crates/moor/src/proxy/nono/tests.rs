@@ -236,6 +236,26 @@ fn non_utf8_token_is_refused_without_echoing_it() {
     assert_eq!(err.to_string(), "proxy start: session token is not utf-8");
 }
 
+#[test]
+fn a_proxy_whose_interception_does_not_start_is_refused() {
+    let state = tempfile::tempdir().unwrap();
+    let (key, cert) = ca::generate(BoxId::new(3)).unwrap();
+    let ca = ca::install(state.path(), BoxId::new(3), (key.as_bytes(), &cert)).unwrap();
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
+    let cfg = build_config(&NonoSpec {
+        rules: &[rule("a", &["a.test"], bearer())],
+        token: &token,
+        ca: &ca,
+        ca_dir: &state.path().join("gone"),
+        upstream_ca: None,
+        chain: None,
+        only_rules: false,
+    });
+    let capture = Arc::new(capture::MoorCapture::new(std::collections::BTreeMap::new()));
+    let err = NonoProxy::start(cfg, capture).unwrap_err();
+    assert!(err.to_string().contains("TLS interception"), "{err}");
+}
+
 fn chain_cfg(rules: &[ResolvedRule]) -> NonoConfig {
     let chain = Chain {
         proxy: "127.0.0.1:9911".parse().unwrap(),
