@@ -79,11 +79,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     run_as(cx, req, super::place::kind_of(req))
 }
 
-/// [`run`], making a new Box of `kind`: an ask starts a place that holds its claim from the insert.
-///
-/// # Errors
-/// As [`run`].
-pub(crate) fn run_as(cx: &Cx, req: &StartReq, kind: BoxKind) -> Result<StartView, CommandError> {
+/// [`run`], making a new Box of `kind`, which an ask's claim may hold; it fails as `run` does.
+pub(super) fn run_as(cx: &Cx, req: &StartReq, kind: BoxKind) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
     super::place::check_start(cx, store, req, user)?;

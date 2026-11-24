@@ -133,6 +133,7 @@ impl Store {
         let sender = InboxKind::Prompt.as_str();
         super::inbox::insert(&tx, id, (InboxKind::Prompt, prompt, sender), self.now())?;
         tx.commit()?;
+        drop(conn);
         Ok(true)
     }
 

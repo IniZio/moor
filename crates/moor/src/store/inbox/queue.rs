@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::{one, rows, select, write_delivery};
 use crate::store::apply::insert_event;
-use crate::store::db::{DbExt as _, Tx};
+use crate::store::db::{Db, DbExt as _, Tx};
 use crate::store::event_from_row;
 use crate::store::reads::SHUT;
 use crate::store::select::events_of;
@@ -168,4 +168,35 @@ pub(in crate::store) fn steered_by(
         }
     }
     Ok(None)
+}
+
+/// Appends `text` of `kind` from `sender` to Box `box_id`'s inbox at `now`, queued, on `conn`,
+/// which a write's own transaction may be.
+pub(in crate::store) fn insert(
+    conn: &dyn Db,
+    box_id: BoxId,
+    (kind, text, sender): (InboxKind, &str, &str),
+    now: Ts,
+) -> Result<InboxId, StoreError> {
+    let id: i64 = conn.row(
+        Query::insert()
+            .into_table(BoxInbox::Table)
+            .columns([
+                BoxInbox::Box,
+                BoxInbox::Kind,
+                BoxInbox::Text,
+                BoxInbox::Sender,
+                BoxInbox::CreatedAt,
+            ])
+            .values_panic([
+                box_id.get().into(),
+                kind.as_str().into(),
+                text.into(),
+                sender.into(),
+                now.as_millis().into(),
+            ])
+            .returning_col(BoxInbox::Id),
+        |r| r.get(0),
+    )?;
+    Ok(InboxId::new(id))
 }

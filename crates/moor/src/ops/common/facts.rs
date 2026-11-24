@@ -34,7 +34,7 @@ pub(crate) fn repo_config(cx: &Cx, row: &BoxRow) -> Result<Option<RepoConfig>, C
 }
 
 /// The repo whose config Box `row` takes: its own, else the task repo of the claim that took it.
-fn task_repo(row: &BoxRow) -> Option<&ForgeRepo> {
+const fn task_repo(row: &BoxRow) -> Option<&ForgeRepo> {
     match (&row.repo, &row.kind) {
         (Some(r), _) => Some(&r.repo),
         (None, BoxKind::Place(PlaceState::Claimed(claim))) => Some(&claim.repo),

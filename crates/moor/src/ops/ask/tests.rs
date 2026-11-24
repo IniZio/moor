@@ -342,9 +342,7 @@ fn no_idle_place_starts_a_place_with_the_claim_and_the_prompt() {
         .unwrap()
         .unwrap();
     assert!(row.repo.is_none());
-    let BoxKind::Place(PlaceState::Claimed(claim)) = row.kind else {
-        panic!("the started place holds no claim: {:?}", row.kind);
-    };
+    let claim = claim_of(&w, row.id).unwrap();
     assert_eq!(claim.repo, repo());
     assert!(claim.served.is_some() && claim.steered.is_some());
     let launch = w.engine.launches().pop().unwrap();
