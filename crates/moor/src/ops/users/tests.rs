@@ -66,9 +66,8 @@ fn whoami_says_whether_the_caller_is_on_the_agent_places_list() {
     f.cx.store().unwrap().enroll(&me, Some(&email)).unwrap();
     let off = run(&f.cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
     assert!(off.get("asks").is_none(), "{off}");
-    let cx = f
-        .cx
-        .with_env(|e| e.with_agent_place_users(["ann@example.com".to_owned()].into()));
+    let cx =
+        f.cx.with_env(|e| e.with_agent_place_users(["ann@example.com".to_owned()].into()));
     let on = run(&cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
     assert_eq!(on["asks"], json!(true));
 }

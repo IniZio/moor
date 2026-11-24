@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
-use moor_core::progress::Class;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
+use moor_core::progress::Class;
 use moor_core::seam::forge::ForgeRepo;
 
 use crate::store::db::DbExt as _;

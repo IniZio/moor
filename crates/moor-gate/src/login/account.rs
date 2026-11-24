@@ -64,6 +64,9 @@ struct View<'a> {
     connect: Connect<'a>,
     /// The agent profile repo, when one is set.
     profile: Option<ProfileSource>,
+    /// Whether the person's sends are questions an agent place answers, with no work Box.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    asks: bool,
 }
 
 /// The connect section's data.
@@ -310,6 +313,7 @@ fn show(stream: &mut TcpStream, gate: &Gate, login: &Login, session: &Session) {
             server_url: login.public(),
         },
         profile,
+        asks: tools::asks(&gate.controller, &session.person),
     };
     json(stream, "200 OK", &json!(view));
 }
