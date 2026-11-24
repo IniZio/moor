@@ -7,7 +7,6 @@ use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
 use std::sync::mpsc;
 
-use moor_core::controller::write_bytes;
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
@@ -114,8 +113,8 @@ fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
 }
 
 /// The fake controller's answer to a `box-tool` `frame`: from Box 9, a work Box, the refusal;
-/// an exec writes `hi` first.
-fn box_tool(frame: &Value, out: &mut dyn Write) -> Response {
+/// an exec of `sleep` is still running as run 7, and a wait on run 7 sees it end.
+fn box_tool(frame: &Value, _out: &mut dyn Write) -> Response {
     let req = &frame["request"];
     if req["from"] == 9 {
         let view = ErrorView {
@@ -129,9 +128,30 @@ fn box_tool(frame: &Value, out: &mut dyn Write) -> Response {
         };
         return Response::err("box-tool", view);
     }
+    if req["call"]["tool"] == "exec" && req["call"]["command"] == "sleep" {
+        return Response::ok(
+            "box-tool",
+            Some(json!({"run": 7, "state": "running", "stdout": "started\n",
+                "stderr": "", "stdout_truncated": false, "stderr_truncated": false})),
+        );
+    }
     if req["call"]["tool"] == "exec" {
-        write_bytes(out, frame["id"].as_str().unwrap(), b"hi\n").unwrap();
-        return Response::ok("exec", Some(json!({"exit": 0})));
+        return Response::ok(
+            "box-tool",
+            Some(json!({"run": 6, "state": "exited", "exit": 0,
+                "stdout": "hi\n", "stderr": "", "stdout_truncated": false,
+                "stderr_truncated": false})),
+        );
+    }
+    if req["call"]["tool"] == "wait" {
+        return Response::ok(
+            "box-tool",
+            Some(
+                json!({"run": req["call"]["run"], "state": "exited", "exit": 0,
+                "stdout": "done\n", "stderr": "",
+                "stdout_truncated": false, "stderr_truncated": false}),
+            ),
+        );
     }
     if req["call"]["tool"] == "close" {
         return Response::ok(
@@ -237,7 +257,13 @@ fn only_the_moor_server_with_report_step_and_the_place_tools_is_served() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["close_box", "exec_in_box", "report_step", "start_box"],
+        [
+            "close_box",
+            "exec_in_box",
+            "exec_wait",
+            "report_step",
+            "start_box"
+        ],
         "{tools:?}"
     );
     let report = tools.iter().find(|t| t["name"] == "report_step").unwrap();
@@ -480,6 +506,38 @@ fn exec_in_box_sends_the_stamped_box_and_no_identity() {
 }
 
 #[test]
+fn a_long_exec_answers_with_its_run_and_exec_wait_reads_its_end() {
+    let l = listener(true);
+    let result = l.call(
+        Some("41"),
+        "exec_in_box",
+        json!({"box": "w", "command": "sleep"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    let out: Value = serde_json::from_str(text(&result)).unwrap();
+    assert_eq!(
+        (out["state"].clone(), out["run"].clone()),
+        (json!("running"), json!(7)),
+        "{out}"
+    );
+    assert_eq!(out["stdout"], "started\n", "{out}");
+    l.seen.recv().unwrap();
+    let result = l.call(Some("41"), "exec_wait", json!({"run": 7}));
+    assert_ne!(result["isError"], true, "{result}");
+    let end: Value = serde_json::from_str(text(&result)).unwrap();
+    assert_eq!(
+        (end["state"].clone(), end["exit"].clone()),
+        (json!("exited"), json!(0)),
+        "{end}"
+    );
+    assert_eq!(end["stdout"], "done\n", "{end}");
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "box-tool", "from": 41, "call": {"tool": "wait", "run": 7}})
+    );
+}
+
+#[test]
 fn start_box_sends_the_stamped_box_and_its_repos() {
     let l = listener(true);
     let result = l.call(
@@ -543,6 +601,8 @@ fn a_place_tool_call_the_gate_cannot_send_reaches_no_controller() {
         ),
         (None, "start_box", json!({"name": "n", "repos": ["o/a"]})),
         (None, "close_box", json!({"box": "w"})),
+        (None, "exec_wait", json!({"run": 7})),
+        (Some("7"), "exec_wait", json!({"run": "seven"})),
         (Some("7"), "close_box", json!({"box": "Not A Name!"})),
     ];
     for (header, tool, args) in calls {
@@ -559,6 +619,7 @@ fn a_work_box_agent_sees_the_place_tools_and_is_refused_by_the_controller() {
         ("exec_in_box", json!({"box": "w", "command": "ls"})),
         ("start_box", json!({"name": "n", "repos": ["o/a"]})),
         ("close_box", json!({"box": "w"})),
+        ("exec_wait", json!({"run": 7})),
     ] {
         let result = l.call(Some("9"), tool, args);
         assert_eq!(result["isError"], true, "{result}");

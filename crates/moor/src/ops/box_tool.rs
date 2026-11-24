@@ -1,5 +1,5 @@
 //! The Box tools of an agent place: `exec_in_box` runs a command in one of its user's work Boxes,
-//! `start_box` starts a Box for that user on its task's repos, tied to the task and running no
+//! `exec_wait` waits on one still running, `start_box` starts a Box for that user on its task's repos, tied to the task and running no
 //! agent, and `close_box` closes one of that user's work Boxes.
 //!
 //! The gate's Box listener sends them as `box-tool`, naming the place from the Proxy's
@@ -9,14 +9,17 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
-use moor_core::request::{BoxCall, BoxToolReq};
+use moor_core::request::{BoxCall, BoxRunId, BoxToolReq};
+use moor_core::response::{CloseRefusal, ErrorDetail};
 use moor_core::user::{Caller, Identity, UserId};
-use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind, ExecReq, StartReq};
+use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind, ExecReq, Response, StartReq};
 
 use super::authz::NOT_YOURS;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::Store;
+
+pub(crate) mod runs;
 
 /// The refusal for a `box-tool` from anyone but a front whose config sets `box_tools: true`.
 pub(crate) const FRONT_ONLY: &str =
@@ -26,11 +29,13 @@ pub(crate) const FRONT_ONLY: &str =
 const NO_IDENTITY: &str = "box-tool acts for the place the Proxy named, so it asserts no identity";
 
 /// The refusal for a call from a work Box's agent.
-const FROM_WORK_BOX: &str = "exec_in_box, start_box and close_box serve only an agent place \
+const FROM_WORK_BOX: &str =
+    "exec_in_box, exec_wait, start_box and close_box serve only an agent place \
      that a task has claimed, and this is a work Box. Run the command here instead.";
 
 /// The refusal for a call from a place no task has claimed yet.
-const FROM_IDLE_PLACE: &str = "exec_in_box, start_box and close_box serve an agent place once a \
+const FROM_IDLE_PLACE: &str =
+    "exec_in_box, exec_wait, start_box and close_box serve an agent place once a \
      task claims it, and none has yet";
 
 /// The refusal for a target that is an agent place.
@@ -45,6 +50,8 @@ pub(crate) enum Plan {
     Start(Box<StartReq>),
     /// The close of a work Box of the place's user, named by id. It carries no `force`.
     Close(CloseReq),
+    /// A wait on a command the place's user started, which [`runs::answer`] scopes to that user.
+    Wait(BoxRunId),
 }
 
 /// A call the place may make, and whom it acts as.
@@ -123,8 +130,37 @@ pub(crate) fn admit(
             target: BoxTarget::Id(closable_box(store, user, target)?),
             force: false,
         }),
+        BoxCall::Wait { run } => Plan::Wait(*run),
     };
     Ok(Admitted { user, who, plan })
+}
+
+/// A close refusal as the place's agent can act on it: it has no CLI and no force, so it is told
+/// to push the work with `exec_in_box` or to tell its user. Any other reply is as it was.
+pub(crate) fn for_place(mut reply: Response) -> Response {
+    let Some(error) = reply.error.as_mut() else {
+        return reply;
+    };
+    let said = match &error.detail {
+        Some(ErrorDetail::CloseRefused(CloseRefusal::Unsaved {
+            branch,
+            ahead,
+            dirty,
+        })) => format!(
+            "the Box holds work that is not pushed ({ahead} unpushed commit(s), {dirty} \
+             uncommitted file(s)). To keep it, commit it and push it with exec_in_box, such as \
+             `git push origin HEAD:refs/heads/{branch}`, then call close_box again; or tell \
+             your user the Box holds work that is not pushed."
+        ),
+        Some(ErrorDetail::CloseRefused(CloseRefusal::Unchecked { reason })) => format!(
+            "could not check the Box for unsaved work: {reason}. Call close_box again once \
+             the Box can be reached, or tell your user."
+        ),
+        _ => return reply,
+    };
+    error.message = said;
+    error.hints.clear();
+    reply
 }
 
 /// The user and claim of `from`, an open place a task has claimed.

@@ -7,8 +7,13 @@ use moor_core::{ErrorKind, Request, Response};
 use super::Moor;
 use crate::error::CommandError;
 use crate::ops;
-use crate::ops::box_tool::Plan;
+use crate::ops::box_tool::{runs, Admitted};
 use crate::vault::Vault;
+use moor_core::request::BoxRunId;
+use moor_core::user::UserId;
+use moor_core::view::BoxRunView;
+use moor_core::ExecReq;
+use std::time::Duration;
 
 impl Moor {
     /// Run `webhook-claim` or `webhook-report` for `caller`, which must be a front whose config
@@ -71,7 +76,7 @@ impl Moor {
     }
 
     /// Allows the `box-tool` `req` from `caller`, asserting `asserted`: what the request may
-    /// see, whom it acts as, and the `exec`, `start` or `close` it runs.
+    /// see, and whom it acts as and what it runs.
     ///
     /// # Errors
     /// The refusal or store failure the request answers with instead.
@@ -80,17 +85,44 @@ impl Moor {
         caller: &Result<Caller, String>,
         asserted: Option<&Identity>,
         req: &BoxToolReq,
-    ) -> Result<(Grant, Identity, Request), CommandError> {
+    ) -> Result<(Grant, Admitted), CommandError> {
         let admitted = ops::box_tool::admit(&self.cx, caller, asserted, req)?;
         let grant = Grant {
             viewer: Viewer::User(admitted.user),
             pins: Pins::new(),
         };
-        let request = match admitted.plan {
-            Plan::Exec(exec) => Request::Exec(exec),
-            Plan::Start(start) => Request::Start(*start),
-            Plan::Close(close) => Request::Close(close),
-        };
-        Ok((grant, admitted.who, request))
+        Ok((grant, admitted))
+    }
+
+    /// Starts `req` as a run of `user` on a thread of its own, stopping it once `stop` says so;
+    /// the run's id, which [`Self::answer_box_run`] reads.
+    pub(crate) fn start_box_run(
+        self,
+        user: UserId,
+        req: ExecReq,
+        stop: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> BoxRunId {
+        let started = runs::register(&self.cx, user);
+        let id = started.id;
+        std::thread::spawn(move || {
+            let clock = self.cx.clock_arc();
+            started.run(|| clock.instant(), &stop, |pipes| self.exec(&req, pipes));
+        });
+        id
+    }
+
+    /// Waits up to `window` on run `id` of `user`, or until `stop` says so; its output since
+    /// the last answer, and how it ended once it has.
+    ///
+    /// # Errors
+    /// The refusal of a run that is not `user`'s, or the error of a command that never ran.
+    pub(crate) fn answer_box_run(
+        &self,
+        user: UserId,
+        id: BoxRunId,
+        window: Duration,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<BoxRunView, CommandError> {
+        runs::answer(&self.cx, user, id, window, stop)
     }
 }

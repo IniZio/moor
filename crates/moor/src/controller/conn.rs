@@ -246,7 +246,7 @@ fn request_reply(
     let attach = matches!(
         request,
         Request::Attach(_) | Request::Exec(_) | Request::BoxRsync(_) | Request::Forward(_)
-    ) || box_tool::streams(&request);
+    );
     match conn
         .answering()
         .and_then(|_answering| answer(&id, request, duplex))

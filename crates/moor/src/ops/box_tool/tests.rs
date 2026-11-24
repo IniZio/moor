@@ -1,22 +1,27 @@
 //! A claimed place's Box tools reach its own user's work Boxes and nothing else.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
-use moor_core::domain::place::Claim;
-use moor_core::request::{BoxCall, BoxExecSecs, BoxToolReq, Grant, Pins};
+use moor_core::domain::place::{BoxKind, Claim, PlaceState};
+use moor_core::request::{BoxCall, BoxExecSecs, BoxRunId, BoxToolReq, Grant, Pins};
 use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Pipes;
-use moor_core::user::{Caller, Identity, Viewer};
+use moor_core::user::{Caller, Identity, UserId, Viewer};
+use moor_core::view::{BoxRunState, BoxRunView};
 use moor_core::{BoxId, BoxName, BoxTarget, CloseReq, ErrorKind, ExitClass, Request};
 
-use super::{admit, Admitted, Plan};
+use super::{admit, for_place, runs, Admitted, Plan};
+use crate::cx::Cx;
 use crate::ops::common::boxwork;
 use crate::ops::run_fixture::{ready_with, Fx};
 use crate::testing::cx::{new_idle_place, requester, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
+use crate::testing::proc::ScriptedProc;
 use crate::Moor;
 
 /// The gate's front, which runs the Box tools.
@@ -29,11 +34,26 @@ fn name(s: &str) -> BoxName {
 }
 
 /// Ready work Box `t` on `o/n` with a claimed place `p` and an idle place `idle` beside it,
-/// all the requester's, and work Box `theirs` of another user; the gate front runs the tools.
+/// all the requester's, and work Box `theirs` and claimed place `q` of another user; the gate
+/// front runs the tools.
 struct World {
     f: Fx,
     place: BoxId,
     idle: BoxId,
+    /// The other user's claimed place.
+    their_place: BoxId,
+}
+
+/// The claim of a place on `o/n` and `o/m`.
+fn claim() -> Claim {
+    Claim {
+        repo: ForgeRepo::new("o", "n"),
+        also: vec![ForgeRepo::new("o", "m")],
+        prompt: "where is it".to_owned(),
+        at: 1,
+        served: Some(2),
+        steered: Some(3),
+    }
 }
 
 fn world() -> World {
@@ -42,20 +62,7 @@ fn world() -> World {
         f.cx.with_env(|e| e.with_front_box_tools(BTreeSet::from(["gate".to_owned()])));
     let store = f.cx.store().unwrap();
     let place = store.apply(new_idle_place(name("p"))).unwrap().box_id;
-    store
-        .put_claim(
-            place,
-            REQUESTER_USER,
-            &Claim {
-                repo: ForgeRepo::new("o", "n"),
-                also: vec![ForgeRepo::new("o", "m")],
-                prompt: "where is it".to_owned(),
-                at: 1,
-                served: Some(2),
-                steered: Some(3),
-            },
-        )
-        .unwrap();
+    store.put_claim(place, REQUESTER_USER, &claim()).unwrap();
     let idle = store.apply(new_idle_place(name("idle"))).unwrap().box_id;
     let other = Identity::parse("gate:other").unwrap();
     let (them, _) = store.enroll(&other, None).unwrap();
@@ -69,7 +76,27 @@ fn world() -> World {
             .requester(them),
         )
         .unwrap();
-    World { f, place, idle }
+    let their_place = store
+        .apply(
+            Decision::insert(NewBox {
+                name: name("q"),
+                repo: None,
+                spec: SpecFields {
+                    kind: BoxKind::Place(PlaceState::Idle),
+                    ..SpecFields::default()
+                },
+            })
+            .requester(them),
+        )
+        .unwrap()
+        .box_id;
+    store.put_claim(their_place, them, &claim()).unwrap();
+    World {
+        f,
+        place,
+        idle,
+        their_place,
+    }
 }
 
 /// `ls` in `target`, from Box `from`.
@@ -153,7 +180,7 @@ fn a_box_tool_from_a_claimed_place_execs_in_its_user_s_work_box() {
     assert_eq!(admitted.who, requester());
     let req = match admitted.plan {
         Plan::Exec(req) => Some(req),
-        Plan::Start(_) | Plan::Close(_) => None,
+        Plan::Start(_) | Plan::Close(_) | Plan::Wait(_) => None,
     }
     .unwrap();
     assert_eq!(req.target, BoxTarget::Id(w.f.id));
@@ -239,7 +266,7 @@ fn a_start_from_a_place_ties_the_box_to_the_task_and_starts_no_agent() {
     let admitted = w.admit(&start(w.place, "o/n", &[])).unwrap();
     let req = match admitted.plan {
         Plan::Start(req) => Some(req),
-        Plan::Exec(_) | Plan::Close(_) => None,
+        Plan::Exec(_) | Plan::Close(_) | Plan::Wait(_) => None,
     }
     .unwrap();
     assert_eq!(req.task, Some(w.place));
@@ -253,7 +280,7 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
     let admitted = w.admit(&start(w.place, "o/m", &["o/n"])).unwrap();
     let req = match admitted.plan {
         Plan::Start(req) => Some(req),
-        Plan::Exec(_) | Plan::Close(_) => None,
+        Plan::Exec(_) | Plan::Close(_) | Plan::Wait(_) => None,
     }
     .unwrap();
     assert_eq!(req.repo, Some(ForgeRepo::new("o", "m")));
@@ -272,7 +299,7 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
 fn close_req(admitted: Admitted) -> CloseReq {
     match admitted.plan {
         Plan::Close(req) => Some(req),
-        Plan::Exec(_) | Plan::Start(_) => None,
+        Plan::Exec(_) | Plan::Start(_) | Plan::Wait(_) => None,
     }
     .unwrap()
 }
@@ -357,4 +384,159 @@ fn a_second_close_names_the_box_as_already_closed() {
     crate::ops::close::requested(&w.f.cx, &req).unwrap();
     refused_with(w.admit(&close(w.place, "t")), "Box t is already closed");
     refused_with(w.admit(&close(w.place, "theirs")), "not your Box");
+}
+
+/// `command` in work Box `t`, from Box `from`.
+fn exec_of(from: BoxId, command: &str) -> BoxToolReq {
+    BoxToolReq {
+        from,
+        call: BoxCall::Exec {
+            target: name("t"),
+            command: command.to_owned(),
+            timeout: BoxExecSecs::new(Some(1800)).unwrap(),
+        },
+    }
+}
+
+/// A wait on `run`, from Box `from`.
+fn wait(from: BoxId, run: BoxRunId) -> BoxToolReq {
+    BoxToolReq {
+        from,
+        call: BoxCall::Wait { run },
+    }
+}
+
+impl World {
+    /// Starts the exec `admitted` plans as the controller does, on the fixture's context; a
+    /// fresh context on the same state takes its place for the calls after.
+    fn start(&mut self, admitted: Admitted) -> BoxRunId {
+        let req = match admitted.plan {
+            Plan::Exec(req) => Some(req),
+            Plan::Start(_) | Plan::Close(_) | Plan::Wait(_) => None,
+        }
+        .unwrap();
+        let answers = Cx::fake(
+            self.f.dir.path(),
+            self.f.driver.clone(),
+            Arc::new(ScriptedProc::new()),
+        )
+        .with_env(|e| e.with_front_box_tools(BTreeSet::from(["gate".to_owned()])));
+        let cx = std::mem::replace(&mut self.f.cx, answers);
+        Moor::from_cx(cx)
+            .granted(Grant {
+                viewer: Viewer::User(admitted.user),
+                pins: Pins::new(),
+            })
+            .start_box_run(admitted.user, req, || false)
+    }
+
+    /// The answer on `run` for `user` after up to `window`.
+    fn answer(&self, user: UserId, run: BoxRunId, window: Duration) -> Result<BoxRunView, String> {
+        runs::answer(&self.f.cx, user, run, window, &|| false).map_err(|e| {
+            assert_eq!(e.kind, ErrorKind::Refused, "{}", e.error);
+            e.error.to_string()
+        })
+    }
+}
+
+#[test]
+fn a_short_command_answers_with_its_exit_and_output() {
+    let mut w = world();
+    let admitted = w.admit(&exec(w.place, "t")).unwrap();
+    let run = w.start(admitted);
+    let view = w.answer(REQUESTER_USER, run, runs::WINDOW).unwrap();
+    assert_eq!(view.state, BoxRunState::Exited { exit: 0 }, "{view:?}");
+    assert!(view.stdout.starts_with("hi from "), "{view:?}");
+}
+
+#[test]
+fn a_long_command_answers_with_its_run_then_its_exit_on_wait() {
+    let mut w = world();
+    let go = w.f.dir.path().join("go");
+    let command = format!(
+        "echo started; while [ ! -e '{}' ]; do sleep 0.05; done; echo done",
+        go.display()
+    );
+    let admitted = w.admit(&exec_of(w.place, &command)).unwrap();
+    let run = w.start(admitted);
+    let clock = w.f.cx.clock_arc();
+    let first = std::thread::scope(|s| {
+        s.spawn(|| {
+            for _ in 0..200 {
+                std::thread::sleep(Duration::from_millis(20));
+                clock.sleep(Duration::from_secs(1));
+            }
+        });
+        w.answer(REQUESTER_USER, run, runs::WINDOW).unwrap()
+    });
+    assert_eq!(
+        (first.run, first.state),
+        (run, BoxRunState::Running),
+        "{first:?}"
+    );
+    assert_eq!(first.stdout, "started\n");
+    let admitted = w.admit(&wait(w.place, run)).unwrap();
+    assert_eq!(admitted.plan, Plan::Wait(run));
+    std::fs::write(&go, "").unwrap();
+    let end = w.answer(admitted.user, run, runs::WINDOW).unwrap();
+    assert_eq!(end.state, BoxRunState::Exited { exit: 0 }, "{end:?}");
+    assert_eq!(
+        end.stdout, "done\n",
+        "only what came after the first answer"
+    );
+    let again = w.answer(admitted.user, run, runs::WINDOW).unwrap();
+    assert_eq!(again.state, BoxRunState::Exited { exit: 0 });
+    assert_eq!(again.stdout, "");
+}
+
+#[test]
+fn a_wait_on_another_user_s_run_is_refused() {
+    let mut w = world();
+    let admitted = w.admit(&exec(w.place, "t")).unwrap();
+    let run = w.start(admitted);
+    let theirs = w.admit(&wait(w.their_place, run)).unwrap();
+    assert_ne!(theirs.user, REQUESTER_USER);
+    let why = w.answer(theirs.user, run, Duration::ZERO).unwrap_err();
+    assert!(why.contains("no such run"), "{why}");
+    let none = w
+        .answer(REQUESTER_USER, BoxRunId(run.0 ^ 1), Duration::ZERO)
+        .unwrap_err();
+    assert_eq!(none, why, "another user's run reads as no run at all");
+    assert!(w.answer(REQUESTER_USER, run, runs::WINDOW).is_ok());
+}
+
+#[test]
+fn a_wait_from_a_work_box_or_an_idle_place_is_refused() {
+    let w = world();
+    refused_with(w.admit(&wait(w.f.id, BoxRunId(1))), "this is a work Box");
+    refused_with(w.admit(&wait(w.idle, BoxRunId(1))), "once a task claims it");
+}
+
+#[test]
+fn unpushed_work_is_refused_with_what_the_place_can_do() {
+    let w = world();
+    w.probe("ahead=1 dirty=2");
+    let admitted = w.admit(&close(w.place, "t")).unwrap();
+    let (user, who) = (admitted.user, admitted.who.clone());
+    let reply = Moor::from_cx(w.f.cx)
+        .granted(Grant {
+            viewer: Viewer::User(user),
+            pins: Pins::new(),
+        })
+        .acting_as(who)
+        .call(Request::Close(close_req(admitted)));
+    let error = for_place(reply).error.unwrap();
+    let said = format!("{}\n{}", error.message, error.hints.join("\n"));
+    for want in [
+        "1 unpushed commit",
+        "2 uncommitted file",
+        "exec_in_box",
+        "git push",
+        "tell your user",
+    ] {
+        assert!(said.contains(want), "missing {want:?} in {said}");
+    }
+    for cli in ["moor run", "moor cp", "--force", "moor close"] {
+        assert!(!said.contains(cli), "{cli:?} in {said}");
+    }
 }

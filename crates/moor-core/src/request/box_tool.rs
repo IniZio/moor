@@ -11,6 +11,11 @@ pub const BOX_EXEC_DEFAULT_SECS: u32 = 30;
 /// Most seconds a Box-tool command may run: as long as a gate check.
 pub const BOX_EXEC_MAX_SECS: u32 = 1800;
 
+/// The id of a command a place started with `exec_in_box`, which `exec_wait` names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BoxRunId(pub u32);
+
 /// Arguments of `box-tool`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +55,11 @@ pub enum BoxCall {
     Close {
         /// The work Box.
         target: BoxName,
+    },
+    /// Wait on a command an `exec` started that was still running when it answered.
+    Wait {
+        /// The command's run.
+        run: BoxRunId,
     },
 }
 
@@ -106,6 +116,15 @@ mod tests {
         let wire =
             r#"{"from":3,"call":{"tool":"exec","target":"w","command":"ls","timeout":1801}}"#;
         assert!(serde_json::from_str::<BoxToolReq>(wire).is_err());
+    }
+
+    #[test]
+    fn a_wait_names_only_its_run() {
+        let wire = r#"{"from":3,"call":{"tool":"wait","run":7}}"#;
+        let req: BoxToolReq = serde_json::from_str(wire).unwrap();
+        assert_eq!(req.call, BoxCall::Wait { run: BoxRunId(7) });
+        let more = r#"{"from":3,"call":{"tool":"wait","run":7,"box":"w"}}"#;
+        assert!(serde_json::from_str::<BoxToolReq>(more).is_err());
     }
 
     #[test]
