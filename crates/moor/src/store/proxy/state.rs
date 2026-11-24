@@ -53,6 +53,22 @@ impl Store {
 
     /// The spec `box_id`'s Proxy starts from; none before the first is recorded.
     pub(crate) fn proxy_spec(&self, box_id: BoxId) -> Result<Option<ProxySpec>, StoreError> {
+        self.proxy_spec_json(box_id)?
+            .map(|j| serde_json::from_str(&j))
+            .transpose()
+            .map_err(|e| StoreError::Corrupt(format!("proxy spec of Box {}: {e}", box_id.get())))
+    }
+
+    /// The hex SHA-256 of the spec `box_id`'s Proxy starts from, as stored, so it changes
+    /// exactly when the spec is recorded with other content; none before the first is recorded.
+    pub(crate) fn proxy_spec_digest(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
+        Ok(self
+            .proxy_spec_json(box_id)?
+            .map(|j| super::key::hash(j.as_bytes())))
+    }
+
+    /// The spec of `box_id`'s Proxy as stored.
+    fn proxy_spec_json(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
         let json: Option<Option<String>> = self
             .reader()?
             .row(
@@ -63,10 +79,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        json.flatten()
-            .map(|j| serde_json::from_str(&j))
-            .transpose()
-            .map_err(|e| StoreError::Corrupt(format!("proxy spec of Box {}: {e}", box_id.get())))
+        Ok(json.flatten())
     }
 
     /// `box_id`'s CA; none before the first is kept.

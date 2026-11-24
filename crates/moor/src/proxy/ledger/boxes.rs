@@ -39,6 +39,16 @@ pub(crate) struct AwakeTokens {
     pub(crate) unread: Vec<(BoxId, String)>,
 }
 
+/// The open Box a token belongs to, and which spec its Proxy should run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Owner {
+    /// The Box.
+    pub(crate) box_id: BoxId,
+    /// A digest of the spec the controller holds for it; none before the first is recorded, or
+    /// from a controller that does not send it.
+    pub(crate) spec: Option<String>,
+}
+
 /// A Box's interception CA as the ledger hands it to the Box's engine.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct CaPair {

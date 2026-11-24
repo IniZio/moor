@@ -23,7 +23,7 @@ use std::fmt;
 use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use boxes::{AwakeTokens, BoxLedger, BoxView, CaPair};
+pub(crate) use boxes::{AwakeTokens, BoxLedger, BoxView, CaPair, Owner};
 use call::Call;
 pub(crate) use client::EgressLedger;
 pub(crate) use endpoint::{Endpoint, TlsFiles};

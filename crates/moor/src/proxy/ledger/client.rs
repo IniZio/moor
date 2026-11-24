@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use zeroize::Zeroizing;
 
 use super::endpoint::Duplex;
-use super::{Call, Endpoint, Fault, Hello, LedgerError, LEDGER};
+use super::{Call, Endpoint, Fault, Hello, LedgerError, Owner, LEDGER};
 
 /// How long one call may wait on the controller before it counts as unavailable.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -131,6 +131,20 @@ impl EgressLedger {
     /// The token hash and Box of every open, awake Box that has an egress token.
     pub(crate) fn awake_tokens(&self) -> Result<super::AwakeTokens, LedgerError> {
         self.0.call(&Call::AwakeTokens)
+    }
+
+    /// The open Box whose egress token hashes to `token_hash`, with a digest of its spec. A
+    /// controller that refuses the call is asked [`Self::token_box`] instead, with no digest.
+    pub(crate) fn token_spec(&self, token_hash: &str) -> Result<Option<Owner>, LedgerError> {
+        let call = Call::TokenSpec {
+            token_hash: token_hash.to_owned(),
+        };
+        match self.0.call(&call) {
+            Err(LedgerError::Refused(_)) => Ok(self
+                .token_box(token_hash)?
+                .map(|box_id| Owner { box_id, spec: None })),
+            answer => answer,
+        }
     }
 
     /// The open Box whose egress token hashes to `token_hash`.

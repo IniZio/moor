@@ -39,6 +39,12 @@ pub(crate) enum Call {
         /// The hex SHA-256 of the token the Box presented.
         token_hash: String,
     },
+    /// [`Call::TokenBox`], with a digest of the spec the Box's Proxy runs from. A controller
+    /// from before this call refuses it.
+    TokenSpec {
+        /// The hex SHA-256 of the token the Box presented.
+        token_hash: String,
+    },
 }
 
 impl Call {

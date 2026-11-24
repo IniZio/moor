@@ -120,6 +120,9 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         (Bound::Egress(None), Call::TokenBox { token_hash }) => {
             encode(&boxes::token_box(store, &token_hash).map_err(Fault::from))
         }
+        (Bound::Egress(None), Call::TokenSpec { token_hash }) => {
+            encode(&boxes::token_spec(store, &token_hash).map_err(Fault::from))
+        }
         (Bound::Egress(None), Call::AwakeTokens) => {
             encode(&boxes::awake_tokens(store).map_err(Fault::from))
         }

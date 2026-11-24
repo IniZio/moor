@@ -2,6 +2,8 @@
 //! request makes for one Box, and nothing else.
 
 use std::collections::BTreeMap;
+use std::io::{BufRead as _, BufReader, Write as _};
+use std::os::unix::net::UnixStream;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
@@ -11,7 +13,7 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use super::super::{BoxLedger, EgressLedger, Endpoint, LedgerError};
+use super::super::{BoxLedger, EgressLedger, Endpoint, LedgerError, Owner};
 use super::{world, World, EGRESS_KEY};
 use crate::store::token_hash;
 use crate::testing::rng::FakeRng;
@@ -169,4 +171,84 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         ledger.view().unwrap().is_some_and(|v| !v.open),
         "its view still answers"
     );
+}
+
+/// A spec for `id` whose one rule sends its secret in `header`.
+fn spec_for(w: &World, id: BoxId, header: &str) -> ProxySpec {
+    let rule = ResolvedRule {
+        name: "tool".to_owned(),
+        hosts: vec!["api.example.com".to_owned()],
+        credential: "tool".to_owned(),
+        inject: ResolvedInject::Header {
+            header: header.to_owned(),
+            form: "{secret}".to_owned(),
+        },
+        endpoint_rules: Vec::new(),
+        box_env: BTreeMap::new(),
+    };
+    ProxySpec {
+        box_id: id,
+        box_handle: None,
+        box_repo: None,
+        other_repos: Vec::new(),
+        rules: vec![rule],
+        user: w.ann,
+        hands_inc: None,
+    }
+}
+
+#[test]
+fn token_spec_answers_box_and_digest() {
+    let w = world();
+    let _served = w.serve();
+    let a = box_with_token(&w, "a", b"token-a");
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
+    let hash = token_hash(b"token-a");
+    let owner = |spec| Ok(Some(Owner { box_id: a, spec }));
+    assert_eq!(
+        ledger.token_spec(&hash),
+        owner(None),
+        "no spec recorded yet"
+    );
+    w.store
+        .set_proxy_spec(a, &spec_for(&w, a, "x-one"))
+        .unwrap();
+    let first = ledger.token_spec(&hash).unwrap().unwrap().spec;
+    assert!(first.is_some());
+    assert_eq!(ledger.token_spec(&hash), owner(first.clone()), "same spec");
+    w.store
+        .set_proxy_spec(a, &spec_for(&w, a, "x-two"))
+        .unwrap();
+    let second = ledger.token_spec(&hash).unwrap().unwrap().spec;
+    assert!(second.is_some() && second != first, "a changed spec");
+    assert_eq!(ledger.token_spec(&token_hash(b"token-b")), Ok(None));
+    let close = Decision::new(a).lifecycle(BoxLifecycleInput::Close { reason: None });
+    w.store.apply(close).unwrap();
+    assert_eq!(ledger.token_spec(&hash), Ok(None), "a closed Box's token");
+}
+
+#[test]
+fn token_box_answer_is_unchanged() {
+    let w = world();
+    let _served = w.serve();
+    let a = box_with_token(&w, "a", b"token-a");
+    w.store
+        .set_proxy_spec(a, &spec_for(&w, a, "x-one"))
+        .unwrap();
+    let mut conn = BufReader::new(UnixStream::connect(&w.socket).unwrap());
+    let mut round = |line: &str| {
+        let stream = conn.get_mut();
+        stream.write_all(line.as_bytes()).unwrap();
+        stream.write_all(b"\n").unwrap();
+        let mut reply = String::new();
+        conn.read_line(&mut reply).unwrap();
+        reply.trim_end().to_owned()
+    };
+    let hello = format!(r#"{{"egress":{{"v":1,"key":"{EGRESS_KEY}","box_id":null}}}}"#);
+    assert_eq!(round(&hello), r#"{"Ok":null}"#);
+    let call = format!(
+        r#"{{"token_box":{{"token_hash":"{}"}}}}"#,
+        token_hash(b"token-a")
+    );
+    assert_eq!(round(&call), format!(r#"{{"Ok":{}}}"#, a.get()));
 }
