@@ -49,17 +49,17 @@ fn last_auth(w: &World) -> Option<String> {
 }
 
 /// How long a held tend waits, which only [`Held::release`] ends.
-const HOLD: Duration = Duration::from_secs(3600);
+pub(super) const HOLD: Duration = Duration::from_secs(3600);
 
 /// A fake clock whose sleeps of [`HOLD`] block until released, so the Proxy never tends.
-struct Held {
+pub(super) struct Held {
     fake: FakeClock,
     released: Mutex<bool>,
     wake: Condvar,
 }
 
 impl Held {
-    fn new() -> Arc<Self> {
+    pub(super) fn new() -> Arc<Self> {
         Arc::new(Self {
             fake: FakeClock::new(Ts::from_millis(1_000)),
             released: Mutex::new(false),
@@ -68,7 +68,7 @@ impl Held {
     }
 
     /// Lets every held sleep end, so the Proxy can drain.
-    fn release(&self) {
+    pub(super) fn release(&self) {
         *self.released.lock().unwrap() = true;
         self.wake.notify_all();
     }
@@ -253,21 +253,21 @@ fn a_tunnel_open_across_a_spec_change_keeps_the_old_proxy_until_it_ends() {
     server.drain(Duration::from_secs(5));
 }
 
-/// Holds each `ca` call relayed while armed, as a slow controller would, and counts the held ones.
+/// Holds each gated call relayed while armed, as a slow controller would, and counts the held ones.
 #[derive(Default)]
-struct CaGate {
+pub(super) struct CaGate {
     /// Whether `ca` calls are held, and how many are.
     state: Mutex<(bool, usize)>,
     wake: Condvar,
 }
 
 impl CaGate {
-    fn set(&self, armed: bool) {
+    pub(super) fn set(&self, armed: bool) {
         self.state.lock().unwrap().0 = armed;
         self.wake.notify_all();
     }
 
-    fn held(&self) -> usize {
+    pub(super) fn held(&self) -> usize {
         self.state.lock().unwrap().1
     }
 
@@ -281,8 +281,9 @@ impl CaGate {
     }
 }
 
-/// Relays the ledger at `real` on `socket`, passing each `ca` call through `gate` first.
-fn gated_controller(socket: &Path, real: &Path) -> Arc<CaGate> {
+/// Relays the ledger at `real` on `socket`, passing each call whose line starts with `call`
+/// through the gate first.
+pub(super) fn gated_controller(socket: &Path, real: &Path, call: &'static str) -> Arc<CaGate> {
     let gate = Arc::new(CaGate::default());
     let listener = UnixListener::bind(socket).unwrap();
     let (each, real) = (Arc::clone(&gate), real.to_owned());
@@ -295,7 +296,7 @@ fn gated_controller(socket: &Path, real: &Path) -> Arc<CaGate> {
                 let (mut from, mut back) = (BufReader::new(&client), BufReader::new(&controller));
                 let mut line = String::new();
                 while from.read_line(&mut line).is_ok_and(|n| n > 0) {
-                    if line.trim_end() == r#""ca""# {
+                    if line.starts_with(call) {
                         gate.pass();
                     }
                     back.get_mut().write_all(line.as_bytes()).unwrap();
@@ -316,7 +317,7 @@ fn gated_controller(socket: &Path, real: &Path) -> Arc<CaGate> {
 fn a_tunnel_and_tending_never_build_a_proxy_for_one_box_at_once() {
     let w = World::new();
     let gated = w.dir.path().join("gated.sock");
-    let gate = gated_controller(&gated, &w.dir.path().join("proxy.sock"));
+    let gate = gated_controller(&gated, &w.dir.path().join("proxy.sock"), r#""ca""#);
     let mut cfg = w.config(10.0, 10.0, 64);
     cfg.ledger = Endpoint::Unix(gated);
     let server = Server::start(cfg).unwrap();

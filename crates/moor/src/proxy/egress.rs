@@ -278,6 +278,12 @@ impl Server {
         self.shared.boxes.engines()
     }
 
+    /// Closes the proxy of `box_id` as tending does once the Box closed.
+    #[cfg(test)]
+    pub(crate) fn close_now(&self, box_id: moor_core::BoxId) {
+        self.shared.boxes.close_now(box_id);
+    }
+
     /// How many Boxes have a running proxy.
     #[cfg(test)]
     pub(crate) fn serving(&self) -> usize {

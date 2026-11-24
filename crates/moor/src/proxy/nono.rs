@@ -259,6 +259,9 @@ pub(crate) enum NonoError {
     /// nono refused to start.
     #[error("proxy start: {0}")]
     Start(String),
+    /// nono started without TLS interception, so no credential rule would apply; nono logs why.
+    #[error("TLS interception did not start")]
+    Interception,
 }
 
 /// How long runtime shutdown waits for in-flight connections.
@@ -293,6 +296,8 @@ impl NonoProxy {
         if cfg.0.session_token.is_none() {
             return Err(NonoError::Start("session token is not utf-8".to_owned()));
         }
+        let intercepts = cfg.0.intercept_ca_dir.is_some()
+            && cfg.0.routes.iter().any(|r| r.credential_key.is_some());
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -307,7 +312,12 @@ impl NonoProxy {
                 ),
             )
             .map_err(|e| NonoError::Start(e.to_string()))?;
-        Ok(Self { runtime, handle })
+        let proxy = Self { runtime, handle };
+        if intercepts && proxy.handle.intercept_ca_path().is_none() {
+            proxy.stop();
+            return Err(NonoError::Interception);
+        }
+        Ok(proxy)
     }
 
     /// The loopback port the proxy listens on.
