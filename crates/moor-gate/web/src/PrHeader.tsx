@@ -2,9 +2,9 @@ import { useEffect, useState } from 'preact/hooks';
 import { boxPulls, type BoxDetail, type RepoPull } from './api';
 
 /** GitHub is read through moor's cache, so a slower poll than the page's own is enough. */
-const PR_POLL_MS = 15000;
+export const PR_POLL_MS = 15000;
 
-const STATES: Record<RepoPull['state'], { word: string; glyph: string; tone: string }> = {
+export const STATES: Record<RepoPull['state'], { word: string; glyph: string; tone: string }> = {
 	unpushed: { word: 'not pushed yet', glyph: '○', tone: 'none' },
 	none: { word: 'none yet', glyph: '○', tone: 'none' },
 	draft: { word: 'draft', glyph: '◌', tone: 'draft' },
@@ -89,6 +89,26 @@ export function PrInline({ pulls, error, named, listed }: { pulls: RepoPull[] | 
 			))}
 		</span>
 	);
+}
+
+/** Where pull request `number` of Box `box` stands on GitHub, in a word; nothing until it has been read, and nothing when it cannot be. */
+export function PrWord({ box, number }: { box: string; number: number }) {
+	const [word, setWord] = useState('');
+	useEffect(() => {
+		let live = true;
+		const run = () =>
+			boxPulls(box).then(
+				(pulls) => live && setWord(STATES[pulls.find((p) => p.number === number)?.state ?? 'none'].word),
+				() => live && setWord(''),
+			);
+		void run();
+		const timer = setInterval(() => !document.hidden && void run(), PR_POLL_MS);
+		return () => {
+			live = false;
+			clearInterval(timer);
+		};
+	}, [box, number]);
+	return word && word !== STATES.none.word ? <>{word}</> : null;
 }
 
 /** `PrInline` for Box `box`, read through moor's cache of GitHub on a slow poll. */

@@ -28,6 +28,16 @@
 .t-pl-ended { margin: 0 0 0 calc(1.1em + 8px); padding: 2px 0 2px 10px; border-left: 3px solid var(--moor-color-danger); color: var(--moor-color-danger); }
 .t-pl-ended-h { margin: 0; font-weight: var(--moor-weight-strong); }
 .t-pl-ended pre { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; }
+.t-pl-box { display: block; width: max-content; margin: -4px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--moor-color-text-muted); text-decoration: none; }
+a.t-pl-box:hover { color: var(--moor-color-text); }
+.t-pl-art, .t-pl-pr { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); overflow: hidden; }
+.t-pl-pic { padding: 6px 10px; background: var(--moor-color-bg-sunken); border-bottom: 1px solid var(--moor-color-border); }
+.t-pl-pic img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; }
+.t-pl-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 6px 2px 10px; }
+.t-pl-glyph { display: inline-flex; color: var(--moor-color-text-muted); }
+.t-pl-name { font-weight: var(--moor-weight-strong); }
+.t-pl-where, .t-pl-sum { font-size: 12px; color: var(--moor-color-text-muted); }
+.t-pl-sum { flex: 1 1 auto; min-width: 0; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-place .t-say { margin-top: auto; padding: 3px 3px 3px 10px; border-color: var(--moor-color-border); border-radius: var(--moor-radius-sm); box-shadow: 0 10px 0 0 var(--moor-color-bg); bottom: 10px; }
 .t-place .t-say-row { align-items: center; gap: 8px; }
 .t-place .t-say textarea { padding: 3px 0; }

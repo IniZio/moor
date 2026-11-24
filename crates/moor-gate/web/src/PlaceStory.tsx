@@ -1,5 +1,8 @@
+import type { ComponentChildren } from 'preact';
+
 import type { BoxDetail, Entry } from './api';
 import { Markdown } from './Markdown';
+import { ArtifactCard, BoxLine, PrCard } from './PlaceCards';
 import { clock, Line } from './Portal';
 import { foldWords, routine, ToolLine } from './Transcript';
 
@@ -52,6 +55,47 @@ function workWords(work: Entry[]): string {
 	return said || plural(work.length, 'note', 'notes');
 }
 
+/** A part of a turn's conversation: the agent's answer, or what its work Boxes made, in the order they happened. */
+type Part = { at: number; node: ComponentChildren; answer?: boolean };
+
+const answerPart = (e: Entry): Part => ({
+	at: Date.parse(e.at),
+	answer: true,
+	node: (
+		<div class="t-pl-say" key={`s${e.key ?? e.id}`}>
+			<span class="t-pl-mark">◆</span>
+			<div class="t-pl-text">
+				<Markdown text={e.text} />
+			</div>
+		</div>
+	),
+});
+
+/** When a turn began: its message, or the first thing it holds when the agent spoke first. */
+const startOf = (t: Turn): number => Math.min(...[t.you, t.answer, ...t.work].flatMap((e) => (e ? [Date.parse(e.at)] : [])));
+
+/** The last index of `items` that `holds`, or -1. */
+const lastIndex = <T,>(items: readonly T[], holds: (item: T) => boolean): number => items.reduce((at, item, i) => (holds(item) ? i : at), -1);
+
+/** The parts of each turn: its answer, and the work Box lines and cards that happened in it. A Box part goes to the last turn that began no later than it, or the first, and follows the answer of the same moment. The pull request card sits above the answer of the last turn, or at its end when there is none. */
+function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): Part[][] {
+	const starts = turns.map(startOf);
+	const parts: Part[][] = turns.map((t) => (t.answer ? [answerPart(t.answer)] : []));
+	const put = (at: number, node: ComponentChildren) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node });
+	for (const box of detail.task_boxes) {
+		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.name}`} />);
+		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.name}/${a.name}@${a.version}`} />);
+	}
+	for (const list of parts) list.sort((x, y) => x.at - y.at || Number(!!y.answer) - Number(!!x.answer));
+	const { pr } = detail;
+	const last = parts.at(-1);
+	if (pr && last) {
+		const above = lastIndex(last, (p) => !!p.answer);
+		last.splice(above < 0 ? last.length : above, 0, { at: 0, node: <PrCard pr={pr} state={prState} key="pr" /> });
+	}
+	return parts;
+}
+
 function Work({ entry, gates }: { entry: Entry; gates: readonly string[] }) {
 	if (entry.class === 'message')
 		return (
@@ -73,11 +117,12 @@ function Ended({ e }: { e: Entry }) {
 	);
 }
 
-/** A question's task as a conversation: the person's messages as bubbles under their name and time, the agent's last words as a line, one quiet fold of its work and earlier words under it, and only a failure that ended the task as an error. */
-export function PlaceStory({ detail, you }: { detail: BoxDetail; you: string }) {
+/** A question's task as a conversation: the person's messages as bubbles under their name and time, the work Boxes its agent started as one line each with what they made as cards, the agent's last words as a line, one quiet fold of its work and earlier words under it, and only a failure that ended the task as an error. `prState` says where the pull request stands, once the page has read it. */
+export function PlaceStory({ detail, you, prState }: { detail: BoxDetail; you: string; prState?: ComponentChildren }) {
 	const turns = turnsOf(detail.timeline, detail.state === 'failed');
 	if (!turns.length) return <p class="t-empty">Nothing has happened yet.</p>;
 	const gates = detail.gate?.gates ?? [];
+	const parts = partsOf(detail, turns, prState);
 	return (
 		<div class="t-pl">
 			{turns.flatMap((t, i) => [
@@ -91,16 +136,7 @@ export function PlaceStory({ detail, you }: { detail: BoxDetail; you: string }) 
 							</div>,
 						]
 					: []),
-				...(t.answer
-					? [
-							<div class="t-pl-say" key={`s${i}`}>
-								<span class="t-pl-mark">◆</span>
-								<div class="t-pl-text">
-									<Markdown text={t.answer.text} />
-								</div>
-							</div>,
-						]
-					: []),
+				...(parts[i] ?? []).map((p) => p.node),
 				...(t.work.length
 					? [
 							<details class="t-pl-fold" key={`f${i}`}>

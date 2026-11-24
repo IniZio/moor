@@ -4,6 +4,7 @@ import type { BoxDetail } from './api';
 import { HeaderActions, RUNNING } from './Ending';
 import { FailedCard } from './Retry';
 import { PlaceStory } from './PlaceStory';
+import { PrWord } from './PrHeader';
 import { POLL_MS } from './Portal';
 import { Composer } from './Steer';
 import { TaskHead } from './TaskHead';
@@ -23,6 +24,8 @@ export function askedPollMs(detail: Pick<BoxDetail, 'task_at'> | null, now: numb
 
 /** A question's task: the conversation, and a box to write more in, with `you` as the name over the person's messages. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show, and Stop shows only while the agent works: it ends the agent and leaves the Box. */
 export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You' }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string }) {
+	const work = detail.task_boxes.at(-1);
+	const prState = detail.pr && work ? <PrWord box={work.name} number={detail.pr.number} /> : undefined;
 	return (
 		<div class="t-box t-place">
 			<TaskHead t={detail} now={now} actions={RUNNING.includes(detail.state) ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null} />
@@ -34,7 +37,7 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null, you =
 			{card}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			<section>
-				<PlaceStory detail={detail} you={you} />
+				<PlaceStory detail={detail} you={you} prState={prState} />
 			</section>
 			<Composer detail={detail} csrf={csrf} onSent={reload} plain />
 		</div>

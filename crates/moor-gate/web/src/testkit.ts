@@ -30,6 +30,12 @@ function childrenOf(el: El): ComponentChild {
 	return v.is(Component, el.type) ? (el.type as (props: Props) => ComponentChild)(el.props) : el.props.children;
 }
 
+/** An element as a person sees it: a component stands for the element it draws. */
+export function drawn(el: El): El {
+	const out = v.is(Component, el.type) ? childrenOf(el) : el;
+	return isValidElement(out) ? (out as El) : el;
+}
+
 /** Visits every element of a rendered tree. */
 export function walk(node: ComponentChild, visit: (el: El) => void): void {
 	if (Array.isArray(node)) {
