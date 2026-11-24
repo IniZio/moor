@@ -20,7 +20,7 @@ namespace.
 | `--controller-ca`, `--controller-cert`, `--controller-key` | `MOOR_GATE_CONTROLLER_*` | none | The TLS files for `--controller`. |
 | `--front-key` | `MOOR_GATE_FRONT_KEY` | none | The key the gate's hello presents to `--controller`. |
 | `--listen` | `MOOR_GATE_LISTEN` | `0.0.0.0:8443` | The address. TLS is the ingress's job. `off` serves only the Box-facing listener, with no sign-in, `/mcp` or portal. `moor up` runs the gate this way. |
-| `--box-listen` | `MOOR_GATE_BOX_LISTEN` | `127.0.0.1:8444` | The Box-facing listener, which serves only `report_step`, `exec_in_box`, `start_box` and `close_box`. Bind loopback beside a Proxy on the host, or the pod address on a cluster. Nothing but a Proxy may reach it. `off` turns it off. A non-loopback address is refused without `--box-listen-off-host`. |
+| `--box-listen` | `MOOR_GATE_BOX_LISTEN` | `127.0.0.1:8444` | The Box-facing listener, which serves only `report_step`, `exec_in_box`, `exec_wait`, `start_box` and `close_box`. Bind loopback beside a Proxy on the host, or the pod address on a cluster. Nothing but a Proxy may reach it. `off` turns it off. A non-loopback address is refused without `--box-listen-off-host`. |
 | `--box-listen-off-host` | `MOOR_GATE_BOX_LISTEN_OFF_HOST` | off | Allows `--box-listen` to bind a non-loopback address. Set it only where nothing but a Proxy can reach that address. |
 | none | `MOOR_SERVICE_KEY` | unset | A shared secret for the Box-facing listener, for a cluster where a NetworkPolicy cannot keep other callers off it, or a host with other users. `moor up` sets it for the controller and its gate. When set, the Proxy stamps it as `X-Moor-Service-Key`. The listener refuses with `401` any request whose copy differs or is missing, and compares in constant time. Set but empty, the gate does not start. Unset, the listener is as before. |
 | `--mcp-resource-url` | `MOOR_GATE_MCP_RESOURCE_URL` | none | The public `/mcp` URL. `/mcp` is off without it. |
@@ -37,15 +37,21 @@ server.
 
 - `report_step` needs `step_reports: true` on the gate's entry in the controller
   config.
-- `exec_in_box`, `start_box` and `close_box` need `box_tools: true`. They answer only an
-  agent place a task has claimed, and act as that place's user. `exec_in_box`
-  reaches only that user's open work Boxes. It takes `box`, `command` and
-  `timeout_seconds`, which is 30 by default and 1800 at most, as long as a gate
-  check. Each stream keeps its first 64 KiB, as the person-facing tool does.
+- `exec_in_box`, `exec_wait`, `start_box` and `close_box` need `box_tools: true`. They
+  answer only an agent place a task has claimed, and act as that place's user.
+  `exec_in_box` reaches only that user's open work Boxes. It takes `box`, `command`
+  and `timeout_seconds`, which is 30 by default and 1800 at most, as long as a gate
+  check. It answers within 45 s, under an agent client's tool timeout. A command
+  still running then answers with `state: running`, its `run` id and the output so
+  far. `exec_wait` takes that `run` and waits up to 45 s more, with the output since
+  the last answer and the exit once the command ends. It reaches only that user's
+  runs. A run is kept 10 minutes after it ends, and a controller restart forgets it.
+  Each stream keeps its first 64 KiB, as the person-facing tool does.
   `start_box` takes `name` and `repos`, and may name only the claim's repos. The
   Box it starts runs no agent. `close_box` takes `box` and closes one of that
   user's open work Boxes. It has no `force`. A Box that holds work not pushed
-  stays open, and the refusal says so. Every Box lists all three tools. A work
+  stays open, and the refusal says to push it with `exec_in_box` or tell the user.
+  Every Box lists all four tools. A work
   Box or an idle place that calls one is refused.
 
 Over `--controller`, a request waits up to 30 s for the controller, then gets

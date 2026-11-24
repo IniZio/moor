@@ -70,7 +70,9 @@ pub use steer::SteerReq;
 mod step_report;
 pub use step_report::StepReportReq;
 mod box_tool;
-pub use box_tool::{BoxCall, BoxExecSecs, BoxToolReq, BOX_EXEC_DEFAULT_SECS, BOX_EXEC_MAX_SECS};
+pub use box_tool::{
+    BoxCall, BoxExecSecs, BoxRunId, BoxToolReq, BOX_EXEC_DEFAULT_SECS, BOX_EXEC_MAX_SECS,
+};
 mod github_hook;
 pub use github_hook::{GitHubHookReq, GitHubHookValue};
 mod machine_pair;

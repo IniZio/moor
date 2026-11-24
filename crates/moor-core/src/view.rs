@@ -27,7 +27,7 @@ pub mod ties;
 pub mod user;
 pub mod workflow;
 use crate::domain::{box_state::BoxLifecycle, hands::HandsState, session_state::SessionState};
-pub use attach::{AttachEnd, AttachView, ExecView};
+pub use attach::{AttachEnd, AttachView, BoxRunState, BoxRunView, ExecView};
 pub use attention::AttentionView;
 pub use detail::{ApprovalView, SaidView};
 pub use forward::{ForwardView, ForwardedView};

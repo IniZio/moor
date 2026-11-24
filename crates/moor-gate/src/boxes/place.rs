@@ -1,21 +1,21 @@
-//! The tools of a claimed agent place: `exec_in_box`, `start_box` and `close_box`, each sent as
-//! `box-tool` for the Box the Proxy named.
+//! The tools of a claimed agent place: `exec_in_box`, `exec_wait`, `start_box` and `close_box`,
+//! each sent as `box-tool` for the Box the Proxy named.
 
 use moor_client::Client;
 use moor_core::name::{BoxName, ForgeRepo};
-use moor_core::request::{BoxCall, BoxExecSecs, BoxToolReq, Request as ControllerRequest};
+use moor_core::request::{
+    BoxCall, BoxExecSecs, BoxRunId, BoxToolReq, Request as ControllerRequest,
+};
 use moor_core::response::ExitClass;
-use moor_core::view::ExecView;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_router, RoleServer};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{box_of, failed, BoxTools};
-use crate::tools::exec::Capped;
 
 /// Arguments of `exec_in_box`.
 #[derive(Deserialize, JsonSchema)]
@@ -24,8 +24,16 @@ struct ExecArgs {
     r#box: String,
     /// The command, as shell text.
     command: String,
-    /// Kill the command after this many seconds: 30 by default, 1800 at most.
+    /// Kill the command after this many seconds: 30 by default, 1800 at most. Set it for a
+    /// build or a test run.
     timeout_seconds: Option<u32>,
+}
+
+/// Arguments of `exec_wait`.
+#[derive(Deserialize, JsonSchema)]
+struct WaitArgs {
+    /// The run id of an `exec_in_box` answer whose state was running.
+    run: u32,
 }
 
 /// Arguments of `start_box`.
@@ -51,9 +59,13 @@ impl BoxTools {
         description = "Run a command in one of your user's work Boxes and get its exit code, \
                        stdout and stderr. Only from an agent place a task has claimed. The \
                        command is shell text with no stdin and no terminal. It is killed after \
-                       timeout_seconds (30 by default, 1800 at most) and timed_out says so. \
-                       Each stream keeps its first 64 KiB; stdout_truncated and \
-                       stderr_truncated say when more was cut."
+                       timeout_seconds (30 by default, 1800 at most; set it for builds and \
+                       tests). The answer comes within about 45 s with the run id, the output \
+                       so far and its state: exited with the exit code, timed_out, stopped, \
+                       or running. While it is running, call exec_wait with that run. Each \
+                       answer has the output since the last one. Each stream \
+                       keeps its first 64 KiB; stdout_truncated and stderr_truncated say when \
+                       more was cut."
     )]
     async fn exec_in_box(
         &self,
@@ -63,10 +75,37 @@ impl BoxTools {
         let call = exec_call(args);
         let controller = self.controller.clone();
         let sent = box_of(&context).and_then(|from| {
-            call.map(|call| move || run_exec(&controller, BoxToolReq { from, call }))
+            call.map(|call| move || run_answered(&controller, BoxToolReq { from, call }))
         });
         match sent {
             Ok(run) => done(tokio::task::spawn_blocking(run).await),
+            Err(why) => failed(why),
+        }
+    }
+
+    /// Waits on a command of the caller place's user that `exec_in_box` left running.
+    #[tool(
+        description = "Wait on a command that exec_in_box left running. Answers within about \
+                       45 s with the output since the last answer and the command's state, as \
+                       exec_in_box gives it. Call it again while the state is running. Only from an agent place a task has claimed, on your user's \
+                       own runs."
+    )]
+    async fn exec_wait(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<WaitArgs>,
+    ) -> CallToolResult {
+        let call = BoxCall::Wait {
+            run: BoxRunId(args.run),
+        };
+        let controller = self.controller.clone();
+        match box_of(&context) {
+            Ok(from) => done(
+                tokio::task::spawn_blocking(move || {
+                    run_answered(&controller, BoxToolReq { from, call })
+                })
+                .await,
+            ),
             Err(why) => failed(why),
         }
     }
@@ -169,30 +208,7 @@ fn refusal(reply: moor_core::Response) -> Result<Value, String> {
     Ok(reply.value.unwrap_or_default())
 }
 
-/// Runs the `exec` `req`; how it ended and what it wrote.
-fn run_exec(controller: &Client, req: BoxToolReq) -> Result<Value, String> {
-    let (mut stdout, mut stderr) = (Capped::default(), Capped::default());
-    let reply = controller
-        .pipe(
-            ControllerRequest::BoxTool(req),
-            std::io::empty(),
-            &mut stdout,
-            &mut stderr,
-        )
-        .map_err(|e| format!("the command's link to the controller failed: {e}"))?;
-    let view: ExecView = serde_json::from_value(refusal(reply)?)
-        .map_err(|e| format!("the controller's answer is not an exec result: {e}"))?;
-    Ok(json!({
-        "exit": view.exit,
-        "timed_out": view.timed_out,
-        "stdout": stdout.text(),
-        "stderr": stderr.text(),
-        "stdout_truncated": stdout.cut,
-        "stderr_truncated": stderr.cut,
-    }))
-}
-
-/// Runs the `start` or `close` `req`; the controller's answer.
+/// Runs `req`; the controller's answer.
 fn run_answered(controller: &Client, req: BoxToolReq) -> Result<Value, String> {
     let reply = controller
         .request(ControllerRequest::BoxTool(req), |_| {})
