@@ -252,3 +252,92 @@ fn a_tunnel_open_across_a_spec_change_keeps_the_old_proxy_until_it_ends() {
     );
     server.drain(Duration::from_secs(5));
 }
+
+/// Holds each `ca` call relayed while armed, as a slow controller would, and counts the held ones.
+#[derive(Default)]
+struct CaGate {
+    /// Whether `ca` calls are held, and how many are.
+    state: Mutex<(bool, usize)>,
+    wake: Condvar,
+}
+
+impl CaGate {
+    fn set(&self, armed: bool) {
+        self.state.lock().unwrap().0 = armed;
+        self.wake.notify_all();
+    }
+
+    fn held(&self) -> usize {
+        self.state.lock().unwrap().1
+    }
+
+    /// Waits while armed, counted as held.
+    fn pass(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.1 += 1;
+        self.wake.notify_all();
+        s = self.wake.wait_while(s, |s| s.0).unwrap();
+        s.1 -= 1;
+    }
+}
+
+/// Relays the ledger at `real` on `socket`, passing each `ca` call through `gate` first.
+fn gated_controller(socket: &Path, real: &Path) -> Arc<CaGate> {
+    let gate = Arc::new(CaGate::default());
+    let listener = UnixListener::bind(socket).unwrap();
+    let (each, real) = (Arc::clone(&gate), real.to_owned());
+    std::thread::spawn(move || {
+        for client in listener.incoming() {
+            let Ok(client) = client else { return };
+            let (gate, real) = (Arc::clone(&each), real.clone());
+            std::thread::spawn(move || {
+                let controller = UnixStream::connect(real).unwrap();
+                let (mut from, mut back) = (BufReader::new(&client), BufReader::new(&controller));
+                let mut line = String::new();
+                while from.read_line(&mut line).is_ok_and(|n| n > 0) {
+                    if line.trim_end() == r#""ca""# {
+                        gate.pass();
+                    }
+                    back.get_mut().write_all(line.as_bytes()).unwrap();
+                    let mut reply = String::new();
+                    back.read_line(&mut reply).unwrap();
+                    if from.get_mut().write_all(reply.as_bytes()).is_err() {
+                        return;
+                    }
+                    line.clear();
+                }
+            });
+        }
+    });
+    gate
+}
+
+#[test]
+fn a_tunnel_and_tending_never_build_a_proxy_for_one_box_at_once() {
+    let w = World::new();
+    let gated = w.dir.path().join("gated.sock");
+    let gate = gated_controller(&gated, &w.dir.path().join("proxy.sock"));
+    let mut cfg = w.config(10.0, 10.0, 64);
+    cfg.ledger = Endpoint::Unix(gated);
+    let server = Server::start(cfg).unwrap();
+    assert_eq!(
+        w.get(open(&server, &w.token, &w.target()).unwrap()),
+        "HTTP/1.1 200 OK"
+    );
+    gate.set(true);
+    token_form(&w);
+    std::thread::scope(|s| {
+        let tunnel = s.spawn(|| w.get(open(&server, &w.token, &w.target()).unwrap()));
+        eventually("a rebuild to read the CA", || gate.held() > 0);
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(
+            gate.held(),
+            1,
+            "a second build of the Box's proxy shares its CA directory with the first"
+        );
+        gate.set(false);
+        assert_eq!(tunnel.join().unwrap(), "HTTP/1.1 200 OK");
+    });
+    assert_eq!(last_auth(&w).as_deref(), Some("Token test-token-1"));
+    server.drain(Duration::from_secs(5));
+}
