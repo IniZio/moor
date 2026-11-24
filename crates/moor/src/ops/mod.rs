@@ -14,6 +14,7 @@ mod auto_close;
 mod binding;
 pub(crate) mod box_config;
 pub(crate) mod box_rsync;
+pub(crate) mod box_tool;
 mod changes;
 mod close;
 pub(crate) mod close_failed;
@@ -129,6 +130,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Refused,
             authz::STEP_REPORT_FRONT_ONLY,
         )),
+        Request::BoxTool(_) => Err(CommandError::new(ErrorKind::Refused, box_tool::FRONT_ONLY)),
         Request::MachinePair(_) => Err(CommandError::new(
             ErrorKind::Refused,
             machine_pair::FRONT_ONLY,

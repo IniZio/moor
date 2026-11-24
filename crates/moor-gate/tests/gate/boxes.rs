@@ -7,6 +7,7 @@ use std::net::TcpListener;
 use std::os::unix::net::UnixListener;
 use std::sync::mpsc;
 
+use moor_core::controller::write_bytes;
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
@@ -79,9 +80,16 @@ fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
                             writeln!(reply, "{line}").unwrap();
                             continue;
                         }
+                        if frame["frame"] != "request" {
+                            continue;
+                        }
                         tx.send(frame["request"].clone()).unwrap();
-                        let step = frame["request"]["report"]["step"].as_str().unwrap_or("");
-                        let envelope = answer(step);
+                        let envelope = if frame["request"]["cmd"] == "box-tool" {
+                            box_tool(&frame, &mut reply)
+                        } else {
+                            let step = frame["request"]["report"]["step"].as_str().unwrap_or("");
+                            answer(step)
+                        };
                         let out =
                             json!({"frame": "response", "id": frame["id"], "envelope": envelope});
                         writeln!(reply, "{out}").unwrap();
@@ -103,6 +111,29 @@ fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
         _dir: dir,
         key: key.map(str::to_owned),
     }
+}
+
+/// The fake controller's answer to a `box-tool` `frame`: from Box 9, a work Box, the refusal;
+/// an exec writes `hi` first.
+fn box_tool(frame: &Value, out: &mut dyn Write) -> Response {
+    let req = &frame["request"];
+    if req["from"] == 9 {
+        let view = ErrorView {
+            kind: ErrorKind::Refused,
+            message: "exec_in_box and start_box serve only an agent place that a task has \
+                      claimed, and this is a work Box."
+                .to_owned(),
+            hints: vec![],
+            context: vec![],
+            detail: None,
+        };
+        return Response::err("box-tool", view);
+    }
+    if req["call"]["tool"] == "exec" {
+        write_bytes(out, frame["id"].as_str().unwrap(), b"hi\n").unwrap();
+        return Response::ok("exec", Some(json!({"exit": 0})));
+    }
+    Response::ok("start", Some(json!({"name": req["call"]["name"]})))
 }
 
 fn answer(step: &str) -> Response {
@@ -192,13 +223,19 @@ fn text(result: &Value) -> &str {
 }
 
 #[test]
-fn only_the_moor_server_with_report_step_is_served() {
+fn only_the_moor_server_with_report_step_and_the_place_tools_is_served() {
     let l = listener(true);
     let reply = l.rpc(Some("7"), "tools/list", json!({}));
     let tools = reply["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 1, "{tools:?}");
-    assert_eq!(tools[0]["name"], "report_step");
-    let mut args: Vec<&str> = tools[0]["inputSchema"]["properties"]
+    let mut names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["exec_in_box", "report_step", "start_box"],
+        "{tools:?}"
+    );
+    let report = tools.iter().find(|t| t["name"] == "report_step").unwrap();
+    let mut args: Vec<&str> = report["inputSchema"]["properties"]
         .as_object()
         .unwrap()
         .keys()
@@ -397,4 +434,100 @@ fn a_gate_with_a_public_listener_still_needs_its_sign_in_flags() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--issuer"), "{stderr}");
+}
+
+impl Listener {
+    /// `tool` called with `args` as Box `box_header`.
+    fn call(&self, box_header: Option<&str>, tool: &str, args: Value) -> Value {
+        let reply = self.rpc(
+            box_header,
+            "tools/call",
+            json!({"name": tool, "arguments": args}),
+        );
+        reply["result"].clone()
+    }
+}
+
+#[test]
+fn exec_in_box_sends_the_stamped_box_and_no_identity() {
+    let l = listener(true);
+    let result = l.call(
+        Some("41"),
+        "exec_in_box",
+        json!({"box": "w", "command": "ls", "timeout_seconds": 1800}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    let out: Value = serde_json::from_str(text(&result)).unwrap();
+    assert_eq!(out["stdout"], "hi\n", "{out}");
+    assert_eq!(out["exit"], 0, "{out}");
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "box-tool", "from": 41, "call": {
+            "tool": "exec", "target": "w", "command": "ls", "timeout": 1800}})
+    );
+    l.call(
+        Some("41"),
+        "exec_in_box",
+        json!({"box": "w", "command": "ls"}),
+    );
+    assert_eq!(l.seen.recv().unwrap()["call"]["timeout"], 30);
+}
+
+#[test]
+fn start_box_sends_the_stamped_box_and_its_repos() {
+    let l = listener(true);
+    let result = l.call(
+        Some("41"),
+        "start_box",
+        json!({"name": "n", "repos": ["o/a", "o/b"], "prompt": "go"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "box-tool", "from": 41, "call": {
+            "tool": "start", "name": "n", "repo": "o/a", "also": ["o/b"], "prompt": "go"}})
+    );
+}
+
+#[test]
+fn a_place_tool_call_the_gate_cannot_send_reaches_no_controller() {
+    let l = listener(true);
+    let calls = [
+        (None, "exec_in_box", json!({"box": "w", "command": "ls"})),
+        (
+            Some("7"),
+            "exec_in_box",
+            json!({"box": "w", "command": "ls", "timeout_seconds": 1801}),
+        ),
+        (
+            Some("7"),
+            "exec_in_box",
+            json!({"box": "w", "command": "ls", "timeout_seconds": 0}),
+        ),
+        (Some("7"), "start_box", json!({"name": "n", "repos": []})),
+        (
+            Some("7"),
+            "start_box",
+            json!({"name": "n", "repos": ["not a repo"]}),
+        ),
+        (None, "start_box", json!({"name": "n", "repos": ["o/a"]})),
+    ];
+    for (header, tool, args) in calls {
+        let result = l.call(header, tool, args.clone());
+        assert_eq!(result["isError"], true, "{tool} {args}: {result}");
+    }
+    assert!(l.seen.try_recv().is_err());
+}
+
+#[test]
+fn a_work_box_agent_sees_the_place_tools_and_is_refused_by_the_controller() {
+    let l = listener(true);
+    for (tool, args) in [
+        ("exec_in_box", json!({"box": "w", "command": "ls"})),
+        ("start_box", json!({"name": "n", "repos": ["o/a"]})),
+    ] {
+        let result = l.call(Some("9"), tool, args);
+        assert_eq!(result["isError"], true, "{result}");
+        assert!(text(&result).contains("this is a work Box"), "{result}");
+    }
 }

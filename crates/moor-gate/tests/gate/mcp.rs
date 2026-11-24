@@ -218,6 +218,17 @@ impl Mcp {
 
     /// The JSON-RPC reply to `method` after a full handshake with `token`.
     fn rpc(&self, token: &str, method: &str, params: Value) -> Value {
+        self.rpc_with(token, &[], method, params)
+    }
+
+    /// [`Self::rpc`] with `headers` on every request.
+    fn rpc_with(
+        &self,
+        token: &str,
+        headers: &[(&str, &str)],
+        method: &str,
+        params: Value,
+    ) -> Value {
         let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
             "protocolVersion": "2025-06-18", "capabilities": {},
             "clientInfo": {"name": "test", "version": "0"}}});
@@ -231,6 +242,9 @@ impl Mcp {
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json, text/event-stream")
                 .header("Authorization", format!("Bearer {token}"));
+            for (name, value) in headers {
+                req = req.header(*name, *value);
+            }
             if let Some(session) = session {
                 req = req.header("Mcp-Session-Id", session);
             }

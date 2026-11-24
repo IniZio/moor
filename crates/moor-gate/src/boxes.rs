@@ -1,12 +1,15 @@
-//! The Box-facing listener: one MCP server, `moor`, with one tool, `report_step`, for the agent
-//! in a Box to report the step of its workflow run.
+//! The Box-facing listener: one MCP server, `moor`, with `report_step` for the agent in a Box to
+//! report the step of its workflow run, and `exec_in_box` and `start_box` for the agent in a
+//! claimed agent place to use its user's work Boxes. Every Box lists all three; the controller
+//! refuses the place tools to any Box but a claimed place.
 //!
 //! A Box holds no token. The shared Proxy routes `moor.moor.internal` to this listener and
 //! stamps `X-Moor-Box: <box id>`, dropping any such header the Box sent. Only the Proxy reaches
 //! this listener, so the header is trusted as the Box's identity. Where a `NetworkPolicy` cannot
 //! keep other callers off it, the Proxy also stamps a shared secret, `X-Moor-Service-Key`, and
 //! the listener refuses a request whose copy differs.
-//! The listener serves no other tool and no person's request.
+//! Each tool names its Box from that header alone and asserts no identity; the controller acts
+//! as the place's own user. The listener serves no other tool and no person's request.
 
 use std::io;
 use std::net::TcpListener;
@@ -35,6 +38,8 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq as _;
 use tokio::runtime::Runtime;
+
+mod place;
 
 /// The header the Proxy stamps with the id of the Box that made the request.
 pub const BOX_HEADER: &str = "x-moor-box";
@@ -132,7 +137,7 @@ impl BoxTools {
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler(router = Self::tool_router())]
+#[tool_handler(router = (Self::tool_router() + Self::place_router()))]
 impl ServerHandler for BoxTools {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())

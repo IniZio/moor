@@ -23,14 +23,16 @@ use crate::Moor;
 
 mod artifact_read;
 mod attach;
+mod box_tool;
 mod exec;
 mod frames;
 mod front;
 
 use artifact_read::read_artifact;
 use attach::attach;
+use box_tool::box_tool;
 use exec::piped;
-use frames::{hello_reply, hello_required, stray};
+use frames::{hello_reply, hello_required, start_watch, stray};
 use front::front_request;
 
 /// Whom one connection speaks for, the vault key its user requests use, and its place in the
@@ -109,6 +111,9 @@ fn answer(
     let cmd = request.cmd();
     if matches!(request, Request::Version {}) {
         return Some(Moor::version());
+    }
+    if let (Request::BoxTool(req), false) = (&request, matches!(peer.caller, Ok(Caller::Runner))) {
+        return box_tool(env, peer, id, asserted, req, (input, out));
     }
     if let Some(done) = front_request(env, peer, &request) {
         return Some(done);
@@ -229,30 +234,6 @@ pub(super) fn serve<W: Write + Send>(
     }
 }
 
-/// Hands a watch `frame` to `watch`, which streams until the connection ends.
-fn start_watch<W: Write>(
-    writer: &mut W,
-    frame: ClientFrame,
-    watch: &impl Fn(&mut W, i64, &WatchFilter, bool, Option<&Identity>),
-) {
-    if let ClientFrame::Watch {
-        since,
-        boxes,
-        kinds,
-        parent,
-        follow,
-        identity,
-    } = frame
-    {
-        let filter = WatchFilter {
-            boxes,
-            kinds,
-            parent,
-        };
-        watch(writer, since, &filter, follow, identity.as_ref());
-    }
-}
-
 /// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`,
 /// `exec`, `box-rsync` or `forward` that ran hands the connection to its relay.
 fn request_reply(
@@ -265,7 +246,7 @@ fn request_reply(
     let attach = matches!(
         request,
         Request::Attach(_) | Request::Exec(_) | Request::BoxRsync(_) | Request::Forward(_)
-    );
+    ) || box_tool::streams(&request);
     match conn
         .answering()
         .and_then(|_answering| answer(&id, request, duplex))

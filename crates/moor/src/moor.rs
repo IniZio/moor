@@ -274,65 +274,6 @@ impl Moor {
         }
     }
 
-    /// Run `webhook-claim` or `webhook-report` for `caller`, which must be a front whose config
-    /// sets `webhooks: true`; it acts for every user, so it asserts no identity.
-    pub(crate) fn call_webhook_outbox(
-        &self,
-        caller: &Result<Caller, String>,
-        vault: &Vault,
-        request: &Request,
-    ) -> Response {
-        let name = request.cmd();
-        let run = || {
-            ops::webhook_outbox::permit(|ns| self.cx.env().front_webhooks(ns), caller)?;
-            let store = self.cx.store()?;
-            match request {
-                Request::WebhookClaim(req) => ops::webhook_outbox::claim(store, vault, req),
-                Request::WebhookReport(req) => ops::webhook_outbox::report(store, req),
-                _ => Err(CommandError::new(
-                    ErrorKind::Internal,
-                    "not a webhook request",
-                )),
-            }
-        };
-        match run() {
-            Ok(value) => Response::ok(name, Some(value)),
-            Err(e) => e.into_response(name, vec![]),
-        }
-    }
-
-    /// Run `step-report` for `caller`, which must be a front whose config sets
-    /// `step_reports: true`. The front names the Box from its transport and asserts no identity.
-    pub(crate) fn call_step_report(
-        &self,
-        caller: &Result<Caller, String>,
-        request: &Request,
-    ) -> Response {
-        let name = request.cmd();
-        let run = || {
-            match caller {
-                Ok(Caller::Front(ns)) if self.cx.env().front_step_reports(ns) => {}
-                _ => {
-                    return Err(CommandError::new(
-                        ErrorKind::Refused,
-                        ops::authz::STEP_REPORT_FRONT_ONLY,
-                    ))
-                }
-            }
-            let Request::StepReport(req) = request else {
-                return Err(CommandError::new(
-                    ErrorKind::Internal,
-                    "not a step-report request",
-                ));
-            };
-            ops::step_report(&self.cx, req)
-        };
-        match run() {
-            Ok(value) => Response::ok(name, Some(value)),
-            Err(e) => e.into_response(name, vec![]),
-        }
-    }
-
     /// Run `machine-pair` for `caller`, which must be a front.
     pub(crate) fn call_machine_pair(
         &self,
@@ -379,6 +320,7 @@ impl Moor {
 }
 
 mod feed;
+mod front;
 mod workflow;
 
 #[cfg(test)]

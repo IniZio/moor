@@ -20,7 +20,7 @@ use crate::{rewrite, Person};
 mod args;
 mod artifact;
 mod events;
-mod exec;
+pub(crate) mod exec;
 pub(crate) use events::{fetch, EventsArgs};
 pub(crate) use listen::client_down;
 mod failed;

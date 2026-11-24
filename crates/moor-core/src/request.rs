@@ -45,7 +45,9 @@ pub use names::{Grant, Named, Pins};
 mod node_settings;
 pub use node_settings::{CapEdit, NodeSettingsGetReq, NodeSettingsSetReq};
 mod repo_config;
+mod run;
 pub use repo_config::{RepoConfigGetReq, RepoConfigSetReq};
+pub use run::RunReq;
 mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
@@ -69,6 +71,8 @@ mod steer;
 pub use steer::SteerReq;
 mod step_report;
 pub use step_report::StepReportReq;
+mod box_tool;
+pub use box_tool::{BoxCall, BoxExecSecs, BoxToolReq, BOX_EXEC_DEFAULT_SECS, BOX_EXEC_MAX_SECS};
 mod github_hook;
 pub use github_hook::{GitHubHookReq, GitHubHookValue};
 mod machine_pair;
@@ -263,6 +267,9 @@ pub enum Request {
     /// What the agent in a Box reports for the step its run is at; only a front with
     /// `step_reports: true`, which names the Box from its transport.
     StepReport(StepReportReq),
+    /// What the agent in a claimed agent place asks of its user's Boxes; only a front with
+    /// `box_tools: true`, which names the place from its transport.
+    BoxTool(BoxToolReq),
     /// Start, show, confirm or collect a code a machine pairs by; only a front.
     MachinePair(MachinePairReq),
     /// A delivery GitHub posted to the gate's `/hooks/github`; only a front.

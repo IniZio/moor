@@ -177,3 +177,20 @@ fn a_box_that_is_not_yours_comes_back_as_a_tool_error() {
         "{result}"
     );
 }
+
+#[test]
+fn a_box_header_on_a_person_s_call_still_runs_as_the_person_and_never_as_a_box() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:write");
+    let reply = m.rpc_with(
+        &token,
+        &[("X-Moor-Box", "7")],
+        "tools/call",
+        json!({"name": "exec_in_box", "arguments": {"box": "repo/web", "command": "id"}}),
+    );
+    assert_ne!(reply["result"]["isError"], true, "{reply}");
+    let sent = &m.requests()[0]["request"];
+    assert_eq!(sent["cmd"], "as", "{sent}");
+    assert_eq!(sent["identity"], "authgear:alice-sub", "{sent}");
+    assert_eq!(sent["request"]["cmd"], "exec", "{sent}");
+}

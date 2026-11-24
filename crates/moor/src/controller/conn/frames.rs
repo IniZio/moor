@@ -1,6 +1,9 @@
 //! Frames the connection sends on its own account: hello answers and stray-frame errors.
 
-use moor_core::controller::{ClientFrame, FrameErrorKind, ServerFrame, PROTOCOL};
+use std::io::Write;
+
+use moor_core::controller::{ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL};
+use moor_core::user::Identity;
 
 /// The error for a bytes, eof or resize frame `id` sent outside a running `attach` or `exec`.
 pub(super) fn stray(id: String) -> ServerFrame {
@@ -37,5 +40,29 @@ pub(super) fn hello_required(frame: ClientFrame) -> ServerFrame {
         id,
         kind: FrameErrorKind::HelloRequired,
         message,
+    }
+}
+
+/// Hands a watch `frame` to `watch`, which streams until the connection ends.
+pub(super) fn start_watch<W: Write>(
+    writer: &mut W,
+    frame: ClientFrame,
+    watch: &impl Fn(&mut W, i64, &WatchFilter, bool, Option<&Identity>),
+) {
+    if let ClientFrame::Watch {
+        since,
+        boxes,
+        kinds,
+        parent,
+        follow,
+        identity,
+    } = frame
+    {
+        let filter = WatchFilter {
+            boxes,
+            kinds,
+            parent,
+        };
+        watch(writer, since, &filter, follow, identity.as_ref());
     }
 }
