@@ -13,6 +13,7 @@ mod box_deaths;
 mod box_gates;
 mod box_hands;
 mod box_inbox;
+mod box_no_setup;
 mod box_places;
 mod box_state;
 mod checkpoint_base;
@@ -126,4 +127,5 @@ pub const STEPS: &[Step] = &[
     step("V101__suspend_unchecked", suspend_unchecked::write),
     step("V102__box_places", box_places::write),
     step("V103__task_boxes", task_boxes::write),
+    step("V104__box_no_setup", box_no_setup::write),
 ];
