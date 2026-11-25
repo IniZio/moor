@@ -77,6 +77,17 @@ fn a_place_brief_names_start_box_close_box_and_the_artifacts_dir() {
 }
 
 #[test]
+fn a_place_brief_points_files_at_the_work_box_and_claims_no_401_for_other_repos() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    assert!(out.contains("in the work Box's `.moor/artifacts/`"), "{out}");
+    assert!(!out.contains("copy it into `.moor/artifacts/` in your working directory"), "{out}");
+    assert!(!out.contains("answers 401 or 404"), "{out}");
+}
+
+#[test]
 fn names_no_prompt_or_goal_line() {
     let out = render(&input(None));
     assert!(
