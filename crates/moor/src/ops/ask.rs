@@ -61,7 +61,10 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         drop(turn);
         return value(store, row.id, true);
     }
-    cold(cx, store, claim, &text)
+    let why = super::place::why_none(store, user)?;
+    let mut v = cold(cx, store, claim, &text)?;
+    v.no_idle_place = Some(why);
+    Ok(v)
 }
 
 /// Whether idle place `row` can take a question now, by what the store holds: awake on a ready
@@ -128,6 +131,7 @@ fn value(store: &Store, id: BoxId, claimed: bool) -> Result<AskValue, CommandErr
         claimed_at: claim.at,
         served_at: claim.served,
         steered_at: claim.steered,
+        no_idle_place: None,
     })
 }
 

@@ -20,9 +20,12 @@ use moor_core::view::StartView;
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind, StartReq};
 
 use super::close;
+
+mod why;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
+pub(crate) use why::why_none;
 
 /// A user's newest place and whether a task claimed it; none for a user with no place yet.
 type Stamp = Option<(BoxId, bool)>;
@@ -171,7 +174,7 @@ fn tend(
             out.push(format!(
                 "agent place {} of {email} was rejected at start{}; no other starts until a person starts one",
                 row.name.as_str(),
-                row.state_reason.as_ref().map_or_else(String::new, |why| format!(": {why}")),
+                why::rejection(store, &row)?.map_or_else(String::new, |why| format!(": {why}")),
             ));
         }
         return Ok(out);
@@ -273,12 +276,19 @@ fn free_name(cx: &Cx, store: &Store) -> Result<BoxName, CommandError> {
     ))
 }
 
+/// Why the failed place `row` failed.
+fn failure(row: &BoxRow) -> String {
+    row.state_reason.clone().unwrap_or_else(|| {
+        row.launch_failure.as_ref().map_or_else(
+            || "its agent did not launch".to_owned(),
+            |f| format!("its agent did not launch at {}: {}", f.step, f.message),
+        )
+    })
+}
+
 /// What the log says of the failed place `row` of `email`.
 fn failed_line(row: &BoxRow, email: &str) -> String {
-    let why = row
-        .state_reason
-        .as_deref()
-        .unwrap_or("its agent did not launch");
+    let why = failure(row);
     format!(
         "agent place {} of {email} failed: {why}; it stays until closed, and no other starts",
         row.name.as_str()

@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use moor_core::config::UserConfig;
+use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::decision::Decision;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::request::AskReq;
 use moor_core::seam::clock::Ts;
@@ -12,7 +14,8 @@ use moor_core::seam::engine::{LaunchPrompt, Steer};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::user::{Email, Identity};
-use moor_core::{BoxId, BoxPath, ErrorDetail, ErrorKind, StartReq};
+use moor_core::view::ask::AskValue;
+use moor_core::{BoxId, BoxPath, BoxTarget, CloseReq, ErrorDetail, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::owners::Cmd;
@@ -20,7 +23,7 @@ use crate::cx::Cx;
 use crate::store::Store;
 use crate::testing::agent;
 use crate::testing::box_name;
-use crate::testing::cx::requester;
+use crate::testing::cx::{new_idle_place, requester, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
@@ -379,4 +382,97 @@ fn no_idle_place_starts_a_place_with_the_claim_and_the_prompt() {
     assert!(launch.place, "a place launches with the place brief");
     let spec = specs(&w).pop().unwrap();
     assert_eq!(spec.box_repo, Some(repo()));
+}
+
+/// An unclaimed place of the requester, admitted and still coming up.
+fn coming_up(w: &World, name: &str) -> BoxId {
+    let store = store(w);
+    let id = store.apply(new_idle_place(box_name(name))).unwrap().box_id;
+    store
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Admitted))
+        .unwrap();
+    id
+}
+
+/// What the ask's reply says of the idle place it did not claim.
+fn why(v: &AskValue) -> &str {
+    v.no_idle_place.as_deref().expect("a cold ask says why")
+}
+
+#[test]
+fn a_cold_ask_names_the_failed_place_that_blocks_the_pool_and_it_closes_by_name() {
+    let w = world();
+    let id = coming_up(&w, "place-broken");
+    store(&w)
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::SetupFailed {
+            cause: "profile: the profile repo could not be fetched".to_owned(),
+            which: None,
+        }))
+        .unwrap();
+    let v = run(&w.cx, &ask("q")).unwrap();
+    assert!(!v.claimed);
+    let said = why(&v);
+    assert!(
+        said.contains("place-broken")
+            && said.contains("failed")
+            && said.contains("profile repo could not be fetched")
+            && said.contains("close_box place-broken"),
+        "{said}"
+    );
+    let req = CloseReq {
+        target: BoxTarget::Name(box_name("place-broken")),
+        force: false,
+    };
+    crate::ops::close::requested(&w.cx, &req).unwrap();
+    assert!(store(&w).idle_places_of(REQUESTER_USER).unwrap().is_empty());
+}
+
+#[test]
+fn a_cold_ask_names_the_place_still_coming_up_and_since_when() {
+    let w = world();
+    coming_up(&w, "place-slow");
+    let v = run(&w.cx, &ask("q")).unwrap();
+    assert!(!v.claimed);
+    let said = why(&v);
+    assert!(
+        said.contains("place-slow") && said.contains("coming up since 1970-01-01T"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_cold_ask_names_a_rejected_last_place() {
+    let w = world();
+    let id = store(&w)
+        .apply(new_idle_place(box_name("place-nope")))
+        .unwrap()
+        .box_id;
+    store(&w)
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Rejected {
+            reason: "no credential".to_owned(),
+        }))
+        .unwrap();
+    let said = run(&w.cx, &ask("q")).unwrap().no_idle_place.unwrap();
+    assert!(
+        said.contains("place-nope") && said.contains("rejected") && said.contains("no credential"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_cold_ask_with_no_place_at_all_says_none_was_waiting() {
+    let w = world();
+    let said = run(&w.cx, &ask("q")).unwrap().no_idle_place.unwrap();
+    assert!(said.starts_with("no idle place: none"), "{said}");
+}
+
+#[test]
+fn a_claimed_ask_says_nothing_of_a_missing_place() {
+    let w = world();
+    place(&w, "p1");
+    let v = run(&w.cx, &ask("q")).unwrap();
+    assert!(v.claimed);
+    assert_eq!(v.no_idle_place, None);
+    let wire = serde_json::to_value(&v).unwrap();
+    assert!(wire.get("no_idle_place").is_none(), "{wire}");
 }

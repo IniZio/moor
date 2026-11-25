@@ -14,4 +14,7 @@ pub struct AskValue {
     pub served_at: Option<i64>,
     /// When the question reached the agent; none while it waits in the inbox.
     pub steered_at: Option<i64>,
+    /// Why no idle place took the question, for an ask that started one; none when one did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub no_idle_place: Option<String>,
 }
