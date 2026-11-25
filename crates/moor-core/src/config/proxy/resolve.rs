@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::template::{check_slots, fill_any_repo, fill_repo, uses_repo, ALLOW_SLOTS, ANY_REPO};
-use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER};
+use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER, GRAPHQL_HOST};
 use crate::config::ConfigError;
+use crate::graphql_scope::Scope;
 use crate::name::ForgeRepo;
 
 /// The embedded default rules.
@@ -53,12 +54,27 @@ pub struct ResolvedRule {
     pub endpoint_rules: Vec<EndpointRule>,
     /// Box environment variables.
     pub box_env: BTreeMap<String, String>,
+    /// For a rule serving [`GRAPHQL_HOST`], the GraphQL roots and mutations it lets through;
+    /// none in a spec recorded before rules carried them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graphql: Option<Scope>,
 }
 
 /// The embedded default rules by name.
 #[must_use]
 pub fn default_rules() -> BTreeMap<String, ToolRule> {
     parse_rules("defaults.yaml", DEFAULTS).unwrap_or_default()
+}
+
+/// The GraphQL scope of the default rule for [`GRAPHQL_HOST`], which a spec recorded before
+/// rules carried their scope is judged by.
+#[must_use]
+pub fn default_graphql() -> Scope {
+    default_rules()
+        .into_values()
+        .find(|r| r.hosts.iter().any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST)))
+        .and_then(|r| r.graphql)
+        .unwrap_or_default()
 }
 
 /// One parsed `allow` entry.
@@ -215,7 +231,12 @@ fn resolve_one(
             user: user.clone().unwrap_or_default(),
         },
     };
+    let judged = rule
+        .hosts
+        .iter()
+        .any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST));
     Ok(ResolvedRule {
+        graphql: judged.then(|| rule.graphql.clone().unwrap_or_default()),
         hosts: rule
             .hosts
             .iter()

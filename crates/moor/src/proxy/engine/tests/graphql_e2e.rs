@@ -209,6 +209,7 @@ pub(super) fn github_rule() -> ResolvedRule {
         path: path.to_owned(),
     };
     ResolvedRule {
+        graphql: None,
         name: "github-api".to_owned(),
         hosts: vec!["api.github.com".to_owned()],
         credential: "github".to_owned(),
@@ -445,3 +446,4 @@ mod placeholder;
 mod reasons;
 mod rejected;
 mod repo_ids;
+mod scope;

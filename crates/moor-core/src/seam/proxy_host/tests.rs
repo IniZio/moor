@@ -41,6 +41,7 @@ fn spec_with_rule_round_trips_through_json() {
             path: "/repos/**".into(),
         }],
         box_env: [("GH_HOST".to_string(), "github.com".to_string())].into(),
+        graphql: Some(crate::config::proxy::default_graphql()),
     }];
     let text = serde_json::to_string(&s).unwrap();
     assert_eq!(serde_json::from_str::<ProxySpec>(&text).unwrap(), s);

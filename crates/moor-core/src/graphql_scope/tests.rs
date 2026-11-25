@@ -4,7 +4,8 @@ use std::fmt::Write;
 
 use serde_json::{json, Value};
 
-use super::{judge, NodeId, RepoRef, Verdict};
+use super::{judge, NodeId, RepoRef, Scope, Verdict};
+use crate::config::proxy::default_graphql;
 
 mod box_files;
 mod extra;
@@ -12,6 +13,11 @@ mod gh_issue_view;
 mod gh_pr_edit_attach;
 mod gh_repo;
 mod redact;
+
+/// The scope the default rules give `api.github.com`.
+pub(super) fn seed() -> Scope {
+    default_graphql()
+}
 
 fn repo() -> RepoRef {
     RepoRef::new("IniZio", "moor")
@@ -22,7 +28,7 @@ pub(super) fn body(query: &str, vars: &Value) -> Vec<u8> {
 }
 
 fn verdict(query: &str, vars: &Value) -> Verdict {
-    judge(&body(query, vars), &repo())
+    judge(&body(query, vars), &repo(), &seed())
 }
 
 pub(super) fn allowed(query: &str, vars: &Value) {
@@ -322,7 +328,7 @@ fn operation_name_does_not_decide() {
         "operationName": "PullRequestByNumber",
     }))
     .unwrap();
-    assert!(matches!(judge(&raw, &repo()), Verdict::Deny(_)));
+    assert!(matches!(judge(&raw, &repo(), &seed()), Verdict::Deny(_)));
 }
 
 #[test]
@@ -445,10 +451,14 @@ fn subscriptions_are_denied() {
 #[test]
 fn duplicate_json_keys_are_denied() {
     let top = br#"{"query":"{ viewer { login } }","query":"{ organization(login:\"v\") { id } }"}"#;
-    assert!(matches!(judge(top, &repo()), Verdict::Deny(r) if r.as_str().contains("duplicate")));
+    assert!(
+        matches!(judge(top, &repo(), &seed()), Verdict::Deny(r) if r.as_str().contains("duplicate"))
+    );
     let vars = br#"{"query":"query($o:String!){repository(owner:$o,name:\"moor\"){id}}",
         "variables":{"o":"victim","o":"IniZio"}}"#;
-    assert!(matches!(judge(vars, &repo()), Verdict::Deny(r) if r.as_str().contains("duplicate")));
+    assert!(
+        matches!(judge(vars, &repo(), &seed()), Verdict::Deny(r) if r.as_str().contains("duplicate"))
+    );
 }
 
 #[test]
@@ -463,7 +473,10 @@ fn malformed_requests_are_denied() {
         b"{\"query\": \"{ viewer { login } }\"} trailing",
         b"[{\"query\": \"{ viewer { login } }\"}]",
     ] {
-        assert!(matches!(judge(raw, &repo()), Verdict::Deny(_)), "{raw:?}");
+        assert!(
+            matches!(judge(raw, &repo(), &seed()), Verdict::Deny(_)),
+            "{raw:?}"
+        );
     }
     denied("{ viewer { login }", &json!({}), "malformed");
     denied("{ viewer { login } } !", &json!({}), "malformed");
@@ -478,10 +491,10 @@ fn malformed_requests_are_denied() {
 #[test]
 fn null_and_missing_variables_are_accepted_when_unused() {
     let raw = serde_json::to_vec(&json!({"query": "{ viewer { login } }"})).unwrap();
-    assert_eq!(judge(&raw, &repo()), Verdict::Allow);
+    assert_eq!(judge(&raw, &repo(), &seed()), Verdict::Allow);
     let raw =
         serde_json::to_vec(&json!({"query": "{ viewer { login } }", "variables": null})).unwrap();
-    assert_eq!(judge(&raw, &repo()), Verdict::Allow);
+    assert_eq!(judge(&raw, &repo(), &seed()), Verdict::Allow);
 }
 
 #[test]

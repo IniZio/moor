@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
+use moor_core::config::proxy::{default_graphql, ResolvedInject, ResolvedRule};
 use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::forge::ForgeRepo;
@@ -232,6 +232,9 @@ fn start_filter(
         upstream,
         guard,
         rest: github.map(|r| r.endpoint_rules.clone()).unwrap_or_default(),
+        scope: github
+            .and_then(|r| r.graphql.clone())
+            .unwrap_or_else(default_graphql),
     })
     .map(Some)
     .map_err(|err| fail(&err))

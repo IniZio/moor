@@ -26,6 +26,7 @@ const BOB: &str = "bob-token-9a71";
 /// The `claude` rule pointed at the fake upstream on `port`, allowing `GET /ok`.
 fn claude_rule(port: u16) -> ResolvedRule {
     ResolvedRule {
+        graphql: None,
         name: "claude".to_owned(),
         hosts: vec![format!("localhost:{port}")],
         credential: "claude".to_owned(),

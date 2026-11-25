@@ -2,6 +2,7 @@
 //!
 //! Pure data and validation; the proxy turns [`ResolvedRule`]s into routes.
 
+mod allow;
 mod extra;
 mod resolve;
 mod shape;
@@ -12,9 +13,13 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
+use crate::graphql_scope::Scope;
 use crate::user::SecretName;
+pub use allow::{GRAPHQL_ENTRY, GRAPHQL_HOST};
 pub(super) use extra::check_extra_allow;
-pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
+pub use resolve::{
+    default_graphql, default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule,
+};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
 
@@ -86,7 +91,7 @@ impl Inject {
 
 /// One `proxy.rules.<name>` entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(try_from = "allow::RawRule")]
 pub struct ToolRule {
     /// Exact domains the rule serves.
     pub hosts: Vec<String>,
@@ -105,6 +110,8 @@ pub struct ToolRule {
     /// Drop the rule for a Box with no repo even when no allow entry or Box
     /// variable uses `{repo}`.
     pub requires_repo: bool,
+    /// The GraphQL roots and mutations its `POST /graphql` entry lists.
+    pub graphql: Option<Scope>,
 }
 
 impl ToolRule {
@@ -121,7 +128,7 @@ impl ToolRule {
     /// a user value). `inject` is the user's when it sets any part, else the
     /// default's. `allow` is the default's entries then the
     /// user's, without duplicates. `box_env` is the union, the user's value
-    /// winning per variable.
+    /// winning per variable. `graphql` is the user's when set, else the default's.
     fn over(&self, default: &Self) -> Self {
         let mut allow = default.allow.clone();
         for entry in &self.allow {
@@ -142,6 +149,7 @@ impl ToolRule {
             allow,
             box_env,
             requires_repo: default.requires_repo,
+            graphql: self.graphql.clone().or_else(|| default.graphql.clone()),
         }
     }
 
@@ -179,6 +187,30 @@ impl ToolRule {
         Ok(())
     }
 
+    /// A GraphQL scope only on a rule for [`GRAPHQL_HOST`], and that rule's `POST /graphql`
+    /// always with one, so what it lets through is written out.
+    fn validate_graphql(&self, at: &str) -> Result<(), ConfigError> {
+        let here = format!("{at}.allow");
+        let judged = self
+            .hosts
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST));
+        let listed = self.allow.iter().any(|a| a == GRAPHQL_ENTRY);
+        match (&self.graphql, judged) {
+            (Some(_), false) => Err(ConfigError::new(
+                here,
+                format!("query and mutation lists apply to {GRAPHQL_HOST} only"),
+            )),
+            (None, true) if listed => Err(ConfigError::new(
+                here,
+                format!(
+                    "list the query roots and mutations {GRAPHQL_ENTRY:?} lets through under it"
+                ),
+            )),
+            _ => Ok(()),
+        }
+    }
+
     /// Checks everything the types cannot except cross-references.
     fn validate(&self, at: &str) -> Result<(), ConfigError> {
         if self.hosts.is_empty() {
@@ -200,6 +232,7 @@ impl ToolRule {
             .map_err(|w| ConfigError::new(format!("{at}.credential"), w))?;
         self.inject.validate(&format!("{at}.inject"))?;
         resolve::validate_allow(&self.allow, at)?;
+        self.validate_graphql(at)?;
         for (name, value) in &self.box_env {
             let here = format!("{at}.box_env.{name}");
             check::env_name(name)

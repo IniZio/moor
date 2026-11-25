@@ -131,6 +131,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         .box_id;
     drop(w.store.reserve(a, &FakeRng::default()));
     let rule = ResolvedRule {
+        graphql: None,
         name: "claude".to_owned(),
         hosts: vec!["api.anthropic.com".to_owned()],
         credential: "claude".to_owned(),
@@ -176,6 +177,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
 /// A spec for `id` whose one rule sends its secret in `header`.
 fn spec_for(w: &World, id: BoxId, header: &str) -> ProxySpec {
     let rule = ResolvedRule {
+        graphql: None,
         name: "tool".to_owned(),
         hosts: vec!["api.example.com".to_owned()],
         credential: "tool".to_owned(),

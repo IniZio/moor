@@ -1,5 +1,6 @@
 //! Tests for the node-id lookup helpers.
 
+use moor_core::config::proxy::default_graphql;
 use moor_core::graphql_scope::{judge, NodeId, RepoRef, Verdict};
 use serde_json::{json, Value};
 
@@ -18,7 +19,7 @@ fn ids(names: &[&str]) -> Vec<NodeId> {
             "variables": { "id": name },
         }))
         .unwrap();
-        let verdict = judge(&body, &repo());
+        let verdict = judge(&body, &repo(), &default_graphql());
         assert!(matches!(verdict, Verdict::NeedsNodeCheck(_)), "{verdict:?}");
         if let Verdict::NeedsNodeCheck(found) = verdict {
             out.extend(found);

@@ -3,6 +3,7 @@
 use serde_json::json;
 
 use super::{allowed, denied, needs, under_box};
+use crate::graphql_scope::{judge, NodeId, RepoRef, Scope, Verdict};
 
 const STATUS: &str = r"
 query PullRequestStatus($q: String!) {
@@ -121,12 +122,22 @@ fn node_results_are_read_as_pull_requests() {
 }
 
 #[test]
-fn merging_is_refused() {
+fn merging_follows_the_rules_like_any_mutation() {
     for name in ["mergePullRequest", "enablePullRequestAutoMerge"] {
         let q = format!(
             "mutation {{ {name}(input: {{pullRequestId: \"P\"}}) {{ clientMutationId }} }}"
         );
-        denied(&q, &json!({}), "merging is not allowed");
+        denied(&q, &json!({}), name);
+        let listed: Scope = serde_json::from_value(json!({
+            "mutation": [format!("{name}(pullRequestId)")]
+        }))
+        .unwrap();
+        let body = super::body(&q, &json!({}));
+        assert_eq!(
+            judge(&body, &RepoRef::new("IniZio", "moor"), &listed),
+            Verdict::NeedsNodeCheck(vec![NodeId::new("P")]),
+            "{name}"
+        );
     }
     let draft =
         "mutation($i: X!) { convertPullRequestToDraft(input: $i) { pullRequest { id isDraft } } }";

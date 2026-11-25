@@ -127,6 +127,7 @@ fn debug_has_rule_names_only() {
 
 fn rule(name: &str, credential: &str) -> ResolvedRule {
     ResolvedRule {
+        graphql: None,
         name: name.to_owned(),
         hosts: vec!["example.com".to_owned()],
         credential: credential.to_owned(),

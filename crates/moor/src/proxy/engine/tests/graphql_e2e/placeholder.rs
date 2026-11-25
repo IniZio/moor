@@ -30,6 +30,7 @@ fn out_of_scope_authorization(rules: Vec<ResolvedRule>) -> Option<String> {
 /// The GitHub rule with exactly this `box_env`.
 fn rule_with_env(env: &[(&str, &str)]) -> ResolvedRule {
     ResolvedRule {
+        graphql: None,
         box_env: env
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
@@ -50,6 +51,7 @@ fn a_user_gh_token_is_the_placeholder_the_box_also_holds() {
 #[test]
 fn a_later_rule_for_the_host_replaces_the_placeholder_as_it_does_in_the_box_env() {
     let other_host = ResolvedRule {
+        graphql: None,
         hosts: vec!["example.com".to_owned()],
         ..rule_with_env(&[("GH_TOKEN", "gho_other_host")])
     };

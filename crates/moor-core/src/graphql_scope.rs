@@ -16,12 +16,14 @@ mod linked;
 mod parse;
 mod policy;
 mod schema;
+mod scope;
 mod strict;
 
 #[cfg(test)]
 mod tests;
 
 pub use linked::Linked;
+pub use scope::{Mutation, Scope, ROOTS};
 
 /// Largest request body that is parsed, in bytes.
 const MAX_BODY: usize = 64 * 1024;
@@ -159,17 +161,17 @@ pub enum Verdict {
     Deny(Reason),
 }
 
-/// Judges a GraphQL request body against the Box repo.
+/// Judges a GraphQL request body against the Box repo and the rule's `scope`.
 #[must_use]
-pub fn judge(body: &[u8], repo: &RepoRef) -> Verdict {
-    judge_linked(body, repo).0
+pub fn judge(body: &[u8], repo: &RepoRef, scope: &Scope) -> Verdict {
+    judge_linked(body, repo, scope).0
 }
 
 /// Judges a GraphQL request body against the Box repo, and returns the linked issues
 /// whose headline the response check blanks; see [`Linked::blank`].
 #[must_use]
-pub fn judge_linked(body: &[u8], repo: &RepoRef) -> (Verdict, Linked) {
-    match scope(body, repo) {
+pub fn judge_linked(body: &[u8], repo: &RepoRef, scope: &Scope) -> (Verdict, Linked) {
+    match check(body, repo, scope) {
         Ok((ids, linked)) if ids.is_empty() => (Verdict::Allow, linked),
         Ok((ids, linked)) => (Verdict::NeedsNodeCheck(ids), linked),
         Err(reason) => (Verdict::Deny(reason), Linked::default()),
@@ -178,14 +180,14 @@ pub fn judge_linked(body: &[u8], repo: &RepoRef) -> (Verdict, Linked) {
 
 /// Parses and checks the request, returning the node IDs that still need a check and the
 /// linked issues it reads.
-fn scope(body: &[u8], repo: &RepoRef) -> Result<(Vec<NodeId>, Linked), Reason> {
+fn check(body: &[u8], repo: &RepoRef, scope: &Scope) -> Result<(Vec<NodeId>, Linked), Reason> {
     if body.len() > MAX_BODY {
         return Err(Reason::new("request body over 64 KiB"));
     }
     let (query, vars) = request(body)?;
     let doc = parse::parse(&query)
         .map_err(|err| Reason::new(format!("malformed query: {}", shown(&err))))?;
-    policy::run(&doc, &vars, repo)
+    policy::run(&doc, &vars, repo, scope)
 }
 
 /// Splits the JSON request into query text and variables; `operationName` is ignored.

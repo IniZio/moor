@@ -50,7 +50,7 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         }
         Err(_) => return Gate::Abort,
     };
-    let in_scope = |repo: &RepoRef| match judge_linked(&body, repo) {
+    let in_scope = |repo: &RepoRef| match judge_linked(&body, repo, &shared.scope) {
         (Verdict::Allow, linked) => Ok(linked),
         (Verdict::Deny(reason), _) => Err((reason.redacted(), reason.query().map(str::to_owned))),
         (Verdict::NeedsNodeCheck(ids), linked) => match nodes_listed(shared, head, &ids) {
