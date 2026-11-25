@@ -42,73 +42,17 @@ impl Tools {
                        write, so no cron fires before you enable it with set_workflow_enabled. \
                        A cron that can fire closer together than the \
                        controller's minimum gap, an hour unless configured, is refused. Adding \
-                       an existing name replaces it, plan included: send the whole plan again, \
-                       and pass the revision you read as expected_revision, so a change made \
-                       since is not overwritten. Every other field you leave out keeps its stored value: \
-                       `cron` and `timezone`, `config`, `timeout_minutes`, `enabled`, `on_pull_request` and \
-                       `gates`. To clear the cron send `cron: null`; to clear \
-                       `config` send an empty string. A new workflow uses the defaults \
-                       instead. \
+                       an existing name replaces it: pass the revision you read as expected_revision, so a \
+                       change made since is not overwritten. Every other field you leave out keeps its stored value: \
+                       `cron` and `timezone`, `config`, `timeout_minutes`, `enabled` and `on_pull_request`. \
+                       To clear the cron send `cron: null`; to clear `config` send an empty string. A new \
+                       workflow uses the defaults instead. \
                        \
-                       Give `gates` instead of a plan for a job whose finish line moor can check. \
-                       The agent gets the prompt and its gates, and no steps. A gate has a `name` \
-                       and any of `evidence` (files the agent leaves in .moor/artifacts/ and \
-                       reports with report_step, flat names or a prefix such as `pr-*`), `checks` \
-                       (commands moor runs in the Box, exit 0 passes; write one as `{run, says}` with \
-                       `says` a plain sentence of what must be true, which the portal shows first), \
-                       `approval: owner` and \
-                       `max_tries` (1 to 5, 2 when left out); the gates open in order. A run with gates is \
-                       never done because the agent went quiet: it is delivered when every gate has passed, \
-                       and its result is the note of the agent's last accepted report. It fails \
-                       when a gate fails for good. When a gate asks the owner or is stuck the run \
-                       waits, as at an approve step, for at most 7 days: the owner calls \
-                       answer_gate on the Box, or steers it to reopen a stuck gate. A workflow has \
-                       a plan or gates, never both; send `gates: []` to clear them. \
-                       \
-                       Send `outcomes` with the gates to name how a run may end, such as `check \
-                       passed` or `nothing to do`; left out, a new workflow's run ends in `done` \
-                       and a replaced one keeps its outcomes, and `[]` clears them. Each has a \
-                       `name` (one line, 40 characters), an optional `says` sentence, `tone` \
-                       (`good` when left out, `bad` or `plain`), `checks` written as a gate's, \
-                       and `anytime`. moor decides the outcome itself: once every gate passed it \
-                       runs every outcome's checks in the order listed and the first whose checks \
-                       all pass is the run's; an `anytime` outcome is also tried whenever the \
-                       agent goes quiet before the gate in hand has passed, and ends the run at \
-                       once when it holds. An anytime outcome needs a check, and only the last \
-                       outcome that is not anytime may have none. When none holds the agent is \
-                       told why, like a failed check. A run in a `bad` outcome is still \
-                       delivered. \
-                       \
-                       Write a plan for any job with more than one finish line; a prompt with no \
-                       plan runs as one step. Turn the prompt into `plan.steps`, a short list \
-                       the author reviews: one step per finish line. Use `work` steps for what \
-                       the agent does, each with the evidence files it leaves in \
-                       .moor/artifacts/ (flat names such as `report.md`, or a prefix such as \
-                       `before-*`), and a final `deliver` step for the pull request, message or \
-                       file the prompt asks for. A `deliver` step has no `ok` or `fail` and ends \
-                       the run; every other step needs an `ok` edge to a step id, and every step \
-                       must lead on to a deliver step. A `fail` edge goes to the step to run \
-                       when a step cannot be done; without one the run fails. Give a work step \
-                       that loops back `max_tries`, 1 to 5. A `check` step is run by moor in the \
-                       Box, not by the agent: exit 0 follows `ok`, any other exit follows \
-                       `fail`, and the command may run twice if a connection drops, so it must \
-                       be safe to repeat. Use a check step for anything a command can decide. \
-                       An `approve` step asks the owner a `question` and the run waits, with \
-                       its Box left to sleep, until the owner calls answer_run; yes follows \
-                       `ok`, no follows `fail`, and a no with no `fail` edge ends the run \
-                       declined. A wait with no answer ends the run declined after 7 days. \
-                       When you change an \
-                       existing workflow, read its plan with list_workflows and keep the ids of \
-                       the steps that did not change, so run history stays attached to them. \
-                       Leave `made_from` out of a plan you wrote for the prompt you send; \
-                       list_workflows reports `plan_stale` when the prompt changed after the \
-                       plan was made. Read get_repo_config first, and say in your reply when a \
-                       step needs a host or credential the repo does not grant; moor does not \
-                       judge that. Nothing is saved until the plan is valid: every error is \
-                       listed at once, so fix them all and call again. The reply lists the \
-                       stored plan as numbered steps and the new revision. Show the numbered \
-                       steps to the author next to the prompt, and change them on request with \
-                       another call. Needs the moor:write scope."
+                       Write the prompt only. moor reads it and keeps its own plan of the steps, made \
+                       again whenever the prompt changes; a workflow made with gates keeps them. Never \
+                       send a plan, gates or outcomes: a call that names one is refused. list_workflows \
+                       shows the plan and any gates as moor's current reading of the prompt. \
+                       Needs the moor:write scope."
     )]
     async fn add_workflow(
         &self,
@@ -125,18 +69,11 @@ impl Tools {
             config: args.config,
             prompt: args.prompt,
             timeout_minutes: args.timeout_minutes,
-            // A model may send the plan as an object or as the JSON text of one.
-            plan: args.plan.map(|p| match p {
-                serde_json::Value::String(text) => text,
-                other => other.to_string(),
-            }),
             expected_revision: args.expected_revision,
             origin_key: None,
             keep_state: false,
             enabled: args.enabled,
             on_pull_request: args.on_pull_request,
-            gates: args.gates,
-            outcomes: args.outcomes.map(Box::new),
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

@@ -156,20 +156,10 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             {
                 return refusal(ErrorKind::Refused, "it changed after you read it");
             }
-            let plan = inner["plan"]
-                .as_str()
-                .map(|p| serde_json::from_str::<Value>(p).unwrap());
-            if plan
-                .as_ref()
-                .is_some_and(|p| p.to_string().contains("bogus"))
-            {
-                return refusal(ErrorKind::Usage, "the plan has 1 error: bogus step");
-            }
             inner["prompt"]
                 .as_str()
                 .unwrap()
                 .clone_into(&mut held.prompt);
-            held.plan = plan;
             held.on_pull_request = inner["on_pull_request"] == true;
             held.enabled = held.enabled || inner["keep_state"] != true;
             held.revision += 1;
@@ -366,18 +356,14 @@ fn text_from_people_and_agents_comes_back_as_inert_json_and_the_page_never_injec
 }
 
 #[test]
-fn a_save_stores_the_plan_marked_edited_and_keeps_every_other_field() {
+fn a_save_stores_the_prompt_alone_and_keeps_every_other_field() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-5");
-    let mut changed = plan();
-    changed["steps"][0]["title"] = json!("Audit well");
-    let body = json!({"prompt": "same prompt", "plan": changed.to_string(), "revision": 3});
+    let body = json!({"prompt": "same prompt", "revision": 3});
     let reply = put(&w, &cookie, &body);
     assert_eq!(reply.status, 200, "{}", reply.body);
     let flow = json_of(&reply);
     assert_eq!(flow["revision"], 4);
-    assert_eq!(flow["plan_edited"], true);
-    assert!(flow["plan"].as_str().unwrap().contains("Audit well"));
     let seen = w.seen.lock().unwrap().clone();
     let add = seen
         .iter()
@@ -388,6 +374,7 @@ fn a_save_stores_the_plan_marked_edited_and_keeps_every_other_field() {
     assert_eq!(add["request"]["repos"], json!(["acme/web"]));
     assert_eq!(add["request"]["timeout_minutes"], 180);
     assert_eq!(add["request"]["expected_revision"], 3);
+    assert!(add["request"].get("plan").is_none(), "the page never writes a plan");
 }
 
 #[test]
@@ -423,30 +410,10 @@ fn a_write_at_a_revision_that_has_moved_is_a_conflict_and_changes_nothing() {
 }
 
 #[test]
-fn a_save_that_would_drop_the_plan_is_refused_until_the_page_says_it_knows() {
-    let w = world(true, &[]);
-    let cookie = as_user(&w, "alice-8");
-    let body = json!({"prompt": "new words", "plan": "  ", "revision": 3});
-    let reply = put(&w, &cookie, &body);
-    assert_eq!(reply.status, 400, "{}", reply.body);
-    assert_eq!(json_of(&reply)["code"], "clears_plan");
-    assert!(!w.cmds().contains(&"workflow-add".to_owned()));
-    let agreed = json!({"prompt": "new words", "plan": "", "revision": 3, "clear_plan": true});
-    let flow = json_of(&put(&w, &cookie, &agreed));
-    assert_eq!(flow["plan"], Value::Null);
-    assert_eq!(flow["has_plan"], false);
-}
-
-#[test]
-fn a_plan_the_controller_refuses_and_a_disabled_workflow_are_handled() {
+fn a_save_of_a_disabled_workflow_keeps_it_disabled() {
     let w = world(true, &[]);
     let cookie = as_user(&w, "alice-9");
-    let bad = json!({"prompt": "p", "plan": "{\"steps\": [\"bogus\"]}", "revision": 3});
-    let reply = put(&w, &cookie, &bad);
-    assert_eq!(reply.status, 400, "{}", reply.body);
-    assert!(json_of(&reply)["error"].as_str().unwrap().contains("bogus"));
-    let not_json = json!({"prompt": "p", "plan": "not json", "revision": 3});
-    assert_eq!(put(&w, &cookie, &not_json).status, 400);
+    get(&w.addr, "/account/api/workflows/weekly-deps", Some(&cookie));
     HELD.lock()
         .unwrap()
         .iter_mut()
@@ -596,5 +563,4 @@ fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
     assert_eq!(unknown.status, 404, "{}", unknown.body);
 }
 mod pull;
-mod review;
 mod run_now;

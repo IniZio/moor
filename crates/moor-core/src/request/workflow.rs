@@ -3,11 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::{AsReq, Request};
-use crate::gate::GateDoc;
 use crate::user::Identity;
 use crate::workflow::{Answer, PullTarget};
 
-/// Arguments of `workflow-add`.
+/// Arguments of `workflow-add`. A workflow's plan and gates are moor's reading of its prompt,
+/// never sent: a request that names `plan`, `gates` or `outcomes` is refused as unknown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowAddReq {
@@ -38,10 +38,6 @@ pub struct WorkflowAddReq {
     /// new one gets the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_minutes: Option<u32>,
-    /// The plan a run walks, as JSON text; none stores no plan, so a run delivers the prompt in
-    /// one step.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<String>,
     /// The revision of the stored workflow this replaces, as `list_workflows` shows it. The call
     /// is refused when the workflow has been changed since. Not checked when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,19 +61,6 @@ pub struct WorkflowAddReq {
     /// on the cron and by hand only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_pull_request: Option<bool>,
-    /// The gates each run's Box starts with, in place of a plan: the run is delivered only when
-    /// they all pass. Absent keeps a stored workflow's gates; an empty list clears them. Sent
-    /// with a plan, or kept beside one, the call is refused.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gates: Option<Vec<GateDoc>>,
-    /// The outcomes a run may end in, sent with `gates` and kept with them; left out, a run
-    /// ends in `done` once every gate passes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[allow(
-        clippy::box_collection,
-        reason = "keeps `Request` and the CLI enums that hold it under the large-variant size"
-    )]
-    pub outcomes: Option<Box<Vec<crate::gate::OutcomeDoc>>>,
 }
 
 /// Arguments of `workflow-remove`.

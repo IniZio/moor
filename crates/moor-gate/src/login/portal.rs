@@ -30,7 +30,6 @@ mod answer;
 mod changes;
 mod end;
 mod inbox;
-mod plan;
 mod pulls;
 mod retry;
 mod row;
@@ -66,7 +65,6 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
             "POST",
             "/account/api/boxes"
                 | "/account/api/box/answer"
-                | "/account/api/plan/draft"
                 | "/account/api/box/retry"
                 | "/account/api/box/steer"
                 | "/account/api/box/stop"
@@ -122,9 +120,6 @@ pub(super) fn serve(
                 body.as_deref(),
                 end::How::Close,
             );
-        }
-        ("POST", "/account/api/plan/draft") => {
-            plan::draft(stream, gate, login, session, req.csrf, body.as_deref());
         }
         ("POST", "/account/api/inbox/read") => {
             inbox::read(stream, gate, session, req.csrf, body.as_deref());

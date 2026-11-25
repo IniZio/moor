@@ -138,54 +138,22 @@ fn the_write_tools_say_a_run_acts_as_the_caller_and_may_open_pull_requests() {
 }
 
 #[test]
-fn add_workflow_sends_its_gates_and_an_empty_list_to_clear_them() {
+fn add_workflow_refuses_a_plan_gates_or_outcomes_and_sends_nothing() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
-    let gates = json!([{"name": "proof", "evidence": ["pr-*"], "max_tries": 2}]);
-    for sent in [gates.clone(), json!([])] {
-        let result = m.call(
-            &token,
-            "add_workflow",
-            json!({"name": "evidence", "repos": ["acme/web"], "prompt": "collect it",
-                "gates": sent}),
-        );
-        assert_ne!(result["isError"], true, "{result}");
+    for field in ["plan", "gates", "outcomes"] {
+        let mut args = json!({"name": "daily", "repos": ["acme/web"], "prompt": "fix it"});
+        args[field] = json!([]);
+        let reply = m.rpc(&token, "tools/call", json!({"name": "add_workflow", "arguments": args}));
+        let refused = reply.get("error").is_some() || reply["result"]["isError"] == true;
+        assert!(refused, "{field}: {reply}");
+        assert!(reply.to_string().contains(field), "{field}: {reply}");
     }
-    let requests = m.requests();
-    assert_eq!(requests[0]["request"]["request"]["gates"], gates);
-    assert_eq!(requests[1]["request"]["request"]["gates"], json!([]));
+    assert!(m.requests().is_empty(), "nothing reaches the controller");
 }
 
 #[test]
-fn add_workflow_sends_the_plan_as_json_text_with_the_revision() {
-    let m = mcp();
-    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
-    let plan = json!({"steps": [
-        {"id": "audit", "title": "Audit", "kind": "work", "instructions": "list the alerts",
-         "done_when": "listed", "evidence": ["alerts.md"], "ok": "ship"},
-        {"id": "ship", "title": "Ship", "kind": "deliver", "instructions": "open the PR",
-         "done_when": "the PR exists"}]});
-    let result = m.call(
-        &token,
-        "add_workflow",
-        json!({"name": "daily-fix", "cron": "0 9 * * *", "timezone": "UTC",
-            "repos": ["acme/web"], "prompt": "fix the alerts",
-            "plan": plan, "expected_revision": 3}),
-    );
-    assert_ne!(result["isError"], true, "{result}");
-    let sent = &m.requests()[0]["request"]["request"];
-    assert_eq!(sent["expected_revision"], 3);
-    let text = sent["plan"]
-        .as_str()
-        .expect("the plan is sent as JSON text");
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(text).unwrap(),
-        plan
-    );
-}
-
-#[test]
-fn the_plan_argument_carries_the_plan_schema_and_the_description_says_how_to_write_one() {
+fn the_add_workflow_text_says_moor_reads_the_prompt_and_no_plan_is_sent() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read");
     let reply = m.rpc(&token, "tools/list", json!({}));
@@ -196,26 +164,11 @@ fn the_plan_argument_carries_the_plan_schema_and_the_description_says_how_to_wri
         .find(|t| t["name"] == "add_workflow")
         .unwrap();
     let schema = tool["inputSchema"].to_string();
-    for want in [
-        "\"plan\"",
-        "\"steps\"",
-        "\"max_tries\"",
-        "\"evidence\"",
-        "expected_revision",
-    ] {
-        assert!(schema.contains(want), "{want} missing from {schema}");
+    for gone in ["\"plan\"", "\"gates\"", "\"outcomes\""] {
+        assert!(!schema.contains(gone), "{gone} still in {schema}");
     }
     let text = tool["description"].as_str().unwrap();
-    for want in [
-        "one step per finish line",
-        "deliver",
-        ".moor/artifacts/",
-        "max_tries",
-        "keep the ids",
-        "get_repo_config",
-        "every error is listed at once",
-        "expected_revision",
-    ] {
+    for want in ["Write the prompt only", "is refused", "expected_revision"] {
         assert!(text.contains(want), "{want} missing from {text}");
     }
 }
