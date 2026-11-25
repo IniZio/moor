@@ -351,7 +351,7 @@ export function RulesView({ gates, outcomes, asJson, onToggle }: RulesProps) {
 			{asJson ? (
 				<>
 					<textarea aria-label="Gates JSON" class="t-mono" rows={14} spellcheck={false} readOnly value={JSON.stringify(outcomes?.length ? { gates, outcomes } : gates, null, 2)} />
-					<p class="muted">Read-only here. Change the gates with add_workflow.</p>
+					<p class="muted">Read-only. moor makes the gates from the prompt.</p>
 				</>
 			) : (
 				<>
