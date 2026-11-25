@@ -82,8 +82,14 @@ fn a_place_brief_points_files_at_the_work_box_and_claims_no_401_for_other_repos(
         place: true,
         ..input(None)
     });
-    assert!(out.contains("in the work Box's `.moor/artifacts/`"), "{out}");
-    assert!(!out.contains("copy it into `.moor/artifacts/` in your working directory"), "{out}");
+    assert!(
+        out.contains("in the work Box's `.moor/artifacts/`"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("copy it into `.moor/artifacts/` in your working directory"),
+        "{out}"
+    );
     assert!(!out.contains("answers 401 or 404"), "{out}");
 }
 
@@ -112,8 +118,14 @@ fn a_place_brief_claims_no_401_on_reads_of_other_repos() {
         place: true,
         ..input(None)
     });
-    assert!(!out.contains("as it does for repos outside this Box"), "{out}");
-    assert!(out.contains("Reads of any repo carry the credential"), "{out}");
+    assert!(
+        !out.contains("as it does for repos outside this Box"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Reads of any repo carry the credential"),
+        "{out}"
+    );
     assert!(out.contains("A 401 or 404 on a write"), "{out}");
 }
 

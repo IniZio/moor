@@ -69,7 +69,8 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     When the task needs code run, start a work Box with `start_box` and run commands in it \
     with `exec_in_box`; they run in the Box's checkout. Save a file the person should see (a \
     screenshot, test output) in the work Box's `.moor/artifacts/`, not in your own folder; \
-    it shows on the task. Do not commit it. Name the files you saved in your final message. \
+    moor collects it within about 30 seconds and when the Box closes, and it stays on the task \
+    after the Box is gone. Do not commit it. Name the files you saved in your final message. \
     Commit your work in the Box and push it with `git push origin HEAD`. Then open the pull \
     request from this place with gh, installing gh with the recipe below when \
     `command -v gh` finds none, and end your final message with its URL. Then close the Box \
