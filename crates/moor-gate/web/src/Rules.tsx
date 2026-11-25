@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 
-import { Conflict, type RepoConfig, repoGet, repoSet, failure, toError } from './api';
+import { Conflict, type RepoConfig, type RulesSeen, repoGet, repoSet, failure, toError } from './api';
 import './rules.css';
 
 /** The line under the repo's name: who shares the rules, and which revision they are at. */
@@ -17,6 +17,48 @@ export function rulesLine(rules: RepoConfig): string {
 export function lineNumbers(text: string): string {
 	const lines = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n');
 	return lines.map((_, i) => i + 1).join('\n');
+}
+
+/** A host as the lists show it: the port only when it is not 443. */
+export function hostPort(host: string, port: number): string {
+	return port === 443 || port === 0 ? host : `${host}:${port}`;
+}
+
+/** What the repo's Boxes met under the rules: requests sent on without the secret, and hosts reached without the Proxy. */
+export function Seen({ seen }: { seen: RulesSeen }) {
+	return (
+		<aside class="rules-seen">
+			<h3>Withheld in the last {seen.days} days</h3>
+			{seen.withheld.length ? (
+				<ul class="seen-rows">
+					{seen.withheld.map((w) => (
+						<li key={`${w.request} ${w.host}`}>
+							<code>{w.request}</code>
+							<code class="muted">{w.host}</code>
+							<span class="seen-n" title="Boxes that reported it">{w.boxes}</span>
+						</li>
+					))}
+				</ul>
+			) : (
+				<p class="muted">Nothing was withheld.</p>
+			)}
+			<p class="muted seen-note">A Box reports each request once, so the number counts Boxes.</p>
+			<h3>Dialled directly</h3>
+			{seen.dialled.length ? (
+				<ul class="seen-rows">
+					{seen.dialled.map((d) => (
+						<li key={hostPort(d.host, d.port)}>
+							<code>{hostPort(d.host, d.port)}</code>
+							<span class="seen-n">{d.count}</span>
+						</li>
+					))}
+				</ul>
+			) : (
+				<p class="muted">No host yet.</p>
+			)}
+			<p class="muted seen-note">Docker Boxes only. An address is a connection that skipped the Box's own proxy.</p>
+		</aside>
+	);
 }
 
 /** A repo's Proxy rules as their stored text, line by line, edited in place. */
@@ -82,6 +124,7 @@ export function RepoRules({ csrf, repo }: { csrf: string; repo: string }) {
 					Your GitHub account cannot push to this repo, so you can read its rules here and not change them.
 				</p>
 			)}
+			<div class={rules.seen ? 'rules-grid' : undefined}>
 			<form class="rules-file" onSubmit={save}>
 				<div class="rules-head">rules.yaml</div>
 				<div class="rules-body">
@@ -106,6 +149,8 @@ export function RepoRules({ csrf, repo }: { csrf: string; repo: string }) {
 					</div>
 				)}
 			</form>
+			{rules.seen && <Seen seen={rules.seen} />}
+			</div>
 		</section>
 	);
 }

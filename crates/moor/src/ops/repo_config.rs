@@ -10,6 +10,8 @@ use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::Viewer;
 use moor_core::view::repo_config::RepoConfigValue;
+
+mod seen;
 use moor_core::ErrorKind;
 
 use super::common::view::rfc3339;
@@ -20,6 +22,9 @@ use crate::store::repo_config::{RepoConfigRow, Wrote};
 
 /// The most text a repo's config may hold, as much as a repo config may hold.
 const TEXT_CAP: usize = 64 * 1024;
+
+/// How many days back a rules read lists what the repo's Boxes met.
+const SEEN_DAYS: u32 = 7;
 
 /// What `repo-config-get` and `repo-config-set` check about the caller.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,8 +47,12 @@ pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, Co
         req.file,
         cx.store()?.repo_text(&req.repo, req.file)?,
     );
-    if req.file == RepoFile::Rules && read.text.is_none() {
-        read.text = Some(DEFAULT_RULES_TEXT.to_owned());
+    if req.file == RepoFile::Rules {
+        if read.text.is_none() {
+            read.text = Some(DEFAULT_RULES_TEXT.to_owned());
+        }
+        let events = cx.store()?.repo_proxy_events(&req.repo, SEEN_DAYS)?;
+        read.seen = Some(seen::seen(&events, SEEN_DAYS));
     }
     read.can_edit = who.can_push;
     Ok(read)
@@ -144,6 +153,7 @@ fn value(repo: &ForgeRepo, file: RepoFile, row: Option<RepoConfigRow>) -> RepoCo
         edited_at: row.as_ref().map(|r| rfc3339(r.edited_at)),
         text: row.map(|r| r.text),
         can_edit: false,
+        seen: None,
     }
 }
 
