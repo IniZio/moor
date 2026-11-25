@@ -141,6 +141,7 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         keep_state: false,
         enabled: Some(true),
         on_pull_request: Some(on_pull_request),
+        regenerate_plan: false,
     }
 }
 

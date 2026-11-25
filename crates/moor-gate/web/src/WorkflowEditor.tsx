@@ -34,13 +34,12 @@ export function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 	if (error) return <Failed error={error} retry={reload} />;
 	if (!flow) return <p class="muted" aria-busy="true">Loading {name}…</p>;
 
-	const save = async (e: Event) => {
-		e.preventDefault();
+	const save = async (regenerate: boolean) => {
 		setBusy(true);
 		setProblem(null);
 		setSaved(false);
 		try {
-			adopt(await workflowSet(csrf, name, { prompt, revision: flow.revision }));
+			adopt(await workflowSet(csrf, name, { prompt: regenerate ? flow.prompt : prompt, revision: flow.revision, regenerate }));
 			setSaved(true);
 		} catch (err) {
 			setProblem({ text: failure(toError(err)), stale: err instanceof Conflict });
@@ -50,7 +49,12 @@ export function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 	const dirty = prompt !== flow.prompt;
 	const gated = flow.gates != null && flow.gates.length > 0 && flow.plan == null;
 	return (
-		<form onSubmit={(e) => void save(e)}>
+		<form
+			onSubmit={(e) => {
+				e.preventDefault();
+				void save(false);
+			}}
+		>
 			<div class="row-head">
 				<strong>{flow.name}</strong>
 				<span class="pills">
@@ -86,7 +90,7 @@ export function WorkflowEditor({ csrf, name }: { csrf: string; name: string }) {
 						<GatesPanel gates={flow.gates ?? []} outcomes={flow.outcomes} />
 					</div>
 				) : (
-					<PlanView text={flow.plan} stale={flow.plan_stale} cron={flow.cron != null} />
+					<PlanView flow={flow} busy={busy || dirty} onAgain={() => void save(true)} />
 				)}
 			</div>
 			{problem?.text && <pre class="notice danger" role="alert">{problem.text}</pre>}

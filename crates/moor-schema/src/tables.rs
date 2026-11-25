@@ -92,7 +92,7 @@ tables! {
         UpdatedAt, Inc }
     Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, TimeoutMinutes,
         CreatedAt, UpdatedAt, OriginFront, OriginKey, Also, Config,
-        Plan, Revision, OnPullRequest, Gates }
+        Plan, Revision, OnPullRequest, Gates, PlanDraft }
     WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
         RecordedAt, Seq, Plan, Step, TryN, WaitingSince, EndedStep, Trigger, PullNumber, HeadSha,
         Verdict }

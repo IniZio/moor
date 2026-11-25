@@ -51,7 +51,9 @@ impl Tools {
                        Write the prompt only. moor reads it and keeps its own plan of the steps, made \
                        again whenever the prompt changes; a workflow made with gates keeps them. Never \
                        send a plan, gates or outcomes: a call that names one is refused. list_workflows \
-                       shows the plan and any gates as moor's current reading of the prompt. \
+                       shows the plan and any gates as moor's current reading of the prompt, and \
+                       `plan_making` while moor makes the plan or why it made none. Send \
+                       `regenerate_plan: true` with the same prompt to have moor make it again. \
                        Needs the moor:write scope."
     )]
     async fn add_workflow(
@@ -74,6 +76,7 @@ impl Tools {
             keep_state: false,
             enabled: args.enabled,
             on_pull_request: args.on_pull_request,
+            regenerate_plan: args.regenerate_plan.unwrap_or(false),
         });
         self.run(&context, WRITE, Ok(request), Reply::AsIs).await
     }

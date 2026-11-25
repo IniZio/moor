@@ -20,6 +20,9 @@ struct Write {
     prompt: String,
     /// The revision the page read.
     revision: u64,
+    /// Yes to have moor make the plan again for an unchanged prompt.
+    #[serde(default)]
+    regenerate: bool,
 }
 
 /// Replaces the prompt of workflow `name` as the session's person, when the request
@@ -102,6 +105,7 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         keep_state: true,
         enabled: None,
         on_pull_request: Some(stored.on_pull_request),
+        regenerate_plan: write.regenerate,
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {

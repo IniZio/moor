@@ -7,7 +7,7 @@ use moor_core::Response;
 use super::Moor;
 use crate::env::Env;
 use crate::ops;
-use crate::ops::workflow::{self, CheckJob, StartJob};
+use crate::ops::workflow::{self, CheckJob, DraftJob, StartJob};
 
 impl Moor {
     /// A pass that starts, finishes and expires workflow runs and returns lines to log. Each
@@ -23,7 +23,10 @@ impl Moor {
                 crate::cx::owners::checked(|| {
                     let start = |job: StartJob| spawn_start(&env, job);
                     let check = |job: CheckJob| spawn_check(&env, job);
-                    workflow::tick(&moor.cx, (&start, &check), draining)
+                    let draft = |job: DraftJob| spawn_draft(&env, job);
+                    let mut out = workflow::tick(&moor.cx, (&start, &check), draining);
+                    out.extend(workflow::plan_pass(&moor.cx, &draft));
+                    out
                 })
             }
             Err(e) => vec![e.error.to_string()],
@@ -97,4 +100,19 @@ fn start_job(env: &Env, job: &StartJob) {
             .viewing_as(Viewer::User(job.firing.owner));
         workflow::run_start(&moor.cx, job);
     }
+}
+
+/// Starts the Box that makes a workflow's plan on a new thread, as the workflow's owner.
+fn spawn_draft(env: &Env, job: DraftJob) {
+    let env = env.clone();
+    std::thread::spawn(move || {
+        crate::cx::owners::checked(|| {
+            if let Ok(moor) = Moor::from_env(&env) {
+                let moor = moor
+                    .acting_as(job.identity.clone())
+                    .viewing_as(Viewer::User(job.owner));
+                workflow::start_draft(&moor.cx, &job);
+            }
+        });
+    });
 }

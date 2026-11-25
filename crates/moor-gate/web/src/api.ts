@@ -207,7 +207,8 @@ const WorkflowSchema = v.object({
 	timeout_minutes: v.number(),
 	prompt: v.string(),
 	plan: v.nullish(v.string()),
-	plan_edited: v.boolean(),
+	/** The plan moor is making from the prompt, or why it made none. */
+	plan_making: v.nullish(v.object({ prompt: v.string(), box_name: v.nullish(v.string()), since: v.nullish(v.number()), failed: v.nullish(v.string()) })),
 	/** The gates each run is held to, when the workflow has them in place of a plan. */
 	gates: v.nullish(v.array(GateDocSchema)),
 	/** The outcomes its runs may end in, when it names them. */
@@ -296,11 +297,11 @@ export async function workflowRunNow(csrf: string, name: string, pull?: string |
 }
 
 /** Replaces a workflow's prompt, against the revision the page read. moor makes its plan. */
-export async function workflowSet(csrf: string, name: string, draft: { prompt: string; revision: number }): Promise<Workflow> {
+export async function workflowSet(csrf: string, name: string, draft: { prompt: string; revision: number; regenerate?: boolean }): Promise<Workflow> {
 	const res = await fetch(workflowPath(name), {
 		method: 'PUT',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: JSON.stringify({ prompt: draft.prompt, revision: draft.revision }),
+		body: JSON.stringify({ prompt: draft.prompt, revision: draft.revision, regenerate: draft.regenerate ?? false }),
 	});
 	return answer(res, WorkflowSchema);
 }

@@ -9,7 +9,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowChangeValue;
 use moor_core::workflow::{
-    Plan, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
+    Plan, PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
     WorkflowSchedule, WorkflowState,
 };
 use moor_core::ErrorKind;
@@ -206,29 +206,23 @@ fn add(
         (enabled, timeout),
     )
     .map_err(usage)?;
-    def.origin = match (origin_front, &req.origin_key) {
-        (Some(front), Some(key)) => Some(WorkflowOrigin {
-            front: front.to_owned(),
-            key: Some(key.clone()),
-        }),
-        (None, Some(_)) => {
-            return Err(CommandError::new(
-                ErrorKind::Refused,
-                "only a front can send an origin_key",
-            ));
-        }
-        _ => None,
-    };
+    def.origin = origin_of(origin_front, req.origin_key.as_deref())?;
     def.config = config;
     def.on_pull_request = on_pull_request;
     (def.plan, def.gates) = kept_reading(prior.as_ref());
+    let wants_plan = plan_wanted(req, prior.as_ref(), def.gates.is_some())?;
     let revision = match store.put_workflow_at(
         user,
         &def,
         req.expected_revision,
         req.keep_state || req.enabled.is_none(),
     )? {
-        Put::Written { revision, .. } => revision,
+        Put::Written { id, revision } => {
+            if wants_plan {
+                store.set_plan_draft(id, Some(&PlanDraft::wanted(&req.prompt)))?;
+            }
+            revision
+        }
         Put::Stale { current } => return Err(stale(&name, current, req.expected_revision)),
     };
     to_value(&WorkflowChangeValue {
@@ -251,6 +245,41 @@ fn kept_reading(prior: Option<&Workflow>) -> (Option<Plan>, Option<Gates>) {
         let plan = (!w.plan.is_single_of(&w.prompt)).then(|| w.plan.clone());
         (plan, w.gates.clone())
     })
+}
+
+/// The origin a write from the front socket `front` with `key` records; only a front may send a key.
+fn origin_of(
+    front: Option<&str>,
+    key: Option<&str>,
+) -> Result<Option<WorkflowOrigin>, CommandError> {
+    match (front, key) {
+        (Some(front), Some(key)) => Ok(Some(WorkflowOrigin {
+            front: front.to_owned(),
+            key: Some(key.to_owned()),
+        })),
+        (None, Some(_)) => Err(CommandError::new(
+            ErrorKind::Refused,
+            "only a front can send an origin_key",
+        )),
+        _ => Ok(None),
+    }
+}
+
+/// Whether the write asks moor to make the plan: a new workflow, a changed prompt, or a request to
+/// make it again. A workflow moor reads as gates gets no plan, and a request to make one again is
+/// refused.
+fn plan_wanted(
+    req: &WorkflowAddReq,
+    prior: Option<&Workflow>,
+    gated: bool,
+) -> Result<bool, CommandError> {
+    if gated && req.regenerate_plan {
+        return Err(usage(
+            "moor reads this workflow as a set of gates, which it cannot make again yet, so \
+             nothing was saved",
+        ));
+    }
+    Ok(!gated && (req.regenerate_plan || prior.is_none_or(|w| w.prompt != req.prompt)))
 }
 
 /// The refusal for a write whose `expected_revision` is not the stored one.

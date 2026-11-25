@@ -35,6 +35,7 @@ fn add_req(name: &str, cron: &str, tz: &str) -> WorkflowAddReq {
         keep_state: false,
         enabled: Some(true),
         on_pull_request: Some(false),
+        regenerate_plan: false,
     }
 }
 

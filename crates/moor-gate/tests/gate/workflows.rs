@@ -374,7 +374,10 @@ fn a_save_stores_the_prompt_alone_and_keeps_every_other_field() {
     assert_eq!(add["request"]["repos"], json!(["acme/web"]));
     assert_eq!(add["request"]["timeout_minutes"], 180);
     assert_eq!(add["request"]["expected_revision"], 3);
-    assert!(add["request"].get("plan").is_none(), "the page never writes a plan");
+    assert!(
+        add["request"].get("plan").is_none(),
+        "the page never writes a plan"
+    );
 }
 
 #[test]

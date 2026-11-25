@@ -74,6 +74,22 @@ pub struct HistoryLineView {
     pub entry: serde_json::Value,
 }
 
+/// The plan moor is making from a workflow's prompt, or why it made none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanMakingView {
+    /// The hash of the prompt the plan is made from, as 64 hex digits.
+    pub prompt: String,
+    /// The Box making it, once asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_name: Option<String>,
+    /// When the Box was asked for, in Unix milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    /// Why no plan was made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<String>,
+}
+
 /// One workflow as `workflow-list` shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowView {
@@ -107,6 +123,9 @@ pub struct WorkflowView {
     /// stale plan still runs.
     #[serde(default)]
     pub plan_stale: bool,
+    /// The plan moor is making for the prompt, or why it made none; none when it is not making one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_making: Option<PlanMakingView>,
     /// Counts the writes of the workflow; send it as `expected_revision` to change it.
     #[serde(default)]
     pub revision: u64,

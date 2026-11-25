@@ -144,7 +144,11 @@ fn add_workflow_refuses_a_plan_gates_or_outcomes_and_sends_nothing() {
     for field in ["plan", "gates", "outcomes"] {
         let mut args = json!({"name": "daily", "repos": ["acme/web"], "prompt": "fix it"});
         args[field] = json!([]);
-        let reply = m.rpc(&token, "tools/call", json!({"name": "add_workflow", "arguments": args}));
+        let reply = m.rpc(
+            &token,
+            "tools/call",
+            json!({"name": "add_workflow", "arguments": args}),
+        );
         let refused = reply.get("error").is_some() || reply["result"]["isError"] == true;
         assert!(refused, "{field}: {reply}");
         assert!(reply.to_string().contains(field), "{field}: {reply}");

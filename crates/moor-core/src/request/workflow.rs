@@ -61,6 +61,10 @@ pub struct WorkflowAddReq {
     /// on the cron and by hand only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_pull_request: Option<bool>,
+    /// Yes to have moor make the plan again for the prompt even when it is unchanged. A changed
+    /// prompt, or a new workflow, has its plan made again either way.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub regenerate_plan: bool,
 }
 
 /// Arguments of `workflow-remove`.
