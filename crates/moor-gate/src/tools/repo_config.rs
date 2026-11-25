@@ -1,5 +1,5 @@
-//! The repo config tools: a repo's config lives in moor, shared by every Box of the repo, and
-//! anyone who can push to the repo may change it.
+//! The repo config tools: a repo's config and Proxy rules live in moor, shared by every Box of
+//! the repo, and anyone who can push to the repo may change them.
 
 use moor_core::request::RepoFile;
 use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, Request as ControllerRequest};
@@ -19,6 +19,8 @@ use crate::mcp::{READ, WRITE};
 struct GetArgs {
     /// The repo as `owner/name`.
     repo: String,
+    /// `config` (the default) for the repo config, or `rules` for the Proxy rules its Boxes follow.
+    file: Option<String>,
 }
 
 /// Arguments of `set_repo_config`.
@@ -26,7 +28,9 @@ struct GetArgs {
 struct SetArgs {
     /// The repo as `owner/name`.
     repo: String,
-    /// The whole config as YAML, in the repo config format.
+    /// `config` (the default) for the repo config, or `rules` for the Proxy rules its Boxes follow.
+    file: Option<String>,
+    /// The whole text as YAML, in the format of `file`.
     text: String,
     /// The `revision` you read it at, 0 when it has none yet; the write is refused when the
     /// stored revision differs. Leave it out to write whatever is stored.
@@ -39,7 +43,9 @@ impl Tools {
     #[tool(
         description = "Read a repo's config as moor stores it: the YAML text (setup, env, brief, \
                        and the rest of what a repo config holds), its revision, and who last \
-                       edited it. A repo with none has revision 0 and no text. Needs the \
+                       edited it. A repo with none has revision 0 and no text. With file \
+                       \"rules\", read the Proxy rules its Boxes follow instead: a repo with \
+                       none stored reads the default rules text at revision 0. Needs the \
                        moor:read scope and a GitHub account that can see the repo."
     )]
     async fn get_repo_config(
@@ -47,9 +53,9 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<GetArgs>,
     ) -> CallToolResult {
-        let request = repo(&args.repo).map(|repo| {
+        let request = target(&args.repo, args.file.as_deref()).map(|(repo, file)| {
             ControllerRequest::RepoConfigGet(RepoConfigGetReq {
-                file: RepoFile::Config,
+                file,
                 identity: None,
                 repo,
             })
@@ -62,7 +68,9 @@ impl Tools {
         description = "Replace a repo's config with new YAML text. It applies to every Box of \
                        the repo: env and teardown to a running Box's next command, the rest \
                        to Boxes started or rebuilt afterwards. The text must parse as \
-                       a repo config, or the write is refused with the reason. Pass the revision \
+                       a repo config, or the write is refused with the reason. With file \
+                       \"rules\", replace the Proxy rules instead: they reach a running Box at \
+                       its next command. Pass the revision \
                        you read as expected_revision, so a change made since is not \
                        overwritten. Needs the moor:write scope and a GitHub account that can \
                        push to the repo."
@@ -72,9 +80,9 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<SetArgs>,
     ) -> CallToolResult {
-        let request = repo(&args.repo).map(|repo| {
+        let request = target(&args.repo, args.file.as_deref()).map(|(repo, file)| {
             ControllerRequest::RepoConfigSet(RepoConfigSetReq {
-                file: RepoFile::Config,
+                file,
                 identity: None,
                 repo,
                 text: args.text,
@@ -85,7 +93,16 @@ impl Tools {
     }
 }
 
-/// `owner/name` as a repo, or the refusal text.
-fn repo(text: &str) -> Result<moor_core::name::ForgeRepo, String> {
-    moor_core::name::ForgeRepo::parse(text).map_err(|e| format!("repo: {e}"))
+/// `owner/name` as a repo and the text `file` names, or the refusal text.
+fn target(
+    text: &str,
+    file: Option<&str>,
+) -> Result<(moor_core::name::ForgeRepo, RepoFile), String> {
+    let repo = moor_core::name::ForgeRepo::parse(text).map_err(|e| format!("repo: {e}"))?;
+    let file = match file {
+        None | Some("config") => RepoFile::Config,
+        Some("rules") => RepoFile::Rules,
+        Some(other) => return Err(format!("file: `{other}` is neither config nor rules")),
+    };
+    Ok((repo, file))
 }

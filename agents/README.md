@@ -32,7 +32,8 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 ## Claude Code
 
 `.mcp.json` starts `moor mcp --server "$MOOR_SERVER"` over stdio. The
-`moor-boxes` skill has Claude run `moor listen --box <name>` in the background for
+`proxy-rules` skill writes the lines of a repo's Proxy rules that the user asks
+for. The `moor-boxes` skill has Claude run `moor listen --box <name>` in the background for
 each Box it starts or is asked to watch; no listener runs until then. Both use
 the sign-in from `moor login --server ...`, run once. Install steps are in
 [docs/notify.md](../docs/notify.md#in-claude-code).
