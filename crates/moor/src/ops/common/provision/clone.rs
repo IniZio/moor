@@ -66,7 +66,7 @@ impl Plan {
     }
 }
 
-/// Starts the Proxy when the clone, setup or dotfiles need it, then clones the repo in the Box with
+/// Starts the Proxy when the clone, setup, dotfiles or profile fetch need it, then clones the repo in the Box with
 /// the Proxy env and sets the Box's git identity in the same exec.
 ///
 /// Returns the clone's milliseconds, none when the Box has no GitHub repo to clone, and the CPUs
@@ -87,7 +87,8 @@ pub(super) fn clone_with_proxy(
         cache::derived(cx, store, r, cfg, &ProviderId::new(target.provider))
     });
     let plan = plan(row, target, &kept);
-    let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
+    let profiled = store.box_profile(id)?.is_some();
+    let wants = plan.is_some() || profiled || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
         .then(|| {
