@@ -93,6 +93,9 @@ pub enum GateError {
         /// What was written.
         got: u64,
     },
+    /// A `made_from` that is not 64 hex digits.
+    #[error("made_from must be 64 hex digits")]
+    MadeFrom,
     /// A gate named for the stage moor keeps after the last gate.
     #[error("gate name `{0}` is kept for the stage that decides the outcome; pick another")]
     ReservedName(String),

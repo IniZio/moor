@@ -1,0 +1,101 @@
+{
+  "gates": [
+    {
+      "name": "review",
+      "evidence": [
+        "dependabot-review.md",
+        "alerts.tsv"
+      ],
+      "checks": [
+        {
+          "run": "[ -s .moor/artifacts/dependabot-review.md ] && [ \"$(head -n1 .moor/artifacts/alerts.tsv)\" = \"$(printf 'repo\\titem\\taction\\treason')\" ]",
+          "says": "dependabot-review.md is not empty and alerts.tsv starts with the exact tab-separated header."
+        },
+        {
+          "run": "awk -F'\\t' 'NR>1{ if ($2 ~ /^pr[0-9]+$/) ok=($3==\"merge\"||$3==\"skip\"); else ok=($3==\"fix\"||$3==\"dismiss\"||$3==\"person\"); if (!ok || $1==\"\" || $4==\"\") bad=1 } END{exit bad}' .moor/artifacts/alerts.tsv",
+          "says": "Every alerts.tsv row has a repo, a valid action for its kind (alert or PR) and a reason."
+        },
+        {
+          "run": "r=$(gh repo view --json nameWithOwner --jq .nameWithOwner); f=.moor/artifacts/alerts.tsv; for n in $(gh api \"repos/$r/dependabot/alerts?state=open\" --paginate --jq '.[].number'); do awk -F'\\t' -v n=\"$n\" '$2==n{f=1} END{exit !f}' $f || { echo \"missing alert $n\"; exit 1; }; done; for n in $(gh pr list --state open --author 'app/dependabot' --limit 200 --json number --jq '.[].number'); do awk -F'\\t' -v n=\"pr$n\" '$2==n{f=1} END{exit !f}' $f || { echo \"missing pr$n\"; exit 1; }; done",
+          "says": "Every open Dependabot alert and every open Dependabot PR on GitHub has a row in alerts.tsv."
+        }
+      ]
+    },
+    {
+      "name": "audit",
+      "evidence": [
+        "audit.md",
+        "upgrade-prs.txt"
+      ],
+      "checks": [
+        {
+          "run": "grep -Eqi 'nothing upgraded|https://github.com/[^ ]+/pull/[0-9]+' .moor/artifacts/audit.md",
+          "says": "audit.md has a PR URL or the words 'nothing upgraded'."
+        },
+        {
+          "run": "grep -q '|' .moor/artifacts/audit.md",
+          "says": "audit.md contains the audit table."
+        },
+        {
+          "run": "f=.moor/artifacts/upgrade-prs.txt; [ -s $f ] || exit 1; if [ \"$(grep -c . $f)\" = 1 ] && grep -qx none $f; then exit 0; fi; base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name); while read -r u; do [ -n \"$u\" ] || continue; [ \"$(gh pr view \"$u\" --json state,baseRefName,isDraft --jq \"(.state==\\\"OPEN\\\" and .baseRefName==\\\"$base\\\" and (.isDraft|not))\")\" = true ] || { echo \"not an open non-draft PR on $base: $u\"; exit 1; }; done < $f",
+          "says": "upgrade-prs.txt is 'none' or lists only open, non-draft PRs against the default branch."
+        }
+      ]
+    },
+    {
+      "name": "live",
+      "evidence": [
+        "live-matrix.md",
+        "live.tsv",
+        "for-a-person.md"
+      ],
+      "checks": [
+        {
+          "run": "[ -s .moor/artifacts/live-matrix.md ] && [ \"$(head -n1 .moor/artifacts/live.tsv)\" = \"$(printf 'surface\\tref\\tresult\\treason')\" ]",
+          "says": "live-matrix.md exists and live.tsv starts with the exact tab-separated header."
+        },
+        {
+          "run": "awk -F'\\t' 'NR>1{ if (!($1==\"docker\"||$1==\"android\"||$1==\"ios\") || !($3==\"pass\"||$3==\"fail\"||$3==\"n/a\") || ($3!=\"pass\" && $4==\"\")) bad=1; seen[$1\" \"$2]=1 } END{ split(\"docker android ios\",s,\" \"); for(i in s) if(!((s[i] \" base\") in seen)) bad=1; exit bad }' .moor/artifacts/live.tsv",
+          "says": "live.tsv has valid surfaces and results, a reason for each non-pass, and a base row for docker, android and ios."
+        },
+        {
+          "run": "t=.moor/artifacts/live.tsv; refs=$(grep -v '^none$' .moor/artifacts/upgrade-prs.txt | sed 's#.*/##'); refs=\"$refs $(awk -F'\\t' '$3==\"merge\" && $2 ~ /^pr[0-9]+$/{sub(/^pr/,\"\",$2); print $2}' .moor/artifacts/alerts.tsv)\"; for n in $refs; do for s in docker android ios; do awk -F'\\t' -v k=$s -v r=pr$n '$1==k && $2==r{f=1} END{exit !f}' $t || { echo \"missing $s pr$n\"; exit 1; }; done; done",
+          "says": "Every upgrade PR and every Dependabot PR marked merge has docker, android and ios rows in live.tsv."
+        },
+        {
+          "run": "p=.moor/artifacts/for-a-person.md; [ -s $p ] || exit 1; for n in $(gh pr list --state open --author 'app/dependabot' --limit 200 --json number --jq '.[].number') $(grep -v '^none$' .moor/artifacts/upgrade-prs.txt | sed 's#.*/##'); do grep -Eq \"pull/$n|#$n|pr$n\" $p || { echo \"for-a-person.md lacks PR $n\"; exit 1; }; done; grep -Eqi 'merge|skip' $p",
+          "says": "for-a-person.md lists every open Dependabot PR and every upgrade PR with merge or skip."
+        }
+      ]
+    },
+    {
+      "name": "report",
+      "evidence": [
+        "result.md"
+      ],
+      "checks": [
+        {
+          "run": "[ -s .moor/artifacts/result.md ] && grep -Eqi 'nothing upgraded|pull/[0-9]+' .moor/artifacts/result.md && grep -qi 'setup' .moor/artifacts/result.md && grep -q -- '- \\[ \\]' .moor/artifacts/result.md",
+          "says": "result.md gives the PR URL or 'nothing upgraded', the proposed setup lines and a checklist of actions for a person."
+        }
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "name": "upgrade PR opened",
+      "says": "The dependency check opened or reused at least one upgrade PR for a person to review.",
+      "checks": [
+        {
+          "run": "! grep -qx none .moor/artifacts/upgrade-prs.txt",
+          "says": "upgrade-prs.txt lists at least one PR."
+        }
+      ]
+    },
+    {
+      "name": "nothing upgraded",
+      "says": "The audit made no upgrade; any Dependabot items are left for a person.",
+      "tone": "plain"
+    }
+  ]
+}

@@ -202,7 +202,7 @@ fn a_new_workflow_or_a_new_prompt_asks_moor_for_a_plan_and_an_unchanged_one_does
 }
 
 #[test]
-fn regenerate_plan_asks_again_for_the_same_prompt_and_is_refused_for_gates() {
+fn regenerate_plan_asks_again_for_the_same_prompt_and_replaces_gates_a_person_wrote() {
     let f = reporting();
     let who = me(&f, "local:2000");
     seed(&f, &who, Some(derived()), None);
@@ -216,22 +216,57 @@ fn regenerate_plan_asks_again_for_the_same_prompt_and_is_refused_for_gates() {
 
     let g = reporting();
     let who = me(&g, "local:2000");
-    let proof = GateDoc {
-        name: "proof".to_owned(),
-        evidence: vec!["pr-*".to_owned()],
-        checks: Vec::new(),
-        approval: None,
-        max_tries: None,
-    };
-    seed(&g, &who, None, Some(Gates::parse(&[proof], &[]).unwrap()));
-    let why = refusal(&g, &who, add(again, None));
-    assert!(why.contains("set of gates"), "{why}");
+    seed(&g, &who, None, Some(Gates::parse(&[proof()], &[]).unwrap()));
     let mut reworded = add_req("daily", "0 9 * * *", "UTC");
     reworded.prompt = "collect it".to_owned();
     ok(&g, &who, add(reworded, None));
     assert!(
         making(&g, &who).is_null(),
-        "gates are moor's reading: no plan is asked for"
+        "gates a person wrote are kept through a prompt change"
+    );
+    let w = ok(&g, &who, cmd(WorkflowCmd::List))["workflows"][0].clone();
+    assert_eq!(w["gates_by"], "person", "{w}");
+    again.prompt = "collect it".to_owned();
+    ok(&g, &who, add(again, None));
+    let (_, draft) = g.cx.store().unwrap().plan_drafts().unwrap().remove(0);
+    assert!(draft.is_for("collect it") && draft.replace, "{draft:?}");
+    let w = ok(&g, &who, cmd(WorkflowCmd::List))["workflows"][0].clone();
+    assert_eq!(
+        w["gates"][0]["name"], "proof",
+        "kept until moor's reading is stored"
+    );
+}
+
+fn proof() -> GateDoc {
+    GateDoc {
+        name: "proof".to_owned(),
+        evidence: vec!["pr-*".to_owned()],
+        checks: Vec::new(),
+        approval: None,
+        max_tries: None,
+    }
+}
+
+#[test]
+fn gates_moor_made_go_stale_with_the_prompt_and_moor_reads_it_again() {
+    let f = reporting();
+    let who = me(&f, "local:2000");
+    let made = Gates::parse(&[proof()], &[]).unwrap().read_from(PROMPT);
+    seed(&f, &who, None, Some(made));
+    let w = ok(&f, &who, cmd(WorkflowCmd::List))["workflows"][0].clone();
+    assert!(w["gates_by"] == "moor" && w["plan_stale"] == false, "{w}");
+    let mut reworded = add_req("daily", "0 9 * * *", "UTC");
+    reworded.prompt = "collect it".to_owned();
+    ok(&f, &who, add(reworded, None));
+    let w = ok(&f, &who, cmd(WorkflowCmd::List))["workflows"][0].clone();
+    assert_eq!(
+        w["plan_stale"], true,
+        "moor's gates of an earlier prompt are stale"
+    );
+    assert_eq!(
+        making(&f, &who)["prompt"],
+        moor_core::workflow::PromptHash::of("collect it").hex(),
+        "and moor reads the new prompt"
     );
 }
 

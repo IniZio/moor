@@ -553,6 +553,7 @@ mod auto_close;
 mod check;
 mod death_cap;
 mod derive;
+mod derive_gates;
 mod eligible;
 mod gated;
 mod hook;

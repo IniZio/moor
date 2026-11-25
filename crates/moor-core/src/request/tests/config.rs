@@ -93,6 +93,7 @@ fn gates_are_left_out_when_absent_and_kept_when_given() {
     let doc = crate::gate::GatesDoc {
         gates: vec![gate],
         outcomes: Vec::new(),
+        made_from: None,
     };
     let given = serde_json::to_value(Request::Start(start(Some(Box::new(doc))))).expect("ser");
     assert_eq!(

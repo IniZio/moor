@@ -1,0 +1,38 @@
+proxy:
+  allow:
+    github-api:
+      - "POST /repos/{repo}/issues/*/comments"
+      - "PATCH /repos/{repo}/issues/comments/*"
+      - "POST /repos/{repo}/statuses/*"
+      - "GET /repos/{repo}/commits/*/statuses"
+      - "GET /repos/{repo}/pulls/*"
+
+env:
+  HOUSE_RULES_PR_COMMENT_MARKERS: moor-evidence
+  PR_CHECK: for f in $(git ls-files '*.sh'); do bash -n "$f"; done
+  PR_RERUN: |
+    set -u
+    [ -n "${PR_CHECK:-}" ] || { echo "rerun: no PR_CHECK in env"; exit 2; }
+    sha=${MOOR_PULL_HEAD_SHA:-}; repo=${MOOR_PULL_REPO:-}
+    [ -n "$sha" ] && [ -n "$repo" ] || { echo "rerun: no pull request head in env"; exit 2; }
+    d=$(mktemp -d /tmp/moor-rerun.XXXXXX) || { echo "rerun: cannot make a temp dir"; exit 2; }
+    trap 'rm -rf "$d"' EXIT
+    export GIT_TERMINAL_PROMPT=0
+    git init -q "$d/w" && cd "$d/w" || { echo "rerun: cannot make a repo in $d"; exit 2; }
+    timeout 300 git fetch -q --depth=1 "https://github.com/$repo.git" "$sha" >"$d/fetch.log" 2>&1 || { echo "rerun: cannot fetch $sha from $repo"; tail -n 5 "$d/fetch.log"; exit 2; }
+    git -c advice.detachedHead=false checkout -q --detach FETCH_HEAD && [ "$(git rev-parse HEAD)" = "$sha" ] || { echo "rerun: cannot check out $sha"; exit 2; }
+    bash -e -c "$PR_CHECK" >"$d/check.log" 2>&1; rc=$?
+    tail -n 15 "$d/check.log"
+    [ "$rc" = 0 ] && { echo "rerun: the check passed at $sha"; exit 0; }
+    echo "rerun: the check failed at $sha (exit $rc)"; exit 1
+
+setup:
+  - scripts/moor-setup.sh node
+  - scripts/moor-setup.sh playwright
+
+brief: |
+  Setup installed Node.js from web/.nvmrc and Playwright Chromium. The web app
+  starts its own server in the tests: `cd web && npx playwright test`.
+  The repo's CI check is the command in $PR_CHECK, run with `bash -e -c "$PR_CHECK"`
+  at the repo root: `for f in $(git ls-files '*.sh'); do bash -n "$f"; done`.
+  The repo has no sign-in. The Rust crate at the repo root is a smoke target: leave it alone.

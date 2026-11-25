@@ -2,6 +2,7 @@
 //! a workflow's plan, and a one-off that proposes its plan and waits for approval first.
 
 use super::PlanDoc;
+use crate::gate::GatesDoc;
 
 /// The evidence file a drafted or proposed plan is left in.
 pub const PLAN_FILE: &str = "plan.json";
@@ -32,6 +33,37 @@ fn how_to_write() -> String {
     )
 }
 
+/// How to write gates in place of a plan, with the schema `Gates::from_json` reads.
+fn how_to_gate() -> String {
+    let schema = schemars::schema_for!(GatesDoc);
+    let schema = serde_json::to_string(&schema).unwrap_or_default();
+    format!(
+        "Write gates instead of a plan when the prompt has each run pass named gates in order \
+         (it says moor holds the run open until its gates pass, or asks for report_step for a \
+         gate). Then the file is an object with `gates` and `outcomes` and no `steps`. Name \
+         one gate for each gate the prompt names, in its order, each with the evidence files the \
+         prompt names for it, and no file it does not name. An evidence name is a flat file \
+         name, or a prefix ending in * that covers names with a number in them, such as pr-* \
+         for pr-<n>-check.log and pr-<n>-summary.json; a * anywhere else is refused. For \
+         everything the prompt says moor checks itself, or says must hold on GitHub or \
+         in a file before the gate passes, add a check: a shell command moor runs in the run's \
+         Box, at the work tree's root, once the evidence is in, that exits 0 only when it holds, \
+         with `says` as one plain sentence. Write checks with sh, git, gh, grep, sed and awk: \
+         the run's Box may have no python3, jq or node, so read JSON with gh's --jq or grep. \
+         Evidence files are under .moor/artifacts/. A run fired \
+         by a pull request has MOOR_PULL_REPO, MOOR_PULL_NUMBER, MOOR_PULL_HEAD_SHA and \
+         MOOR_PULL_URL in its env, with the env of the workflow's config; gh can read GitHub. \
+         When a run can end in different verdicts, such as check passed or failed, nothing to \
+         do, or needs a person, write them as outcomes: a name of up to 40 characters, one \
+         sentence, a tone (good, bad or plain) and the checks that decide it, using the commands \
+         the config gives for that where it has them. moor tries the outcomes in order once \
+         every gate passed, and the first whose checks all pass is the run's verdict; only the \
+         last one may have no check. Mark an outcome anytime when it can end a run before its \
+         gates pass, such as nothing to do. Leave out made_from. The gates are JSON that \
+         matches this schema:\n{schema}"
+    )
+}
+
 /// How a draft prompt opens, so a front can tell a drafting Box from a person's own.
 const DRAFT_HEAD: &str = "Draft a plan for this workflow prompt.";
 
@@ -41,16 +73,27 @@ pub fn is_draft_prompt(text: &str) -> bool {
     text.starts_with(DRAFT_HEAD)
 }
 
-/// What a short Box that drafts a workflow's plan is asked, for the workflow prompt `prompt`.
+/// What a short Box that reads a workflow's prompt is asked, for the workflow prompt `prompt`
+/// and the config `config` its runs' Boxes get: a plan, or gates when the prompt names them.
 #[must_use]
-pub fn draft_prompt(prompt: &str) -> String {
+pub fn draft_prompt(prompt: &str, config: Option<&str>) -> String {
+    let config = config
+        .filter(|c| !c.trim().is_empty())
+        .map(|c| {
+            format!(
+                "Each run's Box gets this config, laid over the repo's:\n```yaml\n{}\n```\n\n",
+                c.trim()
+            )
+        })
+        .unwrap_or_default();
     format!(
-        "{DRAFT_HEAD} Only read: change no file, branch or pull request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\nRead the repos to see what the \
-         prompt needs, then write its plan. Each run starts a new Box on its own branch, so name no \
-         branch, Box or folder of this one.\n\n{}\n\nWrite the plan as .moor/artifacts/{PLAN_FILE} \
-         and nothing else, then end your turn.",
+        "{DRAFT_HEAD} Only read: change no file, branch or pull request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\n{config}Read the repos to see what the \
+         prompt needs, then write moor's reading of it: a plan, or gates. Each run starts a new Box \
+         on its own branch, so name no branch, Box or folder of this one.\n\n{}\n\n{}\n\nWrite \
+         the plan or the gates as .moor/artifacts/{PLAN_FILE} and nothing else, then end your turn.",
         prompt.trim(),
-        how_to_write()
+        how_to_write(),
+        how_to_gate()
     )
 }
 
@@ -94,7 +137,7 @@ mod tests {
 
     #[test]
     fn a_draft_prompt_quotes_the_workflow_prompt_and_the_plan_schema() {
-        let asked = draft_prompt("Bump the deps.");
+        let asked = draft_prompt("Bump the deps.", None);
         assert!(asked.contains("\"\"\"\nBump the deps.\n\"\"\""));
         assert!(asked.contains("\"done_when\"") && asked.contains("\"evidence\""));
         assert!(asked.contains(".moor/artifacts/plan.json"));

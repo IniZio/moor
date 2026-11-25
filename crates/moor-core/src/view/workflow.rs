@@ -90,6 +90,16 @@ pub struct PlanMakingView {
     pub failed: Option<String>,
 }
 
+/// Who wrote a workflow's gates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GatesBy {
+    /// A person; moor keeps them until asked to make its reading again.
+    Person,
+    /// moor, reading the prompt.
+    Moor,
+}
+
 /// One workflow as `workflow-list` shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowView {
@@ -119,10 +129,14 @@ pub struct WorkflowView {
     /// each run delivers the prompt in one step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<serde_json::Value>,
-    /// Whether the plan was made from a different prompt than the one the workflow has now. A
-    /// stale plan still runs.
+    /// Whether moor's reading, its plan or gates, was made from a different prompt than the one
+    /// the workflow has now. A stale reading still runs.
     #[serde(default)]
     pub plan_stale: bool,
+    /// Who wrote the gates: `person` for gates moor keeps until asked to make its reading again,
+    /// `moor` for its own reading of the prompt; none when it has no gates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gates_by: Option<GatesBy>,
     /// The plan moor is making for the prompt, or why it made none; none when it is not making one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan_making: Option<PlanMakingView>,

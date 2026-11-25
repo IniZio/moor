@@ -1,0 +1,79 @@
+{
+  "gates": [
+    {
+      "name": "proof",
+      "evidence": [
+        "box.txt",
+        "pr-*"
+      ],
+      "checks": [
+        {
+          "run": "grep -q \"moor.oursky.codes/#/box/.*/evidence\" .moor/artifacts/box.txt && grep -q \"$MOOR_PULL_HEAD_SHA\" .moor/artifacts/box.txt",
+          "says": "box.txt holds the evidence link and the MOOR_PULL_* values."
+        },
+        {
+          "run": "test -s .moor/artifacts/pr-$MOOR_PULL_NUMBER-check.log && test -s .moor/artifacts/pr-$MOOR_PULL_NUMBER-evidence.md",
+          "says": "The check log and the evidence file for this pull request exist and are not empty."
+        },
+        {
+          "run": "f=.moor/artifacts/pr-$MOOR_PULL_NUMBER-summary.json; grep -q \"\\\"head_sha\\\"[[:space:]]*:[[:space:]]*\\\"$MOOR_PULL_HEAD_SHA\\\"\" $f && grep -q \"\\\"number\\\"[[:space:]]*:[[:space:]]*$MOOR_PULL_NUMBER\" $f && grep -q '\"check_command\"' $f && grep -q '\"evidence_command\"' $f && grep -q '\"not_run\"' $f",
+          "says": "The summary JSON names this pull request and head SHA and has the required fields."
+        },
+        {
+          "run": "test -z \"$(git status --porcelain | grep -v '\\.moor/')\"",
+          "says": "Nothing in the Box's checkout changed outside .moor/."
+        }
+      ]
+    },
+    {
+      "name": "done",
+      "evidence": [
+        "posted.md"
+      ],
+      "checks": [
+        {
+          "run": "test \"$(gh api --paginate repos/$MOOR_PULL_REPO/issues/$MOOR_PULL_NUMBER/comments --jq '[.[] | select(.body | startswith(\"<!-- moor-evidence sha=\"))] | length')\" = 1",
+          "says": "The pull request has exactly one evidence comment."
+        },
+        {
+          "run": "test \"$(gh api --paginate repos/$MOOR_PULL_REPO/issues/$MOOR_PULL_NUMBER/comments --jq '[.[] | select(.body | startswith(\"<!-- moor-evidence sha='$MOOR_PULL_HEAD_SHA' -->\"))] | length')\" = 1",
+          "says": "The evidence comment starts with the marker for the full head SHA."
+        },
+        {
+          "run": "s=$(gh api repos/$MOOR_PULL_REPO/commits/$MOOR_PULL_HEAD_SHA/statuses --jq '[.[] | select(.context==\"moor/evidence\")][0].state'); [ \"$s\" = success ] || [ \"$s\" = failure ]",
+          "says": "The head commit has a moor/evidence status of success or failure."
+        },
+        {
+          "run": "grep -q 'https://github.com/' .moor/artifacts/posted.md",
+          "says": "posted.md holds the comment URL."
+        }
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "name": "nothing to do",
+      "says": "No pull request in env, or it is not open, or its head moved; nothing was posted.",
+      "tone": "plain",
+      "checks": [
+        "[ -z \"${MOOR_PULL_NUMBER:-}\" ] || [ -z \"${MOOR_PULL_HEAD_SHA:-}\" ] || [ \"$(gh api repos/$MOOR_PULL_REPO/pulls/$MOOR_PULL_NUMBER --jq .state)\" != open ] || [ \"$(gh api repos/$MOOR_PULL_REPO/pulls/$MOOR_PULL_NUMBER --jq .head.sha)\" != \"$MOOR_PULL_HEAD_SHA\" ]"
+      ],
+      "anytime": true
+    },
+    {
+      "name": "check passed",
+      "says": "The repo's check passed at the head and the evidence comment and success status are posted.",
+      "checks": [
+        "test \"$(gh api repos/$MOOR_PULL_REPO/commits/$MOOR_PULL_HEAD_SHA/statuses --jq '[.[] | select(.context==\"moor/evidence\")][0].state')\" = success"
+      ]
+    },
+    {
+      "name": "check failed",
+      "says": "The repo's check failed at the head; the evidence comment and failure status are posted.",
+      "tone": "bad",
+      "checks": [
+        "test \"$(gh api repos/$MOOR_PULL_REPO/commits/$MOOR_PULL_HEAD_SHA/statuses --jq '[.[] | select(.context==\"moor/evidence\")][0].state')\" = failure"
+      ]
+    }
+  ]
+}
