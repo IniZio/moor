@@ -1,14 +1,8 @@
-/* A question's task page at the density of the signed-off mock: 13px text, a 17px title, an 880px column. Every rule sits under .t-place, so the shared chrome and the other task pages keep theirs. */
-.t-box.t-place { display: flex; flex-direction: column; max-width: 880px; min-height: calc(100dvh - 122px); margin: 0 auto; font-size: 13px; }
-.t-place .btn { padding: 4px 14px; line-height: 16px; }
-.t-place .t-th { margin-bottom: 6px; }
-.t-place .t-th0 { margin-bottom: 2px; }
-.t-place .t-th1 { gap: 8px; }
-.t-place .t-th-title { font-size: 17px; }
-.t-place .t-th1 > .t-pill { padding: 0 8px; font-size: 12px; line-height: 18px; }
+/* A question's task page: the conversation, its cards and the message box. Sizes, the 880px column and the head come from the shared portal tokens. Every rule sits under .t-place or a t-pl class. */
+.t-box.t-place { display: flex; flex-direction: column; min-height: calc(100dvh - 82px); }
 .t-place .t-pl { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 4px; }
 .t-pl-you { align-self: flex-end; max-width: 78%; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-.t-pl-meta { font-size: 12px; color: var(--moor-color-text-muted); }
+.t-pl-meta { font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-pl-bubble { padding: 4px 10px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-sunken); white-space: pre-wrap; overflow-wrap: anywhere; }
 .t-pl-say { display: flex; align-items: baseline; gap: 8px; }
 .t-pl-mark { flex: none; width: 1.1em; text-align: center; color: var(--moor-color-accent); }
@@ -18,7 +12,7 @@
 .t-pl-note { margin: 0; padding: 2px 0; }
 .t-pl-note > :first-child { margin-top: 0; }
 .t-pl-note > :last-child { margin-bottom: 0; }
-.t-pl-fold { margin: -4px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--moor-color-text-muted); }
+.t-pl-fold { margin: -4px 0 0 calc(1.1em + 8px); font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-pl-fold > summary { display: block; width: max-content; cursor: pointer; list-style: none; }
 .t-pl-fold > summary::-webkit-details-marker { display: none; }
 .t-pl-fold > summary:hover { color: var(--moor-color-text); }
@@ -28,7 +22,7 @@
 .t-pl-ended { margin: 0 0 0 calc(1.1em + 8px); padding: 2px 0 2px 10px; border-left: 3px solid var(--moor-color-danger); color: var(--moor-color-danger); }
 .t-pl-ended-h { margin: 0; font-weight: var(--moor-weight-strong); }
 .t-pl-ended pre { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; }
-.t-pl-box { display: block; width: max-content; margin: -4px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--moor-color-text-muted); text-decoration: none; }
+.t-pl-box { display: block; width: max-content; margin: -4px 0 0 calc(1.1em + 8px); font-size: var(--app-text-sm); color: var(--moor-color-text-muted); text-decoration: none; }
 a.t-pl-box:hover { color: var(--moor-color-text); }
 .t-pl-art, .t-pl-pr { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); overflow: hidden; }
 .t-pl-pic { padding: 6px 10px; background: var(--moor-color-bg-sunken); border-bottom: 1px solid var(--moor-color-border); }
@@ -36,8 +30,6 @@ a.t-pl-box:hover { color: var(--moor-color-text); }
 .t-pl-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 6px 2px 10px; }
 .t-pl-glyph { display: inline-flex; color: var(--moor-color-text-muted); }
 .t-pl-name { font-weight: var(--moor-weight-strong); }
-.t-pl-where, .t-pl-sum { font-size: 12px; color: var(--moor-color-text-muted); }
+.t-pl-where, .t-pl-sum { font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-pl-sum { flex: 1 1 auto; min-width: 0; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t-place .t-say { margin-top: auto; padding: 3px 3px 3px 10px; border-color: var(--moor-color-border); border-radius: var(--moor-radius-sm); box-shadow: 0 10px 0 0 var(--moor-color-bg); bottom: 10px; }
-.t-place .t-say-row { align-items: center; gap: 8px; }
-.t-place .t-say textarea { padding: 3px 0; }
+.t-place .t-say { margin-top: auto; }

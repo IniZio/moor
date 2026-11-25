@@ -1,13 +1,13 @@
 /* The gate cards on the Box page. Own classes (t-gate), no inline styles (the page's CSP forbids them). */
-.t-gate-label { margin: 0.5rem 0 0.2rem; font-size: 0.8125rem; font-weight: 650; color: var(--moor-color-text-muted); }
+.t-gate-label { margin: 0.5rem 0 0.2rem; font-size: var(--app-text-sm); font-weight: 650; color: var(--moor-color-text-muted); }
 .t-gate-why { margin: 0 0 0.4rem; overflow-wrap: anywhere; }
-.t-gate-tail summary { cursor: pointer; margin-bottom: 0.3rem; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-gate-tail summary { cursor: pointer; margin-bottom: 0.3rem; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-gate-tail .t-quote { margin-bottom: 0.3rem; }
 .t-gate-missing { margin: 0 0 0.6rem; padding-left: 1.2rem; }
 .t-refused .t-what, .t-moor .t-what { white-space: normal; }
 /* moor's own message to the agent: a system note, quieter than a person's message and with no accent speaker. */
 .t-moor .t-who, .t-moor .t-what { color: var(--moor-color-text-muted); }
-.t-moor .t-what { font-size: 0.8125rem; border-left: 2px solid var(--moor-color-border-strong); padding-left: 0.6rem; }
+.t-moor .t-what { font-size: var(--app-text-sm); border-left: 2px solid var(--moor-color-border-strong); padding-left: 0.6rem; }
 .t-moor .t-what p { margin: 0 0 0.35rem; }
 .t-moor .t-what p:last-child { margin-bottom: 0; }
 .t-moor-quote { margin: 0.2rem 0 0.4rem; }
@@ -15,12 +15,12 @@
 .t-moor-quote blockquote { margin: 0.15rem 0 0; padding: 0.35rem 0.6rem; border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-sunken); color: var(--moor-color-text); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--moor-text-sm); }
 .t-refused-title { margin: 0; color: var(--moor-color-text-muted); }
 .t-refused-why { margin: 0.15rem 0 0.3rem; }
-.t-refused-sent summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-refused-sent summary { cursor: pointer; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-refused-sent .t-quote { margin: 0.3rem 0 0; }
 .t-gate-tried { list-style: none; margin: 0 0 var(--moor-space-3); padding: 0; display: grid; gap: var(--moor-space-3); }
 .t-gate-says { margin: 0 0 0.4rem; font-weight: 650; overflow-wrap: anywhere; }
 .t-gate-cmd { margin: 0.4rem 0 0.6rem; }
-.t-gate-cmd summary { cursor: pointer; font-size: 0.8125rem; color: var(--moor-color-text-muted); }
+.t-gate-cmd summary { cursor: pointer; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-gate-cmd .t-quote { margin: 0.3rem 0 0; }
 .t-rules .plan-bar { margin-bottom: var(--moor-space-2); }
 .t-rules-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--moor-space-3); }
