@@ -142,13 +142,36 @@ fn a_request_that_sends_a_plan_gates_or_outcomes_is_refused() {
     }
 }
 
+/// A fixture whose controller lets Box agents report steps, so a planned run can go ahead.
+fn reporting() -> Fixture {
+    let dir = tempfile::tempdir().unwrap();
+    let served = moor_core::config::parse_user("x", "moor_service:\n  upstream: 127.0.0.1:8444\n");
+    let config = moor_core::config::UserConfig {
+        moor_service: served.unwrap().moor_service,
+        ..Default::default()
+    };
+    let cx = crate::cx::Cx::fake_with(
+        dir.path(),
+        std::sync::Arc::new(crate::testing::driver::FakeDriver::new()),
+        std::sync::Arc::new(crate::testing::proc::ScriptedProc::new()),
+        config,
+    )
+    .with_env(|e| e.with_front_step_reports(std::collections::BTreeSet::from(["gate".to_owned()])));
+    let vault = crate::vault::Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    Fixture {
+        _dir: dir,
+        cx,
+        vault,
+    }
+}
+
 fn making(f: &Fixture, who: &Identity) -> serde_json::Value {
     ok(f, who, cmd(WorkflowCmd::List))["workflows"][0]["plan_making"].clone()
 }
 
 #[test]
 fn a_new_workflow_or_a_new_prompt_asks_moor_for_a_plan_and_an_unchanged_one_does_not() {
-    let f = fixture();
+    let f = reporting();
     let who = me(&f, "local:2000");
     ok(&f, &who, add(add_req("daily", "0 9 * * *", "UTC"), None));
     let asked = making(&f, &who);
@@ -180,7 +203,7 @@ fn a_new_workflow_or_a_new_prompt_asks_moor_for_a_plan_and_an_unchanged_one_does
 
 #[test]
 fn regenerate_plan_asks_again_for_the_same_prompt_and_is_refused_for_gates() {
-    let f = fixture();
+    let f = reporting();
     let who = me(&f, "local:2000");
     seed(&f, &who, Some(derived()), None);
     let mut again = add_req("daily", "0 9 * * *", "UTC");
@@ -191,7 +214,7 @@ fn regenerate_plan_asks_again_for_the_same_prompt_and_is_refused_for_gates() {
         moor_core::workflow::PromptHash::of(PROMPT).hex()
     );
 
-    let g = fixture();
+    let g = reporting();
     let who = me(&g, "local:2000");
     let proof = GateDoc {
         name: "proof".to_owned(),
@@ -209,5 +232,42 @@ fn regenerate_plan_asks_again_for_the_same_prompt_and_is_refused_for_gates() {
     assert!(
         making(&g, &who).is_null(),
         "gates are moor's reading: no plan is asked for"
+    );
+}
+
+#[test]
+fn a_controller_whose_boxes_cannot_report_steps_asks_for_no_plan() {
+    let f = fixture();
+    let who = me(&f, "local:2000");
+    ok(&f, &who, add(add_req("daily", "0 9 * * *", "UTC"), None));
+    assert!(
+        making(&f, &who).is_null(),
+        "its runs deliver the prompt in one step"
+    );
+}
+
+#[test]
+fn a_new_prompt_while_a_box_makes_the_plan_keeps_that_box_on_the_draft() {
+    let f = reporting();
+    let who = me(&f, "local:2000");
+    ok(&f, &who, add(add_req("daily", "0 9 * * *", "UTC"), None));
+    let store = f.cx.store().unwrap();
+    let user = store.user_of(&who).unwrap().unwrap();
+    let id = store
+        .workflow(user, &WorkflowName::parse("daily").unwrap())
+        .unwrap()
+        .unwrap()
+        .id;
+    let (_, wanted) = store.plan_drafts().unwrap().remove(0);
+    let asked = wanted.asked("daily/w1-plan-x", 1);
+    assert!(store.move_plan_draft(id, &wanted, Some(&asked)).unwrap());
+    let mut reworded = add_req("daily", "0 9 * * *", "UTC");
+    reworded.prompt = "fix only the login page".to_owned();
+    reworded.regenerate_plan = true;
+    ok(&f, &who, add(reworded, None));
+    assert_eq!(
+        making(&f, &who)["box_name"],
+        "daily/w1-plan-x",
+        "the pass still knows the Box, so it closes it before asking again"
     );
 }

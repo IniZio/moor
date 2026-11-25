@@ -50,7 +50,7 @@ impl Tools {
                        \
                        Write the prompt only. moor reads it and keeps its own plan of the steps, made \
                        again whenever the prompt changes; a workflow made with gates keeps them. Never \
-                       send a plan, gates or outcomes: a call that names one is refused. list_workflows \
+                       send a plan, gates or outcomes: a call that names one is refused. get_workflow \
                        shows the plan and any gates as moor's current reading of the prompt, and \
                        `plan_making` while moor makes the plan or why it made none. Send \
                        `regenerate_plan: true` with the same prompt to have moor make it again. \

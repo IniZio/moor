@@ -9,8 +9,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowChangeValue;
 use moor_core::workflow::{
-    Plan, PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
-    WorkflowSchedule, WorkflowState,
+    Plan, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin, WorkflowSchedule,
+    WorkflowState,
 };
 use moor_core::ErrorKind;
 
@@ -210,7 +210,8 @@ fn add(
     def.config = config;
     def.on_pull_request = on_pull_request;
     (def.plan, def.gates) = kept_reading(prior.as_ref());
-    let wants_plan = plan_wanted(req, prior.as_ref(), def.gates.is_some())?;
+    let wants_plan = plan_wanted(req, prior.as_ref(), def.gates.is_some())?
+        && crate::ops::workflow::unreportable(cx, "the plan").is_none();
     let revision = match store.put_workflow_at(
         user,
         &def,
@@ -219,7 +220,7 @@ fn add(
     )? {
         Put::Written { id, revision } => {
             if wants_plan {
-                store.set_plan_draft(id, Some(&PlanDraft::wanted(&req.prompt)))?;
+                store.want_plan(id, &req.prompt)?;
             }
             revision
         }
@@ -267,7 +268,8 @@ fn origin_of(
 
 /// Whether the write asks moor to make the plan: a new workflow, a changed prompt, or a request to
 /// make it again. A workflow moor reads as gates gets no plan, and a request to make one again is
-/// refused.
+/// refused. A controller whose Box agents cannot report steps asks for none either, since it
+/// could not run a planned workflow; its runs deliver the prompt in one step.
 fn plan_wanted(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,

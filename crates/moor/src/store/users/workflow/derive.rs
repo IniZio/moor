@@ -54,6 +54,34 @@ impl Store {
         Ok(changed == 1)
     }
 
+    /// Workflow `id`'s draft; none when moor is not making its plan.
+    pub(crate) fn plan_draft(&self, id: WorkflowId) -> Result<Option<PlanDraft>, StoreError> {
+        let text: Option<Option<String>> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(Workflows::PlanDraft)
+                    .from(Workflows::Table)
+                    .and_where(Expr::col(Workflows::Id).eq(id.get())),
+                |r| r.get(0),
+            )
+            .optional()?;
+        text.flatten().as_deref().map(read).transpose()
+    }
+
+    /// Asks moor to make workflow `id`'s plan for `prompt`. A Box already making one keeps its
+    /// draft: the pass sees its prompt is old, closes it and asks again, so no Box is left behind.
+    pub(crate) fn want_plan(&self, id: WorkflowId, prompt: &str) -> Result<(), StoreError> {
+        let wanted = PlanDraft::wanted(prompt);
+        match self.plan_draft(id)? {
+            None => self.set_plan_draft(id, Some(&wanted)),
+            Some(d) if d.box_name.is_none() || d.failed.is_some() => {
+                self.move_plan_draft(id, &d, Some(&wanted)).map(|_| ())
+            }
+            Some(_) => Ok(()),
+        }
+    }
+
     /// Every workflow with a draft, by id, with it.
     pub(crate) fn plan_drafts(&self) -> Result<Vec<(WorkflowId, PlanDraft)>, StoreError> {
         let reader = self.reader()?;
