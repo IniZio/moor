@@ -48,6 +48,25 @@ again. Everything else applies to Boxes started afterwards.
 | `setup` | A new Box, and `moor retry` on a Box whose setup failed. |
 | `box.size`, `cache` | A new Box, or one that is rebuilt on a new machine. |
 | `node.labels`, `box_credentials`, `proxy.allow` | A new Box. |
+## Proxy rules
+
+Each repo also has a rules text in moor. It holds the Proxy rules its Boxes
+follow, as a `rules:` list with no names, in the [rule keys](config.md) of
+`proxy.rules`.
+A repo with none stored follows the default rules text, and `get` prints that
+text at revision 0. Save an edited copy to change what the repo's Boxes may
+reach and where their secrets go:
+
+```sh
+moor repo rules get OWNER/NAME > rules.yaml
+moor repo rules set OWNER/NAME --file rules.yaml --expected-revision 0
+```
+
+A request that no allow entry matches still goes out, without the secret. A
+host belongs to one rule. A Box of several repos follows its first repo's
+rules. A saved edit reaches a running Box at its next `moor exec` or run. From then
+on it holds for every new connection of that Box, the agent's included.
+
 ## Override for one Box
 
 A start can carry a partial config, in the same YAML, that applies to that Box

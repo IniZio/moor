@@ -7,6 +7,7 @@ use std::time::Duration;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::decision::{BoxRepo, Decision, NewBox, SpecFields};
 use moor_core::domain::place::{BoxKind, PlaceState};
+use moor_core::request::RepoFile;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
@@ -173,7 +174,7 @@ pub(crate) fn box_repo() -> BoxRepo {
 /// Stores `yaml` as `repo`'s config in `store`, as an operator setting it would.
 pub(crate) fn store_config(store: &Store, repo: &ForgeRepo, yaml: &str) {
     store
-        .set_repo_config(repo, yaml, "operator", None)
+        .set_repo_text(repo, RepoFile::Config, yaml, "operator", None)
         .expect("store the repo config");
 }
 

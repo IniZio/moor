@@ -1,6 +1,7 @@
 //! The repo config tools: a repo's config lives in moor, shared by every Box of the repo, and
 //! anyone who can push to the repo may change it.
 
+use moor_core::request::RepoFile;
 use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, Request as ControllerRequest};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::CallToolResult;
@@ -48,6 +49,7 @@ impl Tools {
     ) -> CallToolResult {
         let request = repo(&args.repo).map(|repo| {
             ControllerRequest::RepoConfigGet(RepoConfigGetReq {
+                file: RepoFile::Config,
                 identity: None,
                 repo,
             })
@@ -72,6 +74,7 @@ impl Tools {
     ) -> CallToolResult {
         let request = repo(&args.repo).map(|repo| {
             ControllerRequest::RepoConfigSet(RepoConfigSetReq {
+                file: RepoFile::Config,
                 identity: None,
                 repo,
                 text: args.text,

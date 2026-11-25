@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use moor_core::config::{Flags, Layer};
 use moor_core::domain::decision::Decision;
+use moor_core::request::RepoFile;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::BoxName;
 
@@ -80,14 +81,26 @@ fn an_edit_of_the_stored_config_reaches_a_running_box_at_once() {
     assert_eq!(s.setup, ["build"]);
 
     store
-        .set_repo_config(&repo(), "env: {A: edited}\n", "operator", Some(1))
+        .set_repo_text(
+            &repo(),
+            RepoFile::Config,
+            "env: {A: edited}\n",
+            "operator",
+            Some(1),
+        )
         .unwrap();
     let s = settings_of(&cx, &row, &Flags::default()).unwrap();
     assert_eq!(s.env.get("A").map(String::as_str), Some("edited"));
     assert!(s.setup.is_empty(), "an edit replaces the config whole");
 
     store
-        .set_repo_config(&repo(), "env: {A: again}\n", "operator", Some(2))
+        .set_repo_text(
+            &repo(),
+            RepoFile::Config,
+            "env: {A: again}\n",
+            "operator",
+            Some(2),
+        )
         .unwrap();
     let s = settings_of(&cx, &row, &Flags::default()).unwrap();
     assert_eq!(s.env.get("A").map(String::as_str), Some("again"));

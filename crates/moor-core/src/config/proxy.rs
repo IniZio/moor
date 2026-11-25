@@ -19,8 +19,8 @@ use crate::user::SecretName;
 pub use allow::{GRAPHQL_ENTRY, GRAPHQL_HOST};
 pub(super) use extra::check_extra_allow;
 pub use resolve::{
-    default_graphql, default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule,
-    DEFAULT_RULES_TEXT,
+    default_graphql, default_rules, resolve_rules, resolve_rules_over, EndpointRule,
+    ResolvedInject, ResolvedRule, DEFAULT_RULES_TEXT,
 };
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
@@ -268,7 +268,16 @@ pub(super) fn injected(rules: &BTreeMap<String, ToolRule>) -> BTreeMap<String, S
 impl ProxyConfig {
     /// The default rules with each user rule laid over its same-named default.
     pub(super) fn merged_rules(&self) -> BTreeMap<String, ToolRule> {
-        let mut merged = default_rules();
+        self.merged_over(default_rules())
+    }
+
+    /// `base`, the rules of a rules text by id, overlaid with these rules as
+    /// [`Self::merged_rules`] overlays the defaults.
+    pub(super) fn merged_over(
+        &self,
+        base: BTreeMap<String, ToolRule>,
+    ) -> BTreeMap<String, ToolRule> {
+        let mut merged = base;
         for (name, rule) in &self.rules {
             let rule = merged
                 .get(name)

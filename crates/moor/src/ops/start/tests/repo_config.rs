@@ -2,6 +2,7 @@
 //! a repo with none starts with an empty config, and neither says anything about it.
 
 use moor_core::config::Flags;
+use moor_core::request::RepoFile;
 use moor_core::seam::forge::{ForgeRepo, RepoAt};
 use moor_core::{BoxId, ErrorKind, StartReq};
 
@@ -49,7 +50,13 @@ fn a_repo_with_no_stored_config_starts_with_an_empty_config_and_no_repo_config_w
         !codes.iter().any(|c| c.starts_with("repo_config")),
         "{codes:?}"
     );
-    assert_eq!(w.cx.store().unwrap().repo_config(&repo()).unwrap(), None);
+    assert_eq!(
+        w.cx.store()
+            .unwrap()
+            .repo_text(&repo(), RepoFile::Config)
+            .unwrap(),
+        None
+    );
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let s = settings_of(&w.cx, &row, &Flags::default()).unwrap();
     assert!(s.setup.is_empty() && s.env.is_empty() && s.model.is_none());

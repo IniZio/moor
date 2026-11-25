@@ -148,11 +148,24 @@ pub fn resolve_rules(
     repos: &[ForgeRepo],
     fetch_without_repo: bool,
 ) -> Result<Vec<ResolvedRule>, ConfigError> {
+    resolve_rules_over(default_rules(), user, repos, fetch_without_repo)
+}
+
+/// As [`resolve_rules`], over `base`, the rules of a rules text by id, in place of the defaults.
+///
+/// # Errors
+/// As [`resolve_rules`].
+pub fn resolve_rules_over(
+    base: BTreeMap<String, ToolRule>,
+    user: &ProxyConfig,
+    repos: &[ForgeRepo],
+    fetch_without_repo: bool,
+) -> Result<Vec<ResolvedRule>, ConfigError> {
     for r in repos {
         check_repo_part("owner", &r.owner)?;
         check_repo_part("name", &r.name)?;
     }
-    let merged = user.merged_rules();
+    let merged = user.merged_over(base);
     let mut out = Vec::new();
     for (name, rule) in merged {
         let serves_any = fetch_without_repo && rule.allow.iter().any(|a| a.contains(ANY_REPO));

@@ -45,7 +45,7 @@ pub use names::{Grant, Named, Pins};
 mod node_settings;
 pub use node_settings::{CapEdit, NodeSettingsGetReq, NodeSettingsSetReq};
 mod repo_config;
-pub use repo_config::{RepoConfigGetReq, RepoConfigSetReq};
+pub use repo_config::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};

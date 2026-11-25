@@ -114,6 +114,8 @@ These act as your local identity through the controller.
 | `moor box-config NAME` | Replaces an open Box's config override with `--file FILE`, or stdin, or removes it with `--remove`. |
 | `moor repo config get OWNER/NAME` | Prints the repo's stored config as YAML; `--json` adds its revision and last editor. |
 | `moor repo config set OWNER/NAME` | Replaces the config with `--file FILE`, or stdin. It needs push access to the repo. `--expected-revision N` refuses a write after someone else's save. |
+| `moor repo rules get OWNER/NAME` | Prints the repo's Proxy rules text, or the default text at revision 0. See [Proxy rules](repo.md#proxy-rules). |
+| `moor repo rules set OWNER/NAME` | Replaces the rules text, as `repo config set` does. |
 
 ### The host
 

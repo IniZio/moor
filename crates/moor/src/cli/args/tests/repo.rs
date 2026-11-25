@@ -1,6 +1,6 @@
 //! `moor repo config get` and `set`.
 
-use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq};
+use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::Request;
 
@@ -9,6 +9,7 @@ use super::{req, run};
 #[test]
 fn get_names_the_repo_as_owner_slash_name_or_a_url() {
     let want = Request::RepoConfigGet(RepoConfigGetReq {
+        file: RepoFile::Config,
         identity: None,
         repo: ForgeRepo::new("o", "n"),
     });
@@ -18,6 +19,27 @@ fn get_names_the_repo_as_owner_slash_name_or_a_url() {
         want
     );
     assert!(run(&["repo", "config", "get"]).is_err());
+}
+
+#[test]
+fn rules_get_and_set_name_the_rules_file() {
+    let want = Request::RepoConfigGet(RepoConfigGetReq {
+        file: RepoFile::Rules,
+        identity: None,
+        repo: ForgeRepo::new("o", "n"),
+    });
+    assert_eq!(req(&["repo", "rules", "get", "o/n"]), want);
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("rules.yaml");
+    std::fs::write(&file, "rules: []\n").unwrap();
+    let set = req(&["repo", "rules", "set", "o/n", "-f", file.to_str().unwrap()]);
+    let Request::RepoConfigSet(set) = set else {
+        unreachable!("{set:?}")
+    };
+    assert_eq!(
+        (set.file, set.text.as_str()),
+        (RepoFile::Rules, "rules: []\n")
+    );
 }
 
 #[test]
@@ -38,6 +60,7 @@ fn set_reads_the_file_and_carries_the_revision_it_was_given() {
             "3"
         ]),
         Request::RepoConfigSet(RepoConfigSetReq {
+            file: RepoFile::Config,
             identity: None,
             repo: ForgeRepo::new("o", "n"),
             text: "setup: [make]\n".to_owned(),

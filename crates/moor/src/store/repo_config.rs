@@ -1,18 +1,20 @@
-//! Each repo's config, kept in the store as the YAML text `parse_repo` reads.
+//! Each repo's texts in moor: its config, which `parse_repo` reads, in `repos`, and its Proxy
+//! rules, which `parse_rules_text` reads, in `repo_rules`.
 //!
 //! A row is keyed by the repo's lowercased `owner/name`, since GitHub treats `IniZio/x` and
 //! `inizio/x` as one repo. Every write is one statement that decides on the row's revision, so
 //! two writers cannot both win.
 
 use moor_core::name::ForgeRepo;
+use moor_core::request::RepoFile;
 use moor_core::seam::clock::Ts;
-use moor_schema::tables::Repos;
-use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
+use moor_schema::tables::{RepoRules, Repos};
+use sea_query::{DynIden, Expr, ExprTrait as _, IntoIden as _, OnConflict, Query};
 
 use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
-/// A repo's stored config.
+/// A repo's stored text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RepoConfigRow {
     /// The YAML text, which parsed when it was stored.
@@ -25,7 +27,7 @@ pub(crate) struct RepoConfigRow {
     pub(crate) edited_at: Ts,
 }
 
-/// What a write of a repo's config did.
+/// What a write of a repo's text did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Wrote {
     /// The row is now this.
@@ -43,24 +45,59 @@ fn key(repo: &ForgeRepo) -> String {
     repo.to_string().to_ascii_lowercase()
 }
 
+/// The table and columns that hold one kind of repo text.
+struct Cols {
+    /// The table.
+    table: DynIden,
+    /// The repo key.
+    repo: DynIden,
+    /// The text.
+    text: DynIden,
+    /// The write count.
+    revision: DynIden,
+    /// Who wrote it last.
+    edited_by: DynIden,
+    /// When it was written last.
+    edited_at: DynIden,
+}
+
+/// Where `file` is kept.
+fn cols(file: RepoFile) -> Cols {
+    match file {
+        RepoFile::Config => Cols {
+            table: Repos::Table.into_iden(),
+            repo: Repos::Repo.into_iden(),
+            text: Repos::Config.into_iden(),
+            revision: Repos::Revision.into_iden(),
+            edited_by: Repos::EditedBy.into_iden(),
+            edited_at: Repos::EditedAt.into_iden(),
+        },
+        RepoFile::Rules => Cols {
+            table: RepoRules::Table.into_iden(),
+            repo: RepoRules::Repo.into_iden(),
+            text: RepoRules::Rules.into_iden(),
+            revision: RepoRules::Revision.into_iden(),
+            edited_by: RepoRules::EditedBy.into_iden(),
+            edited_at: RepoRules::EditedAt.into_iden(),
+        },
+    }
+}
+
 impl Store {
-    /// `repo`'s stored config, if it has one.
-    pub(crate) fn repo_config(
+    /// The stored `file` of `repo`, if any.
+    pub(crate) fn repo_text(
         &self,
         repo: &ForgeRepo,
+        file: RepoFile,
     ) -> Result<Option<RepoConfigRow>, StoreError> {
+        let c = cols(file);
         let row = self
             .reader()?
             .row(
                 Query::select()
-                    .columns([
-                        Repos::Config,
-                        Repos::Revision,
-                        Repos::EditedBy,
-                        Repos::EditedAt,
-                    ])
-                    .from(Repos::Table)
-                    .and_where(Expr::col(Repos::Repo).eq(key(repo))),
+                    .columns([c.text, c.revision, c.edited_by, c.edited_at])
+                    .from(c.table)
+                    .and_where(Expr::col(c.repo).eq(key(repo))),
                 |r| {
                     Ok(RepoConfigRow {
                         text: r.get(0)?,
@@ -74,24 +111,20 @@ impl Store {
         Ok(row)
     }
 
-    /// Stores `text` as `repo`'s config when it has none, at revision 1; the row that is already
-    /// there is left alone and `None` comes back.
-    pub(crate) fn insert_repo_config(
+    /// Stores `text` as `repo`'s `file` at revision 1 unless it already has one; the new row,
+    /// or `None` when a row was there.
+    pub(crate) fn insert_repo_text(
         &self,
         repo: &ForgeRepo,
+        file: RepoFile,
         text: &str,
         edited_by: &str,
     ) -> Result<Option<RepoConfigRow>, StoreError> {
+        let c = cols(file);
         let made = self.writer().run(
             Query::insert()
-                .into_table(Repos::Table)
-                .columns([
-                    Repos::Repo,
-                    Repos::Config,
-                    Repos::Revision,
-                    Repos::EditedBy,
-                    Repos::EditedAt,
-                ])
+                .into_table(c.table)
+                .columns([c.repo.clone(), c.text, c.revision, c.edited_by, c.edited_at])
                 .values_panic([
                     key(repo).into(),
                     text.into(),
@@ -99,84 +132,84 @@ impl Store {
                     edited_by.into(),
                     self.now().as_millis().into(),
                 ])
-                .on_conflict(OnConflict::column(Repos::Repo).do_nothing().to_owned()),
+                .on_conflict(OnConflict::column(c.repo).do_nothing().to_owned()),
         )?;
         if made == 0 {
             return Ok(None);
         }
-        self.repo_config(repo)
+        self.repo_text(repo, file)
     }
 
-    /// Stores `text` as `repo`'s config. With `expected`, the write happens only when the row is
-    /// at that revision, where 0 means no row; without it the row is replaced whatever it holds.
-    pub(crate) fn set_repo_config(
+    /// Replaces `repo`'s `file` with `text` when its revision is `expected` (0: none stored);
+    /// with no `expected` it replaces whatever is stored.
+    pub(crate) fn set_repo_text(
         &self,
         repo: &ForgeRepo,
+        file: RepoFile,
         text: &str,
         edited_by: &str,
         expected: Option<u64>,
     ) -> Result<Wrote, StoreError> {
+        let c = cols(file);
+        let now = self.now().as_millis();
         let changed = match expected {
             Some(0) => {
-                return Ok(match self.insert_repo_config(repo, text, edited_by)? {
+                return Ok(match self.insert_repo_text(repo, file, text, edited_by)? {
                     Some(row) => Wrote::Written(row),
-                    None => self.stale(repo)?,
+                    None => self.stale(repo, file)?,
                 })
             }
             Some(revision) => self.writer().run(
                 Query::update()
-                    .table(Repos::Table)
-                    .value(Repos::Config, text)
-                    .value(Repos::Revision, Expr::col(Repos::Revision).add(1))
-                    .value(Repos::EditedBy, edited_by)
-                    .value(Repos::EditedAt, self.now().as_millis())
-                    .and_where(Expr::col(Repos::Repo).eq(key(repo)))
+                    .table(c.table)
+                    .value(c.text, text)
+                    .value(c.revision.clone(), Expr::col(c.revision.clone()).add(1))
+                    .value(c.edited_by, edited_by)
+                    .value(c.edited_at, now)
+                    .and_where(Expr::col(c.repo).eq(key(repo)))
                     .and_where(
-                        Expr::col(Repos::Revision).eq(i64::try_from(revision).unwrap_or(i64::MAX)),
+                        Expr::col(c.revision).eq(i64::try_from(revision).unwrap_or(i64::MAX)),
                     ),
             )?,
             None => self.writer().run(
                 Query::insert()
-                    .into_table(Repos::Table)
+                    .into_table(c.table.clone())
                     .columns([
-                        Repos::Repo,
-                        Repos::Config,
-                        Repos::Revision,
-                        Repos::EditedBy,
-                        Repos::EditedAt,
+                        c.repo.clone(),
+                        c.text.clone(),
+                        c.revision.clone(),
+                        c.edited_by.clone(),
+                        c.edited_at.clone(),
                     ])
                     .values_panic([
                         key(repo).into(),
                         text.into(),
                         1_i64.into(),
                         edited_by.into(),
-                        self.now().as_millis().into(),
+                        now.into(),
                     ])
                     .on_conflict(
-                        OnConflict::column(Repos::Repo)
-                            .value(Repos::Config, text)
-                            .value(
-                                Repos::Revision,
-                                Expr::col((Repos::Table, Repos::Revision)).add(1),
-                            )
-                            .value(Repos::EditedBy, edited_by)
-                            .value(Repos::EditedAt, self.now().as_millis())
+                        OnConflict::column(c.repo)
+                            .value(c.text, text)
+                            .value(c.revision.clone(), Expr::col((c.table, c.revision)).add(1))
+                            .value(c.edited_by, edited_by)
+                            .value(c.edited_at, now)
                             .to_owned(),
                     ),
             )?,
         };
         if changed == 0 {
-            return self.stale(repo);
+            return self.stale(repo, file);
         }
         Ok(self
-            .repo_config(repo)?
+            .repo_text(repo, file)?
             .map_or_else(|| Wrote::Stale { current: None }, Wrote::Written))
     }
 
-    /// The refusal of a write whose expected revision was not the row's.
-    fn stale(&self, repo: &ForgeRepo) -> Result<Wrote, StoreError> {
+    /// The refusal of a write that expected another revision of `repo`'s `file`.
+    fn stale(&self, repo: &ForgeRepo, file: RepoFile) -> Result<Wrote, StoreError> {
         Ok(Wrote::Stale {
-            current: self.repo_config(repo)?.map(|r| r.revision),
+            current: self.repo_text(repo, file)?.map(|r| r.revision),
         })
     }
 }

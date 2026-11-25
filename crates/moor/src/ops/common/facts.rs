@@ -2,6 +2,7 @@
 
 use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig, RepoOverride};
 use moor_core::domain::place::{BoxKind, PlaceState};
+use moor_core::request::RepoFile;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::ProviderId;
@@ -67,7 +68,7 @@ fn stored_config_of(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<Option<RepoConf
     let Some(repo) = repo else {
         return Ok(None);
     };
-    let Some(stored) = cx.store()?.repo_config(repo)? else {
+    let Some(stored) = cx.store()?.repo_text(repo, RepoFile::Config)? else {
         return Ok(None);
     };
     let file = format!("{repo}:repo config (revision {})", stored.revision);
