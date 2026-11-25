@@ -49,8 +49,8 @@ token's audience.
 | `answer_run` | `workflow`, `answer` (`yes` or `no`); optional `note`, `pull` (`OWNER/NAME#NUMBER`, which run when several wait) |
 | `answer_gate` | `box`, `answer` (`yes` or `no`); optional `note` (told to the agent), `ask` (the `needs.id` answered) |
 | `run_workflow` | `name`, with optional `expected_revision` and `pull` (`OWNER/NAME#NUMBER`) |
-| `get_repo_config` | `repo` |
-| `set_repo_config` | `repo`, `text`; optional `expected_revision` |
+| `get_repo_config` | `repo`; optional `file`, `config` (the default) or `rules` |
+| `set_repo_config` | `repo`, `text`; optional `file` (as above) and `expected_revision` |
 | `get_node_settings` | `name` |
 | `set_node_settings` | `name`; optional `max_boxes`, `no_cap`, `labels`, `expected_revision` |
 
