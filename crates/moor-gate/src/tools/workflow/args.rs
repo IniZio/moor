@@ -49,8 +49,9 @@ pub(super) struct AddArgs {
     /// marked ready for review or pushed to. The run gets the pull request in its env. Left
     /// out, a new workflow is false and a replaced one keeps its value.
     pub(super) on_pull_request: Option<bool>,
-    /// True to have moor make the workflow's plan again from the prompt, even when the prompt is
-    /// unchanged. A new workflow or a changed prompt has its plan made again either way.
+    /// True to have moor make the workflow's plan or gates again from the prompt, even when the
+    /// prompt is unchanged, replacing gates a person wrote once made. A new workflow or a changed
+    /// prompt has its reading made again either way.
     pub(super) regenerate_plan: Option<bool>,
 }
 

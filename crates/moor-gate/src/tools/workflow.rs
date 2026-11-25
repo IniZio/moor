@@ -48,12 +48,15 @@ impl Tools {
                        To clear the cron send `cron: null`; to clear `config` send an empty string. A new \
                        workflow uses the defaults instead. \
                        \
-                       Write the prompt only. moor reads it and keeps its own plan of the steps, made \
-                       again whenever the prompt changes; a workflow made with gates keeps them. Never \
-                       send a plan, gates or outcomes: a call that names one is refused. get_workflow \
-                       shows the plan and any gates as moor's current reading of the prompt, and \
-                       `plan_making` while moor makes the plan or why it made none. Send \
-                       `regenerate_plan: true` with the same prompt to have moor make it again. \
+                       Write the prompt only. moor reads it and keeps its own reading: a plan of the \
+                       steps, or gates and outcomes when the prompt has runs pass named gates, made \
+                       again whenever the prompt changes. Gates a person wrote (`gates_by: person`) are \
+                       kept through a prompt change. Never send a plan, gates or outcomes: a call that \
+                       names one is refused. get_workflow shows the plan or gates as moor's current \
+                       reading of the prompt, and `plan_making` while moor makes it or why it made \
+                       none. Send `regenerate_plan: true` with the same prompt to have moor make it \
+                       again; once made, it replaces the stored plan or gates, those a person wrote \
+                       too, which stay in force until then. \
                        Needs the moor:write scope."
     )]
     async fn add_workflow(
@@ -101,8 +104,8 @@ impl Tools {
         description = "Read one of your workflows in full: cron and time zone, repos, config \
                        (which may hold the extra Proxy `allow` entries the workflow's Boxes get, \
                        and only theirs), prompt, plan (with plan_stale when the prompt changed \
-                       after it was made), revision, timeout, whether it is enabled, its gates and \
-                       outcomes, its next due time and its latest run with its outcome, Box and \
+                       after the plan or gates were made), revision, timeout, whether it is enabled, \
+                       its gates and outcomes (with gates_by: person when a person wrote them), its next due time and its latest run with its outcome, Box and \
                        history. Read it before changing it with add_workflow. Needs the moor:read \
                        scope."
     )]

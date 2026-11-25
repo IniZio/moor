@@ -225,6 +225,8 @@ const WorkflowSchema = v.object({
 	plan_making: v.nullish(v.object({ prompt: v.string(), box_name: v.nullish(v.string()), since: v.nullish(v.number()), failed: v.nullish(v.string()) })),
 	/** The gates each run is held to, when the workflow has them in place of a plan. */
 	gates: v.nullish(v.array(GateDocSchema)),
+	/** Who wrote the gates: a person (kept until moor is asked to make its reading again) or moor. */
+	gates_by: v.nullish(v.picklist(['person', 'moor'])),
 	/** The outcomes its runs may end in, when it names them. */
 	outcomes: v.nullish(v.array(OutcomeDocSchema)),
 	revision: v.number(),

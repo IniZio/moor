@@ -210,8 +210,8 @@ fn add(
     def.config = config;
     def.on_pull_request = on_pull_request;
     (def.plan, def.gates) = kept_reading(prior.as_ref());
-    let wants_plan = plan_wanted(req, prior.as_ref(), def.gates.is_some())?
-        && crate::ops::workflow::unreportable(cx, "the plan").is_none();
+    let wants_plan = reading_wanted(req, prior.as_ref())
+        .filter(|_| crate::ops::workflow::unreportable(cx, "the plan").is_none());
     let revision = match store.put_workflow_at(
         user,
         &def,
@@ -219,8 +219,8 @@ fn add(
         req.keep_state || req.enabled.is_none(),
     )? {
         Put::Written { id, revision } => {
-            if wants_plan {
-                store.want_plan(id, &req.prompt)?;
+            if let Some(replace) = wants_plan {
+                store.want_plan(id, &req.prompt, replace)?;
             }
             revision
         }
@@ -266,22 +266,20 @@ fn origin_of(
     }
 }
 
-/// Whether the write asks moor to make the plan: a new workflow, a changed prompt, or a request to
-/// make it again. A workflow moor reads as gates gets no plan, and a request to make one again is
-/// refused. A controller whose Box agents cannot report steps asks for none either, since it
-/// could not run a planned workflow; its runs deliver the prompt in one step.
-fn plan_wanted(
-    req: &WorkflowAddReq,
-    prior: Option<&Workflow>,
-    gated: bool,
-) -> Result<bool, CommandError> {
-    if gated && req.regenerate_plan {
-        return Err(usage(
-            "moor reads this workflow as a set of gates, which it cannot make again yet, so \
-             nothing was saved",
-        ));
+/// Whether the write asks moor to read the prompt again, and if so whether that reading replaces
+/// gates a person wrote. A new workflow, a changed prompt, or a request to make it again asks for
+/// one, whose plan or gates replace the ones moor made. Gates a person wrote are kept through a
+/// prompt change; only a request to make it again replaces them, once moor's reading is stored.
+/// A controller whose Box agents cannot report steps asks for none, since it could not run a
+/// planned workflow; its runs deliver the prompt in one step.
+fn reading_wanted(req: &WorkflowAddReq, prior: Option<&Workflow>) -> Option<bool> {
+    let by_hand = prior
+        .and_then(|w| w.gates.as_ref())
+        .is_some_and(|g| g.made_from().is_none());
+    if by_hand {
+        return req.regenerate_plan.then_some(true);
     }
-    Ok(!gated && (req.regenerate_plan || prior.is_none_or(|w| w.prompt != req.prompt)))
+    (req.regenerate_plan || prior.is_none_or(|w| w.prompt != req.prompt)).then_some(false)
 }
 
 /// The refusal for a write whose `expected_revision` is not the stored one.

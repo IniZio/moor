@@ -70,7 +70,10 @@ fn a_first_message_with_gates_is_not_the_persons() {
 
 #[test]
 fn a_prompt_moor_built_is_not_the_persons() {
-    assert_eq!(prompt(&user(&json!(draft_prompt("Bump the deps.")))), None);
+    assert_eq!(
+        prompt(&user(&json!(draft_prompt("Bump the deps.", None)))),
+        None
+    );
     assert_eq!(
         prompt(&user(&json!(plan_first_prompt("Fix the typo.")))),
         None

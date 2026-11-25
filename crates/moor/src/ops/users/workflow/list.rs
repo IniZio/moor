@@ -3,7 +3,9 @@
 use moor_core::gate::Gates;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use moor_core::view::workflow::{LastRunView, PlanMakingView, WorkflowListValue, WorkflowView};
+use moor_core::view::workflow::{
+    GatesBy, LastRunView, PlanMakingView, WorkflowListValue, WorkflowView,
+};
 use moor_core::workflow::{PlanDraft, PromptHash, Workflow};
 
 use super::next_due;
@@ -53,7 +55,20 @@ fn view(
         plan: (!w.plan.is_single_of(&w.prompt))
             .then(|| serde_json::to_value(w.plan.to_doc()).ok())
             .flatten(),
-        plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
+        plan_stale: w.gates.as_ref().map_or_else(
+            || w.plan.made_from != PromptHash::of(&w.prompt),
+            |g| {
+                g.made_from()
+                    .is_some_and(|h| *h != PromptHash::of(&w.prompt))
+            },
+        ),
+        gates_by: w.gates.as_ref().map(|g| {
+            if g.made_from().is_some() {
+                GatesBy::Moor
+            } else {
+                GatesBy::Person
+            }
+        }),
         plan_making: plan_making.map(|d| PlanMakingView {
             prompt: d.prompt,
             box_name: d.box_name,

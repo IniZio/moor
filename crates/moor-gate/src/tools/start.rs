@@ -41,6 +41,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         (Some(gates), outcomes) => Some(Box::new(GatesDoc {
             gates,
             outcomes: outcomes.unwrap_or_default(),
+            made_from: None,
         })),
     };
     Ok(ControllerRequest::Start(StartReq {

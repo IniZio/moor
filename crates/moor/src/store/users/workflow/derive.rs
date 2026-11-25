@@ -1,6 +1,6 @@
-//! The plan moor makes of a workflow's prompt: where it stands, and storing the plan made.
+//! moor's reading of a workflow's prompt: where it stands, and storing the plan or gates made.
 
-use moor_core::workflow::{Plan, PlanDraft, PromptHash, WorkflowId};
+use moor_core::workflow::{PlanDraft, PromptHash, Reading, WorkflowId};
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Query};
 
@@ -69,10 +69,16 @@ impl Store {
         text.flatten().as_deref().map(read).transpose()
     }
 
-    /// Asks moor to make workflow `id`'s plan for `prompt`. A Box already making one keeps its
-    /// draft: the pass sees its prompt is old, closes it and asks again, so no Box is left behind.
-    pub(crate) fn want_plan(&self, id: WorkflowId, prompt: &str) -> Result<(), StoreError> {
-        let wanted = PlanDraft::wanted(prompt);
+    /// Asks moor to read workflow `id`'s `prompt`, replacing gates a person wrote when
+    /// `replace` is true. A Box already making one keeps its draft: the pass sees its prompt is
+    /// old, closes it and asks again, so no Box is left behind.
+    pub(crate) fn want_plan(
+        &self,
+        id: WorkflowId,
+        prompt: &str,
+        replace: bool,
+    ) -> Result<(), StoreError> {
+        let wanted = PlanDraft::wanted(prompt).replacing(replace);
         match self.plan_draft(id)? {
             None => self.set_plan_draft(id, Some(&wanted)),
             Some(d) if d.box_name.is_none() || d.failed.is_some() => {
@@ -100,10 +106,19 @@ impl Store {
         .collect()
     }
 
-    /// Stores `plan` as workflow `id`'s and clears its draft, only while the workflow's prompt is
-    /// the one the plan was made from. Its revision stays: the plan is moor's, not an edit. True
+    /// Stores `reading` as workflow `id`'s and clears its draft, only while the workflow's prompt
+    /// is the one it was made from. A plan clears the gates and gates clear the plan, so a
+    /// workflow keeps one reading. Its revision stays: the reading is moor's, not an edit. True
     /// when it was stored.
-    pub(crate) fn store_made_plan(&self, id: WorkflowId, plan: &Plan) -> Result<bool, StoreError> {
+    pub(crate) fn store_made_reading(
+        &self,
+        id: WorkflowId,
+        reading: &Reading,
+    ) -> Result<bool, StoreError> {
+        let (plan, gates) = match reading {
+            Reading::Plan(p) => (Some(p.to_json()?), None),
+            Reading::Gates(g) => (None, Some(serde_json::to_string(&g.doc())?)),
+        };
         let mut writer = self.writer();
         let tx = writer.immediate()?;
         let prompt: Option<String> = tx
@@ -115,7 +130,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        if prompt.is_none_or(|p| PromptHash::of(&p) != plan.made_from) {
+        if prompt.is_none_or(|p| Some(&PromptHash::of(&p)) != reading.made_from()) {
             drop(tx);
             drop(writer);
             return Ok(false);
@@ -123,7 +138,8 @@ impl Store {
         tx.run(
             Query::update()
                 .table(Workflows::Table)
-                .value(Workflows::Plan, plan.to_json()?)
+                .value(Workflows::Plan, plan)
+                .value(Workflows::Gates, gates)
                 .value(Workflows::PlanDraft, Option::<String>::None)
                 .and_where(Expr::col(Workflows::Id).eq(id.get())),
         )?;

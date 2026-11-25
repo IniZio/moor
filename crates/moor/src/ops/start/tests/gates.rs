@@ -28,6 +28,7 @@ fn with_gates(name: &str, gates: Vec<GateDoc>) -> StartReq {
         gates: Some(Box::new(moor_core::gate::GatesDoc {
             gates,
             outcomes: Vec::new(),
+            made_from: None,
         })),
         ..repo_req(name)
     }

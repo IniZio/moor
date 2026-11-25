@@ -68,3 +68,26 @@ export function PlanView({ flow, busy, onAgain }: { flow: Workflow; busy: boolea
 		</section>
 	);
 }
+
+/** How moor's gates of a workflow's prompt came to be, and a way to make them again; the gates sit below it. */
+export function GatesNote({ flow, busy, onAgain }: { flow: Workflow; busy: boolean; onAgain: () => void }) {
+	const making = flow.plan_making;
+	const why = flow.gates_by === 'person'
+		? 'A person wrote these gates. Make it again to have moor read them from the prompt; they stay until moor has.'
+		: "moor's current reading of the prompt. It is made again when the prompt changes.";
+	return (
+		<>
+			<h3>Gates</h3>
+			<p class="muted">
+				{why}{' '}
+				{!making && (
+					<button type="button" class="quiet" disabled={busy} onClick={onAgain}>
+						Make it again
+					</button>
+				)}
+			</p>
+			<MakingNote making={making} busy={busy} onAgain={onAgain} />
+			{flow.plan_stale && <p class="notice warn" role="status">These gates were made from an earlier prompt. They still hold until moor makes them again.</p>}
+		</>
+	);
+}

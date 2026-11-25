@@ -1,0 +1,65 @@
+{
+  "gates": [
+    {
+      "name": "proof",
+      "evidence": [
+        "pr-*"
+      ]
+    },
+    {
+      "name": "done",
+      "evidence": [
+        "posted.md"
+      ],
+      "checks": [
+        {
+          "run": "sha=$MOOR_PULL_HEAD_SHA; r=$MOOR_PULL_REPO; ids=$(gh api --paginate repos/$r/issues/$MOOR_PULL_NUMBER/comments --jq \".[]|select(.body|startswith(\\\"<!-- moor-evidence sha=$sha -->\\\"))|.id\") || { echo \"cannot read the comments of $r#$MOOR_PULL_NUMBER\"; exit 1; }; n=$(printf '%s\\n' \"$ids\" | grep -c . || true); [ \"$n\" = 1 ] || { echo \"want 1 moor-evidence comment for $sha, found $n\"; exit 1; };",
+          "says": "The pull request has exactly one evidence comment for this commit."
+        }
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "name": "check failed",
+      "says": "The pull request's check failed, by moor's own rerun and by the posted status.",
+      "tone": "bad",
+      "checks": [
+        {
+          "run": "s=$(gh api repos/$MOOR_PULL_REPO/commits/$MOOR_PULL_HEAD_SHA/statuses --jq '[.[]|select(.context==\"moor/evidence\")][0].state') || { echo \"cannot read the statuses of $MOOR_PULL_HEAD_SHA\"; exit 2; }; echo \"the newest moor/evidence status is ${s:-none}\"; [ \"$s\" = failure ]",
+          "says": "The newest moor/evidence status on the head is failure."
+        },
+        {
+          "run": "[ -n \"${PR_RERUN:-}\" ] || { echo \"no PR_RERUN in env: moor cannot rerun the check\"; exit 2; }; bash -c \"$PR_RERUN\"; rc=$?; [ \"$rc\" = 1 ] || { [ \"$rc\" = 0 ] || echo \"the rerun did not run the check (exit $rc)\"; exit 1; }",
+          "says": "moor's own rerun of the check at the head ran and failed."
+        }
+      ]
+    },
+    {
+      "name": "check passed",
+      "says": "The pull request's check passed, by moor's own rerun and by the posted status.",
+      "checks": [
+        {
+          "run": "s=$(gh api repos/$MOOR_PULL_REPO/commits/$MOOR_PULL_HEAD_SHA/statuses --jq '[.[]|select(.context==\"moor/evidence\")][0].state') || { echo \"cannot read the statuses of $MOOR_PULL_HEAD_SHA\"; exit 2; }; echo \"the newest moor/evidence status is ${s:-none}\"; [ \"$s\" = success ]",
+          "says": "The newest moor/evidence status on the head is success."
+        },
+        {
+          "run": "[ -n \"${PR_RERUN:-}\" ] || { echo \"no PR_RERUN in env: moor cannot rerun the check\"; exit 2; }; bash -c \"$PR_RERUN\"",
+          "says": "moor's own rerun of the check at the head passed."
+        }
+      ]
+    },
+    {
+      "name": "nothing to do",
+      "says": "The pull request is closed, moved on, or not named.",
+      "tone": "plain",
+      "checks": [
+        {
+          "run": "[ -n \"$MOOR_PULL_NUMBER\" ] || { echo \"no pull request in env\"; exit 0; }; got=$(gh api repos/$MOOR_PULL_REPO/pulls/$MOOR_PULL_NUMBER --jq '.state+\" \"+.head.sha') || { echo \"cannot read the pull request\"; exit 2; }; set -- $got; [ \"$1\" = open ] || { echo \"the pull request is $1\"; exit 0; }; [ \"$2\" = \"$MOOR_PULL_HEAD_SHA\" ] || { echo \"its head moved to $2\"; exit 0; }; echo \"the pull request is open at $2\"; exit 1",
+          "says": "There is no open pull request at the head this run was fired for."
+        }
+      ],
+      "anytime": true
+    }
+  ]
+}

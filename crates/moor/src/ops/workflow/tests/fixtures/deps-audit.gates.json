@@ -1,0 +1,92 @@
+{
+  "gates": [
+    {
+      "name": "review",
+      "evidence": [
+        "dependabot-review.md",
+        "alerts.tsv"
+      ],
+      "checks": [
+        {
+          "run": "R=\"acme/app\"; f=.moor/artifacts/alerts.tsv\n[ \"$(head -1 $f 2>/dev/null)\" = \"$(printf 'repo\\titem\\taction\\treason')\" ] || { echo \"alerts.tsv is missing or lacks its header line\"; exit 1; }\nbad=$(awk -F'\\t' 'NR>1 && (NF<4 || $3 !~ /^(fix|dismiss|person|merge|skip)$/ || $4 == \"\")' $f | head -3); [ -z \"$bad\" ] || { echo \"rows need repo, item, fix|dismiss|person|merge|skip and a reason: $bad\"; exit 1; }\nt=$(date -u -r $f +%Y-%m-%dT%H:%M:%SZ); miss=\nfor r in $R; do\n  ns=$(gh api --paginate \"repos/$r/dependabot/alerts?state=open&per_page=100\" --jq \".[]|select(.created_at<\\\"$t\\\")|.number\") || { echo \"cannot read the alerts of $r\"; exit 1; }\n  ps=$(gh api --paginate \"repos/$r/pulls?state=open&per_page=100\" --jq \".[]|select(.user.login==\\\"dependabot[bot]\\\" and .created_at<\\\"$t\\\")|\\\"pr\\\"+(.number|tostring)\") || { echo \"cannot read the pull requests of $r\"; exit 1; }\n  for n in $ns $ps; do awk -F'\\t' -v r=$r -v n=$n '$1==r && $2==n {f=1} END {exit !f}' $f || miss=\"$miss $r:$n\"; done\ndone\n[ -z \"$miss\" ] || { echo \"open on GitHub but not in alerts.tsv:$miss\"; exit 1; }; echo \"alerts.tsv names every open alert and Dependabot PR\"",
+          "says": "alerts.tsv names every open Dependabot alert and PR, each with a known action."
+        }
+      ]
+    },
+    {
+      "name": "audit",
+      "evidence": [
+        "audit.md",
+        "upgrade-prs.txt"
+      ],
+      "checks": [
+        {
+          "run": "R=\"acme/app\"; f=.moor/artifacts/upgrade-prs.txt\n[ -s $f ] || { echo \"no upgrade-prs.txt\"; exit 1; }\n[ \"$(tr -d ' \\n' < $f)\" = none ] && { echo \"nothing upgraded\"; exit 0; }\nfor u in $(cat $f); do\n  p=${u#https://github.com/}; r=${p%/pull/*}; n=${p##*/pull/}\n  case \" $R \" in *\" $r \"*) ;; *) echo \"$u is not a PR on this workflow's repos\"; exit 1;; esac\n  d=$(gh api repos/$r --jq .default_branch) || { echo \"cannot read $r\"; exit 1; }\n  got=$(gh api repos/$r/pulls/$n --jq '.state+\" \"+.base.ref+\" \"+.head.ref') || { echo \"cannot read $u\"; exit 1; }\n  set -- $got; [ \"$1\" = open ] || { echo \"$u is $1\"; exit 1; }; [ \"$2\" = \"$d\" ] || { echo \"$u targets $2, not $d\"; exit 1; }; [ \"$3\" != \"$d\" ] || { echo \"$u comes from $d itself\"; exit 1; }\ndone; echo \"every upgrade PR is open against the default branch\"",
+          "says": "Every upgrade PR named is open against the default branch, or nothing was upgraded."
+        }
+      ]
+    },
+    {
+      "name": "live",
+      "evidence": [
+        "live-matrix.md",
+        "for-a-person.md",
+        "live.tsv"
+      ],
+      "checks": [
+        {
+          "run": "S=\"docker android ios\"; f=.moor/artifacts/live.tsv; up=.moor/artifacts/upgrade-prs.txt; al=.moor/artifacts/alerts.tsv\n[ \"$(head -1 $f 2>/dev/null)\" = \"$(printf 'surface\\tref\\tresult\\treason')\" ] || { echo \"live.tsv is missing or lacks its header line\"; exit 1; }\nbad=$(awk -F'\\t' 'NR>1 && (NF<3 || $3 !~ /^(pass|fail|n\\/a)$/ || ($3 != \"pass\" && $4 == \"\"))' $f | head -3); [ -z \"$bad\" ] || { echo \"rows need surface, ref, pass|fail|n/a, and a reason unless pass: $bad\"; exit 1; }\nfor s in $S; do awk -F'\\t' -v s=$s '$1==s && $2==\"base\" {f=1} END {exit !f}' $f || { echo \"no base row for $s\"; exit 1; }; done\nfor n in $(grep -o 'pull/[0-9]*' $up 2>/dev/null | sed 's|pull/|pr|') $(awk -F'\\t' '$3==\"merge\" {print $2}' $al 2>/dev/null); do\n  awk -F'\\t' -v n=$n '$2==n {f=1} END {exit !f}' $f || { echo \"no live row for $n\"; exit 1; }\n  grep -Eq \"pull/${n#pr}([^0-9]|$)\" .moor/artifacts/for-a-person.md || { echo \"for-a-person.md does not link $n\"; exit 1; }\ndone; echo \"every surface has a base row and every PR to merge was tested\"",
+          "says": "Every surface has a base result and every PR to merge was tested and listed for a person."
+        }
+      ]
+    },
+    {
+      "name": "report",
+      "evidence": [
+        "result.md"
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "name": "upgrade breaks a surface",
+      "says": "A PR fails a live test that passes on the default branch.",
+      "tone": "bad",
+      "checks": [
+        {
+          "run": "r=$(awk -F'\\t' 'NR>1 && $2==\"base\" {b[$1]=$3} NR>1 && $2!=\"base\" && $3==\"fail\" {f[$1]=1} END {for (s in f) if (b[s]==\"pass\") {print s; x=1}; exit !x}' .moor/artifacts/live.tsv) || exit 1; echo \"fails only on a PR: $r\"",
+          "says": "A surface passes on base and fails on a PR."
+        }
+      ]
+    },
+    {
+      "name": "upgrade PR ready",
+      "says": "An upgrade PR is open and failed no live test; a person merges it.",
+      "checks": [
+        {
+          "run": "grep -q 'pull/[0-9]' .moor/artifacts/upgrade-prs.txt",
+          "says": "upgrade-prs.txt names a PR."
+        },
+        {
+          "run": "! awk -F'\\t' 'NR>1 && $2 ~ /^pr/ && $3 == \"fail\" {x=1} END {exit !x}' .moor/artifacts/live.tsv",
+          "says": "No PR row in live.tsv is a fail."
+        }
+      ]
+    },
+    {
+      "name": "needs a person",
+      "says": "Open alerts, Dependabot PRs or base failures wait for a person.",
+      "tone": "plain",
+      "checks": [
+        {
+          "run": "awk 'FNR>1 {x=1} END {exit !x}' .moor/artifacts/alerts.tsv || awk -F'\\t' 'NR>1 && $2==\"base\" && $3==\"fail\" {x=1} END {exit !x}' .moor/artifacts/live.tsv",
+          "says": "alerts.tsv has a row, or a base surface fails."
+        }
+      ]
+    },
+    {
+      "name": "all clear",
+      "says": "No open alerts, no upgrades, and every base surface passes or is n/a."
+    }
+  ]
+}

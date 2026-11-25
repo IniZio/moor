@@ -39,24 +39,24 @@ impl Rig {
     }
 
     /// One pass; the Box it asked for, if any.
-    fn plan_pass(&self) -> Option<DraftJob> {
+    pub(super) fn plan_pass(&self) -> Option<DraftJob> {
         let job = RefCell::new(None);
         let out = pass(&self.cx, &|j| *job.borrow_mut() = Some(j));
         assert!(out.is_empty(), "{out:?}");
         job.into_inner()
     }
 
-    fn draft(&self, id: WorkflowId) -> Option<PlanDraft> {
+    pub(super) fn draft(&self, id: WorkflowId) -> Option<PlanDraft> {
         let drafts = self.cx.store().unwrap().plan_drafts().unwrap();
         drafts.into_iter().find(|(w, _)| *w == id).map(|(_, d)| d)
     }
 
-    fn open(&self, job: &DraftJob) -> Option<moor_core::BoxId> {
+    pub(super) fn open(&self, job: &DraftJob) -> Option<moor_core::BoxId> {
         let store = self.cx.store().unwrap();
         store.open_box_by_name(&job.req.name).unwrap().map(|r| r.id)
     }
 
-    fn leave_plan(&self, job: &DraftJob, text: &str) {
+    pub(super) fn leave_plan(&self, job: &DraftJob, text: &str) {
         let store = self.cx.store().unwrap();
         let id = self.open(job).expect("the Box is open");
         store

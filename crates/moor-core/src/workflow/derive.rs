@@ -1,10 +1,11 @@
-//! Where moor stands in making a workflow's plan. A person writes the prompt; moor reads it and
-//! keeps a plan of its steps. A new prompt asks for a plan, a short Box makes it as `plan.json`,
-//! and only that Box's plan is ever stored.
+//! Where moor stands in reading a workflow's prompt. A person writes the prompt; moor reads it and
+//! keeps its reading: a plan of steps, or gates a run must pass. A new prompt asks for a reading,
+//! a short Box writes it as `plan.json`, and only that Box's reading is ever stored.
 
 use serde::{Deserialize, Serialize};
 
-use super::PromptHash;
+use super::{Plan, PromptHash};
+use crate::gate::Gates;
 
 /// A plan moor is making, or failed to make, for a workflow's prompt. Kept on the workflow until
 /// its plan is stored.
@@ -22,6 +23,10 @@ pub struct PlanDraft {
     /// Why no plan was made. moor does not try again until the prompt changes or the owner asks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
+    /// Whether the owner asked moor to replace gates a person wrote with its own reading. Without
+    /// it, gates a person wrote stay and no reading is made.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub replace: bool,
 }
 
 impl PlanDraft {
@@ -33,7 +38,14 @@ impl PlanDraft {
             box_name: None,
             since: None,
             failed: None,
+            replace: false,
         }
+    }
+
+    /// This draft, replacing gates a person wrote when `replace` is true.
+    #[must_use]
+    pub fn replacing(self, replace: bool) -> Self {
+        Self { replace, ..self }
     }
 
     /// Whether this draft is for `prompt`.
@@ -58,6 +70,44 @@ impl PlanDraft {
         Self {
             failed: Some(why.into()),
             ..self.clone()
+        }
+    }
+}
+
+/// moor's reading of a workflow's prompt, as the Box that made it left it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reading {
+    /// Steps a run walks.
+    Plan(Plan),
+    /// Gates a run's Box must pass, with the outcomes it may end in.
+    Gates(Gates),
+}
+
+impl Reading {
+    /// The reading in `text`, made for `prompt`: gates when it is an object with `gates`, a
+    /// plan otherwise.
+    ///
+    /// # Errors
+    /// Every reason the reading is not valid.
+    pub fn parse(text: &str, prompt: &str) -> Result<Self, Vec<String>> {
+        let value: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| vec![format!("not JSON: {e}")])?;
+        if value.get("gates").is_some() {
+            return Gates::from_json(text)
+                .map(|g| Self::Gates(g.read_from(prompt)))
+                .map_err(|e| vec![e.to_string()]);
+        }
+        Plan::parse(text, prompt)
+            .map(Self::Plan)
+            .map_err(|errors| errors.iter().map(ToString::to_string).collect())
+    }
+
+    /// The hash of the prompt it was made from.
+    #[must_use]
+    pub const fn made_from(&self) -> Option<&PromptHash> {
+        match self {
+            Self::Plan(p) => Some(&p.made_from),
+            Self::Gates(g) => g.made_from(),
         }
     }
 }

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 use schemars::JsonSchema;
 
-use crate::workflow::{Evidence, EvidenceName, StepId, Tries, EVIDENCE_NAMES_MAX};
+use crate::workflow::{Evidence, EvidenceName, PromptHash, StepId, Tries, EVIDENCE_NAMES_MAX};
 
 mod brief;
 #[cfg(test)]
@@ -115,6 +115,10 @@ pub struct GatesDoc {
     /// The outcomes; none for the one implicit outcome.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outcomes: Vec<OutcomeDoc>,
+    /// The hash of the prompt moor read the gates from, as 64 hex digits; none for gates a
+    /// person wrote. Leave it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_from: Option<String>,
 }
 
 /// A Box's gates, one to eight in the order they pass, and the outcomes its run may end in, at
@@ -122,9 +126,11 @@ pub struct GatesDoc {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gates {
     /// The gates.
-    gates: Vec<Gate>,
+    list: Vec<Gate>,
     /// The outcomes, in the order moor tries them.
     outcomes: Vec<Outcome>,
+    /// The prompt moor read them from; none for gates a person wrote.
+    made_from: Option<PromptHash>,
 }
 
 impl Gates {
@@ -150,7 +156,11 @@ impl Gates {
             gates.push(gate);
         }
         let outcomes = outcome::parse_outcomes(outcomes)?;
-        Ok(Self { gates, outcomes })
+        Ok(Self {
+            list: gates,
+            outcomes,
+            made_from: None,
+        })
     }
 
     /// The gates in `text`, the JSON of a [`GatesDoc`].
@@ -160,7 +170,31 @@ impl Gates {
     pub fn from_json(text: &str) -> Result<Self, GateError> {
         let doc: GatesDoc =
             serde_json::from_str(text).map_err(|e| GateError::Json(e.to_string()))?;
-        Self::parse(&doc.gates, &doc.outcomes)
+        let made_from = doc
+            .made_from
+            .as_deref()
+            .map(|hex| PromptHash::from_hex(hex).ok_or(GateError::MadeFrom))
+            .transpose()?;
+        Ok(Self {
+            made_from,
+            ..Self::parse(&doc.gates, &doc.outcomes)?
+        })
+    }
+
+    /// These gates as moor's reading of `prompt`, unless they already name the prompt they were
+    /// read from.
+    #[must_use]
+    pub fn read_from(self, prompt: &str) -> Self {
+        Self {
+            made_from: self.made_from.or_else(|| Some(PromptHash::of(prompt))),
+            ..self
+        }
+    }
+
+    /// The prompt moor read these gates from; none for gates a person wrote.
+    #[must_use]
+    pub const fn made_from(&self) -> Option<&PromptHash> {
+        self.made_from.as_ref()
     }
 
     /// The gates and outcomes as a Box or a workflow keeps them.
@@ -169,13 +203,14 @@ impl Gates {
         GatesDoc {
             gates: self.docs(),
             outcomes: self.outcome_docs(),
+            made_from: self.made_from.as_ref().map(PromptHash::hex),
         }
     }
 
     /// The gates as written, leaving out what is default.
     #[must_use]
     pub fn docs(&self) -> Vec<GateDoc> {
-        self.gates.iter().map(doc_of).collect()
+        self.list.iter().map(doc_of).collect()
     }
 
     /// The outcomes as written; none when there is only the implicit one.
@@ -203,13 +238,13 @@ impl Gates {
 
     /// Every gate, the first one first.
     pub fn iter(&self) -> impl Iterator<Item = &Gate> {
-        self.gates.iter()
+        self.list.iter()
     }
 
     /// The gate at place `at`, from 0.
     #[must_use]
     pub fn get(&self, at: usize) -> Option<&Gate> {
-        self.gates.get(at)
+        self.list.get(at)
     }
 }
 

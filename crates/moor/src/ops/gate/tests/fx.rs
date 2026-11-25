@@ -80,6 +80,7 @@ pub(super) fn fx_on(
     fx_doc(driver, |dir| GatesDoc {
         gates: gates(dir),
         outcomes: Vec::new(),
+        made_from: None,
     })
 }
 
@@ -97,7 +98,11 @@ pub(super) fn fx_outcomes_on(
 ) -> Fx {
     fx_doc(driver, |dir| {
         let (gates, outcomes) = doc(dir);
-        GatesDoc { gates, outcomes }
+        GatesDoc {
+            gates,
+            outcomes,
+            made_from: None,
+        }
     })
 }
 

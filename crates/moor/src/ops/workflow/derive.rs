@@ -1,8 +1,10 @@
-//! moor makes a workflow's plan from its prompt. A write that changes the prompt asks for a plan;
-//! this pass starts a short Box that reads the repos and leaves `plan.json`, stores that plan
-//! when the prompt is still the one it was made from, and closes the Box. Nothing else stores a
-//! plan. A Box that ends without a plan leaves the reason, and moor tries again only when the
-//! prompt changes or the owner asks: no try repeats on its own.
+//! moor reads a workflow's prompt into a plan or gates. A write that changes the prompt asks for a
+//! reading; this pass starts a short Box that reads the repos and leaves `plan.json`, stores that
+//! reading when the prompt is still the one it was made from, and closes the Box. Nothing else
+//! stores one. Storing a plan clears the gates and storing gates clears the plan. Gates a person
+//! wrote stay until the owner asks moor to make the reading again. A Box that ends without a
+//! reading leaves the reason, and moor tries again only when the prompt changes or the owner asks:
+//! no try repeats on its own.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CloseReason;
@@ -11,7 +13,7 @@ use moor_core::request::ArtifactReadReq;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    draft_prompt, plan_box_name, Plan, PlanDraft, PromptHash, Workflow, WorkflowId, PLAN_FILE,
+    draft_prompt, plan_box_name, PlanDraft, PromptHash, Reading, Workflow, WorkflowId, PLAN_FILE,
 };
 use moor_core::StartReq;
 
@@ -79,11 +81,13 @@ fn one(
         return Ok(());
     }
     let now = cx.clock().now().as_millis();
-    if !draft.is_for(&w.prompt) || w.gates.is_some() {
+    let by_hand = w.gates.as_ref().is_some_and(|g| g.made_from().is_none());
+    if !draft.is_for(&w.prompt) || (by_hand && !draft.replace) {
         if let Some(name) = draft.box_name.as_deref() {
             close(cx, store, name);
         }
-        let next = w.gates.is_none().then(|| PlanDraft::wanted(&w.prompt));
+        let next = (!by_hand || draft.replace)
+            .then(|| PlanDraft::wanted(&w.prompt).replacing(draft.replace));
         store
             .move_plan_draft(id, draft, next.as_ref())
             .map_err(|e| e.to_string())?;
@@ -137,7 +141,7 @@ fn ask(
         req: StartReq {
             placement: moor_core::decide::schedule::Placement::FirstOnline,
             config: w.config.clone(),
-            prompt: Some(draft_prompt(&w.prompt)),
+            prompt: Some(draft_prompt(&w.prompt, w.config.as_deref())),
             repo: Some(repo.clone()),
             also: Some(also.to_vec()),
             ..StartReq::named(name)
@@ -189,21 +193,18 @@ fn harvest(
         return Ok(());
     };
     if let Some(text) = plan_text(cx, store, &row)? {
-        return match Plan::parse(&text, &w.prompt) {
-            Ok(plan) => {
+        return match Reading::parse(&text, &w.prompt) {
+            Ok(reading) => {
                 close(cx, store, name);
                 store
-                    .store_made_plan(w.id, &plan)
+                    .store_made_reading(w.id, &reading)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
             }
-            Err(errors) => {
-                let lines: Vec<String> = errors.iter().map(ToString::to_string).collect();
-                fail(format!(
-                    "the plan the Box left is not valid: {}",
-                    lines.join("; ")
-                ))
-            }
+            Err(errors) => fail(format!(
+                "the plan the Box left is not valid: {}",
+                errors.join("; ")
+            )),
         };
     }
     let quiet = row

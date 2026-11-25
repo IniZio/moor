@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { Conflict, failure, toError, type Workflow, workflowGet, workflowSet } from './api';
 import { AutomationBox } from './AutomationBox';
 import { GatesPanel } from './Gates';
-import { PlanView } from './PlanView';
+import { GatesNote, PlanView } from './PlanView';
 
 /** The automation's prompt beside its file, and moor's reading of it below. */
 export function WorkflowEditor({ csrf, flow, onFlow }: { csrf: string; flow: Workflow; onFlow: (read: Workflow) => void }) {
@@ -65,7 +65,7 @@ export function WorkflowEditor({ csrf, flow, onFlow }: { csrf: string; flow: Wor
 			/>
 			{gated ? (
 				<section class="plan-view" aria-label="Gates">
-					<p class="muted">moor's current reading of this workflow is a set of gates. Regenerating them from the prompt comes later.</p>
+					<GatesNote flow={flow} busy={busy || prompt !== flow.prompt} onAgain={() => void save(true)} />
 					<GatesPanel gates={flow.gates ?? []} outcomes={flow.outcomes} />
 				</section>
 			) : (
