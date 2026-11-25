@@ -10,6 +10,7 @@ use moor_core::name::BoxName;
 use moor_core::request::{ArtifactReadReq, ArtifactsReq, EnrollReq, Request};
 use moor_core::response::{ErrorDetail, ErrorKind, ExitClass, Response};
 use moor_core::view::ArtifactView;
+use moor_core::{BoxId, BoxTarget};
 
 use crate::{rewrite, Person};
 
@@ -19,8 +20,8 @@ pub(crate) const ARTIFACT_HOLD_BACK_MAX: u64 = 4 * 1024 * 1024;
 
 /// The Artifact a caller asked for.
 pub(crate) struct Wanted {
-    /// The Box that published it.
-    pub(crate) r#box: BoxName,
+    /// The Box that published it: by name, the newest Box of that name.
+    pub(crate) r#box: BoxTarget,
     /// Its name.
     pub(crate) name: String,
     /// Its version; the newest when none.
@@ -34,6 +35,21 @@ impl Wanted {
     pub(crate) fn parse(r#box: &str, name: &str, version: Option<u32>) -> Result<Self, Refusal> {
         let r#box =
             BoxName::parse_allow_bare(r#box).map_err(|e| Refusal::BadRequest(e.to_string()))?;
+        Self::of(r#box.into(), name, version)
+    }
+
+    /// The Artifact `name` of exactly the Box with id `id`, or why those do not name one.
+    pub(crate) fn by_id(id: &str, name: &str, version: Option<u32>) -> Result<Self, Refusal> {
+        let id = id
+            .parse::<i64>()
+            .ok()
+            .filter(|v| *v > 0)
+            .ok_or_else(|| Refusal::BadRequest(format!("invalid Box id `{id}`")))?;
+        Self::of(BoxId::new(id).into(), name, version)
+    }
+
+    /// The Artifact `name` of Box `r#box`, or why the name is not one.
+    fn of(r#box: BoxTarget, name: &str, version: Option<u32>) -> Result<Self, Refusal> {
         if !valid_name(name) {
             return Err(Refusal::BadRequest(format!(
                 "invalid artifact name `{name}`"
@@ -49,11 +65,7 @@ impl Wanted {
 
     /// The gate path that downloads this Artifact at `version`.
     pub(crate) fn path(&self, version: u32) -> String {
-        format!(
-            "/boxes/{}/artifacts/{}/{version}",
-            self.r#box.as_str(),
-            self.name
-        )
+        format!("/boxes/{}/artifacts/{}/{version}", self.r#box, self.name)
     }
 }
 
@@ -103,7 +115,7 @@ impl Refusal {
 /// An Artifact the controller holds a record of; [`read`] fetches its bytes.
 pub(crate) struct Found {
     /// The Box that published it.
-    target: BoxName,
+    target: BoxTarget,
     /// Its record: name, version, content type, size and sha256.
     pub(crate) record: ArtifactView,
     /// Whether it may be another user's, as [`Wanted::everyone`].
@@ -118,7 +130,7 @@ pub(crate) fn find(client: &Client, person: &Person, wanted: &Wanted) -> Result<
     });
     ask(client, person, enroll)?;
     let list = Request::Artifacts(ArtifactsReq {
-        target: wanted.r#box.clone().into(),
+        target: wanted.r#box.clone(),
         all: true,
         everyone: wanted.everyone,
     });
@@ -136,8 +148,7 @@ pub(crate) fn find(client: &Client, person: &Person, wanted: &Wanted) -> Result<
                 .map_or_else(String::new, |v| format!(" v{v}"));
             Refusal::NotFound(format!(
                 "no artifact {}{which} for {}",
-                wanted.name,
-                wanted.r#box.as_str()
+                wanted.name, wanted.r#box
             ))
         })?;
     Ok(Found {
@@ -155,7 +166,7 @@ pub(crate) fn read(
     on_bytes: impl FnMut(&[u8]) -> io::Result<()>,
 ) -> Result<(), Refusal> {
     let request = Request::ArtifactRead(ArtifactReadReq {
-        target: found.target.clone().into(),
+        target: found.target.clone(),
         name: found.record.name.clone(),
         version: Some(found.record.version),
         offset: 0,

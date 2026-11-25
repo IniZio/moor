@@ -83,8 +83,8 @@ function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): 
 	const parts: Part[][] = turns.map((t) => (t.answer ? [answerPart(t.answer)] : []));
 	const put = (at: number, node: ComponentChildren) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node });
 	for (const box of detail.task_boxes) {
-		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.name}`} />);
-		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.name}/${a.name}@${a.version}`} />);
+		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.id}`} />);
+		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.id}/${a.name}@${a.version}`} />);
 	}
 	for (const list of parts) list.sort((x, y) => x.at - y.at || Number(!!y.answer) - Number(!!x.answer));
 	const { pr } = detail;

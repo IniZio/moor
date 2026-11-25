@@ -220,18 +220,20 @@ fn param(query: &str, key: &str) -> Option<String> {
         .map(|(_, v)| v.into_owned())
 }
 
-/// The path that serves `name` at `version` of Box `boxed`.
-fn href(boxed: &str, name: &str, version: u32) -> String {
+/// The path that serves `name` at `version` of the Box `key` names: `("box", name)` for the
+/// newest Box of a name, `("box_id", id)` for exactly one Box.
+fn href((key, boxed): (&str, &str), name: &str, version: u32) -> String {
     let query = oauth2::url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("box", boxed)
+        .append_pair(key, boxed)
         .append_pair("name", name)
         .append_pair("version", &version.to_string())
         .finish();
     format!("/account/api/box/artifact?{query}")
 }
 
-/// One artifact of Box `boxed` as a page reads it, with the path that serves it.
-fn evidence(boxed: &str, a: &ArtifactView) -> Value {
+/// One artifact of the Box `boxed` names, as [`href`] takes it, as a page reads it, with the
+/// path that serves it.
+fn evidence(boxed: (&str, &str), a: &ArtifactView) -> Value {
     json!({"name": a.name, "version": a.version, "kind": a.kind,
            "content_type": a.content_type, "size": a.size,
            "created_at": a.created_at,
@@ -272,7 +274,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
         .artifacts
         .iter()
         .flatten()
-        .map(|a| evidence(boxed, a))
+        .map(|a| evidence(("box", boxed), a))
         .collect();
     if let Some(map) = view.as_object_mut() {
         map.insert("timeline".to_owned(), shown.timeline.unwrap_or(json!([])));
@@ -297,10 +299,10 @@ fn refuse(stream: &mut TcpStream, refusal: &Refusal) {
 /// Sends the artifact the query names, as the session's person. An image is inline, else a download.
 pub(super) fn artifact(stream: &mut TcpStream, gate: &Gate, session: &Session, query: &str) {
     let version = param(query, "version").and_then(|v| v.parse().ok());
-    let wanted = Wanted::parse(
-        &param(query, "box").unwrap_or_default(),
-        &param(query, "name").unwrap_or_default(),
-        version,
+    let name = param(query, "name").unwrap_or_default();
+    let wanted = param(query, "box_id").map_or_else(
+        || Wanted::parse(&param(query, "box").unwrap_or_default(), &name, version),
+        |id| Wanted::by_id(&id, &name, version),
     );
     let everyone = wanted.map(|w| Wanted {
         everyone: true,

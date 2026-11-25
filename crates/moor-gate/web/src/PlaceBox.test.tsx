@@ -23,6 +23,7 @@ const ARTIFACT = (name: string, image: boolean, m: number) => ({
 /** What a test sets over the work Box the gate sends. */
 type Over = { state?: string; ready_ms?: number | null; closed_at?: string | null; started_at?: string; artifacts?: object[] };
 const WORK_BOX = (extra: Over = {}) => ({
+	id: 1,
 	name: WORK,
 	repo: 'acme/clinic-prototype',
 	started_at: at(5, 10),

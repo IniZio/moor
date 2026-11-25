@@ -74,7 +74,7 @@ fn workflows() -> Response {
 fn place(name: &str) -> Response {
     let mut boxed = row(name, "ready", "done", "answered", Value::Null);
     boxed["task_at"] = json!("2026-11-24T10:58:00Z");
-    let work = json!({"name": "web/mcp-1a2b3c4d", "repo": "acme/web",
+    let work = json!({"id": 5, "name": "web/mcp-1a2b3c4d", "repo": "acme/web",
         "started_at": "2026-11-24T11:05:10Z", "ready_ms": 38000, "state": "closed",
         "closed_at": "2026-11-24T11:11:12Z",
         "artifacts": [{"name": "fee line.png", "version": 1, "kind": "screenshot",
@@ -82,6 +82,21 @@ fn place(name: &str) -> Response {
             "created_at": "2026-11-24T11:10:00Z"}]});
     let shown = json!({"box": boxed, "events": [], "timeline": [], "artifacts": [],
         "task_boxes": [work]});
+    Response::ok("x", Some(shown))
+}
+
+/// A task whose place started two work Boxes of one name, the first closed before the second.
+fn twice(name: &str) -> Response {
+    let boxed = row(name, "ready", "done", "answered", Value::Null);
+    let work = |id: i64, file: &str| {
+        json!({"id": id, "name": "web/w", "repo": "acme/web",
+            "started_at": "2026-11-24T11:05:10Z", "state": "closed",
+            "artifacts": [{"name": file, "version": 1, "kind": "file",
+                "content_type": "text/plain", "size": 3, "sha256": "0",
+                "created_at": "2026-11-24T11:10:00Z"}]})
+    };
+    let shown = json!({"box": boxed, "events": [], "timeline": [], "artifacts": [],
+        "task_boxes": [work(7, "a.txt"), work(8, "b.txt")]});
     Response::ok("x", Some(shown))
 }
 
@@ -131,6 +146,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
             )
         }
         ("show", Some(name)) if mine && name == "web/place" => place(name),
+        ("show", Some(name)) if mine && name == "web/twice" => twice(name),
         ("show", Some(name)) if mine && name == "nightly/w1-202611190600" => failed_box(name),
         ("show", Some(name)) => refusal(&format!("no Box {name}")),
         ("retry", Some("nightly/w1-202611190600")) if mine => {
@@ -214,10 +230,45 @@ fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
     let art = &work["artifacts"][0];
     assert_eq!(art["image"], true);
     assert_eq!(
-        art["href"], "/account/api/box/artifact?box=web%2Fmcp-1a2b3c4d&name=fee+line.png&version=1",
+        art["href"], "/account/api/box/artifact?box_id=5&name=fee+line.png&version=1",
         "the picture is served by the work Box, not by the place"
     );
     assert_eq!(detail["artifacts"], json!([]));
+}
+
+#[test]
+fn two_work_boxes_of_one_name_each_link_and_open_their_own_file() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-11");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Ftwice", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let detail = json_of(&reply);
+    for (n, (id, file)) in [(7, "a.txt"), (8, "b.txt")].into_iter().enumerate() {
+        let line = &detail["task_boxes"][n];
+        let files: Vec<&str> = line["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(files, [file]);
+        let href = line["artifacts"][0]["href"].as_str().unwrap();
+        assert_eq!(
+            href,
+            format!("/account/api/box/artifact?box_id={id}&name={file}&version=1")
+        );
+        get(&w.addr, href, Some(&cookie));
+        let asked = w
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|r| r["request"]["cmd"] == "artifacts")
+            .cloned()
+            .unwrap();
+        assert_eq!(asked["request"]["box"], json!({"id": id}), "{file}");
+    }
 }
 
 #[test]

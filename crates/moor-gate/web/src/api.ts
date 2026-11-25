@@ -517,6 +517,8 @@ const EvidenceSchema = v.object({
 
 /** A work Box the place of a question's task started: what the task page says of it in one line, and the files it left. A state this page does not know is shown as sent. */
 const TaskBoxSchema = v.object({
+	/** The work Box's id; a later Box of the task may reuse its name. */
+	id: v.number(),
 	name: v.string(),
 	repo: v.string(),
 	started_at: v.string(),

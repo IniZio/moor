@@ -110,6 +110,7 @@ fn task_boxes_of(store: &Store, place: &BoxRow) -> Result<Vec<TaskBoxView>, Comm
             let millis = |at: Option<Ts>| at.map(Ts::as_millis);
             let ready = millis(t.ready_at).zip(Some(t.row.created_at.as_millis()));
             Ok(TaskBoxView {
+                id: t.row.id,
                 name: t.row.name.as_str().to_owned(),
                 repo: t
                     .row
