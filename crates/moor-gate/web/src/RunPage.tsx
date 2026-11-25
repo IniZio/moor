@@ -5,6 +5,7 @@ import { closingWaitWords, outcomeLine } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
+import { WriteUp, writeUpsOf } from './WriteUp';
 
 function LineItem({ line }: { line: Line }) {
 	return (
@@ -19,6 +20,9 @@ function LineItem({ line }: { line: Line }) {
 					))}
 				</ul>
 			)}
+			{writeUpsOf(line.evidence).map((w) => (
+				<WriteUp key={w.href} name={w.name} href={w.href} />
+			))}
 		</li>
 	);
 }

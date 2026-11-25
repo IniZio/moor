@@ -110,6 +110,7 @@ fn waiting_run(held: &Held) -> Value {
 
 fn delivered_run() -> Value {
     json!({"id": 6, "due_at": 500, "outcome": "finished", "phase": "done",
+        "trigger": "pull_request", "pull": "acme/web#5", "head_sha": "a41c9e2f00d",
         "result": "ok", "history": [
             {"at": 100, "entry": {"kind": "queued"}},
             {"at": 400_100, "entry": {"kind": "ended", "phase_before": "running",

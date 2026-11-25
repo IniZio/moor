@@ -254,6 +254,7 @@ fn run_row(row: &RunRowView) -> Value {
         "due_at": run.due_at,
         "trigger": run.trigger,
         "pull": run.pull,
+        "head_sha": run.head_sha,
         "started_at": started,
         "duration_ms": duration,
         "status": status(&run.phase, &run.outcome),

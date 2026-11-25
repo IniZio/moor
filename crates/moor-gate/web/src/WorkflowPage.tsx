@@ -1,4 +1,5 @@
-import { workflowGet, type Workflow } from './api';
+import { type RunRow, workflowGet, type Workflow } from './api';
+import { groupByPull, shortSha } from './runGroups';
 import { scheduleText } from './schedule';
 import { useLoad } from './useLoad';
 import { duration, Failed, PullLink, PullTag, StatusIcon, when } from './WorkflowBits';
@@ -6,28 +7,38 @@ import { WorkflowActions } from './WorkflowActions';
 import { WorkflowEditor } from './WorkflowEditor';
 import './automation.css';
 
+function RunItem({ flow, r }: { flow: Workflow; r: RunRow }) {
+	return (
+		<li>
+			<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
+				<StatusIcon status={r.status} verdict={r.verdict} />
+				<span class="grow">{r.pull && r.head_sha ? <span class="t-mono">{shortSha(r.head_sha)}</span> : r.trigger}</span>
+				<span class="muted">{when(r.due_at)}</span>
+				<span class="muted">{duration(r.duration_ms)}</span>
+				<span class="outcome">{r.label}</span>
+			</a>
+		</li>
+	);
+}
+
+/** The runs, grouped by the pull request each is for, newest group first. */
 function Runs({ flow }: { flow: Workflow }) {
+	const groups = groupByPull(flow.runs);
+	const flat = groups.length === 1 && groups[0].pull == null;
 	return (
 		<>
 			<h2 class="sub">Runs</h2>
-			{flow.runs.length === 0 ? (
-				<p class="muted">No runs yet.</p>
-			) : (
-				<ul class="runs">
-					{flow.runs.map((r) => (
-						<li key={r.id} class={r.pull ? 'has-pr' : undefined}>
-							<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
-								<StatusIcon status={r.status} verdict={r.verdict} />
-								<span class="grow">{r.trigger}</span>
-								<span class="muted">{when(r.due_at)}</span>
-								<span class="muted">{duration(r.duration_ms)}</span>
-								<span class="outcome">{r.label}</span>
-							</a>
-							{r.pull && <PullLink pull={r.pull} />}
-						</li>
-					))}
-				</ul>
-			)}
+			{groups.length === 0 && <p class="muted">No runs yet.</p>}
+			{groups.map((g) => (
+				<div key={g.pull ?? ''} class="run-group">
+					{!flat && <p class="dayhead">{g.pull ? <PullLink pull={g.pull} /> : 'Not for a pull request'}</p>}
+					<ul class="runs">
+						{g.runs.map((r) => (
+							<RunItem key={r.id} flow={flow} r={r} />
+						))}
+					</ul>
+				</div>
+			))}
 		</>
 	);
 }
