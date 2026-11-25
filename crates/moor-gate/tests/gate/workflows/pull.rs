@@ -1,8 +1,9 @@
-//! The pull request switch on the workflow form's create and save.
+//! The pull request switch on the workflow form's create and save, and a run's pull request
+//! on the page.
 
 use serde_json::{json, Value};
 
-use super::super::login::send;
+use super::super::login::{get, send};
 use super::super::secrets::World;
 use super::{as_user, csrf, json_of, world};
 
@@ -85,4 +86,19 @@ fn a_save_turns_the_switch_on_and_off_and_keeps_it_when_it_is_not_sent() {
     assert_eq!(off.status, 200, "{}", off.body);
     assert_eq!(json_of(&off)["on_pull_request"], false);
     assert_ne!(adds(&w).pop().unwrap()["on_pull_request"], true);
+}
+
+#[test]
+fn a_pull_request_run_names_its_pull_request_and_head_commit() {
+    let w = world(true, &[]);
+    let cookie = as_user(&w, "alice-pr");
+    let flow = json_of(&get(
+        &w.addr,
+        "/account/api/workflows/weekly-deps",
+        Some(&cookie),
+    ));
+    let runs = flow["runs"].as_array().unwrap();
+    let pr = runs.iter().find(|r| r["id"] == 6).unwrap();
+    assert_eq!(pr["pull"], "acme/web#5");
+    assert_eq!(pr["head_sha"], "a41c9e2f00d");
 }

@@ -5,6 +5,7 @@ import { closingWaitWords, outcomeLine } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
+import { runWriteUps, WriteUp } from './WriteUp';
 
 function LineItem({ line }: { line: Line }) {
 	return (
@@ -186,6 +187,9 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 						{run.box && `, Box ${run.box}`}
 					</p>
 					<RunResult run={run} />
+					{runWriteUps(run).map((w) => (
+						<WriteUp key={w.href} name={w.name} href={w.href} />
+					))}
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					<Question run={run} csrf={csrf} onAnswered={setValue} />
 					<ol class="steps">

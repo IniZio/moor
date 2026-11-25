@@ -205,6 +205,8 @@ const RunRowSchema = v.object({
 	trigger: v.string(),
 	/** The pull request the run is for, `OWNER/NAME#NUMBER`. */
 	pull: v.nullish(v.string()),
+	/** The pull request's head commit the run is for. */
+	head_sha: v.nullish(v.string()),
 	started_at: v.nullish(v.number()),
 	duration_ms: v.nullish(v.number()),
 	status: StatusSchema,
