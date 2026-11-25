@@ -8,7 +8,7 @@ The evidence comment is the pull request's issue comment whose body STARTS with 
 
 Write nothing into the Box's checkout except .moor/artifacts/. Scratch files go under /tmp or .moor/artifacts. Do not create .claude files, do not edit tracked files, do not commit.
 
-The portal origin is https://moor.oursky.codes. This Box's name is in its environment or its branch name (try: env | grep -i moor; git branch --show-current; hostname). The link to this run's evidence is https://moor.oursky.codes/#/box/<Box name with / written as %2F>/evidence. Write it to box.txt first, with the MOOR_PULL_* values.
+The portal origin is https://moor.example.com. This Box's name is in its environment or its branch name (try: env | grep -i moor; git branch --show-current; hostname). The link to this run's evidence is https://moor.example.com/#/box/<Box name with / written as %2F>/evidence. Write it to box.txt first, with the MOOR_PULL_* values.
 
 How the run goes. Work through these in order. moor holds this run open until its gates pass, so finish them all.
 1. Read the pull request. If it is not open, or its head moved from MOOR_PULL_HEAD_SHA, write no file, post nothing, say why in one line and stop: moor checks that itself and ends the run as "nothing to do".
