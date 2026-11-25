@@ -1,3 +1,4 @@
+{{- $_ := include "moor.boxTools" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,6 +25,9 @@ data:
       {{- end }}
     {{- end }}
     {{- end }}
+    {{- with .Values.controller.agentPlaces.users }}
+    agent_places: {{- dict "users" . | toYaml | nindent 6 }}
+    {{- end }}
     {{- if or .Values.gate.enabled .Values.notify.enabled }}
     fronts:
       {{- if include "moor.gateSeparate" . }}
@@ -33,9 +37,15 @@ data:
         {{- if include "moor.stepReports" . }}
         step_reports: true
         {{- end }}
+        {{- if include "moor.boxTools" . }}
+        box_tools: true
+        {{- end }}
       {{- else if include "moor.stepReports" . }}
       authgear:
         step_reports: true
+        {{- if include "moor.boxTools" . }}
+        box_tools: true
+        {{- end }}
       {{- else if .Values.gate.enabled }}
       authgear: {}
       {{- end }}

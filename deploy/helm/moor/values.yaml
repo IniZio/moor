@@ -38,6 +38,9 @@ controller:
   uid: 10001
   # agent.model in the controller config: the model a Box's agent starts with. Empty leaves the agent's own default.
   agentModel: ""
+  # agent_places in the controller config. users: emails of the users who get an agent place; empty starts none. See docs/config.md agent_places.
+  agentPlaces:
+    users: []
   # Shared nodes as {name: {runtime, labels, max_boxes}}; empty runs Boxes only on enrolled machines.
   nodes: {}
   # box.node: the shared node a start naming none tries first, after the user's own.
@@ -99,6 +102,7 @@ gate:
   # steps. With egress.enabled the listener binds the pod address behind the ClusterIP Service
   # <release>-gate-boxes. Off by default, since the chart has no NetworkPolicy: docs/kubernetes.md.
   stepReports: false
+  boxTools: false
   boxPort: 8444
   # /front is a WebSocket held open for a whole session: the ingress must allow long-lived
   # upgrades (raise its read/idle timeouts to hours) or sessions drop when it times them out.

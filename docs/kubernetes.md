@@ -169,6 +169,10 @@ turn the key on only where nothing but the egress pods can reach
 port only from pods labelled `app.kubernetes.io/name: moor-egress`. It must
 keep the pod's other ports open.
 
+`gate.boxTools: true` lets the gate's Box listener run `exec_in_box`, `exec_wait`, `start_box` and `close_box` for the agent in a claimed place. It needs `gate.stepReports`.
+
+`controller.agentPlaces.users` lists the emails of the users who get an agent place. Empty starts none. See [`agent_places`](config.md#agent_places).
+
 ## Run the controller without a volume
 
 With `database.url` and `blobs.s3` both set, the controller keeps its store in
