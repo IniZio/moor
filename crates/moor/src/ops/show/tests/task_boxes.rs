@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
+use moor_core::request::ArtifactReadReq;
 use moor_core::view::TaskBoxState;
 use moor_core::BoxId;
 use moor_schema::tables::Events;
@@ -158,6 +159,46 @@ fn a_task_box_s_artifacts_carry_its_own_name() {
     };
     assert_eq!(files("a"), [("note.txt".to_owned(), 1)]);
     assert_eq!(files("b"), [("shot.png".to_owned(), 2)]);
+}
+
+#[test]
+fn two_task_boxes_of_one_name_each_read_their_own_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
+    let place = claimed(&cx, "taken");
+    let first = started_by(&cx, "w", place);
+    let store = cx.store().unwrap();
+    store
+        .add_artifact(first, "a.txt", b"aaa", cx.blobs().unwrap())
+        .unwrap();
+    close_after(&cx, first, 1_000);
+    let second = started_by(&cx, "w", place);
+    store
+        .add_artifact(second, "b.txt", b"bbb", cx.blobs().unwrap())
+        .unwrap();
+    close_after(&cx, second, 1_000);
+
+    let shown = task_boxes(&cx, "taken");
+    assert_eq!(shown.len(), 2);
+    for (line, (file, bytes)) in shown.iter().zip([("a.txt", b"aaa"), ("b.txt", b"bbb")]) {
+        let files: Vec<&str> = line.artifacts.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(files, [file]);
+        let req = ArtifactReadReq {
+            target: line.id.into(),
+            name: file.to_owned(),
+            version: None,
+            offset: 0,
+            len: 64,
+            everyone: false,
+        };
+        let mut got = Vec::new();
+        crate::ops::artifacts::read(&cx, &req, &mut |d| {
+            got.extend_from_slice(d);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(got, bytes, "{file}");
+    }
 }
 
 #[test]

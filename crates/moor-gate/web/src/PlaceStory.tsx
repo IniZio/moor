@@ -93,8 +93,8 @@ function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): 
 	const parts: Part[][] = turns.map((t) => (t.answer ? [answerPart(t.answer)] : []));
 	const put = (at: number, node: ComponentChildren, pr = false) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node, pr });
 	for (const box of detail.task_boxes) {
-		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.name}`} />);
-		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.name}/${a.name}@${a.version}`} />);
+		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.id}`} />);
+		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.id}/${a.name}@${a.version}`} />);
 	}
 	const { pr } = detail;
 	const seen = pr ? prSeenAt(pr, detail.timeline) : NaN;

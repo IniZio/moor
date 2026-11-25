@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ArtifactView;
 use crate::domain::box_state::BoxLifecycle;
+use crate::name::BoxId;
 
 /// Where a work Box stands, in the words a task shows. The Box's own lifecycle maps onto these
 /// five, so a task never has to name a rejected or a setup-failed Box differently.
@@ -39,7 +40,9 @@ impl From<BoxLifecycle> for TaskBoxState {
 /// One work Box of a task: the line the conversation shows for it and the files it left.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskBoxView {
-    /// The Box's name; its artifacts and terminal are addressed by it.
+    /// The Box's id; its artifacts are addressed by it, since a later Box may reuse the name.
+    pub id: BoxId,
+    /// The Box's name; its terminal is addressed by it.
     pub name: String,
     /// The repo the Box cloned, `OWNER/NAME`.
     pub repo: String,
