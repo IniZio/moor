@@ -57,7 +57,11 @@ pub(super) fn start(
         return match sent {
             Ok(asked) => {
                 let name = asked.get("box").and_then(Value::as_str);
-                json(stream, "200 OK", &json!({"box": name}));
+                let reply = asked.get("no_idle_place").map_or_else(
+                    || json!({"box": name}),
+                    |why| json!({"box": name, "no_idle_place": why}),
+                );
+                json(stream, "200 OK", &reply);
             }
             Err(why) => json(stream, "400 Bad Request", &json!({"error": why})),
         };

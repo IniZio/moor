@@ -429,6 +429,12 @@ it, then the next place starts. A start that is rejected, or that makes no Box, 
 the same way. It stays so until the user has a new place or the controller restarts. A person can
 start the next place with `moor start --place`.
 
+These places are hidden, so an ask says what stands in their way. An `ask` that finds no idle place
+to claim starts one for the question, and its answer's `no_idle_place` says why it found none. It
+names a failed place and why it failed, a place still coming up and since when, a rejected start,
+or that none was waiting. A failed or stuck place closes by that name, with `close_box` or
+`moor close`, and the keeper starts the next one.
+
 Each place holds one machine slot while it waits.
 
 ### `github_app`
