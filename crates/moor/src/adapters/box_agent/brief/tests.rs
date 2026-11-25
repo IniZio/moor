@@ -94,6 +94,22 @@ fn a_place_brief_points_files_at_the_work_box_and_claims_no_401_for_other_repos(
 }
 
 #[test]
+fn a_place_brief_says_a_later_box_continues_the_task_s_branch_and_pull_request() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    let place = out.split("Reports are how").next().unwrap_or_default();
+    for words in [
+        "A later work Box of this task starts on the task's branch",
+        "adds to the same pull request",
+        "One work Box of a task is open at a time",
+    ] {
+        assert!(place.contains(words), "{words} in {place}");
+    }
+}
+
+#[test]
 fn a_place_brief_opens_the_pull_request_from_the_place_with_gh() {
     let out = render(&BriefInput {
         place: true,

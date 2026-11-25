@@ -74,7 +74,10 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     Commit your work in the Box and push it with `git push origin HEAD`. Then open the pull \
     request from this place with gh, installing gh with the recipe below when \
     `command -v gh` finds none, and end your final message with its URL. Then close the Box \
-    with `close_box`, which refuses unpushed work.\n\n\
+    with `close_box`, which refuses unpushed work. A later work Box of this task starts on \
+    the task's branch with the commits pushed before, so its push adds to the same pull \
+    request: open a new one only when none is open. One work Box of a task is open at a \
+    time.\n\n\
     You may receive follow-up messages (steers) typed into this session.\n\n\
     Decide on your own when you reasonably can, and ask a question only when the choice is \
     the owner's.\n\n";
