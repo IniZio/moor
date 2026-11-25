@@ -56,6 +56,10 @@
       },
       {
         "method": "GET",
+        "path": "/repos/*/*/git/trees/**"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets"
       },
       {
@@ -199,12 +203,24 @@
         "path": "/*/*.git/info/refs"
       },
       {
+        "method": "GET",
+        "path": "/*/*/info/refs"
+      },
+      {
         "method": "POST",
         "path": "/*/*.git/git-upload-pack"
       },
       {
         "method": "POST",
+        "path": "/*/*/git-upload-pack"
+      },
+      {
+        "method": "POST",
         "path": "/acme/widgets.git/git-receive-pack"
+      },
+      {
+        "method": "POST",
+        "path": "/acme/widgets/git-receive-pack"
       }
     ],
     "box_env": {}

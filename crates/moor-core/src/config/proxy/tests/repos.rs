@@ -89,9 +89,13 @@ fn any_repo_may_be_fetched_but_only_box_repos_pushed() {
         entries,
         [
             "GET /*/*.git/info/refs",
+            "GET /*/*/info/refs",
             "POST /*/*.git/git-upload-pack",
+            "POST /*/*/git-upload-pack",
             "POST /a/app.git/git-receive-pack",
             "POST /a/lib.git/git-receive-pack",
+            "POST /a/app/git-receive-pack",
+            "POST /a/lib/git-receive-pack",
         ]
     );
     for (method, path, allowed) in [
@@ -115,10 +119,37 @@ fn any_repo_may_be_fetched_but_only_box_repos_pushed() {
 }
 
 #[test]
+fn a_clone_url_without_dot_git_gets_the_same_rules() {
+    let entries = git_entries(&app_and_lib(), false);
+    for (method, path, allowed) in [
+        ("GET", "/other/thing/info/refs", true),
+        ("POST", "/other/thing/git-upload-pack", true),
+        ("POST", "/a/app/git-receive-pack", true),
+        ("POST", "/a/lib/git-receive-pack", true),
+        ("POST", "/other/thing/git-receive-pack", false),
+        ("GET", "/a/b/c/info/refs", false),
+        ("POST", "/a/b/c/git-upload-pack", false),
+        ("GET", "/thing/info/refs", false),
+        ("GET", "/other/thing/info/refs/extra", false),
+    ] {
+        assert_eq!(
+            git_allows(&entries, method, path),
+            allowed,
+            "{method} {path}"
+        );
+    }
+}
+
+#[test]
 fn a_box_without_a_repo_fetches_only_when_it_has_a_profile() {
     assert_eq!(
         git_entries(&[], true),
-        ["GET /*/*.git/info/refs", "POST /*/*.git/git-upload-pack"]
+        [
+            "GET /*/*.git/info/refs",
+            "GET /*/*/info/refs",
+            "POST /*/*.git/git-upload-pack",
+            "POST /*/*/git-upload-pack",
+        ]
     );
     assert!(git_entries(&[], false).is_empty());
     let rules = resolve_rules(&ProxyConfig::default(), &[], true).expect("resolves");
@@ -151,6 +182,7 @@ fn github_api_reads_any_repo_with_get_alone() {
             "GET /repos/*/*/tags",
             "GET /repos/*/*/contents",
             "GET /repos/*/*/contents/**",
+            "GET /repos/*/*/git/trees/**",
         ]
     );
 }
