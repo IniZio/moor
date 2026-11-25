@@ -17,7 +17,7 @@ token's audience.
 | Scope | Allows |
 | --- | --- |
 | `moor:read` | `list_boxes`, `list_nodes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_workflows`, `get_workflow`, `list_workflow_runs`, `get_workflow_run`, `get_repo_config`, `list_events`, `GET /events`, artifact downloads, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled`, `answer_run`, `answer_gate`, `run_workflow`, `set_repo_config` |
+| `moor:write` | `start_box`, `ask`, `send_to_box`, `exec_in_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook`, `add_workflow`, `remove_workflow`, `set_workflow_enabled`, `answer_run`, `answer_gate`, `run_workflow`, `set_repo_config` |
 
 ## Tools
 
@@ -26,6 +26,7 @@ token's audience.
 | `list_boxes` | none |
 | `list_nodes` | none |
 | `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `gates`, `wait` |
+| `ask` | `repos`, `prompt` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `get_artifact` | `box`, `name`; optional `version` |
@@ -63,6 +64,7 @@ token's audience.
   returns once the Box exists, with the fields `box_status` gives. With
   `wait: true`, it returns once setup and the agent launch finish. A start on
   a name that is open attaches to that Box.
+- `ask` sends a question to your agent place, the request the portal's Tasks home sends. `repos` is a list of `owner/name`, the task's own first. It answers the place that took it (`box`, `claimed`), then follow it with `box_status`. A caller not on the controller's `agent_places` list is refused, and the refusal names the email moor holds for them.
 - `send_to_box` answers a pending question with an option's name or its
   1-based number.
 - `close_box` refuses a Box with commits that are not pushed or files that are

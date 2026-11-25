@@ -10,7 +10,6 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::request::AskReq;
-use moor_core::user::UserId;
 use moor_core::view::ask::AskValue;
 use moor_core::{BoxId, BoxName, ErrorKind, StartReq};
 
@@ -38,7 +37,7 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
     }
     let store = cx.store()?;
     let user = start::require(cx, Some(repo))?;
-    on_roster(cx, store, user)?;
+    super::place::on_roster(cx, store, user)?;
     for r in &req.repos {
         start::repo::fetch(cx, user, r, None)?;
     }
@@ -63,20 +62,6 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         return value(store, row.id, true);
     }
     cold(cx, store, claim, &text)
-}
-
-/// Refuses a user who is not on the controller's `agent_places` list.
-fn on_roster(cx: &Cx, store: &Store, user: UserId) -> Result<(), CommandError> {
-    let listed = store
-        .email_of(user)?
-        .is_some_and(|email| cx.env().agent_place_user(&email));
-    if listed {
-        return Ok(());
-    }
-    Err(CommandError::new(
-        ErrorKind::Refused,
-        "you are not on this controller's agent_places list",
-    ))
 }
 
 /// Whether idle place `row` can take a question now, by what the store holds: awake on a ready

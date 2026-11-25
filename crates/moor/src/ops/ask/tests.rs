@@ -334,6 +334,34 @@ fn a_user_off_the_list_is_refused_before_any_claim() {
 }
 
 #[test]
+fn a_refusal_names_the_email_the_controller_holds_for_the_user() {
+    let mut w = world();
+    w.cx = w.cx.with_env(|e| e.with_agent_place_users(BTreeSet::new()));
+    let err = run(&w.cx, &ask("q")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(
+        err.error.to_string().contains("agent_places"),
+        "{}",
+        err.error
+    );
+    assert!(
+        err.error.to_string().contains("ann@example.com"),
+        "{}",
+        err.error
+    );
+}
+
+#[test]
+fn a_refusal_says_when_the_controller_holds_no_email_for_the_user() {
+    let w = world();
+    let other = Identity::parse("local:2000").unwrap();
+    let (user, _) = store(&w).enroll(&other, None).unwrap();
+    let err = crate::ops::place::on_roster(&w.cx, store(&w), user).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains("no email"), "{}", err.error);
+}
+
+#[test]
 fn no_idle_place_starts_a_place_with_the_claim_and_the_prompt() {
     let w = world();
     let v = run(&w.cx, &ask("Where is GET /items handled?")).unwrap();
