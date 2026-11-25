@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ArtifactView;
 use crate::domain::box_state::BoxLifecycle;
-use crate::BoxId;
+use crate::name::BoxId;
 
 /// Where a work Box stands, in the words a task shows. The Box's own lifecycle maps onto these
 /// five, so a task never has to name a rejected or a setup-failed Box differently.
