@@ -5,13 +5,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::template::{check_slots, fill_any_repo, fill_repo, uses_repo, ALLOW_SLOTS, ANY_REPO};
-use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER, GRAPHQL_HOST};
+use super::{parse_rules_text, ProxyConfig, ToolRule, DEFAULT_HEADER, GRAPHQL_HOST};
 use crate::config::ConfigError;
 use crate::graphql_scope::Scope;
 use crate::name::ForgeRepo;
 
-/// The embedded default rules.
-const DEFAULTS: &str = include_str!("defaults.yaml");
+/// The default rules text: what a repo with no rules text of its own follows, and what a
+/// Box with no repo follows.
+pub const DEFAULT_RULES_TEXT: &str = include_str!("defaults.yaml");
 
 /// A method and path glob the proxy lets through.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,10 +61,10 @@ pub struct ResolvedRule {
     pub graphql: Option<Scope>,
 }
 
-/// The embedded default rules by name.
+/// The default rules by id.
 #[must_use]
 pub fn default_rules() -> BTreeMap<String, ToolRule> {
-    parse_rules("defaults.yaml", DEFAULTS).unwrap_or_default()
+    parse_rules_text("defaults.yaml", DEFAULT_RULES_TEXT).unwrap_or_default()
 }
 
 /// The GraphQL scope of the default rule for [`GRAPHQL_HOST`], which a spec recorded before

@@ -1,87 +1,84 @@
-claude:
-  hosts: [api.anthropic.com]
-  credential: claude
-  inject:
-    header: Authorization
-    form: "Bearer {secret}"
-  box_env:
-    CLAUDE_CODE_OAUTH_TOKEN: moor-proxy
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-github-api:
-  hosts: [api.github.com]
-  credential: github
-  # Its {any_repo} reads would otherwise keep this rule for a no-repo Box with a profile.
-  requires_repo: true
-  inject:
-    header: Authorization
-    form: "token {secret}"
-  allow:
-    - "GET /repos/{any_repo}"
-    - "GET /repos/{any_repo}/releases"
-    - "GET /repos/{any_repo}/releases/**"
-    - "GET /repos/{any_repo}/tags"
-    - "GET /repos/{any_repo}/contents"
-    - "GET /repos/{any_repo}/contents/**"
-    - "GET /repos/{any_repo}/git/trees/**"
-    - "GET /repos/{repo}"
-    - "GET|POST /repos/{repo}/pulls"
-    - "GET|PATCH /repos/{repo}/pulls/*"
-    - "GET /repos/{repo}/pulls/*/files"
-    - "GET /repos/{repo}/pulls/*/commits"
-    - "GET /repos/{repo}/pulls/*/comments"
-    - "GET|POST /repos/{repo}/pulls/*/reviews"
-    - "POST|DELETE /repos/{repo}/pulls/*/requested_reviewers"
-    - "PUT /repos/{repo}/pulls/*/update-branch"
-    - "GET /repos/{repo}/issues"
-    - "GET /repos/{repo}/issues/**"
-    - "GET /repos/{repo}/commits/*/check-runs"
-    - "GET /repos/{repo}/commits/*/status"
-    - "GET /repos/{repo}/actions/**"
-    - "GET /repos/{repo}/check-runs/*/annotations"
-    - "GET /repos/{repo}/dependabot/alerts"
-    - "GET /repos/{repo}/dependabot/alerts/*"
-    - "GET /repos/{repo}/branches/*/protection/required_status_checks"
-    - "GET /rate_limit"
-    - "GET /user"
-    - "GET|POST /repos/{repo}/stacks"
-    - "GET /repos/{repo}/stacks/*"
-    - "POST /repos/{repo}/stacks/*/add"
-    - "POST /repos/{repo}/stacks/*/unstack"
-    - "POST /graphql":
-        query: [repository, viewer, node, nodes, search, __type]
-        mutation:
-          - createPullRequest(repositoryId, headRepositoryId)
-          - updatePullRequest(pullRequestId)
-          - markPullRequestReadyForReview(pullRequestId)
-          - disablePullRequestAutoMerge(pullRequestId)
-          - requestReviewsByLogin(pullRequestId)
-          - replaceActorsForAssignable(assignableId)
-          - convertPullRequestToDraft(pullRequestId)
-  box_env:
-    GH_TOKEN: gho_moor-proxy
-    GH_REPO: "{repo}"
-    GH_NO_UPDATE_NOTIFIER: "1"
-    GH_TELEMETRY: disabled
-github-git:
-  hosts: [github.com]
-  credential: github
-  inject:
-    basic_user: x-access-token
-  allow:
-    - "GET /{any_repo}.git/info/refs"
-    - "GET /{any_repo}/info/refs"
-    - "POST /{any_repo}.git/git-upload-pack"
-    - "POST /{any_repo}/git-upload-pack"
-    - "POST /{repo}.git/git-receive-pack"
-    - "POST /{repo}/git-receive-pack"
-github-uploads:
-  hosts: [uploads.github.com]
-  credential: github
-  # The allow path cannot name the repo (the proxy strips query strings), so
-  # a Box with no repo gets no upload rule.
-  requires_repo: true
-  inject:
-    header: Authorization
-    form: "token {secret}"
-  allow:
-    - "POST /user-attachments/assets"
+rules:
+  - hosts: [api.anthropic.com]
+    credential: claude
+    inject:
+      header: Authorization
+      form: "Bearer {secret}"
+    box_env:
+      CLAUDE_CODE_OAUTH_TOKEN: moor-proxy
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+  - hosts: [api.github.com]
+    credential: github
+    # Its {any_repo} reads would otherwise keep this rule for a no-repo Box with a profile.
+    requires_repo: true
+    inject:
+      header: Authorization
+      form: "token {secret}"
+    allow:
+      - "GET /repos/{any_repo}"
+      - "GET /repos/{any_repo}/releases"
+      - "GET /repos/{any_repo}/releases/**"
+      - "GET /repos/{any_repo}/tags"
+      - "GET /repos/{any_repo}/contents"
+      - "GET /repos/{any_repo}/contents/**"
+      - "GET /repos/{any_repo}/git/trees/**"
+      - "GET /repos/{repo}"
+      - "GET|POST /repos/{repo}/pulls"
+      - "GET|PATCH /repos/{repo}/pulls/*"
+      - "GET /repos/{repo}/pulls/*/files"
+      - "GET /repos/{repo}/pulls/*/commits"
+      - "GET /repos/{repo}/pulls/*/comments"
+      - "GET|POST /repos/{repo}/pulls/*/reviews"
+      - "POST|DELETE /repos/{repo}/pulls/*/requested_reviewers"
+      - "PUT /repos/{repo}/pulls/*/update-branch"
+      - "GET /repos/{repo}/issues"
+      - "GET /repos/{repo}/issues/**"
+      - "GET /repos/{repo}/commits/*/check-runs"
+      - "GET /repos/{repo}/commits/*/status"
+      - "GET /repos/{repo}/actions/**"
+      - "GET /repos/{repo}/check-runs/*/annotations"
+      - "GET /repos/{repo}/dependabot/alerts"
+      - "GET /repos/{repo}/dependabot/alerts/*"
+      - "GET /repos/{repo}/branches/*/protection/required_status_checks"
+      - "GET /rate_limit"
+      - "GET /user"
+      - "GET|POST /repos/{repo}/stacks"
+      - "GET /repos/{repo}/stacks/*"
+      - "POST /repos/{repo}/stacks/*/add"
+      - "POST /repos/{repo}/stacks/*/unstack"
+      - "POST /graphql":
+          query: [repository, viewer, node, nodes, search, __type]
+          mutation:
+            - createPullRequest(repositoryId, headRepositoryId)
+            - updatePullRequest(pullRequestId)
+            - markPullRequestReadyForReview(pullRequestId)
+            - disablePullRequestAutoMerge(pullRequestId)
+            - requestReviewsByLogin(pullRequestId)
+            - replaceActorsForAssignable(assignableId)
+            - convertPullRequestToDraft(pullRequestId)
+    box_env:
+      GH_TOKEN: gho_moor-proxy
+      GH_REPO: "{repo}"
+      GH_NO_UPDATE_NOTIFIER: "1"
+      GH_TELEMETRY: disabled
+  - hosts: [github.com]
+    credential: github
+    inject:
+      basic_user: x-access-token
+    allow:
+      - "GET /{any_repo}.git/info/refs"
+      - "GET /{any_repo}/info/refs"
+      - "POST /{any_repo}.git/git-upload-pack"
+      - "POST /{any_repo}/git-upload-pack"
+      - "POST /{repo}.git/git-receive-pack"
+      - "POST /{repo}/git-receive-pack"
+  - hosts: [uploads.github.com]
+    credential: github
+    # The allow path cannot name the repo (the proxy strips query strings), so
+    # a Box with no repo gets no upload rule.
+    requires_repo: true
+    inject:
+      header: Authorization
+      form: "token {secret}"
+    allow:
+      - "POST /user-attachments/assets"

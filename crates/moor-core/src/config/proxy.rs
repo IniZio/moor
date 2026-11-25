@@ -7,21 +7,24 @@ mod extra;
 mod resolve;
 mod shape;
 mod template;
+mod text;
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::{check, parse_strict, ConfigError};
+use super::{check, ConfigError};
 use crate::graphql_scope::Scope;
 use crate::user::SecretName;
 pub use allow::{GRAPHQL_ENTRY, GRAPHQL_HOST};
 pub(super) use extra::check_extra_allow;
 pub use resolve::{
     default_graphql, default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule,
+    DEFAULT_RULES_TEXT,
 };
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
+pub use text::parse_rules_text;
 
 /// The user secret the GitHub rules inject.
 pub const GITHUB_SECRET: &str = "github";
@@ -292,22 +295,6 @@ impl ProxyConfig {
         }
         Ok(())
     }
-}
-
-/// Parses and validates a standalone rules document (name to rule).
-///
-/// # Errors
-/// Returns [`ConfigError`] for bad YAML, unknown keys, or invalid rules.
-pub(super) fn parse_rules(
-    file: &str,
-    text: &str,
-) -> Result<BTreeMap<String, ToolRule>, ConfigError> {
-    let rules: BTreeMap<String, ToolRule> = parse_strict(file, text)?;
-    for (name, rule) in &rules {
-        rule.validate(&format!("proxy.rules.{name}"))
-            .map_err(|e| e.in_file(file))?;
-    }
-    Ok(rules)
 }
 
 #[cfg(test)]
