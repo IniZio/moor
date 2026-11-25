@@ -516,3 +516,4 @@ fn each_default_rule_injects_its_own_secret() {
 
 mod graphql;
 mod repos;
+mod text;
