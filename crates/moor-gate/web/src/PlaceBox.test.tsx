@@ -146,3 +146,12 @@ test('a detail from a controller that sends no task_boxes still parses', async (
 	const detail = await detailOf(TWO_TURNS);
 	expect(detail.task_boxes).toEqual([]);
 });
+
+test('the pull request card sits after the Box line of the Box that opened it, not the latest one', async () => {
+	const url = 'https://github.com/acme/clinic-prototype/pull/15';
+	const opened: Entry = { id: 9, key: 'k9', at: at(8), kind: 'tool', class: 'step', text: 'gh pr create', tool: { name: 'Bash', title: 'gh pr create', failed: false, refused: false, input: null, output: { text: url, cut: false } } };
+	const timeline = [...TWO_TURNS.slice(0, 4), opened, said(5, 10, 'Opened the pull request.'), you(6, 30, 'Also add a test.'), said(7, 40, 'Added the test.')];
+	const boxes = [WORK_BOX(), WORK_BOX({ started_at: at(31) })].map((b, i) => ({ ...b, name: `${WORK}-${i}` }));
+	const view = await story(timeline, { task_boxes: boxes, pr: { repo: 'acme/clinic-prototype', number: 15, url } });
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-box', 't-pl-pr', 't-pl-say', 't-pl-fold', 't-pl-you', 't-pl-box', 't-pl-say']);
+});

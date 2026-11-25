@@ -56,7 +56,11 @@ function workWords(work: Entry[]): string {
 }
 
 /** A part of a turn's conversation: the agent's answer, or what its work Boxes made, in the order they happened. */
-type Part = { at: number; node: ComponentChildren; answer?: boolean };
+type Part = { at: number; node: ComponentChildren; answer?: boolean; pr?: boolean };
+
+/** Parts in time order; at the same moment the pull request card comes first, then the answer, then the rest. */
+const byTime = (x: Part, y: Part) => x.at - y.at || rank(x) - rank(y);
+const rank = (p: Part) => (p.pr ? 0 : p.answer ? 1 : 2);
 
 const answerPart = (e: Entry): Part => ({
 	at: Date.parse(e.at),
@@ -77,19 +81,27 @@ const startOf = (t: Turn): number => Math.min(...[t.you, t.answer, ...t.work].fl
 /** The last index of `items` that `holds`, or -1. */
 const lastIndex = <T,>(items: readonly T[], holds: (item: T) => boolean): number => items.reduce((at, item, i) => (holds(item) ? i : at), -1);
 
-/** The parts of each turn: its answer, and the work Box lines and cards that happened in it. A Box part goes to the last turn that began no later than it, or the first, and follows the answer of the same moment. The pull request card sits above the answer of the last turn, or at its end when there is none. */
+/** When the pull request first showed in the task: the first entry whose words or call mention its address, or NaN when none does. */
+function prSeenAt(pr: NonNullable<BoxDetail['pr']>, timeline: Entry[]): number {
+	const first = timeline.find((e) => [e.text, e.tool?.output?.text, JSON.stringify(e.tool?.input ?? '')].some((s) => s?.includes(pr.url)));
+	return first ? Date.parse(first.at) : NaN;
+}
+
+/** The parts of each turn: its answer, and the work Box lines and cards that happened in it. A Box part goes to the last turn that began no later than it, or the first, and follows the answer of the same moment. The pull request card sits where the pull request first showed, after the Box line of the Box that opened it. When nothing shows it, the card sits above the answer of the last turn, or at its end when there is none. */
 function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): Part[][] {
 	const starts = turns.map(startOf);
 	const parts: Part[][] = turns.map((t) => (t.answer ? [answerPart(t.answer)] : []));
-	const put = (at: number, node: ComponentChildren) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node });
+	const put = (at: number, node: ComponentChildren, pr = false) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node, pr });
 	for (const box of detail.task_boxes) {
 		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.name}`} />);
 		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.name}/${a.name}@${a.version}`} />);
 	}
-	for (const list of parts) list.sort((x, y) => x.at - y.at || Number(!!y.answer) - Number(!!x.answer));
 	const { pr } = detail;
+	const seen = pr ? prSeenAt(pr, detail.timeline) : NaN;
+	if (pr && !Number.isNaN(seen)) put(seen, <PrCard pr={pr} state={prState} key="pr" />, true);
+	for (const list of parts) list.sort(byTime);
 	const last = parts.at(-1);
-	if (pr && last) {
+	if (pr && Number.isNaN(seen) && last) {
 		const above = lastIndex(last, (p) => !!p.answer);
 		last.splice(above < 0 ? last.length : above, 0, { at: 0, node: <PrCard pr={pr} state={prState} key="pr" /> });
 	}
