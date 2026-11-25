@@ -88,6 +88,36 @@ fn a_place_brief_points_files_at_the_work_box_and_claims_no_401_for_other_repos(
 }
 
 #[test]
+fn a_place_brief_opens_the_pull_request_from_the_place_with_gh() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    let place = out.split("Reports are how").next().unwrap_or_default();
+    for words in [
+        "git push origin HEAD",
+        "from this place with gh",
+        "`command -v gh`",
+        "Do not commit it",
+        "Name the files you saved in your final message",
+    ] {
+        assert!(place.contains(words), "{words} in {place}");
+    }
+    assert!(out.contains("install -D /tmp/"), "{out}");
+}
+
+#[test]
+fn a_place_brief_claims_no_401_on_reads_of_other_repos() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    assert!(!out.contains("as it does for repos outside this Box"), "{out}");
+    assert!(out.contains("Reads of any repo carry the credential"), "{out}");
+    assert!(out.contains("A 401 or 404 on a write"), "{out}");
+}
+
+#[test]
 fn names_no_prompt_or_goal_line() {
     let out = render(&input(None));
     assert!(
