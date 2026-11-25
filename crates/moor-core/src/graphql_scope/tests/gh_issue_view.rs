@@ -100,6 +100,7 @@ fn the_gh_issue_view_response_shows_only_box_repo_headlines() {
             &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
         ),
         &RepoRef::new("IniZio", "moor"),
+        &super::seed(),
     );
     assert_eq!(verdict, Verdict::Allow);
     let resp = json!({"data": {"repository": {"issue": {
@@ -140,6 +141,7 @@ fn the_response_check_copies_unchecked_values_as_sent() {
             &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
         ),
         &RepoRef::new("IniZio", "moor"),
+        &super::seed(),
     );
     let resp = r#"{ "data" : {"repository": {"hasIssuesEnabled" : true, "issue": {"body": "a\u0041 1.50",
         "reactionGroups": [ 1.50 , 2e3 ], "parent": {"title": "x", "state": "OPEN", "repository": {"nameWithOwner": "victim/secrets"}},
@@ -160,6 +162,7 @@ fn a_query_without_linked_issues_needs_no_response_check() {
             &json!({"owner": "IniZio", "repo": "moor", "pr_number": 1}),
         ),
         &RepoRef::new("IniZio", "moor"),
+        &super::seed(),
     );
     assert_eq!(verdict, Verdict::Allow);
     assert!(paths.is_empty());
@@ -188,6 +191,7 @@ fn a_deeply_nested_list_on_a_linked_path_is_left_unchecked() {
             &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
         ),
         &RepoRef::new("IniZio", "moor"),
+        &super::seed(),
     );
     on_proxy_stack(move || {
         let depth = 5_000;
@@ -208,6 +212,7 @@ fn a_huge_list_of_lists_of_sub_issues_is_refused_fast() {
             &json!({"owner": "IniZio", "repo": "moor", "number": 1}),
         ),
         &RepoRef::new("IniZio", "moor"),
+        &super::seed(),
     );
     on_proxy_stack(move || {
         let depth = 1_000_000;

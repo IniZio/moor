@@ -47,7 +47,16 @@ github-api:
     - "GET /repos/{repo}/stacks/*"
     - "POST /repos/{repo}/stacks/*/add"
     - "POST /repos/{repo}/stacks/*/unstack"
-    - "POST /graphql"
+    - "POST /graphql":
+        query: [repository, viewer, node, nodes, search, __type]
+        mutation:
+          - createPullRequest(repositoryId, headRepositoryId)
+          - updatePullRequest(pullRequestId)
+          - markPullRequestReadyForReview(pullRequestId)
+          - disablePullRequestAutoMerge(pullRequestId)
+          - requestReviewsByLogin(pullRequestId)
+          - replaceActorsForAssignable(assignableId)
+          - convertPullRequestToDraft(pullRequestId)
   box_env:
     GH_TOKEN: gho_moor-proxy
     GH_REPO: "{repo}"

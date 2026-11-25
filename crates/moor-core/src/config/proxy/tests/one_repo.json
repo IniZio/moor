@@ -184,6 +184,25 @@
       "GH_REPO": "acme/widgets",
       "GH_TELEMETRY": "disabled",
       "GH_TOKEN": "gho_moor-proxy"
+    },
+    "graphql": {
+      "query": [
+        "repository",
+        "viewer",
+        "node",
+        "nodes",
+        "search",
+        "__type"
+      ],
+      "mutation": [
+        "createPullRequest(repositoryId, headRepositoryId)",
+        "updatePullRequest(pullRequestId)",
+        "markPullRequestReadyForReview(pullRequestId)",
+        "disablePullRequestAutoMerge(pullRequestId)",
+        "requestReviewsByLogin(pullRequestId)",
+        "replaceActorsForAssignable(assignableId)",
+        "convertPullRequestToDraft(pullRequestId)"
+      ]
     }
   },
   {

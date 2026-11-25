@@ -8,21 +8,10 @@ use super::schema::{self, Next};
 mod paths;
 mod query;
 mod roots;
-use super::{Linked, NodeId, Reason, RepoRef};
+use super::{Linked, NodeId, Reason, RepoRef, Scope};
 
 /// Most selections visited while expanding fragments.
 const MAX_VISITS: usize = 5_000;
-
-/// Allowed mutations with the input keys that hold node IDs; the first key is required.
-const MUTATIONS: &[(&str, &[&str])] = &[
-    ("createPullRequest", &["repositoryId", "headRepositoryId"]),
-    ("updatePullRequest", &["pullRequestId"]),
-    ("markPullRequestReadyForReview", &["pullRequestId"]),
-    ("disablePullRequestAutoMerge", &["pullRequestId"]),
-    ("requestReviewsByLogin", &["pullRequestId"]),
-    ("replaceActorsForAssignable", &["assignableId"]),
-    ("convertPullRequestToDraft", &["pullRequestId"]),
-];
 
 /// Checks the only operation of a document and returns the node IDs that need a check and
 /// the linked issues it reads.
@@ -30,6 +19,7 @@ pub(super) fn run(
     doc: &Doc,
     vars: &Map<String, Json>,
     repo: &RepoRef,
+    scope: &Scope,
 ) -> Result<(Vec<NodeId>, Linked), Reason> {
     let op = match doc.ops.as_slice() {
         [op] => op,
@@ -44,6 +34,7 @@ pub(super) fn run(
         op,
         vars,
         repo,
+        scope,
         visits: 0,
         pr_only: false,
         ids: Vec::new(),
@@ -64,6 +55,8 @@ struct Policy<'a> {
     vars: &'a Map<String, Json>,
     /// The Box repo.
     repo: &'a RepoRef,
+    /// The roots and mutations the rule lets through.
+    scope: &'a Scope,
     /// Selections visited so far.
     visits: usize,
     /// When set, type conditions must be `PullRequest`.
@@ -246,6 +239,9 @@ impl<'a> Policy<'a> {
 
     /// Checks a root query field.
     fn query(&mut self, field: &'a Field) -> Result<(), Reason> {
+        if !self.scope.allows_root(&field.name) {
+            return Err(deny_field(&field.name));
+        }
         match field.name.as_str() {
             "repository" => {
                 self.repository(field)?;
@@ -271,16 +267,8 @@ impl<'a> Policy<'a> {
 
     /// Checks an allow-listed mutation and collects its node IDs.
     fn mutation(&mut self, field: &'a Field) -> Result<(), Reason> {
-        if matches!(
-            field.name.as_str(),
-            "mergePullRequest" | "enablePullRequestAutoMerge"
-        ) {
-            return Err(Reason::new(format!(
-                "`{}`: merging is not allowed from the Box",
-                field.name
-            )));
-        }
-        let Some((_, keys)) = MUTATIONS.iter().find(|(name, _)| *name == field.name) else {
+        let scope: &'a Scope = self.scope;
+        let Some(keys) = scope.mutation(&field.name) else {
             return Err(deny_field(&field.name));
         };
         Self::only_args(field, &["input"])?;
@@ -296,7 +284,7 @@ impl<'a> Policy<'a> {
             }
         };
         for (i, key) in keys.iter().enumerate() {
-            match input.get(*key) {
+            match input.get(key.as_str()) {
                 Some(Json::String(id)) => self.note(id.clone()),
                 None if i > 0 => {}
                 _ => {

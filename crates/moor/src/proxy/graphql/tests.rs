@@ -297,6 +297,7 @@ fn rig_placeholder(
         upstream,
         guard,
         rest: Vec::new(),
+        scope: moor_core::config::proxy::default_graphql(),
     })
     .unwrap();
     Rig { filter, up, ca_pem }

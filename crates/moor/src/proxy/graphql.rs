@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 
 use moor_core::config::proxy::EndpointRule;
-use moor_core::graphql_scope::RepoRef;
+use moor_core::graphql_scope::{RepoRef, Scope};
 use nono_proxy::config::{CompiledEndpointRules, EndpointRule as NonoRule};
 use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
 use rustls::ServerConfig;
@@ -71,6 +71,8 @@ pub(crate) struct FilterSpec {
     /// The REST requests the rule credentials, checked against the `/repos/{owner}/{name}`
     /// form of a `/repositories/{id}` request.
     pub(crate) rest: Vec<EndpointRule>,
+    /// The GraphQL roots and mutations the rule lets through.
+    pub(crate) scope: Scope,
 }
 
 /// One refused request, reported without body, path, query or headers.
@@ -144,6 +146,8 @@ pub(super) struct Shared {
     pub(super) repo_ids: RepoIds,
     /// The REST requests the rule credentials.
     pub(super) rest: CompiledEndpointRules,
+    /// The GraphQL roots and mutations the rule lets through.
+    pub(super) scope: Scope,
     /// Turns of the requests whose response is checked.
     checking: Turns,
     /// Refusals not yet drained.
@@ -250,6 +254,7 @@ impl GraphqlFilter {
             host: spec.host,
             port: spec.port,
             rule: spec.rule,
+            scope: spec.scope,
             credential_headers: spec.credential_headers,
             placeholder: spec.placeholder,
             withheld: Mutex::new(VecDeque::new()),

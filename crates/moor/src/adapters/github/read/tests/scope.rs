@@ -1,5 +1,6 @@
 //! The read a controller makes at Box start, judged by the GraphQL scope filter of the Box it runs in.
 
+use moor_core::config::proxy::default_graphql;
 use moor_core::graphql_scope::{judge, RepoRef, Verdict};
 use serde_json::json;
 
@@ -16,7 +17,11 @@ fn verdict(base: Option<&str>) -> Verdict {
             "hasBase": base.is_some(),
         },
     });
-    judge(body.to_string().as_bytes(), &RepoRef::new("o", "n"))
+    judge(
+        body.to_string().as_bytes(),
+        &RepoRef::new("o", "n"),
+        &default_graphql(),
+    )
 }
 
 #[test]
@@ -37,7 +42,11 @@ fn read_of_another_repo_is_not_allowed() {
         "variables": {"owner": "x", "name": "y", "branch": "refs/heads/b", "base": "", "hasBase": false},
     });
     assert_ne!(
-        judge(body.to_string().as_bytes(), &RepoRef::new("o", "n")),
+        judge(
+            body.to_string().as_bytes(),
+            &RepoRef::new("o", "n"),
+            &default_graphql()
+        ),
         Verdict::Allow
     );
 }

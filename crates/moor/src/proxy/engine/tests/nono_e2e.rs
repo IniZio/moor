@@ -23,6 +23,7 @@ const SECRET: &str = "test-token-1";
 /// One header-injecting rule for `localhost:<port>` that allows only `GET /ok`.
 fn rule(port: u16) -> ResolvedRule {
     ResolvedRule {
+        graphql: None,
         name: "tool".to_owned(),
         hosts: vec![format!("localhost:{port}")],
         credential: "tool-token".to_owned(),
