@@ -1,12 +1,12 @@
 /* The task page: head, needs card, gate story, prompt, tabs, timeline rows and message box. Own classes (t-th, t-sg), no inline styles (the page's CSP forbids them). */
-.t-th { display: block; padding: 0; margin-bottom: 18px; }
-.t-th0 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 6px; font-size: 0.8125rem; }
+.t-th { display: block; padding: 0; margin-bottom: 6px; }
+.t-th0 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px; font-size: var(--app-text-sm); }
 .t-th-repo { display: inline-flex; align-items: center; gap: 8px; }
-.t-th-repo .t-mono { font-size: 0.8125rem; }
+.t-th-repo .t-mono { font-size: var(--app-text-sm); }
 .t-th-sep, .t-th-starts, .t-th-meta { color: var(--moor-color-text-muted); }
-.t-th-sep { font-size: 0.9375rem; }
-.t-th-starts { font-size: 0.8125rem; }
-.t-th0 .t-th-issue { font-size: 0.75rem; color: var(--moor-color-text-muted); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
+.t-th-sep { font-size: var(--app-text); }
+.t-th-starts { font-size: var(--app-text-sm); }
+.t-th0 .t-th-issue { font-size: var(--app-text-sm); color: var(--moor-color-text-muted); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
 .t-th-pr { color: var(--moor-color-accent); }
 .t-th-pr, .pr-inline { line-height: 18px; }
 .pr-inline, .pr-other { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
@@ -14,14 +14,14 @@
 .pr-inline a.t-mono { color: var(--moor-color-accent); }
 .pr-inline .pr-step.pr-go { color: var(--moor-color-accent); font-weight: var(--moor-weight-strong); }
 .pr-inline .pr-step.pr-done { color: var(--moor-color-success); }
-.t-th1 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.t-th1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .t-th-title { margin: 0; font: var(--moor-weight-heading) var(--moor-text-2xl) / 1.2 var(--moor-font-heading); min-width: 0; overflow-wrap: anywhere; }
-.t-th1 > .t-pill { flex: none; padding: 1px 9px; font-size: 0.75rem; font-weight: var(--moor-weight-strong); }
+.t-th1 > .t-pill { flex: none; padding: 0 8px; line-height: 18px; font-size: var(--app-text-sm); font-weight: var(--moor-weight-strong); }
 .t-th1 > .t-acts { flex: none; }
 .t-th1 > .grow { flex: 1 1 auto; }
-.t-th-meta { display: flex; flex-wrap: wrap; align-items: baseline; margin: 6px 0 0; font-size: 0.875rem; }
+.t-th-meta { display: flex; flex-wrap: wrap; align-items: baseline; margin: 2px 0 0; font-size: var(--app-text-sm); }
 .t-th-meta > * + *::before { content: ' · '; white-space: pre; }
-.t-th-meta .t-mono { font-size: 0.78rem; }
+.t-th-meta .t-mono { font-size: var(--app-text-sm); }
 .t-th-meta a { color: inherit; }
 .t-box .t-stop { border-color: var(--moor-color-border-strong); color: inherit; }
 .t-box .t-stop:hover:not(:disabled) { background: var(--moor-color-bg-raised); border-color: var(--moor-color-text-muted); }
@@ -29,8 +29,8 @@
 /* What the agent asks, above the gates: a card with the state's colour. */
 .t-box .t-wait { margin: 0 0 28px; padding: 16px 18px; border: 1.5px solid var(--state-needs); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); box-shadow: var(--moor-shadow-md); }
 .t-box .t-wait-stuck { border-color: var(--moor-color-danger); }
-.t-box .t-wait-h { font-size: 0.8125rem; color: var(--moor-color-text-muted); }
-.t-box .t-wait-q { margin: 0 0 8px; font: var(--moor-weight-heading) 1.1rem / 1.2 var(--moor-font-heading); }
+.t-box .t-wait-h { font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
+.t-box .t-wait-q { margin: 0 0 8px; font: var(--moor-weight-heading) var(--moor-text-lg) / 1.2 var(--moor-font-heading); }
 .t-box .t-wait-btns { margin-top: 12px; }
 
 .t-story { margin: 0; }
@@ -41,22 +41,22 @@ summary.t-sg-row { cursor: pointer; }
 summary.t-sg-row::-webkit-details-marker { display: none; }
 summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-sg-mark { flex: none; width: 1.1em; text-align: center; font-weight: var(--moor-weight-strong); color: var(--t-tone); }
-.t-sg-n { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 1.5px solid var(--moor-color-text); border-radius: 50%; font-size: 0.7rem; font-weight: var(--moor-weight-strong); font-variant-numeric: tabular-nums; }
+.t-sg-n { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 1.5px solid var(--moor-color-text); border-radius: 50%; font-size: var(--app-text-sm); font-weight: var(--moor-weight-strong); font-variant-numeric: tabular-nums; }
 .t-sg-name { font-weight: 700; overflow-wrap: anywhere; }
-.t-sg-state { font-size: 0.875rem; font-weight: var(--moor-weight-strong); color: var(--moor-color-text-muted); }
+.t-sg-state { font-size: var(--app-text); font-weight: var(--moor-weight-strong); color: var(--moor-color-text-muted); }
 .t-sg-state::before { content: '· '; font-weight: 400; }
 .t-sg.t-quiet .t-sg-row { color: var(--moor-color-text-muted); }
 .t-sg.t-warn { --t-tone: var(--moor-color-warning); color: inherit; }
 .t-sg-hand { box-shadow: inset 2px 0 0 var(--t-tone); }
 .t-sg-hand .t-sg-state, .t-sg-hand .t-sg-n { color: var(--t-tone); }
-.t-sg-end .t-sg-row { font-size: 0.875rem; }
+.t-sg-end .t-sg-row { font-size: var(--app-text); }
 .t-sg-body { padding: 0 6px 10px calc(6px + 1.1em + 1.25rem + 16px); }
-.t-sg-rule { margin: 0 0 var(--moor-space-2); font-size: 0.875rem; color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
+.t-sg-rule { margin: 0 0 var(--moor-space-2); font-size: var(--app-text); color: var(--moor-color-text-muted); overflow-wrap: anywhere; }
 .t-sg-rule:last-child { margin-bottom: 0; }
 .t-sg-body .t-wait { margin: var(--moor-space-2) 0 0; }
 
 .t-prompt { margin: 10px 0 26px; }
-.t-prompt summary { display: block; width: max-content; list-style: none; cursor: pointer; font-size: 0.875rem; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
+.t-prompt summary { display: block; width: max-content; list-style: none; cursor: pointer; font-size: var(--app-text); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
 .t-prompt summary::-webkit-details-marker { display: none; }
 .t-prompt pre { margin: var(--moor-space-2) 0 0; padding: 0.5rem 0.7rem; background: var(--moor-color-bg-sunken); border-radius: var(--moor-radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--moor-text-sm)/1.45 var(--moor-font-body); }
 
@@ -65,7 +65,7 @@ summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-box .t-tab { padding: 4px 0; font-weight: var(--moor-weight-body); border-bottom: 2px solid transparent; margin-bottom: 0; }
 .t-box .t-tab[aria-selected='true'] { border-bottom-color: var(--moor-color-text); }
 .t-tabs > .grow { flex: 1 1 auto; }
-.t-tabs .t-cnt { font-size: 0.8125rem; font-weight: 500; }
+.t-tabs .t-cnt { font-size: var(--app-text-sm); font-weight: 500; }
 .t-tabs .t-cnt .t-counts { font: inherit; }
 .t-box .t-events { display: block; }
 .t-box .t-ev { grid-template-columns: 4rem minmax(0, 1fr) 3rem; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
@@ -77,6 +77,6 @@ summary.t-sg-row:hover { background: var(--moor-color-bg-sunken); }
 .t-box .t-moor .t-who { font-family: var(--moor-font-heading); }
 .t-box .t-moor .t-what { padding-left: 0; border-left: 0; font-size: inherit; }
 .t-box .t-fold, .t-box .t-tool-fold { padding: 6px 0; border-bottom: 1px solid var(--moor-color-border); }
-.t-box .t-fold summary, .t-box .t-tool-fold > summary { display: block; width: auto; padding: 0 0 0 calc(4rem + 10px); font-size: 0.875rem; color: var(--moor-color-text-muted); }
+.t-box .t-fold summary, .t-box .t-tool-fold > summary { display: block; width: auto; padding: 0 0 0 calc(4rem + 10px); font-size: var(--app-text); color: var(--moor-color-text-muted); }
 .t-box .t-fold .t-chev { margin-right: 4px; }
 .t-box .t-fold-body, .t-box .t-tool-runs { margin: 4px 0 0 calc(4rem + 10px); }

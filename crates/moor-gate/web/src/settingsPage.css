@@ -1,5 +1,5 @@
 .settings-page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--moor-space-8); align-items: start; }
-.settings-nav { position: sticky; top: 4rem; display: grid; gap: 0.15rem; font-size: var(--app-text); }
+.settings-nav { position: sticky; top: 3rem; display: grid; gap: 0.15rem; font-size: var(--app-text); }
 .settings-nav h1 { font-size: var(--moor-text-xl); margin: 0 0 var(--moor-space-3); }
 .settings-nav a { color: var(--moor-color-text); text-decoration: none; padding: 0.35rem 0.6rem; border-radius: var(--moor-radius-sm); }
 .settings-nav a:hover { background: var(--moor-color-bg-sunken); }
