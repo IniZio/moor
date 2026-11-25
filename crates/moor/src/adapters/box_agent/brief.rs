@@ -49,8 +49,10 @@ pub(super) fn render(b: &BriefInput) -> String {
          your final message. A Report never means the Box is finished; keep working \
          until the work is done, and do not stop after reporting.\n\n",
     );
-    out.push_str(PUBLISH);
-    out.push_str(ATTACH);
+    if !b.place {
+        out.push_str(PUBLISH);
+        out.push_str(ATTACH);
+    }
     out.push_str(GH_INSTALL);
     out
 }
@@ -61,9 +63,18 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     `Repos:` line naming the GitHub repos it is about, then a blank line, then the person's \
     message. Read those repos through GitHub: `gh api`, or \
     `git clone --filter=blob:none https://github.com/OWNER/NAME.git /tmp/NAME`. Requests for \
-    the repos the task names carry the owner's credential through moor's Proxy; any other \
-    repo answers 401 or 404. When HTTPS_PROXY is set, do not unset or bypass it. Write only \
+    the repos the task names carry the owner's credential through moor's Proxy. When \
+    HTTPS_PROXY is set, do not unset or bypass it. Write only \
     in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
+    When the task needs code run, start a work Box with `start_box` and run commands in it \
+    with `exec_in_box`; they run in the Box's checkout. Save a file the person should see (a \
+    screenshot, test output) in the work Box's `.moor/artifacts/`, not in your own folder; \
+    moor collects it within about 30 seconds and when the Box closes, and it stays on the task \
+    after the Box is gone. Do not commit it. Name the files you saved in your final message. \
+    Commit your work in the Box and push it with `git push origin HEAD`. Then open the pull \
+    request from this place with gh, installing gh with the recipe below when \
+    `command -v gh` finds none, and end your final message with its URL. Then close the Box \
+    with `close_box`, which refuses unpushed work.\n\n\
     You may receive follow-up messages (steers) typed into this session.\n\n\
     Decide on your own when you reasonably can, and ask a question only when the choice is \
     the owner's.\n\n";
@@ -166,7 +177,7 @@ printf '%s\n' \
   && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
 ```
 
-gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. A 401 or 404 means the Proxy withheld the credential, as it does for repos outside this Box. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.
+gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. Reads of any repo carry the credential; writes are limited to the repos this Box or task names. A 401 or 404 on a write (a push, a pull request, a comment) to any other repo means the Proxy withheld the credential. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.
 "#;
 
 #[cfg(test)]
