@@ -23,6 +23,7 @@ fn the_tools_are_listed() {
             "add_workflow",
             "answer_gate",
             "answer_run",
+            "ask",
             "box_status",
             "close_box",
             "close_failed_boxes",
