@@ -30,7 +30,7 @@ use super::host_session::refuse_invalid;
 use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{BoxRow, Store, StoreError};
+use crate::store::{BoxRow, Store};
 
 mod asleep;
 mod gates;
@@ -45,6 +45,7 @@ pub(crate) mod repo;
 mod response;
 mod restore;
 mod revive;
+mod task_branch;
 mod watch;
 
 use response::{queued_view, set_agent, set_provisioned, view};
@@ -383,9 +384,8 @@ fn insert(
     (req, user): (&StartReq, UserId),
     new: NewBox,
     checked: Vec<CheckedCred>,
-) -> Result<BoxId, StoreError> {
-    let mut decision = Decision::insert(new)
-        .branch_by_id()
+) -> Result<BoxId, CommandError> {
+    let mut decision = task_branch::insert(store, req.task, new)?
         .parent_session(req.parent.map(SessionId::get))
         .requester(user);
     if !checked.is_empty() {

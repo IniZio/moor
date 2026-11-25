@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
-use moor_core::BoxId;
+use moor_core::{BoxId, BoxName};
 use moor_schema::tables::{Boxes, Events};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
@@ -21,7 +22,33 @@ pub(crate) struct TaskBox {
     pub(crate) closed_at: Option<Ts>,
 }
 
+/// The branch a task's work Boxes share, and the one of them still open on it.
+pub(crate) struct TaskBranch {
+    /// The branch of the first Box the place started.
+    pub(crate) branch: String,
+    /// The task's Box that is open on that branch, if one is.
+    pub(crate) open: Option<BoxName>,
+}
+
 impl Store {
+    /// The branch of the first Box place `place` started, which every later Box of the task
+    /// starts on; none before the place started one.
+    pub(crate) fn task_branch(&self, place: BoxId) -> Result<Option<TaskBranch>, StoreError> {
+        let tied = Expr::col((Boxes::Table, Boxes::Task)).eq(place.get());
+        let rows = query_boxes(&self.reader()?, tied, Order::Asc, None)?;
+        let Some(branch) = rows.iter().find_map(|r| r.branch.clone()) else {
+            return Ok(None);
+        };
+        let open = rows
+            .iter()
+            .find(|r| {
+                r.branch.as_ref() == Some(&branch)
+                    && !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
+            })
+            .map(|r| r.name.clone());
+        Ok(Some(TaskBranch { branch, open }))
+    }
+
     /// The Boxes whose agent-started tie is place `place`, open or closed, oldest first. Each takes
     /// the time of its first `working` event, since a woken Box logs `working` again, and of its
     /// `closed` event. One read per kind of fact, however many Boxes the place started.
