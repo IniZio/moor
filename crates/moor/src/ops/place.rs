@@ -325,14 +325,28 @@ pub(super) fn check_start(
             format!("a place takes {what} from no one: it starts with no repo and no prompt"),
         ));
     }
-    let listed = store
-        .email_of(user)?
-        .is_some_and(|email| cx.env().agent_place_user(&email));
-    if !listed {
-        return Err(CommandError::new(
-            ErrorKind::Refused,
-            "you are not on this controller's agent_places list",
-        ));
+    on_roster(cx, store, user)
+}
+
+/// Refuses a user who is not on the controller's `agent_places` list. The refusal names the email
+/// the controller holds for the user, since a mismatch there is the likely cause.
+///
+/// # Errors
+/// Refused for a user off the list; a store failure.
+pub(super) fn on_roster(cx: &Cx, store: &Store, user: UserId) -> Result<(), CommandError> {
+    let email = store.email_of(user)?;
+    if email
+        .as_deref()
+        .is_some_and(|email| cx.env().agent_place_user(email))
+    {
+        return Ok(());
     }
-    Ok(())
+    let held = email.map_or_else(
+        || "moor has no email for your user".to_owned(),
+        |email| format!("moor has {email} for your user"),
+    );
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!("you are not on this controller's agent_places list; {held}"),
+    ))
 }

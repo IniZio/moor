@@ -70,6 +70,8 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
                         "show" => list::boxes(who),
                         "start" => json!({"started": inner["name"]}),
+                        "ask" => json!({"box": "place-1", "claimed": true, "claimed_at": 1,
+                            "served_at": null, "steered_at": null}),
                         _ => workflow_list::answer(cmd, inner).unwrap_or(Value::Null),
                     };
                     let envelope = Response::ok("x", Some(value));
@@ -403,6 +405,32 @@ fn start_box_sends_a_start_as_the_person() {
             "cmd": "start", "name": "web/fix", "prompt": "fix it", "base": "main",
             "repo": "acme/web", "no_agent": false, "resume": false}})
     );
+}
+
+#[test]
+fn ask_sends_the_question_as_the_person_and_names_the_place_that_took_it() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let result = m.call(
+        &token,
+        "ask",
+        json!({"repos": ["acme/web", "acme/lib"], "prompt": "Where is GET /items handled?"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    assert_eq!(result["structuredContent"]["box"], "place-1");
+    assert_eq!(result["structuredContent"]["claimed"], true);
+    let next = result["structuredContent"]["next"].as_str().unwrap();
+    assert!(next.contains("box_status"), "{result}");
+    let sent = m.requests();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(
+        sent[0]["request"],
+        json!({"cmd": "as", "identity": "authgear:alice-sub", "request": {
+            "cmd": "ask", "repos": ["acme/web", "acme/lib"],
+            "prompt": "Where is GET /items handled?"}})
+    );
+    let bad = m.call(&token, "ask", json!({"repos": ["web"], "prompt": "q"}));
+    assert_eq!(bad["isError"], true, "{bad}");
 }
 
 #[test]

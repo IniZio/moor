@@ -34,7 +34,7 @@ mod start;
 mod webhook;
 mod workflow;
 
-use args::{BoxArgs, CloseArgs, SendArgs, StartArgs};
+use args::{AskArgs, BoxArgs, CloseArgs, SendArgs, StartArgs};
 pub(crate) use failed::retry_from_portal;
 use reply::Reply;
 pub(crate) use start::{ask_from_portal, asks, start_from_portal, NewBox};
@@ -107,6 +107,52 @@ impl Tools {
         }
         self.run_with(&context, WRITE, request, reply, send_early)
             .await
+    }
+
+    /// Asks the caller's agent place a question.
+    #[tool(
+        name = "ask",
+        description = "Ask a question about one or more GitHub repos given as owner/name in `repos`, \
+                       first one first: the task's own. It goes to your own agent place, as the \
+                       portal's Tasks home sends it, and the answer names the place that took it \
+                       (box), with no work Box behind it. Follow it with box_status, \
+                       inspect_box or list_boxes. Refused when you are not on the controller's \
+                       agent_places list; the refusal names the email moor has for you. A refusal \
+                       for missing secrets names them; the person stores them in a browser on \
+                       the account page at the gate's root, never through an agent. Needs the \
+                       moor:write scope."
+    )]
+    async fn ask_question(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<AskArgs>,
+    ) -> CallToolResult {
+        let auth = match auth_for(&context, WRITE) {
+            Ok(auth) => auth,
+            Err(why) => return failed(why),
+        };
+        let controller = self.controller.clone();
+        let origin = self.public_url.clone().unwrap_or_default();
+        let sent = tokio::task::spawn_blocking(move || {
+            ask_from_portal(&controller, &auth.person, (args.repos, args.prompt), origin)
+        })
+        .await;
+        match sent {
+            Ok(Ok(mut value)) => {
+                if let Some(reply) = value.as_object_mut() {
+                    reply.insert(
+                        "next".to_owned(),
+                        Value::from(
+                            "the place has the question; call box_status or inspect_box with \
+                             this Box's name to read its agent's answer",
+                        ),
+                    );
+                }
+                CallToolResult::structured(value)
+            }
+            Ok(Err(why)) => failed(why),
+            Err(e) => failed(format!("the call did not finish: {e}")),
+        }
     }
 
     /// Shows one Box.

@@ -36,6 +36,15 @@ pub(super) struct StartArgs {
     pub(super) wait: Option<bool>,
 }
 
+/// Arguments of `ask`.
+#[derive(Deserialize, JsonSchema)]
+pub(super) struct AskArgs {
+    /// The repos the question is about, each as `owner/name`, first one first: the task's own.
+    pub(super) repos: Vec<String>,
+    /// The question, as you would put it to the person's agent.
+    pub(super) prompt: String,
+}
+
 /// Arguments of the tools that name one Box.
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct BoxArgs {
