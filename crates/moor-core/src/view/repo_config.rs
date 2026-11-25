@@ -3,12 +3,16 @@
 use serde::{Deserialize, Serialize};
 
 use crate::name::ForgeRepo;
+use crate::request::RepoFile;
 
 /// A repo's stored config.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoConfigValue {
     /// The repo.
     pub repo: ForgeRepo,
+    /// Which of the repo's texts this is.
+    #[serde(default, skip_serializing_if = "RepoFile::is_config")]
+    pub file: RepoFile,
     /// The config as YAML; none when the repo has no stored config.
     pub text: Option<String>,
     /// How many times the config was written, 0 when it has not been.

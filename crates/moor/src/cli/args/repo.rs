@@ -3,7 +3,7 @@
 use std::io::Read as _;
 
 use clap::{Args, Subcommand};
-use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq};
+use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::Request;
 
@@ -13,14 +13,18 @@ pub(super) enum RepoCli {
     /// A repo's config, which lives in moor, not in the repo.
     #[command(subcommand)]
     Config(ConfigCli),
+    /// The Proxy rules a repo's Boxes follow, which live in moor. A repo with none stored
+    /// shows the default rules text.
+    #[command(subcommand)]
+    Rules(ConfigCli),
 }
 
 /// Subcommands of `repo config`.
 #[derive(Debug, Subcommand)]
 pub(super) enum ConfigCli {
-    /// Print the repo's stored config; `--json` adds its revision and who last edited it.
+    /// Print the stored text; `--json` adds its revision and who last edited it.
     Get(RepoArg),
-    /// Replace the repo's stored config. You need push access to the repo.
+    /// Replace the stored text. You need push access to the repo.
     Set(SetArgs),
 }
 
@@ -69,13 +73,18 @@ pub(super) fn config_text(path: &str) -> Result<String, String> {
 impl RepoCli {
     /// Convert the parsed verb into its request.
     pub(super) fn into_request(self) -> Request {
-        let Self::Config(config) = self;
-        match config {
+        let (file, verb) = match self {
+            Self::Config(verb) => (RepoFile::Config, verb),
+            Self::Rules(verb) => (RepoFile::Rules, verb),
+        };
+        match verb {
             ConfigCli::Get(a) => Request::RepoConfigGet(RepoConfigGetReq {
+                file,
                 identity: None,
                 repo: a.repo,
             }),
             ConfigCli::Set(a) => Request::RepoConfigSet(RepoConfigSetReq {
+                file,
                 identity: None,
                 repo: a.repo,
                 text: a.text,

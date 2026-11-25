@@ -42,6 +42,7 @@ mod pause_publish;
 mod proxy_key;
 mod proxy_state;
 mod repo_config;
+mod repo_rules;
 mod resume_memory;
 mod said_at;
 mod session_archive;
@@ -128,4 +129,5 @@ pub const STEPS: &[Step] = &[
     step("V102__box_places", box_places::write),
     step("V103__task_boxes", task_boxes::write),
     step("V104__box_no_setup", box_no_setup::write),
+    step("V105__repo_rules", repo_rules::write),
 ];

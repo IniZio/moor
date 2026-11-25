@@ -2,12 +2,13 @@
 
 use serde_json::json;
 
-use super::{RepoConfigGetReq, RepoConfigSetReq};
+use super::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use crate::name::ForgeRepo;
 use crate::request::Request;
 
 fn set(expected_revision: Option<u64>) -> Request {
     Request::RepoConfigSet(RepoConfigSetReq {
+        file: RepoFile::Config,
         identity: None,
         repo: ForgeRepo::new("o", "n"),
         text: "setup: [make]\n".into(),
@@ -16,11 +17,26 @@ fn set(expected_revision: Option<u64>) -> Request {
 }
 
 #[test]
+fn the_rules_file_is_said_and_the_config_is_left_unsaid() {
+    let rules: Request =
+        serde_json::from_str(r#"{"cmd":"repo-config-get","repo":"o/n","file":"rules"}"#).unwrap();
+    let Request::RepoConfigGet(get) = &rules else {
+        unreachable!("{rules:?}")
+    };
+    assert_eq!(get.file, super::RepoFile::Rules);
+    assert_eq!(
+        serde_json::to_value(&rules).unwrap(),
+        json!({"cmd":"repo-config-get","repo":"o/n","file":"rules"})
+    );
+}
+
+#[test]
 fn a_get_is_a_repo_and_nothing_else() {
     let get: Request = serde_json::from_str(r#"{"cmd":"repo-config-get","repo":"o/n"}"#).unwrap();
     assert_eq!(
         get,
         Request::RepoConfigGet(RepoConfigGetReq {
+            file: RepoFile::Config,
             identity: None,
             repo: ForgeRepo::new("o", "n"),
         })

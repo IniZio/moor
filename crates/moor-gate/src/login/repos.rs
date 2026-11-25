@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::net::TcpStream;
 
 use moor_core::name::ForgeRepo;
+use moor_core::request::RepoFile;
 use moor_core::request::{
     RepoConfigGetReq, RepoConfigSetReq, Request as ControllerRequest, ShowReq,
 };
@@ -84,6 +85,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, path:
         return not_a_repo(stream);
     };
     let get = ControllerRequest::RepoConfigGet(RepoConfigGetReq {
+        file: RepoFile::Config,
         identity: None,
         repo,
     });
@@ -117,6 +119,7 @@ pub(super) fn write(
     };
     let ask = |request| tools::ask_as(&gate.controller, &session.person, request);
     let set = ControllerRequest::RepoConfigSet(RepoConfigSetReq {
+        file: RepoFile::Config,
         identity: None,
         repo: repo.clone(),
         text: write.text,
@@ -128,6 +131,7 @@ pub(super) fn write(
     };
     if reply.class == ExitClass::Refused {
         let get = ControllerRequest::RepoConfigGet(RepoConfigGetReq {
+            file: RepoFile::Config,
             identity: None,
             repo,
         });

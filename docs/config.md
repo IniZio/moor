@@ -198,9 +198,11 @@ adds to it.
 | `box_env` | Variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | Drop the rule for a Box with no repo. |
 
-The default rules are `claude` for `api.anthropic.com` and `github-api`,
-`github-git`, and `github-uploads` for GitHub. They are in
-[defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml).
+The default rules serve `api.anthropic.com`, `api.github.com`, `github.com` and
+`uploads.github.com`. Inside moor they are `claude`, `github-api`,
+`github-git`, and `github-uploads`, the names a rule here extends. Their text is
+[defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml), and each
+repo can replace it with its own [Proxy rules](repo.md#proxy-rules).
 [The Proxy and secrets](proxy.md) explains what they allow.
 
 ### `cache`

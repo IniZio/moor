@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq};
+use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::{ForgeError, ForgeRepo, RepoAt};
 use moor_core::user::Viewer;
 use moor_core::ErrorKind;
@@ -14,6 +14,8 @@ use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
+
+mod rules;
 
 const BASE: &str = "abc123";
 
@@ -37,6 +39,7 @@ fn user(dir: &Path, forge: &Arc<FakeForge>) -> Cx {
 
 fn get_req() -> RepoConfigGetReq {
     RepoConfigGetReq {
+        file: RepoFile::Config,
         identity: None,
         repo: repo(),
     }
@@ -44,6 +47,7 @@ fn get_req() -> RepoConfigGetReq {
 
 fn set_req(text: &str, expected_revision: Option<u64>) -> RepoConfigSetReq {
     RepoConfigSetReq {
+        file: RepoFile::Config,
         identity: None,
         repo: repo(),
         text: text.to_owned(),

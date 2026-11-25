@@ -27,3 +27,10 @@ fn set_names_the_repo_and_its_new_revision() {
     let (out, _) = render(&Response::ok("repo-config-set", Some(v)), false);
     assert_eq!(out, "o/n config is now revision 4\n");
 }
+
+#[test]
+fn a_rules_set_says_rules() {
+    let v = json!({"repo": "o/n", "file": "rules", "text": "rules: []\n", "revision": 2});
+    let (out, _) = render(&Response::ok("repo-config-set", Some(v)), false);
+    assert_eq!(out, "o/n rules is now revision 2\n");
+}

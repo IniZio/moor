@@ -99,6 +99,7 @@ tables! {
     WorkflowRunHistory { Run, N, At, Entry }
     WorkflowSeq { Id, N }
     Repos { Repo, Config, Revision, EditedBy, EditedAt }
+    RepoRules { Repo, Rules, Revision, EditedBy, EditedAt }
     UserInbox { Id, User, Box, Event, Kind, Title, Text, CreatedAt, ReadAt, ClearedAt }
     MachinePairings { Code, DeviceHash, Ask, Stage, Enrolled, ExpiresAt }
 }

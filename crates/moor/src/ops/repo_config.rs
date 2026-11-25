@@ -1,10 +1,12 @@
-//! `repo-config-get` and `repo-config-set`: a repo's config as the store keeps it.
+//! `repo-config-get` and `repo-config-set`: a repo's config or Proxy rules as the store keeps
+//! them.
 //!
 //! The operator reads and writes any repo. A user reads a repo their GitHub account can see and
 //! writes one it can push to, as the account's own token says, the same check a start makes.
 
 use moor_core::config::parse_repo;
-use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq};
+use moor_core::config::proxy::{parse_rules_text, DEFAULT_RULES_TEXT};
+use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::Viewer;
 use moor_core::view::repo_config::RepoConfigValue;
@@ -28,13 +30,21 @@ enum Need {
     Push,
 }
 
-/// `repo-config-get`: the stored config of the repo, or revision 0 with no text when it has none.
+/// `repo-config-get`: the stored text of the repo, or revision 0 when it has none: no text for
+/// its config, the default rules text for its rules.
 ///
 /// # Errors
 /// Refused when the caller's account cannot see the repo; a store or forge failure.
 pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, CommandError> {
     let who = check(cx, &req.repo, Need::See)?;
-    let mut read = value(&req.repo, cx.store()?.repo_config(&req.repo)?);
+    let mut read = value(
+        &req.repo,
+        req.file,
+        cx.store()?.repo_text(&req.repo, req.file)?,
+    );
+    if req.file == RepoFile::Rules && read.text.is_none() {
+        read.text = Some(DEFAULT_RULES_TEXT.to_owned());
+    }
     read.can_edit = who.can_push;
     Ok(read)
 }
@@ -49,30 +59,34 @@ pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, Co
     if req.text.len() > TEXT_CAP {
         return Err(CommandError::new(
             ErrorKind::Usage,
-            format!("the config is over {TEXT_CAP} bytes"),
+            format!("the {} is over {TEXT_CAP} bytes", noun(req.file)),
         ));
     }
-    parse_repo(&format!("{}:repo config", req.repo), &req.text)
-        .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
+    match req.file {
+        RepoFile::Config => parse_repo(&format!("{}:repo config", req.repo), &req.text).map(drop),
+        RepoFile::Rules => parse_rules_text(&format!("{}:rules", req.repo), &req.text).map(drop),
+    }
+    .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     match cx
         .store()?
-        .set_repo_config(&req.repo, &req.text, &who, req.expected_revision)?
+        .set_repo_text(&req.repo, req.file, &req.text, &who, req.expected_revision)?
     {
         Wrote::Written(row) => Ok(RepoConfigValue {
             can_edit: true,
-            ..value(&req.repo, Some(row))
+            ..value(&req.repo, req.file, Some(row))
         }),
         Wrote::Stale { current } => {
-            let now = current.map_or_else(|| "no config".to_owned(), |r| format!("revision {r}"));
+            let what = noun(req.file);
+            let now = current.map_or_else(|| format!("no {what}"), |r| format!("revision {r}"));
             let wanted = req.expected_revision.unwrap_or_default();
             Err(CommandError::new(
                 ErrorKind::Refused,
                 format!(
-                    "the config of {} is at {now}, not revision {wanted}: it changed after you read it",
+                    "the {what} of {} is at {now}, not revision {wanted}: it changed after you read it",
                     req.repo
                 ),
             )
-            .with_hint("read it again with `moor repo config get`, apply your change to that text, and set it with that revision"))
+            .with_hint(format!("read it again with `moor repo {what} get`, apply your change to that text, and set it with that revision")))
         }
     }
 }
@@ -103,7 +117,7 @@ fn check(cx: &Cx, repo: &ForgeRepo, need: Need) -> Result<Caller, CommandError> 
     if need == Need::Push && !at.can_push {
         return Err(CommandError::new(
             ErrorKind::Refused,
-            format!("your GitHub account cannot push to {repo}, so it cannot change its config"),
+            format!("your GitHub account cannot push to {repo}, so it cannot change its config or rules"),
         ));
     }
     Ok(Caller {
@@ -112,10 +126,19 @@ fn check(cx: &Cx, repo: &ForgeRepo, need: Need) -> Result<Caller, CommandError> 
     })
 }
 
-/// The view of `row`, the repo's stored config.
-fn value(repo: &ForgeRepo, row: Option<RepoConfigRow>) -> RepoConfigValue {
+/// What `file` is called in messages and in `moor repo <noun>`.
+const fn noun(file: RepoFile) -> &'static str {
+    match file {
+        RepoFile::Config => "config",
+        RepoFile::Rules => "rules",
+    }
+}
+
+/// The view of `row`, the repo's stored `file`.
+fn value(repo: &ForgeRepo, file: RepoFile, row: Option<RepoConfigRow>) -> RepoConfigValue {
     RepoConfigValue {
         repo: repo.clone(),
+        file,
         revision: row.as_ref().map_or(0, |r| r.revision),
         edited_by: row.as_ref().map(|r| r.edited_by.clone()),
         edited_at: row.as_ref().map(|r| rfc3339(r.edited_at)),

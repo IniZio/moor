@@ -6,6 +6,7 @@ use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
 use moor_core::exec_env::Purpose;
+use moor_core::request::RepoFile;
 use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, Place};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, Output};
@@ -229,7 +230,7 @@ pub(super) fn set_up_all(
             break;
         }
         let repo = &tree.listed.repo;
-        let stored = match store.repo_config(repo) {
+        let stored = match store.repo_text(repo, RepoFile::Config) {
             Ok(Some(stored)) => stored,
             Ok(None) => continue,
             Err(e) => return Ok(failed_before_run(cx, format!("{repo}: {e}"))),
