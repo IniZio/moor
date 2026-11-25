@@ -8,7 +8,7 @@
       ],
       "checks": [
         {
-          "run": "grep -q \"moor.oursky.codes/#/box/.*/evidence\" .moor/artifacts/box.txt && grep -q \"$MOOR_PULL_HEAD_SHA\" .moor/artifacts/box.txt",
+          "run": "grep -q \"moor.example.com/#/box/.*/evidence\" .moor/artifacts/box.txt && grep -q \"$MOOR_PULL_HEAD_SHA\" .moor/artifacts/box.txt",
           "says": "box.txt holds the evidence link and the MOOR_PULL_* values."
         },
         {
