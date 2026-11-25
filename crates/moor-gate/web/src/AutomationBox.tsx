@@ -74,21 +74,25 @@ export function AutomationBox(p: BoxProps) {
 					{p.showFile ? 'Hide file' : 'Show file'}
 				</button>
 				{p.problem?.stale && (
-					<button type="button" class="quiet" disabled={p.busy} onClick={p.onReload}>
+					<button type="button" class="btn" disabled={p.busy} onClick={p.onReload}>
 						Discard mine and load theirs
 					</button>
 				)}
 				{phase !== 'saved' && (
-					<button type="button" class="quiet" disabled={p.busy} onClick={p.onDiscard}>
+					<button type="button" class="btn" disabled={p.busy} onClick={p.onDiscard}>
 						Discard
 					</button>
 				)}
 				{phase === 'writing' && (
-					<button type="button" disabled={p.busy} onClick={p.onRead}>
+					<button type="button" class="btn primary" disabled={p.busy} onClick={p.onRead}>
 						Read it
 					</button>
 				)}
-				{phase === 'read' && <button disabled={p.busy}>Save</button>}
+				{phase === 'read' && (
+					<button class="btn primary" disabled={p.busy}>
+						Save
+					</button>
+				)}
 			</div>
 		</form>
 	);
