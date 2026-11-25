@@ -14,6 +14,7 @@ use moor_core::view::workflow::{
 use serde_json::{json, Value};
 
 mod download;
+mod file;
 mod form;
 mod now;
 mod run;
@@ -304,6 +305,8 @@ fn detail(gate: &Gate, session: &Session, name: &str) -> Result<Value, Failure> 
     let mut view = summary(&w);
     if let Some(map) = view.as_object_mut() {
         map.insert("config".to_owned(), json!(w.config));
+        map.insert("may".to_owned(), file::may(w.config.as_deref()));
+        map.insert("run_as".to_owned(), json!(session.person.email.as_str()));
         map.insert("timeout_minutes".to_owned(), json!(w.timeout_minutes));
         map.insert("prompt".to_owned(), json!(w.prompt));
         map.insert("plan".to_owned(), json!(plan_text));

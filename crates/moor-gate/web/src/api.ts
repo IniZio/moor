@@ -227,6 +227,10 @@ const WorkflowSchema = v.object({
 	outcomes: v.nullish(v.array(OutcomeDocSchema)),
 	revision: v.number(),
 	runs: v.array(RunRowSchema),
+	/** Who each run acts as. */
+	run_as: v.optional(v.string(), ''),
+	/** The extra Proxy entries the workflow's config asks for, rule to entries as written, or why the config does not parse. */
+	may: v.optional(v.object({ allow: v.optional(v.record(v.string(), v.array(v.string()))), error: v.optional(v.string()) }), {}),
 });
 
 const LineSchema = v.object({

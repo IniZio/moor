@@ -272,6 +272,19 @@ fn the_page_lists_runs_with_icon_time_duration_and_outcome() {
 }
 
 #[test]
+fn the_page_shows_who_a_run_acts_as_and_what_its_config_lets_it_do() {
+    let w = world(true, &[]);
+    let cookie = as_user(&w, "alice-9");
+    let flow = json_of(&get(
+        &w.addr,
+        "/account/api/workflows/weekly-deps",
+        Some(&cookie),
+    ));
+    assert_eq!(flow["run_as"], "alice-9@example.com");
+    assert_eq!(flow["may"], json!({ "allow": {} }));
+}
+
+#[test]
 #[allow(
     clippy::cognitive_complexity,
     reason = "one run page read, asserted field by field"
