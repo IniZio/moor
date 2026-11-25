@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 
 use moor_core::request::BoxRunId;
 use moor_core::seam::proc::Pipes;
-use moor_core::user::UserId;
 use moor_core::view::{BoxRunState, BoxRunView, ExecView};
+use moor_core::BoxId;
 use moor_core::ErrorKind;
 
 use crate::cx::Cx;
@@ -35,7 +35,7 @@ const OUTPUT_CAP: usize = 64 * 1024;
 const TICK: Duration = Duration::from_millis(100);
 
 /// The refusal for a run that is not the caller's, has ended long ago, or never was.
-pub(crate) const NO_RUN: &str = "no such run of your user's: it ended over 10 minutes ago, the \
+pub(crate) const NO_RUN: &str = "no such run of this task's: it ended over 10 minutes ago, the \
      controller restarted, or it never was. Run the command again with exec_in_box.";
 
 /// One stream of a run: the bytes kept, whether more were cut, and how far answers have read.
@@ -85,10 +85,10 @@ struct State {
     ended_at: Option<Instant>,
 }
 
-/// One command of a place's user.
+/// One command of a place.
 struct Run {
-    /// The place's user, the only one whose answers read it.
-    user: UserId,
+    /// The place that started it, the only one whose answers read it.
+    place: BoxId,
     /// What it wrote and how it ended.
     state: Mutex<State>,
     /// Notified once it ends.
@@ -124,12 +124,12 @@ pub(crate) struct Started {
     run: Arc<Run>,
 }
 
-/// Registers a run of `user` in `cx`'s state directory, forgetting runs that ended long ago.
+/// Registers a run of `place` in `cx`'s state directory, forgetting runs that ended long ago.
 /// Its id is random, so an id from before a restart never names a new run.
-pub(crate) fn register(cx: &Cx, user: UserId) -> Started {
+pub(crate) fn register(cx: &Cx, place: BoxId) -> Started {
     let now = cx.clock().instant();
     let run = Arc::new(Run {
-        user,
+        place,
         state: Mutex::default(),
         ended: Condvar::new(),
     });
@@ -208,14 +208,14 @@ impl Started {
     }
 }
 
-/// Waits up to `window` for run `id` of `user` to end, or until `stop` says so, then answers
+/// Waits up to `window` for run `id` of `place` to end, or until `stop` says so, then answers
 /// with the output since the last answer and, once the run has ended, how.
 ///
 /// # Errors
-/// [`NO_RUN`] for a run of another user or none, and the error of a command that never ran.
+/// [`NO_RUN`] for a run of another place or none, and the error of a command that never ran.
 pub(crate) fn answer(
     cx: &Cx,
-    user: UserId,
+    place: BoxId,
     id: BoxRunId,
     window: Duration,
     stop: &dyn Fn() -> bool,
@@ -224,7 +224,7 @@ pub(crate) fn answer(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .get(&key(cx, id))
-        .filter(|r| r.user == user)
+        .filter(|r| r.place == place)
         .cloned()
         .ok_or_else(|| CommandError::new(ErrorKind::Refused, NO_RUN))?;
     let clock = cx.clock();

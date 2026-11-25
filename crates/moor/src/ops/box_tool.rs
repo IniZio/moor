@@ -1,10 +1,12 @@
-//! The Box tools of an agent place: `exec_in_box` runs a command in one of its user's work Boxes,
+//! The Box tools of an agent place: `exec_in_box` runs a command in one of its task's work Boxes,
 //! `exec_wait` waits on one still running, `start_box` starts a Box for that user on its task's repos, tied to the task and running no
-//! agent, and `close_box` closes one of that user's work Boxes.
+//! agent, and `close_box` closes one of its task's work Boxes.
 //!
 //! The gate's Box listener sends them as `box-tool`, naming the place from the Proxy's
 //! `X-Moor-Box` and asserting no identity. They answer only a place a task has claimed, act as
-//! that place's user and no one else, and reach only that user's work Boxes. Anything else is
+//! that place's user and no one else, and reach only the work Boxes the place itself started (a
+//! Box's `task` is the place). A Box of another task, of no task or of another user is refused
+//! alike. Anything else is
 //! refused before a command runs, a Box starts or a Box closes.
 
 use moor_core::domain::box_state::BoxLifecycle;
@@ -38,19 +40,29 @@ const FROM_IDLE_PLACE: &str =
     "exec_in_box, exec_wait, start_box and close_box serve an agent place once a \
      task claims it, and none has yet";
 
+/// The refusal for a Box the place may not reach: another task's, no task's, another user's or
+/// none, said alike so that names cannot be probed.
+fn not_this_task(target: &BoxName) -> String {
+    format!(
+        "{NOT_YOURS}: Box {} is not a work Box this task started; it belongs to another task \
+         or none",
+        target.as_str()
+    )
+}
+
 /// The refusal for a target that is an agent place.
 const ONLY_WORK_BOXES: &str = "exec_in_box and close_box reach only work Boxes, not an agent place";
 
 /// What a place's call runs, once it is allowed.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Plan {
-    /// A command in a work Box of the place's user, named by id.
+    /// A command in a work Box of the place's task, named by id.
     Exec(ExecReq),
     /// A start for the place's user on the claim's repos, tied to the place and running no agent.
     Start(Box<StartReq>),
-    /// The close of a work Box of the place's user, named by id. It carries no `force`.
+    /// The close of a work Box of the place's task, named by id. It carries no `force`.
     Close(CloseReq),
-    /// A wait on a command the place's user started, which [`runs::answer`] scopes to that user.
+    /// A wait on a command the place's user started, which [`runs::answer`] scopes to the place.
     Wait(BoxRunId),
 }
 
@@ -74,7 +86,7 @@ fn refused(why: impl Into<String>) -> CommandError {
 ///
 /// # Errors
 /// The refusal for a caller that is not a `box_tools` front or that asserts an identity, a Box
-/// that is not a claimed place, a target that is not the place's user's open work Box, or a
+/// that is not a claimed place, a target that is not an open work Box the place started, or a
 /// start on a repo the claim does not name; or a store failure.
 pub(crate) fn admit(
     cx: &Cx,
@@ -102,7 +114,7 @@ pub(crate) fn admit(
             command,
             timeout,
         } => Plan::Exec(ExecReq {
-            target: BoxTarget::Id(work_box(store, user, target)?),
+            target: BoxTarget::Id(work_box(store, (user, req.from), target)?),
             argv: vec![command.clone()],
             timeout_secs: Some(timeout.get()),
         }),
@@ -127,7 +139,7 @@ pub(crate) fn admit(
             }))
         }
         BoxCall::Close { target } => Plan::Close(CloseReq {
-            target: BoxTarget::Id(closable_box(store, user, target)?),
+            target: BoxTarget::Id(closable_box(store, (user, req.from), target)?),
             force: false,
         }),
         BoxCall::Wait { run } => Plan::Wait(*run),
@@ -179,23 +191,32 @@ fn claimed_place(store: &Store, from: BoxId) -> Result<(UserId, Claim), CommandE
     }
 }
 
-/// The id of `target`, an open work Box of `user`.
-fn work_box(store: &Store, user: UserId, target: &BoxName) -> Result<BoxId, CommandError> {
+/// The id of `target`, an open work Box of `user` that `place` started.
+fn work_box(
+    store: &Store,
+    (user, place): (UserId, BoxId),
+    target: &BoxName,
+) -> Result<BoxId, CommandError> {
     let row = store
         .open_box_by_name(target)?
         .filter(|row| row.user == Some(user))
-        .ok_or_else(|| refused(NOT_YOURS))?;
+        .ok_or_else(|| refused(not_this_task(target)))?;
     match row.kind {
-        BoxKind::Work => Ok(row.id),
+        BoxKind::Work if row.task == Some(place) => Ok(row.id),
+        BoxKind::Work => Err(refused(not_this_task(target))),
         BoxKind::Place(_) => Err(refused(ONLY_WORK_BOXES)),
     }
 }
 
-/// The id of `target`, an open work Box of `user` that a close may reach. One that closed
+/// The id of `target`, an open work Box of `user` that `place` started, which a close may reach. One that closed
 /// already is named so, since the end state the caller asked for is the one it finds.
-fn closable_box(store: &Store, user: UserId, target: &BoxName) -> Result<BoxId, CommandError> {
-    let open = work_box(store, user, target);
-    if open.is_err() && closed_work_box(store, user, target)? {
+fn closable_box(
+    store: &Store,
+    who: (UserId, BoxId),
+    target: &BoxName,
+) -> Result<BoxId, CommandError> {
+    let open = work_box(store, who, target);
+    if open.is_err() && closed_work_box(store, who, target)? {
         return Err(refused(format!(
             "Box {} is already closed",
             target.as_str()
@@ -204,10 +225,15 @@ fn closable_box(store: &Store, user: UserId, target: &BoxName) -> Result<BoxId, 
     open
 }
 
-/// Whether the newest Box named `target` is a closed work Box of `user`.
-fn closed_work_box(store: &Store, user: UserId, target: &BoxName) -> Result<bool, CommandError> {
+/// Whether the newest Box named `target` is a closed work Box of `user` that `place` started.
+fn closed_work_box(
+    store: &Store,
+    (user, place): (UserId, BoxId),
+    target: &BoxName,
+) -> Result<bool, CommandError> {
     Ok(store.latest_box_by_name(target)?.is_some_and(|row| {
         row.user == Some(user)
+            && row.task == Some(place)
             && matches!(row.kind, BoxKind::Work)
             && row.lifecycle == BoxLifecycle::Closed
     }))
