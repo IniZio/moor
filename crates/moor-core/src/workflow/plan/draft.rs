@@ -42,11 +42,15 @@ fn how_to_gate() -> String {
          (it says moor holds the run open until its gates pass, or asks for report_step for a \
          gate). Then the file is an object with `gates` and `outcomes` and no `steps`. Name \
          one gate for each gate the prompt names, in its order, each with the evidence files the \
-         prompt says it leaves; a name with a number in it is a prefix ending in *, such as \
-         pr-*. For everything the prompt says moor checks itself, or says must hold on GitHub or \
+         prompt names for it, and no file it does not name. An evidence name is a flat file \
+         name, or a prefix ending in * that covers names with a number in them, such as pr-* \
+         for pr-<n>-check.log and pr-<n>-summary.json; a * anywhere else is refused. For \
+         everything the prompt says moor checks itself, or says must hold on GitHub or \
          in a file before the gate passes, add a check: a shell command moor runs in the run's \
          Box, at the work tree's root, once the evidence is in, that exits 0 only when it holds, \
-         with `says` as one plain sentence. Evidence files are under .moor/artifacts/. A run fired \
+         with `says` as one plain sentence. Write checks with sh, git, gh, grep, sed and awk: \
+         the run's Box may have no python3, jq or node, so read JSON with gh's --jq or grep. \
+         Evidence files are under .moor/artifacts/. A run fired \
          by a pull request has MOOR_PULL_REPO, MOOR_PULL_NUMBER, MOOR_PULL_HEAD_SHA and \
          MOOR_PULL_URL in its env, with the env of the workflow's config; gh can read GitHub. \
          When a run can end in different verdicts, such as check passed or failed, nothing to \
