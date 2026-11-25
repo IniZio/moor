@@ -7,7 +7,7 @@ use moor_core::Sha;
 use super::setup::{kinds, warning_codes};
 use super::*;
 use crate::testing::engine::FakeEngine;
-use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_EGRESS_PORT};
 use moor_core::seam::driver::{ExecOutcome, Place};
 
 pub(super) const HEAD: &str = "1111111111111111111111111111111111111111";
@@ -261,6 +261,22 @@ fn the_proxy_lets_the_box_fetch_any_repo_but_never_push_its_profile() {
         !paths.iter().any(|p| p.contains("ann/profile")),
         "{paths:?}"
     );
+}
+
+#[test]
+fn a_box_with_no_repo_fetches_its_profile_through_the_proxy() {
+    let (w, _) = with_proxy(world_answering(None, HEAD, None));
+    set_profile(&w, None);
+    started(&w);
+    let fetch = w
+        .driver
+        .execs()
+        .into_iter()
+        .map(|(_, spec, _)| spec.argv.join(" "))
+        .find(|argv| argv.contains("git fetch"))
+        .unwrap();
+    let proxied = format!("export HTTPS_PROXY=\"http://127.0.0.1:{FAKE_EGRESS_PORT}\"");
+    assert!(fetch.contains(&proxied), "{fetch}");
 }
 
 #[test]

@@ -75,7 +75,8 @@ pub(super) fn finish_steps(
     };
     let cfg = settings_of(cx, row, &Flags::default())?;
     let repo = row.repo.as_ref().map(|r| &r.repo);
-    let wants = repo.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
+    let profiled = store.box_profile(row.id)?.is_some();
+    let wants = repo.is_some() || profiled || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let proxy = wants
         .then(|| box_exec::proxy(cx, row.id, Some((handle.clone(), held.inc)), repo, &cfg))
         .transpose();
