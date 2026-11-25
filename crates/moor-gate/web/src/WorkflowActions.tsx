@@ -3,7 +3,7 @@ import { useRef, useState } from 'preact/hooks';
 import { failure, toError, type Workflow, workflowRemove, workflowRunNow, workflowSwitch } from './api';
 import { fromFlow, openForm } from './WorkflowDraft';
 
-/** Edit, Duplicate, switch on or off, and Delete, for one workflow. */
+/** Run now, Duplicate, switch on or off, and Delete, for one workflow. */
 export function WorkflowActions({ csrf, flow, onChanged }: { csrf: string; flow: Workflow; onChanged: () => void }) {
 	const confirm = useRef<HTMLDialogElement>(null);
 	const [busy, setBusy] = useState(false);
@@ -34,9 +34,6 @@ export function WorkflowActions({ csrf, flow, onChanged }: { csrf: string; flow:
 			>
 				Run now
 			</button>
-			<a class="button quiet" href={`#/workflows/${encodeURIComponent(flow.name)}/edit`}>
-				Edit
-			</a>
 			<button type="button" class="quiet" onClick={duplicate}>
 				Duplicate
 			</button>
