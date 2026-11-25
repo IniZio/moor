@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `gates`, `wait` |
+| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `no_setup`, `gates`, `wait` |
 | `ask` | `repos`, `prompt` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
@@ -63,7 +63,8 @@ token's audience.
   anything when you lack a secret, and links the portal. It
   returns once the Box exists, with the fields `box_status` gives. With
   `wait: true`, it returns once setup and the agent launch finish. A start on
-  a name that is open attaches to that Box.
+  a name that is open attaches to that Box. With `no_setup: true`, the Box
+  skips the repo's setup lines and is ready once it is cloned and its agent installed.
 - `ask` sends a question to your agent place, the request the portal's Tasks home sends. `repos` is a list of `owner/name`, the task's own first. It answers the place that took it (`box`, `claimed`), then follow it with `box_status`. A caller not on the controller's `agent_places` list is refused, and the refusal names the email moor holds for them.
 - `send_to_box` answers a pending question with an option's name or its
   1-based number.
