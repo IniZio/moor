@@ -96,6 +96,8 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -q '^  name: moor-service-key$$'
 	test "$$(helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -c 'name: moor-service-key, key: service-key')" = 2
 	helm template moor $(CHART) $(CHART_VALUES) --set gate.stepReports=true --set gate.enabled=false 2>&1 | grep -q 'gate.stepReports needs gate.enabled'
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -q 'box_tools: true'
+	helm template moor $(CHART) $(CHART_VALUES) --set gate.boxTools=true 2>&1 | grep -q 'gate.boxTools needs gate.stepReports'
 	helm template moor $(CHART) $(CHART_VALUES) | grep -q 'command: \[moor-machine-runner\]'
 	! helm template moor $(CHART) $(CHART_VALUES) --set runner.enabled=false | grep -q 'moor-machine-runner'
 	! helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml | grep -q 'gate-link'

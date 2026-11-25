@@ -178,6 +178,14 @@ true
 {{- end -}}
 {{- end -}}
 
+{{/* Non-empty when the gate's Box listener also runs the Box tools for an agent in a claimed place. */}}
+{{- define "moor.boxTools" -}}
+{{- if .Values.gate.boxTools -}}
+{{- if not (include "moor.stepReports" .) }}{{ fail "gate.boxTools needs gate.stepReports: the Box tools run on the gate's Box listener" }}{{ end -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{/* Where the Proxy sends moor.moor.internal: the gate beside it in the pod, or the gate-boxes Service. */}}
 {{- define "moor.boxUpstream" -}}
 {{- if .Values.egress.enabled -}}
