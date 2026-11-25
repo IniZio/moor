@@ -1,0 +1,13 @@
+.repo-rules { margin: var(--moor-space-6) 0 var(--moor-space-8); }
+.repo-rules h2 { margin: 0; }
+.rules-rev { color: var(--moor-color-text-muted); font-size: var(--moor-text-xs); margin: var(--moor-space-2) 0 var(--moor-space-3); padding-bottom: var(--moor-space-2); border-bottom: 1px solid var(--moor-color-border); }
+.rules-file { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-sunken); overflow: hidden; }
+.rules-head { font: var(--moor-weight-strong) var(--moor-text-xs) / 1.5 var(--moor-font-mono); padding: var(--moor-space-1) var(--moor-space-3) var(--moor-space-1) calc(38px + var(--moor-space-1)); border-bottom: 1px solid var(--moor-color-border); }
+.rules-body { display: grid; grid-template-columns: 38px minmax(0, 1fr); max-height: 70vh; overflow: auto; }
+.rules-gutter, .rules-body textarea { font: var(--moor-text-xs) / 1.5 var(--moor-font-mono); padding-top: var(--moor-space-2); padding-bottom: var(--moor-space-2); margin: 0; }
+.rules-gutter { padding-right: var(--moor-space-2); text-align: right; color: var(--moor-color-text-muted); opacity: 0.7; user-select: none; }
+.rules-body textarea, .rules-body textarea[readonly] { padding-left: var(--moor-space-1); padding-right: var(--moor-space-3); border: 0; border-radius: 0; background: none; resize: none; overflow-x: auto; overflow-y: hidden; white-space: pre; }
+.rules-body textarea:focus-visible { outline: none; }
+.rules-file:focus-within { border-color: var(--moor-color-border-strong); }
+.rules-problem { margin: 0; border-radius: 0; }
+.rules-foot { display: flex; gap: var(--moor-space-2); padding: var(--moor-space-2) var(--moor-space-3); border-top: 1px solid var(--moor-color-border); }

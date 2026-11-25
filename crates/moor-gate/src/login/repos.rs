@@ -1,5 +1,5 @@
-//! The repo settings page's data: the repos a person has used, and one repo's config read and
-//! replaced as them. The controller decides who may read and who may push; this only carries
+//! The repo settings page's data: the repos a person has used, and one repo's config or Proxy
+//! rules read and replaced as them. The controller decides who may read and who may push; this only carries
 //! the answer, and tells a stale write from other refusals.
 
 use std::collections::BTreeSet;
@@ -19,7 +19,8 @@ use super::account::{failed, json};
 use super::{check_csrf, Session};
 use crate::{tools, Gate};
 
-/// What a repo is read and written under: this, then `owner/name`.
+/// What a repo is read and written under: this, then `owner/name` for its config or
+/// `owner/name/rules` for its Proxy rules.
 const PREFIX: &str = "/account/api/repos/";
 
 /// The largest config write the page reads: the controller's own cap, with room for JSON escapes.
@@ -28,16 +29,28 @@ pub(super) const BODY_MAX: usize = 256 * 1024;
 /// The body of a config write.
 #[derive(Deserialize)]
 struct Write {
-    /// The whole config as YAML.
+    /// The whole text as YAML.
     text: String,
     /// The revision the page read, 0 when the repo had none.
     revision: u64,
 }
 
-/// The `owner/name` in `path`, when it is a repo route.
-pub(super) fn named(path: &str) -> Option<&str> {
-    path.strip_prefix(PREFIX)
-        .filter(|rest| rest.split('/').count() == 2)
+/// The `owner/name` in `path` and which of its texts the path names, when it is a repo route.
+pub(super) fn named(path: &str) -> Option<(&str, RepoFile)> {
+    let rest = path.strip_prefix(PREFIX)?;
+    match rest.split('/').count() {
+        2 => Some((rest, RepoFile::Config)),
+        3 => rest
+            .strip_suffix("/rules")
+            .map(|repo| (repo, RepoFile::Rules)),
+        _ => None,
+    }
+}
+
+/// The repo and text `path` names, when the repo parses.
+fn target(path: &str) -> Option<(ForgeRepo, RepoFile)> {
+    let (repo, file) = named(path)?;
+    Some((ForgeRepo::parse(repo).ok()?, file))
 }
 
 /// Answers the repos of the person's Boxes: the ones they have used, that is.
@@ -79,13 +92,13 @@ fn repos_of(shown: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
-/// Answers the stored config of the repo `path` names, and whether the person may edit it.
+/// Answers the stored text `path` names, and whether the person may edit it.
 pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, path: &str) {
-    let Some(repo) = named(path).and_then(|p| ForgeRepo::parse(p).ok()) else {
+    let Some((repo, file)) = target(path) else {
         return not_a_repo(stream);
     };
     let get = ControllerRequest::RepoConfigGet(RepoConfigGetReq {
-        file: RepoFile::Config,
+        file,
         identity: None,
         repo,
     });
@@ -95,7 +108,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, path:
     }
 }
 
-/// Replaces the config of the repo `path` names with the written text, as the session's person,
+/// Replaces the text `path` names with the written one, as the session's person,
 /// when the request carries the CSRF token. A write at a revision that is no longer the stored
 /// one answers `409` with who changed it and when.
 pub(super) fn write(
@@ -110,7 +123,7 @@ pub(super) fn write(
         let error = json!({"error": "write from the page you are signed in on"});
         return json(stream, "403 Forbidden", &error);
     }
-    let Some(repo) = named(path).and_then(|p| ForgeRepo::parse(p).ok()) else {
+    let Some((repo, file)) = target(path) else {
         return not_a_repo(stream);
     };
     let Some(write) = body.and_then(|b| serde_json::from_slice::<Write>(b).ok()) else {
@@ -119,7 +132,7 @@ pub(super) fn write(
     };
     let ask = |request| tools::ask_as(&gate.controller, &session.person, request);
     let set = ControllerRequest::RepoConfigSet(RepoConfigSetReq {
-        file: RepoFile::Config,
+        file,
         identity: None,
         repo: repo.clone(),
         text: write.text,
@@ -131,7 +144,7 @@ pub(super) fn write(
     };
     if reply.class == ExitClass::Refused {
         let get = ControllerRequest::RepoConfigGet(RepoConfigGetReq {
-            file: RepoFile::Config,
+            file,
             identity: None,
             repo,
         });

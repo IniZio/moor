@@ -117,22 +117,26 @@ export async function signOut(csrf: string): Promise<void> {
 	});
 }
 
-/** `owner/name` as a URL path, each part encoded. */
-function repoPath(repo: string): string {
-	return `/account/api/repos/${repo.split('/').map(encodeURIComponent).join('/')}`;
+/** Which of a repo's texts in moor: its config, or the Proxy rules its Boxes follow. */
+export type RepoFile = 'config' | 'rules';
+
+/** `owner/name` as a URL path, each part encoded, with `/rules` for the rules. */
+function repoPath(repo: string, file: RepoFile): string {
+	const path = `/account/api/repos/${repo.split('/').map(encodeURIComponent).join('/')}`;
+	return file === 'rules' ? `${path}/rules` : path;
 }
 
 export async function repoList(): Promise<string[]> {
 	return (await answer(await fetch('/account/api/repos'), RepoListSchema)).repos;
 }
 
-export async function repoGet(repo: string): Promise<RepoConfig> {
-	return answer(await fetch(repoPath(repo)), RepoConfigSchema);
+export async function repoGet(repo: string, file: RepoFile = 'config'): Promise<RepoConfig> {
+	return answer(await fetch(repoPath(repo, file)), RepoConfigSchema);
 }
 
-/** Replaces the repo's config, against the revision the page read. */
-export async function repoSet(csrf: string, repo: string, text: string, revision: number): Promise<RepoConfig> {
-	const res = await fetch(repoPath(repo), {
+/** Replaces the repo's config or rules, against the revision the page read. */
+export async function repoSet(csrf: string, repo: string, text: string, revision: number, file: RepoFile = 'config'): Promise<RepoConfig> {
+	const res = await fetch(repoPath(repo, file), {
 		method: 'PUT',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
 		body: JSON.stringify({ text, revision }),
