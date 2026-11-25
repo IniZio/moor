@@ -235,7 +235,7 @@ Secrets belong to each user, and a host that no rule serves is already direct.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `brief` | string | Notes the agent reads before it starts. |
-| `setup` | list of commands | Run on each new Box. A failing line puts the Box in `setup_failed`. |
+| `setup` | list of commands | Run on each new Box. A failing line puts the Box in `setup_failed`. A Box started with no setup (`moor start --no-setup`, `start_box` `no_setup`) runs none, on any machine it gets. |
 | `teardown` | list of commands | Run when the Box closes. |
 | `env` | map | Plain variables for the Box. `PATH` is reserved. Credential-like names never reach the agent. |
 | `box.size` | `small`, `medium`, `large`, `xlarge` | 4, 8, 16, or 32 GiB. Wins over the user config. |

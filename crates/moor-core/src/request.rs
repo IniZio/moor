@@ -317,6 +317,9 @@ pub struct StartReq {
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,
+    /// Skip the repo's setup lines on every machine the Box gets; left out of the JSON when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_setup: bool,
     /// Read and ignored, since every Box starts cold. A client one release older sends it for
     /// `--cold`, and a request that names a field this struct lacks is refused.
     #[serde(default, skip_serializing)]

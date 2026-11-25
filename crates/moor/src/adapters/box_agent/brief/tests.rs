@@ -337,3 +337,13 @@ fn names_no_host_paths_moor_commands_or_secrets() {
     assert!(!out.contains("moor report"));
     assert!(!out.to_lowercase().contains("token"));
 }
+
+#[test]
+fn a_place_brief_offers_a_work_box_without_setup_and_a_work_brief_does_not() {
+    let place = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    assert!(place.contains("pass `no_setup` to `start_box`"), "{place}");
+    assert!(!render(&input(None)).contains("no_setup"));
+}

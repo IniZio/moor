@@ -149,6 +149,7 @@ fn start(from: BoxId, repo: &str, also: &[&str]) -> BoxToolReq {
             name: name("n2"),
             repo: parse(repo),
             also: also.iter().map(|r| parse(r)).collect(),
+            no_setup: false,
         },
     }
 }
@@ -479,4 +480,17 @@ fn unpushed_work_is_refused_with_what_the_place_can_do() {
     for cli in ["moor run", "moor cp", "--force", "moor close"] {
         assert!(!said.contains(cli), "{cli:?} in {said}");
     }
+}
+
+#[test]
+fn a_start_from_a_place_carries_its_no_setup() {
+    let w = world();
+    let mut call = start(w.place, "o/n", &[]);
+    if let BoxCall::Start { no_setup, .. } = &mut call.call {
+        *no_setup = true;
+    }
+    let admitted = w.admit(&call).unwrap();
+    assert!(matches!(admitted.plan, Plan::Start(ref r) if r.no_setup && r.no_agent));
+    let plain = w.admit(&start(w.place, "o/n", &[])).unwrap();
+    assert!(matches!(plain.plan, Plan::Start(ref r) if !r.no_setup));
 }

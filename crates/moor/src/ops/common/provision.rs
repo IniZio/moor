@@ -39,6 +39,9 @@ pub(crate) use self::retry::resume_setup;
 use self::retry::{kept_box_retry, retry_in_box};
 use self::target::SetupTarget;
 
+/// What a Box started with no setup says in place of its setup lines, on each machine it gets.
+const NO_SETUP: &str = "setup skipped: started with no setup";
+
 /// Re-reads a Box row that must exist.
 ///
 /// # Errors
@@ -255,6 +258,7 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 }
 
 /// Runs repo setup in a Box under the setup effect and records how it ended, ending the effect.
+/// A Box started with no setup runs no setup line, on this machine or any later one.
 ///
 /// `advance` moves the Box on to working; a failed line or agent install moves any Box to
 /// setup-failed, one that was already working included. The machine may have just come up, so
@@ -273,7 +277,13 @@ fn run_and_record(
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     record_delivered(cx, store, (id, inc), cfg, cloned.delivered)?;
-    let run = set_up_all(cx, store, id, target, cfg, &proxy)?;
+    let run = if reread(store, id)?.no_setup {
+        let text = NO_SETUP.to_owned();
+        store.apply(Decision::new(id).event(ExtraEvent::BoxProgress { text }))?;
+        setup::SetupRun::Skipped
+    } else {
+        set_up_all(cx, store, id, target, cfg, &proxy)?
+    };
     if !run.failed() {
         store.apply(Decision::new(id).set(Fields {
             setup_failed_at: Field::Clear,

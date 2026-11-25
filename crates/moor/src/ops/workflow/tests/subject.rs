@@ -204,6 +204,7 @@ fn a_newer_head_closes_an_older_box_whose_agent_never_launched() {
         model: None,
         node: None,
         no_agent: true,
+        no_setup: false,
         resume: false,
         repo: Some(repo()),
         also: None,

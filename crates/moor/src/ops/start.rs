@@ -150,8 +150,7 @@ fn settled(
     Ok(v)
 }
 
-/// What the start asks of a node: the labels its repo requires, the node the requester named,
-/// and the node the requester named.
+/// What the start asks of a node: the labels its repo requires and the node the requester named.
 fn spec_of(req: &StartReq, repo: Option<&RepoConfig>) -> Result<BoxSpec, CommandError> {
     let node = req
         .node
@@ -366,6 +365,7 @@ fn new_box(req: &StartReq, facts: &Facts, labels: Vec<String>, kind: BoxKind) ->
         spec: SpecFields {
             kind,
             task: req.task,
+            no_setup: req.no_setup,
             issue: req.issue.clone(),
             prompt: req.prompt.clone(),
             base: facts.base.clone(),

@@ -118,7 +118,12 @@ pub(crate) fn admit(
             argv: vec![command.clone()],
             timeout_secs: Some(timeout.get()),
         }),
-        BoxCall::Start { name, repo, also } => {
+        BoxCall::Start {
+            name,
+            repo,
+            also,
+            no_setup,
+        } => {
             if let Some(other) = std::iter::once(repo)
                 .chain(also)
                 .find(|r| !claim.repos().any(|c| c == *r))
@@ -132,6 +137,7 @@ pub(crate) fn admit(
             Plan::Start(Box::new(StartReq {
                 repo: Some(repo.clone()),
                 no_agent: true,
+                no_setup: *no_setup,
                 task: Some(req.from),
                 // Named even when empty, so the user config's `box.also` adds no repo.
                 also: Some(also.clone()),

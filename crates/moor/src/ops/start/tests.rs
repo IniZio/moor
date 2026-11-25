@@ -52,6 +52,7 @@ mod lost_machine;
 mod machine;
 mod named_node;
 mod new_hands;
+mod no_setup;
 mod others;
 mod parent;
 mod place;
@@ -176,6 +177,7 @@ fn req(name: &str) -> StartReq {
         model: None,
         node: None,
         no_agent: false,
+        no_setup: false,
         resume: false,
         repo: None,
         parent: None,

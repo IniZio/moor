@@ -61,6 +61,7 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 | `--model MODEL` | The agent model. |
 | `--config FILE` | A partial repo config for this Box only, laid over the repo's. `-` reads stdin. See [Override for one Box](repo.md#override-for-one-box). |
 | `--no-agent` | Start no agent. |
+| `--no-setup` | Skip the repo's setup lines, also on a later machine and in `moor retry`. The Box is ready once the repos are cloned and the agent installed. |
 | `--resume` | Resume the agent's stored session. |
 | `--parent ID` | The parent Session. The default is `MOOR_SESSION`. |
 

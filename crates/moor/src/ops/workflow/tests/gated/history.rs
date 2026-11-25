@@ -221,6 +221,7 @@ fn a_recovered_run_of_a_gated_workflow_starts_at_its_first_gate() {
         model: None,
         node: None,
         no_agent: false,
+        no_setup: false,
         resume: false,
         repo: Some(job.firing.repo),
         also: None,

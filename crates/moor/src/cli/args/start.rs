@@ -19,7 +19,9 @@ pub(super) struct StartArgs {
     /// may start one.
     #[arg(
         long,
-        conflicts_with_all = ["prompt", "issue", "base", "repo", "config", "no_agent", "resume"]
+        conflicts_with_all = [
+            "prompt", "issue", "base", "repo", "config", "no_agent", "no_setup", "resume"
+        ]
     )]
     place: bool,
     /// Prompt for the agent.
@@ -53,6 +55,10 @@ pub(super) struct StartArgs {
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
+    /// Skip the repo's setup lines: the Box is ready once the repo is cloned and the agent
+    /// installed, and the agent installs what it needs. A later machine of the Box skips them too.
+    #[arg(long)]
+    no_setup: bool,
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
@@ -80,6 +86,7 @@ impl From<StartArgs> for StartReq {
             node: a.node,
             config: override_text(a.config),
             no_agent: a.no_agent,
+            no_setup: a.no_setup,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
             also: (!also.is_empty()).then_some(also),

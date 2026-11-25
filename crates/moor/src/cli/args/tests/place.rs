@@ -20,3 +20,12 @@ fn start_place_takes_a_name_and_no_repo_or_prompt() {
         assert!(run(args).is_err(), "{args:?}");
     }
 }
+
+#[test]
+fn no_setup_starts_a_box_without_setup_but_not_a_place() {
+    assert!(matches!(
+        super::req(&["start", "t", "--no-setup"]),
+        moor_core::Request::Start(s) if s.no_setup
+    ));
+    assert!(super::run(&["start", "t", "--place", "--no-setup"]).is_err());
+}
