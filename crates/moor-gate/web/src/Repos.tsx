@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { Conflict, type RepoConfig, repoGet, repoList, repoSet, failure, toError } from './api';
 import { GitHubApp } from './GitHubApp';
+import { RepoRules } from './Rules';
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 
@@ -156,9 +157,12 @@ export function Repos({ csrf, repo }: { csrf: string; repo: string | null }) {
 				<Help />
 				<Picker repo={repo} />
 				{repo && REPO.test(repo) ? (
-					<ul class="cards">
-						<li><Editor key={repo} csrf={csrf} repo={repo} /></li>
-					</ul>
+					<>
+						<RepoRules key={repo} csrf={csrf} repo={repo} />
+						<ul class="cards">
+							<li><Editor key={repo} csrf={csrf} repo={repo} /></li>
+						</ul>
+					</>
 				) : repo ? (
 					<p class="notice danger" role="alert">Name a repo as owner/name.</p>
 				) : null}

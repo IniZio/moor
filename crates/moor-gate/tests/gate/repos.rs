@@ -29,13 +29,21 @@ fn refusal(kind: ErrorKind, message: &str) -> Response {
 /// What the fake controller answers `repo-config-get`, `repo-config-set` and `show` from `who`.
 pub(super) fn answer(configs: &mut Configs, cmd: &str, who: &str, inner: &Value) -> Response {
     let repo = inner["repo"].as_str().unwrap_or_default().to_owned();
+    let file = inner["file"].as_str().unwrap_or("config").to_owned();
+    let key = if file == "config" {
+        repo.clone()
+    } else {
+        format!("{repo}#{file}")
+    };
     let can_edit = !who.contains(READER);
-    let held = |configs: &Configs| match configs.get(&repo) {
+    let held = |configs: &Configs| match configs.get(&key) {
         Some((text, revision, by)) => {
-            json!({"repo": repo, "text": text, "revision": revision, "edited_by": by,
+            json!({"repo": repo, "file": file, "text": text, "revision": revision, "edited_by": by,
                 "edited_at": "2026-11-17T10:00:00Z", "can_edit": can_edit})
         }
-        None => json!({"repo": repo, "text": null, "revision": 0, "can_edit": can_edit}),
+        None => {
+            json!({"repo": repo, "file": file, "text": null, "revision": 0, "can_edit": can_edit})
+        }
     };
     match cmd {
         "show" => Response::ok(
@@ -58,11 +66,11 @@ pub(super) fn answer(configs: &mut Configs, cmd: &str, who: &str, inner: &Value)
             if text.contains("bogus") {
                 return refusal(ErrorKind::Usage, "unknown key `bogus`");
             }
-            let at = configs.get(&repo).map_or(0, |c| c.1);
+            let at = configs.get(&key).map_or(0, |c| c.1);
             if inner["expected_revision"].as_u64().is_some_and(|r| r != at) {
                 return refusal(ErrorKind::Refused, "it changed after you read it");
             }
-            configs.insert(repo.clone(), (text.to_owned(), at + 1, who.to_owned()));
+            configs.insert(key.clone(), (text.to_owned(), at + 1, who.to_owned()));
             Response::ok("x", Some(held(configs)))
         }
         _ => Response::ok("x", None),
@@ -219,4 +227,23 @@ fn a_write_needs_the_csrf_header_a_revision_and_a_repo_name() {
         assert_eq!(reply.status, 400, "{path}: {}", reply.body);
     }
     assert!(w.configs.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_repos_rules_read_and_write_under_rules_apart_from_its_config() {
+    let w = world(true, &[]);
+    let cookie = as_user(&w, "alice-sub");
+    let rules = "rules:\n  - hosts: [api.github.com]\n";
+    let saved = write(&w, &cookie, "acme/web/rules", rules, 0);
+    assert_eq!(saved.status, 200, "{}", saved.body);
+    let now = json_of(&read(&w, &cookie, "acme/web/rules"));
+    assert_eq!(now["file"], "rules");
+    assert_eq!(now["text"], rules);
+    assert_eq!(now["revision"], 1);
+    let config = json_of(&read(&w, &cookie, "acme/web"));
+    assert_eq!(config["revision"], 0, "the config is untouched: {config}");
+    let stale = write(&w, &cookie, "acme/web/rules", rules, 0);
+    assert_eq!(stale.status, 409, "{}", stale.body);
+    assert_ne!(read(&w, &cookie, "acme/web/other").status, 200);
+    assert_eq!(json_of(&read(&w, &cookie, "acme/rules"))["file"], "config");
 }
