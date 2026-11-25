@@ -20,7 +20,7 @@ use super::{box_of, failed, BoxTools};
 /// Arguments of `exec_in_box`.
 #[derive(Deserialize, JsonSchema)]
 struct ExecArgs {
-    /// The work Box's name, one of your user's open Boxes.
+    /// The work Box's name, one this task started and still open.
     r#box: String,
     /// The command, as shell text.
     command: String,
@@ -48,15 +48,15 @@ struct StartArgs {
 /// Arguments of `close_box`.
 #[derive(Deserialize, JsonSchema)]
 struct CloseArgs {
-    /// The work Box's name, one of your user's open Boxes.
+    /// The work Box's name, one this task started and still open.
     r#box: String,
 }
 
 #[tool_router(router = place_router, vis = "pub(super)")]
 impl BoxTools {
-    /// Runs a command in a work Box of the caller place's user.
+    /// Runs a command in a work Box the caller place started.
     #[tool(
-        description = "Run a command in one of your user's work Boxes and get its exit code, \
+        description = "Run a command in a work Box this task started and get its exit code, \
                        stdout and stderr. Only from an agent place a task has claimed. The \
                        command is shell text with no stdin and no terminal. It is killed after \
                        timeout_seconds (30 by default, 1800 at most; set it for builds and \
@@ -83,12 +83,12 @@ impl BoxTools {
         }
     }
 
-    /// Waits on a command of the caller place's user that `exec_in_box` left running.
+    /// Waits on a command of the caller place that `exec_in_box` left running.
     #[tool(
         description = "Wait on a command that exec_in_box left running. Answers within about \
                        45 s with the output since the last answer and the command's state, as \
-                       exec_in_box gives it. Call it again while the state is running. Only from an agent place a task has claimed, on your user's \
-                       own runs."
+                       exec_in_box gives it. Call it again while the state is running. Only from an agent place a task has claimed, on this \
+                       task's own runs."
     )]
     async fn exec_wait(
         &self,
@@ -133,9 +133,9 @@ impl BoxTools {
         }
     }
 
-    /// Closes one of the caller place's user's work Boxes.
+    /// Closes a work Box the caller place started.
     #[tool(
-        description = "Close one of your user's work Boxes when its work is done. Only from an \
+        description = "Close a work Box this task started when its work is done. Only from an \
                        agent place a task has claimed. It is refused while the Box holds work \
                        that is not pushed: push it with exec_in_box, then close again. There is \
                        no force. Answers once the Box is closed."

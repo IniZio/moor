@@ -11,9 +11,8 @@ use crate::ops::box_tool::{runs, Plan};
 use crate::vault::Vault;
 use moor_core::request::BoxRunId;
 use moor_core::request::{BoxCall, BoxToolReq as ToolReq};
-use moor_core::user::UserId;
 use moor_core::view::BoxRunView;
-use moor_core::ExecReq;
+use moor_core::{BoxId, ExecReq};
 use std::time::Duration;
 
 impl Moor {
@@ -113,15 +112,15 @@ impl Moor {
         ops::box_tool::for_place(reply)
     }
 
-    /// Starts `req` as a run of `user` on a thread of its own, stopping it once `stop` says so;
+    /// Starts `req` as a run of `place` on a thread of its own, stopping it once `stop` says so;
     /// the run's id, which [`Self::answer_box_run`] reads.
     pub(crate) fn start_box_run(
         self,
-        user: UserId,
+        place: BoxId,
         req: ExecReq,
         stop: impl Fn() -> bool + Send + Sync + 'static,
     ) -> BoxRunId {
-        let started = runs::register(&self.cx, user);
+        let started = runs::register(&self.cx, place);
         let id = started.id;
         std::thread::spawn(move || {
             let clock = self.cx.clock_arc();
@@ -130,18 +129,18 @@ impl Moor {
         id
     }
 
-    /// Waits up to `window` on run `id` of `user`, or until `stop` says so; its output since
+    /// Waits up to `window` on run `id` of `place`, or until `stop` says so; its output since
     /// the last answer, and how it ended once it has.
     ///
     /// # Errors
-    /// The refusal of a run that is not `user`'s, or the error of a command that never ran.
+    /// The refusal of a run that is not `place`'s, or the error of a command that never ran.
     pub(crate) fn answer_box_run(
         &self,
-        user: UserId,
+        place: BoxId,
         id: BoxRunId,
         window: Duration,
         stop: &dyn Fn() -> bool,
     ) -> Result<BoxRunView, CommandError> {
-        runs::answer(&self.cx, user, id, window, stop)
+        runs::answer(&self.cx, place, id, window, stop)
     }
 }

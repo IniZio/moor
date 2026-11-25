@@ -31,16 +31,16 @@ pub(super) fn box_tool(
         Err(e) => return Some(e.into_response("box-tool", vec![])),
         Ok(admitted) => admitted,
     };
-    let Viewer::User(user) = grant.viewer else {
+    if !matches!(grant.viewer, Viewer::User(_)) {
         let e = CommandError::new(ErrorKind::Internal, "a place's Box tool acts for no user");
         return Some(e.into_response("box-tool", vec![]));
-    };
-    let drain = peer.conn.drain();
+    }
+    let (place, drain) = (req.from, peer.conn.drain());
     let (answering, draining, stopping) = (env.clone(), Arc::clone(drain), Arc::clone(drain));
     let answer = move |run: Result<BoxRunId, CommandError>| {
         let reply = run.and_then(|run| {
             Moor::from_env(&answering)?
-                .answer_box_run(user, run, Moor::BOX_RUN_WINDOW, &|| draining.begun())
+                .answer_box_run(place, run, Moor::BOX_RUN_WINDOW, &|| draining.begun())
         });
         match reply {
             Ok(view) => Response::ok("box-tool", serde_json::to_value(view).ok()),
@@ -57,7 +57,7 @@ pub(super) fn box_tool(
             wait_unless_draining("box-tool", id, WAIT, out, drain, move || {
                 answer(Moor::from_env(&start).map(|moor| {
                     moor.granted(grant)
-                        .start_box_run(user, exec, move || stopping.begun())
+                        .start_box_run(place, exec, move || stopping.begun())
                 }))
             })
         }

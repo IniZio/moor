@@ -197,6 +197,17 @@ pub(super) fn kind_of(conn: &dyn Db, id: BoxId) -> Result<Option<BoxKind>, Store
 
 #[cfg(test)]
 impl Store {
+    /// Ties work Box `id` to place `place`, as a start from that place does.
+    pub(crate) fn tie_to_task(&self, id: BoxId, place: BoxId) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::Task, place.get())
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+        )?;
+        Ok(())
+    }
+
     /// Records `claim` on Box `id` for `user`, as a task that took the Box would.
     pub(crate) fn put_claim(
         &self,
