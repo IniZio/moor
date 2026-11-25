@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test';
 
 import type { RepoConfig } from './api';
-import { lineNumbers, rulesLine } from './Rules';
+import { all, textOf } from './testkit';
+import { hostPort, lineNumbers, rulesLine, Seen } from './Rules';
 
 const rules = (over: Partial<RepoConfig> = {}): RepoConfig => ({
 	repo: 'acme/web',
@@ -27,4 +28,22 @@ test('each line of the text gets one number, and a closing newline adds none', (
 	expect(lineNumbers('rules:\n  - hosts: [a]\n')).toBe('1\n2');
 	expect(lineNumbers('rules:\n  - hosts: [a]')).toBe('1\n2');
 	expect(lineNumbers('')).toBe('1');
+});
+
+test('a host shows its port only when it is not 443', () => {
+	expect(hostPort('registry.npmjs.org', 443)).toBe('registry.npmjs.org');
+	expect(hostPort('151.101.1.1', 80)).toBe('151.101.1.1:80');
+});
+
+test('the lists show each withheld request with its host and Boxes, and each dialled host with its count', () => {
+	const view = Seen({
+		seen: {
+			days: 7,
+			withheld: [{ request: 'GET /user', host: 'api.github.com', boxes: 2 }],
+			dialled: [{ host: 'registry.npmjs.org', port: 443, count: 212 }],
+		},
+	});
+	const rows = all(view, 'li').map((li) => textOf(li));
+	expect(rows).toEqual(['GET /userapi.github.com2', 'registry.npmjs.org212']);
+	expect(textOf(view)).toContain('Withheld in the last 7 days');
 });

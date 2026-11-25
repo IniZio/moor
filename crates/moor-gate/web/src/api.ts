@@ -37,7 +37,14 @@ const AccountSchema = v.object({
 	asks: v.optional(v.boolean(), false),
 });
 
+const RulesSeenSchema = v.object({
+	days: v.number(),
+	withheld: v.array(v.object({ request: v.string(), host: v.string(), boxes: v.number() })),
+	dialled: v.array(v.object({ host: v.string(), port: v.number(), count: v.number() })),
+});
+
 const RepoConfigSchema = v.object({
+	seen: v.nullish(RulesSeenSchema),
 	repo: v.string(),
 	text: v.nullish(v.string()),
 	revision: v.number(),
@@ -62,6 +69,7 @@ const FailureSchema = v.object({ error: v.string() });
 export type Secret = v.InferOutput<typeof SecretSchema>;
 export type Node = v.InferOutput<typeof NodeSchema>;
 export type RepoConfig = v.InferOutput<typeof RepoConfigSchema>;
+export type RulesSeen = v.InferOutput<typeof RulesSeenSchema>;
 export type NodeSettings = v.InferOutput<typeof NodeSettingsSchema>;
 export type Account = v.InferOutput<typeof AccountSchema>;
 

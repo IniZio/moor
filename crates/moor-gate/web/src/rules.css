@@ -11,3 +11,15 @@
 .rules-file:focus-within { border-color: var(--moor-color-border-strong); }
 .rules-problem { margin: 0; border-radius: 0; }
 .rules-foot { display: flex; gap: var(--moor-space-2); padding: var(--moor-space-2) var(--moor-space-3); border-top: 1px solid var(--moor-color-border); }
+main.wide:has(.rules-grid) { max-width: 84rem; }
+.settings-body:has(.rules-grid) { max-width: none; }
+.repo-rules { container-type: inline-size; }
+.rules-grid { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; column-gap: var(--moor-space-6); align-items: start; }
+.rules-seen h3 { font-size: var(--moor-text-sm); margin: 0 0 var(--moor-space-1); }
+.seen-rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--moor-color-border); }
+.seen-rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--moor-space-3); align-items: baseline; padding: var(--moor-space-1) var(--moor-space-2); border-bottom: 1px solid var(--moor-color-border); }
+.seen-rows li:has(> :nth-child(2):last-child) { grid-template-columns: minmax(0, 1fr) auto; }
+.seen-rows code { overflow-wrap: anywhere; }
+.seen-n { font: var(--moor-text-xs) var(--moor-font-mono); text-align: right; min-width: 2ch; }
+.seen-note { font-size: var(--moor-text-xs); margin: var(--moor-space-1) 0 var(--moor-space-5); }
+@container (max-width: 52rem) { .rules-grid { grid-template-columns: 1fr; row-gap: var(--moor-space-5); } }
