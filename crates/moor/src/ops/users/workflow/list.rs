@@ -3,8 +3,8 @@
 use moor_core::gate::Gates;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use moor_core::view::workflow::{LastRunView, WorkflowListValue, WorkflowView};
-use moor_core::workflow::{PromptHash, Workflow};
+use moor_core::view::workflow::{LastRunView, PlanMakingView, WorkflowListValue, WorkflowView};
+use moor_core::workflow::{PlanDraft, PromptHash, Workflow};
 
 use super::next_due;
 use super::stream::run_view;
@@ -19,18 +19,24 @@ pub(super) fn list(
     now: Ts,
 ) -> Result<serde_json::Value, CommandError> {
     let mut workflows = Vec::new();
+    let mut drafts: std::collections::HashMap<_, _> = store.plan_drafts()?.into_iter().collect();
     for w in store.workflows(user)? {
         let last_run = match store.last_workflow_run(w.id)? {
             Some(run) => Some(run_view(store, w.name.as_str(), &run)?),
             None => None,
         };
-        workflows.push(view(&w, now, last_run));
+        let making = drafts.remove(&w.id);
+        workflows.push(view(&w, now, (last_run, making)));
     }
     to_value(&WorkflowListValue { workflows })
 }
 
 /// `w` as shown.
-fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
+fn view(
+    w: &Workflow,
+    now: Ts,
+    (last_run, plan_making): (Option<LastRunView>, Option<PlanDraft>),
+) -> WorkflowView {
     let enabled = matches!(w.state, moor_core::workflow::WorkflowState::Enabled { .. });
     WorkflowView {
         name: w.name.to_string(),
@@ -48,6 +54,12 @@ fn view(w: &Workflow, now: Ts, last_run: Option<LastRunView>) -> WorkflowView {
             .then(|| serde_json::to_value(w.plan.to_doc()).ok())
             .flatten(),
         plan_stale: w.plan.made_from != PromptHash::of(&w.prompt),
+        plan_making: plan_making.map(|d| PlanMakingView {
+            prompt: d.prompt,
+            box_name: d.box_name,
+            since: d.since,
+            failed: d.failed,
+        }),
         revision: w.revision,
         on_pull_request: w.on_pull_request,
         gates: w.gates.as_ref().map(Gates::docs),

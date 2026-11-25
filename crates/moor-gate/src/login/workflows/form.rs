@@ -9,7 +9,7 @@ use moor_core::request::{
 use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::workflow::WorkflowView;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::save::changed;
 use super::{decode, not_found, read, workflows, Failure};
@@ -47,13 +47,9 @@ struct Create {
     /// The fields it starts with.
     #[serde(flatten)]
     fields: Fields,
-    /// A workflow of the person's whose plan and config the new one copies.
+    /// A workflow of the person's whose config the new one copies.
     #[serde(default)]
     copy_of: Option<String>,
-    /// The plan's JSON text, such as one an agent drafted; it replaces a copied plan. None when
-    /// absent or blank.
-    #[serde(default)]
-    plan: Option<String>,
     /// False to store the new workflow disabled; true when absent.
     #[serde(default = "on")]
     enabled: bool,
@@ -126,7 +122,7 @@ fn non_empty(text: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_owned())
 }
 
-/// The add request for `name` with `fields`, the plan and config of `kept`.
+/// The add request for `name` with `fields` and the config of `kept`.
 fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddReq {
     let on_pull_request = fields
         .on_pull_request
@@ -140,14 +136,12 @@ fn add(name: &str, fields: Fields, kept: Option<&WorkflowView>) -> WorkflowAddRe
         config: kept.and_then(|w| w.config.clone()),
         prompt: fields.prompt,
         timeout_minutes: fields.timeout_minutes,
-        plan: kept.and_then(|w| w.plan.as_ref()).map(Value::to_string),
         expected_revision: None,
         origin_key: None,
         keep_state: false,
         enabled: Some(true),
         on_pull_request: Some(on_pull_request),
-        gates: None,
-        outcomes: None,
+        regenerate_plan: false,
     }
 }
 
@@ -173,7 +167,7 @@ fn added(
 }
 
 /// Makes a workflow as the session's person. A name already taken is refused, so a create never
-/// replaces a workflow. A copy takes the plan and config of the one it copies.
+/// replaces a workflow. A copy takes the config of the one it copies; moor makes its plan.
 pub(crate) fn create(
     stream: &mut TcpStream,
     gate: &Gate,
@@ -204,9 +198,6 @@ pub(crate) fn create(
         return not_found(stream);
     }
     let mut request = add(&name, new.fields, copied.flatten());
-    if let Some(plan) = new.plan.filter(|p| !p.trim().is_empty()) {
-        request.plan = Some(plan);
-    }
     request.enabled = Some(new.enabled);
     match tools::ask_as(
         &gate.controller,
@@ -218,7 +209,7 @@ pub(crate) fn create(
     }
 }
 
-/// Replaces the fields of workflow `name` as the session's person, keeping its plan, config,
+/// Replaces the fields of workflow `name` as the session's person, keeping its config
 /// and whether it runs. A write at a revision that is no longer the stored one answers `409`.
 pub(crate) fn edit(
     stream: &mut TcpStream,

@@ -211,7 +211,8 @@ const WorkflowSchema = v.object({
 	timeout_minutes: v.number(),
 	prompt: v.string(),
 	plan: v.nullish(v.string()),
-	plan_edited: v.boolean(),
+	/** The plan moor is making from the prompt, or why it made none. */
+	plan_making: v.nullish(v.object({ prompt: v.string(), box_name: v.nullish(v.string()), since: v.nullish(v.number()), failed: v.nullish(v.string()) })),
 	/** The gates each run is held to, when the workflow has them in place of a plan. */
 	gates: v.nullish(v.array(GateDocSchema)),
 	/** The outcomes its runs may end in, when it names them. */
@@ -275,11 +276,6 @@ export type Run = v.InferOutput<typeof RunSchema>;
 export type Step = v.InferOutput<typeof StepSchema>;
 export type Line = v.InferOutput<typeof LineSchema>;
 
-const ClearsPlanSchema = v.object({ error: v.string(), code: v.literal('clears_plan') });
-
-/** Thrown when a save would drop a stored plan; the page asks the person first. */
-export class ClearsPlan extends Error {}
-
 function workflowPath(name: string): string {
 	return `/account/api/workflows/${encodeURIComponent(name)}`;
 }
@@ -304,27 +300,13 @@ export async function workflowRunNow(csrf: string, name: string, pull?: string |
 	return answer(res, RunNowSchema);
 }
 
-/** Replaces a workflow's prompt and plan, against the revision the page read. */
-export async function workflowSet(
-	csrf: string,
-	name: string,
-	draft: { prompt: string; plan: string; revision: number; clearPlan: boolean },
-): Promise<Workflow> {
+/** Replaces a workflow's prompt, against the revision the page read. moor makes its plan. */
+export async function workflowSet(csrf: string, name: string, draft: { prompt: string; revision: number; regenerate?: boolean }): Promise<Workflow> {
 	const res = await fetch(workflowPath(name), {
 		method: 'PUT',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
-		body: JSON.stringify({
-			prompt: draft.prompt,
-			plan: draft.plan,
-			revision: draft.revision,
-			clear_plan: draft.clearPlan,
-		}),
+		body: JSON.stringify({ prompt: draft.prompt, revision: draft.revision, regenerate: draft.regenerate ?? false }),
 	});
-	if (res.status === 400) {
-		const body: unknown = await res.clone().json().catch(() => null);
-		const clears = v.safeParse(ClearsPlanSchema, body);
-		if (clears.success) throw new ClearsPlan(clears.output.error);
-	}
 	return answer(res, WorkflowSchema);
 }
 
@@ -341,9 +323,9 @@ function send(csrf: string, method: string, path: string, body: Body) {
 	});
 }
 
-/** Makes a workflow. A taken name is refused as a conflict; `copyOf` lends its plan and config. */
-export async function workflowCreate(csrf: string, name: string, fields: WorkflowFields, copyOf?: string, plan?: string): Promise<Workflow> {
-	return answer(await send(csrf, 'POST', '/account/api/workflows', { name, ...fields, copy_of: copyOf, plan }), WorkflowSchema);
+/** Makes a workflow. A taken name is refused as a conflict; `copyOf` lends its config. */
+export async function workflowCreate(csrf: string, name: string, fields: WorkflowFields, copyOf?: string): Promise<Workflow> {
+	return answer(await send(csrf, 'POST', '/account/api/workflows', { name, ...fields, copy_of: copyOf }), WorkflowSchema);
 }
 
 /** Replaces a workflow's fields, against the revision the page read; its plan stays. */

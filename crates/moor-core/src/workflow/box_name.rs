@@ -1,6 +1,6 @@
 //! The name of the Box a workflow firing starts.
 
-use super::{RunCause, WorkflowId};
+use super::{PromptHash, RunCause, WorkflowId};
 use crate::name::{BoxName, NameError};
 use crate::seam::clock::Ts;
 
@@ -25,6 +25,31 @@ fn slug(text: &str, max: usize) -> String {
     } else {
         trimmed.to_owned()
     }
+}
+
+/// The name of the Box that makes workflow `id`'s plan for the prompt hashed `prompt`.
+///
+/// It is `<workflow>/w<id>-plan-<first 8 of the hash>-<at, UTC to the second>`. The stamp keeps a
+/// second try for the same prompt clear of the first.
+///
+/// # Errors
+/// [`NameError`] when `at` is outside the years the clock can print, or the name is too long.
+pub fn plan_box_name(
+    id: WorkflowId,
+    workflow: &str,
+    prompt: &PromptHash,
+    at: Ts,
+) -> Result<BoxName, NameError> {
+    let stamp = jiff::Timestamp::from_millisecond(at.as_millis())
+        .map_err(|_| NameError::BoxName(format!("{workflow}@{}", at.as_millis())))?
+        .strftime("%Y%m%d%H%M%S")
+        .to_string();
+    let hash = prompt.hex();
+    let short = hash.get(..8).unwrap_or(&hash);
+    BoxName::parse(&format!(
+        "{}/w{id}-plan-{short}-{stamp}",
+        slug(workflow, PART_MAX)
+    ))
 }
 
 /// The Box name for workflow `id`, called `workflow`, firing at `due_at` for `cause`.

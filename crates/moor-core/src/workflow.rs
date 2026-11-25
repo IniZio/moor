@@ -257,6 +257,7 @@ pub struct Workflow {
 
 mod box_name;
 mod cause;
+mod derive;
 mod gated;
 mod gated_history;
 mod history;
@@ -271,8 +272,9 @@ mod schedule;
 #[cfg(test)]
 mod tests;
 
-pub use box_name::box_name;
+pub use box_name::{box_name, plan_box_name};
 pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
+pub use derive::PlanDraft;
 pub use gated::{gated_move, GatedMove, Standing};
 pub use gated_history::gate_history;
 pub use history::HistoryEntry;

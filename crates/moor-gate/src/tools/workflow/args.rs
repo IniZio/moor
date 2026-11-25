@@ -1,12 +1,13 @@
 //! The arguments of the workflow tools, and the pull request a tool argument names.
 
-use moor_core::gate::GateDoc;
-use moor_core::workflow::{PlanDoc, PullTarget};
+use moor_core::workflow::PullTarget;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-/// Arguments of `add_workflow`.
+/// Arguments of `add_workflow`. An unknown field, such as a `plan` or `gates` written by hand, is
+/// refused: moor reads both from the prompt.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct AddArgs {
     /// A name, unique among your workflows; adding the same name again replaces it.
     pub(super) name: String,
@@ -37,10 +38,6 @@ pub(super) struct AddArgs {
     /// Minutes a run may take before it is stopped, 1 to 720; 180 for a new workflow when left
     /// out, and the stored value when you replace one.
     pub(super) timeout_minutes: Option<u32>,
-    /// The plan a run walks, as an object with a `steps` list; see the tool description for how
-    /// to write one. None when left out, and each run then delivers the prompt in one step.
-    #[schemars(schema_with = "plan_schema")]
-    pub(super) plan: Option<serde_json::Value>,
     /// The `revision` `list_workflows` showed for the workflow you are replacing. The call is
     /// refused when the workflow has changed since. Leave it out for a new workflow.
     pub(super) expected_revision: Option<u64>,
@@ -52,16 +49,9 @@ pub(super) struct AddArgs {
     /// marked ready for review or pushed to. The run gets the pull request in its env. Left
     /// out, a new workflow is false and a replaced one keeps its value.
     pub(super) on_pull_request: Option<bool>,
-    /// Gates each run's Box must pass before the run counts as delivered, in the order they
-    /// pass, in place of a plan; see the tool description. Left out, a new workflow has none and
-    /// a replaced one keeps its gates; an empty list clears them. A workflow has a plan or gates,
-    /// never both.
-    pub(super) gates: Option<Vec<GateDoc>>,
-    /// The outcomes a run may end in, sent with `gates`; see the tool description. Left out, a
-    /// new workflow's run ends in `done` once every gate passes and a replaced one keeps its
-    /// outcomes; an empty list clears them. A run's `verdict` in `list_workflow_runs` names
-    /// the outcome it found.
-    pub(super) outcomes: Option<Vec<moor_core::gate::OutcomeDoc>>,
+    /// True to have moor make the workflow's plan again from the prompt, even when the prompt is
+    /// unchanged. A new workflow or a changed prompt has its plan made again either way.
+    pub(super) regenerate_plan: Option<bool>,
 }
 
 /// A field that tells null from absent: absent stays `None` through `default`, and null is
@@ -72,11 +62,6 @@ where
     T: Deserialize<'de>,
 {
     T::deserialize(deserializer).map(Some)
-}
-
-/// The JSON Schema of a plan, which `add_workflow` checks the argument against.
-fn plan_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    generator.subschema_for::<Option<PlanDoc>>()
 }
 
 /// Arguments of the tools that name one workflow.

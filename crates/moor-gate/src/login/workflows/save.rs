@@ -1,10 +1,9 @@
-//! Replacing a workflow's prompt and plan as the page's person.
+//! Replacing a workflow's prompt as the page's person. Its plan is moor's, never written here.
 
 use std::net::TcpStream;
 
 use moor_core::request::{Request as ControllerRequest, WorkflowAddReq};
 use moor_core::response::{ExitClass, Response as ControllerResponse};
-use moor_core::view::workflow::WorkflowView;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -19,16 +18,14 @@ use crate::{tools, Gate};
 struct Write {
     /// What each Box's agent is asked to do.
     prompt: String,
-    /// The plan as JSON text; blank for none.
-    plan: String,
     /// The revision the page read.
     revision: u64,
-    /// Yes when the page asked the person and they agreed that a stored plan goes.
+    /// Yes to have moor make the plan again for an unchanged prompt.
     #[serde(default)]
-    clear_plan: bool,
+    regenerate: bool,
 }
 
-/// Replaces the prompt and plan of workflow `name` as the session's person, when the request
+/// Replaces the prompt of workflow `name` as the session's person, when the request
 /// carries the CSRF token. A write at a revision that is no longer the stored one answers `409`.
 pub(crate) fn write(
     stream: &mut TcpStream,
@@ -43,7 +40,7 @@ pub(crate) fn write(
         return json(stream, "403 Forbidden", &error);
     }
     let Some(write) = body.and_then(|b| serde_json::from_slice::<Write>(b).ok()) else {
-        let error = json!({"error": "send the prompt, the plan and the revision you read"});
+        let error = json!({"error": "send the prompt and the revision you read"});
         return json(stream, "400 Bad Request", &error);
     };
     let name = decode(name);
@@ -81,18 +78,7 @@ impl From<Failure> for Saved {
     }
 }
 
-/// A plan's steps alone, for comparing a person's change to the stored plan. Marking a plan
-/// reviewed drops `made_from`, which is not an edit.
-fn steps_of(plan: &Value) -> Value {
-    let mut plan = plan.clone();
-    if let Some(map) = plan.as_object_mut() {
-        map.remove("edited");
-        map.remove("made_from");
-    }
-    plan
-}
-
-/// Stores the written prompt and plan on top of what the workflow already is.
+/// Stores the written prompt on top of what the workflow already is.
 fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(), Saved> {
     let found = Failure::own(workflows(gate, session))?
         .into_iter()
@@ -103,7 +89,6 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
     if stored.revision != write.revision {
         return Err(Saved::Conflict(Some(stored.revision)));
     }
-    let plan = plan_to_store(&stored, write)?;
     let add = ControllerRequest::WorkflowAdd(WorkflowAddReq {
         identity: None,
         name: stored.name.clone(),
@@ -113,7 +98,6 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         config: stored.config.clone(),
         prompt: write.prompt.clone(),
         timeout_minutes: Some(stored.timeout_minutes),
-        plan,
         expected_revision: Some(write.revision),
         origin_key: None,
         // An edit of the content only: whether it runs, and why not, stay as stored, and so
@@ -121,8 +105,7 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         keep_state: true,
         enabled: None,
         on_pull_request: Some(stored.on_pull_request),
-        gates: None,
-        outcomes: None,
+        regenerate_plan: write.regenerate,
     });
     let reply = tools::ask_as(&gate.controller, &session.person, add).map_err(Saved::Other)?;
     if reply.class == ExitClass::Refused {
@@ -141,53 +124,13 @@ fn save(gate: &Gate, session: &Session, name: &str, write: &Write) -> Result<(),
         let why = reply
             .error
             .as_ref()
-            .map_or("the controller refused the plan", |e| e.message.as_str());
+            .map_or("the controller refused the prompt", |e| e.message.as_str());
         return Err(Saved::Bad(json!({"error": why})));
     }
     if reply.class != ExitClass::Ok {
         return Err(Saved::Refused(Box::new(reply)));
     }
     Ok(())
-}
-
-/// The plan text to store for `write`: none when the page asked for none, and it said it
-/// knows a stored plan goes; otherwise the written JSON, marked `edited` when it differs from
-/// the stored plan.
-fn plan_to_store(stored: &WorkflowView, write: &Write) -> Result<Option<String>, Saved> {
-    let text = write.plan.trim();
-    if text.is_empty() {
-        if stored.plan.is_some() && !write.clear_plan {
-            let prompt_changed = stored.prompt != write.prompt;
-            let why = if prompt_changed {
-                "This changes the prompt and leaves the plan empty, so the plan would be \
-                 cleared and every run would deliver the prompt in one step."
-            } else {
-                "The plan is empty, so it would be cleared and every run would deliver the \
-                 prompt in one step."
-            };
-            return Err(Saved::Bad(json!({"error": why, "code": "clears_plan"})));
-        }
-        return Ok(None);
-    }
-    let mut plan: Value = serde_json::from_str(text)
-        .map_err(|e| Saved::Bad(json!({"error": format!("the plan is not JSON: {e}")})))?;
-    let Some(map) = plan.as_object_mut() else {
-        return Err(Saved::Bad(
-            json!({"error": "the plan must be an object with a `steps` list"}),
-        ));
-    };
-    let same = stored
-        .plan
-        .as_ref()
-        .is_some_and(|p| steps_of(p) == steps_of(&Value::Object(map.clone())));
-    let was_edited = stored
-        .plan
-        .as_ref()
-        .and_then(|p| p.get("edited"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    map.insert("edited".to_owned(), json!(!same || was_edited));
-    Ok(Some(plan.to_string()))
 }
 
 /// Answers `409`: the workflow is no longer at the revision the page wrote against.

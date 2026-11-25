@@ -59,6 +59,7 @@ mod workflow_changes;
 mod workflow_gates;
 mod workflow_on_pull;
 mod workflow_optional_cron;
+mod workflow_plan_draft;
 mod workflow_plans;
 mod workflow_repo_set;
 mod workflow_run_pull;
@@ -130,4 +131,5 @@ pub const STEPS: &[Step] = &[
     step("V103__task_boxes", task_boxes::write),
     step("V104__box_no_setup", box_no_setup::write),
     step("V105__repo_rules", repo_rules::write),
+    step("V106__workflow_plan_draft", workflow_plan_draft::write),
 ];

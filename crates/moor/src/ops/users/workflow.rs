@@ -9,8 +9,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::workflow::WorkflowChangeValue;
 use moor_core::workflow::{
-    Plan, PlanError, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin,
-    WorkflowSchedule, WorkflowState,
+    Plan, TimeoutMinutes, Workflow, WorkflowDef, WorkflowName, WorkflowOrigin, WorkflowSchedule,
+    WorkflowState,
 };
 use moor_core::ErrorKind;
 
@@ -206,29 +206,24 @@ fn add(
         (enabled, timeout),
     )
     .map_err(usage)?;
-    def.origin = match (origin_front, &req.origin_key) {
-        (Some(front), Some(key)) => Some(WorkflowOrigin {
-            front: front.to_owned(),
-            key: Some(key.clone()),
-        }),
-        (None, Some(_)) => {
-            return Err(CommandError::new(
-                ErrorKind::Refused,
-                "only a front can send an origin_key",
-            ));
-        }
-        _ => None,
-    };
+    def.origin = origin_of(origin_front, req.origin_key.as_deref())?;
     def.config = config;
     def.on_pull_request = on_pull_request;
-    (def.plan, def.gates) = plan_or_gates(req, prior.as_ref())?;
+    (def.plan, def.gates) = kept_reading(prior.as_ref());
+    let wants_plan = plan_wanted(req, prior.as_ref(), def.gates.is_some())?
+        && crate::ops::workflow::unreportable(cx, "the plan").is_none();
     let revision = match store.put_workflow_at(
         user,
         &def,
         req.expected_revision,
         req.keep_state || req.enabled.is_none(),
     )? {
-        Put::Written { revision, .. } => revision,
+        Put::Written { id, revision } => {
+            if wants_plan {
+                store.want_plan(id, &req.prompt)?;
+            }
+            revision
+        }
         Put::Stale { current } => return Err(stale(&name, current, req.expected_revision)),
     };
     to_value(&WorkflowChangeValue {
@@ -243,72 +238,50 @@ fn add(
     })
 }
 
-/// The gates `req` asks for on top of `prior`, the workflow it replaces: gates or outcomes left
-/// out are the stored ones, and an empty list is none.
-fn parse_gates(
-    req: &WorkflowAddReq,
-    prior: Option<&Workflow>,
-) -> Result<Option<Gates>, CommandError> {
-    let outcomes = req.outcomes.as_deref().map(Vec::as_slice);
-    match req.gates.as_deref() {
-        None if outcomes.is_some() => Err(usage(
-            "send outcomes with the gates they end, so nothing was saved".to_owned(),
+/// The plan and gates a replace keeps: moor's reading of the stored workflow, which a request
+/// never sends. A plan made for another prompt is kept, and reads as stale until moor makes it
+/// again. A new workflow has neither.
+fn kept_reading(prior: Option<&Workflow>) -> (Option<Plan>, Option<Gates>) {
+    prior.map_or((None, None), |w| {
+        let plan = (!w.plan.is_single_of(&w.prompt)).then(|| w.plan.clone());
+        (plan, w.gates.clone())
+    })
+}
+
+/// The origin a write from the front socket `front` with `key` records; only a front may send a key.
+fn origin_of(
+    front: Option<&str>,
+    key: Option<&str>,
+) -> Result<Option<WorkflowOrigin>, CommandError> {
+    match (front, key) {
+        (Some(front), Some(key)) => Ok(Some(WorkflowOrigin {
+            front: front.to_owned(),
+            key: Some(key.to_owned()),
+        })),
+        (None, Some(_)) => Err(CommandError::new(
+            ErrorKind::Refused,
+            "only a front can send an origin_key",
         )),
-        None => Ok(prior.and_then(|w| w.gates.clone())),
-        Some([]) if outcomes.is_some_and(|o| !o.is_empty()) => Err(usage(
-            "outcomes need gates: a workflow without gates ends as its plan says, so nothing was \
-             saved"
-                .to_owned(),
-        )),
-        Some([]) => Ok(None),
-        Some(docs) => {
-            let stored = || {
-                prior
-                    .and_then(|w| w.gates.as_ref())
-                    .map(Gates::outcome_docs)
-                    .unwrap_or_default()
-            };
-            let outcomes = outcomes.map_or_else(stored, <[_]>::to_vec);
-            Gates::parse(docs, &outcomes)
-                .map(Some)
-                .map_err(|e| usage(e.to_string()))
-        }
+        _ => Ok(None),
     }
 }
 
-/// The plan and the gates the workflow ends up with, refused when it would have both.
-fn plan_or_gates(
+/// Whether the write asks moor to make the plan: a new workflow, a changed prompt, or a request to
+/// make it again. A workflow moor reads as gates gets no plan, and a request to make one again is
+/// refused. A controller whose Box agents cannot report steps asks for none either, since it
+/// could not run a planned workflow; its runs deliver the prompt in one step.
+fn plan_wanted(
     req: &WorkflowAddReq,
     prior: Option<&Workflow>,
-) -> Result<(Option<Plan>, Option<Gates>), CommandError> {
-    let plan = req
-        .plan
-        .as_deref()
-        .map(|text| parse_plan(text, &req.prompt))
-        .transpose()?;
-    let gates = parse_gates(req, prior)?;
-    if plan.is_some() && gates.is_some() {
-        return Err(usage(if req.gates.is_some() {
-            "a workflow has a plan or gates, not both: send one of them, so nothing was saved"
-        } else {
-            "this workflow keeps its gates, and a workflow has a plan or gates, not both: send `gates: []` to clear the gates, or leave the plan out, so nothing was saved"
-        }));
+    gated: bool,
+) -> Result<bool, CommandError> {
+    if gated && req.regenerate_plan {
+        return Err(usage(
+            "moor reads this workflow as a set of gates, which it cannot make again yet, so \
+             nothing was saved",
+        ));
     }
-    Ok((plan, gates))
-}
-
-/// The plan in `text`, made for `prompt`, or a refusal that lists every error in it.
-fn parse_plan(text: &str, prompt: &str) -> Result<Plan, CommandError> {
-    let refuse = |errors: Vec<PlanError>| {
-        let lines: Vec<String> = errors.iter().map(|e| format!("- {e}")).collect();
-        usage(format!(
-            "the plan has {} error{}, so nothing was saved:\n{}",
-            lines.len(),
-            if lines.len() == 1 { "" } else { "s" },
-            lines.join("\n")
-        ))
-    };
-    Plan::parse(text, prompt).map_err(refuse)
+    Ok(!gated && (req.regenerate_plan || prior.is_none_or(|w| w.prompt != req.prompt)))
 }
 
 /// The refusal for a write whose `expected_revision` is not the stored one.
