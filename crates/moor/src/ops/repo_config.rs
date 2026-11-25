@@ -37,7 +37,11 @@ enum Need {
 /// Refused when the caller's account cannot see the repo; a store or forge failure.
 pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, CommandError> {
     let who = check(cx, &req.repo, Need::See)?;
-    let mut read = value(&req.repo, cx.store()?.repo_text(&req.repo, req.file)?);
+    let mut read = value(
+        &req.repo,
+        req.file,
+        cx.store()?.repo_text(&req.repo, req.file)?,
+    );
     if req.file == RepoFile::Rules && read.text.is_none() {
         read.text = Some(DEFAULT_RULES_TEXT.to_owned());
     }
@@ -69,7 +73,7 @@ pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, Co
     {
         Wrote::Written(row) => Ok(RepoConfigValue {
             can_edit: true,
-            ..value(&req.repo, Some(row))
+            ..value(&req.repo, req.file, Some(row))
         }),
         Wrote::Stale { current } => {
             let what = noun(req.file);
@@ -130,10 +134,11 @@ const fn noun(file: RepoFile) -> &'static str {
     }
 }
 
-/// The view of `row`, the repo's stored config.
-fn value(repo: &ForgeRepo, row: Option<RepoConfigRow>) -> RepoConfigValue {
+/// The view of `row`, the repo's stored `file`.
+fn value(repo: &ForgeRepo, file: RepoFile, row: Option<RepoConfigRow>) -> RepoConfigValue {
     RepoConfigValue {
         repo: repo.clone(),
+        file,
         revision: row.as_ref().map_or(0, |r| r.revision),
         edited_by: row.as_ref().map(|r| r.edited_by.clone()),
         edited_at: row.as_ref().map(|r| rfc3339(r.edited_at)),

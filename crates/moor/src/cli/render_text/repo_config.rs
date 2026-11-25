@@ -1,5 +1,6 @@
 //! Text for `repo config get` and `repo config set`.
 
+use moor_core::request::RepoFile;
 use moor_core::view::box_config::BoxConfigValue;
 use moor_core::view::repo_config::RepoConfigValue;
 use serde_json::Value;
@@ -28,8 +29,12 @@ pub(super) fn box_line(value: &Value) -> Option<String> {
 /// The line a `repo-config-set` reply prints: the repo and the revision it is now at.
 pub(super) fn set_line(value: &Value) -> Option<String> {
     let view = serde_json::from_value::<RepoConfigValue>(value.clone()).ok()?;
+    let what = match view.file {
+        RepoFile::Config => "config",
+        RepoFile::Rules => "rules",
+    };
     Some(format!(
-        "{} config is now revision {}\n",
+        "{} {what} is now revision {}\n",
         view.repo, view.revision
     ))
 }
