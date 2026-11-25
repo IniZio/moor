@@ -22,6 +22,7 @@ github-api:
     - "GET /repos/{any_repo}/tags"
     - "GET /repos/{any_repo}/contents"
     - "GET /repos/{any_repo}/contents/**"
+    - "GET /repos/{any_repo}/git/trees/**"
     - "GET /repos/{repo}"
     - "GET|POST /repos/{repo}/pulls"
     - "GET|PATCH /repos/{repo}/pulls/*"
@@ -59,8 +60,11 @@ github-git:
     basic_user: x-access-token
   allow:
     - "GET /{any_repo}.git/info/refs"
+    - "GET /{any_repo}/info/refs"
     - "POST /{any_repo}.git/git-upload-pack"
+    - "POST /{any_repo}/git-upload-pack"
     - "POST /{repo}.git/git-receive-pack"
+    - "POST /{repo}/git-receive-pack"
 github-uploads:
   hosts: [uploads.github.com]
   credential: github
