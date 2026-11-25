@@ -38,6 +38,11 @@ pub(super) fn ask(who: &str, inner: &Value) -> Response {
         return Response::err("x", view);
     }
     assert!(who.contains(ASKER), "only a listed person asks");
+    if inner["repos"][0] == "acme/cold" {
+        let value = json!({"box": "place-5e6f7a8b", "claimed": false, "claimed_at": 1,
+            "no_idle_place": "no idle place: place-0a0b0c0d failed: profile: not found; close it with close_box place-0a0b0c0d and moor starts the next place"});
+        return Response::ok("x", Some(value));
+    }
     let value = json!({"box": "place-1a2b3c4d", "claimed": true, "claimed_at": 1,
         "served_at": 2, "steered_at": 3});
     Response::ok("x", Some(value))
@@ -98,4 +103,18 @@ fn a_person_off_the_roster_starts_as_before() {
     let seen = w.seen.lock().unwrap().clone();
     assert!(seen.iter().any(|r| r["request"]["cmd"] == "start"));
     assert!(seen.iter().all(|r| r["request"]["cmd"] != "ask"));
+}
+
+#[test]
+fn a_cold_ask_tells_the_page_why_no_idle_place_took_it() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "asker-cara");
+    let csrf = csrf_of(&w, &cookie);
+    let sent = json!({"repos": ["acme/cold"], "prompt": "q"}).to_string();
+    let reply = post_to(&w, "/account/api/boxes", &cookie, Some(&csrf), &sent);
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let view = json_of(&reply);
+    assert_eq!(view["box"], "place-5e6f7a8b");
+    let why = view["no_idle_place"].as_str().unwrap();
+    assert!(why.contains("close_box place-0a0b0c0d"), "{why}");
 }
