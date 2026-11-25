@@ -81,6 +81,7 @@ fn start_with_all_flags() {
             model: Some("haiku".into()),
             node: None,
             no_agent: true,
+            no_setup: false,
             resume: true,
             repo: None,
             parent: None,

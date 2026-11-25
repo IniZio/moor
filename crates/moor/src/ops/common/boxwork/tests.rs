@@ -107,6 +107,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, HandsRow) {
         hands: Some(boxed.clone()),
         kind: BoxKind::Work,
         task: None,
+        no_setup: false,
     };
     (row, boxed)
 }

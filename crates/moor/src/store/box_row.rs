@@ -63,5 +63,6 @@ pub(super) fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         task: row
             .get::<_, Option<i64>>(const { at(Boxes::Task) })?
             .map(BoxId::new),
+        no_setup: row.get::<_, i64>(const { at(Boxes::NoSetup) })? != 0,
     })
 }

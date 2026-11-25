@@ -67,7 +67,9 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     HTTPS_PROXY is set, do not unset or bypass it. Write only \
     in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
     When the task needs code run, start a work Box with `start_box` and run commands in it \
-    with `exec_in_box`; they run in the Box's checkout. Save a file the person should see (a \
+    with `exec_in_box`; they run in the Box's checkout. When the work does not need the repo's \
+    setup (reading code, a small edit), pass `no_setup` to `start_box` so the Box is ready \
+    sooner. Save a file the person should see (a \
     screenshot, test output) in the work Box's `.moor/artifacts/`, not in your own folder; \
     moor collects it within about 30 seconds and when the Box closes, and it stays on the task \
     after the Box is gone. Do not commit it. Name the files you saved in your final message. \

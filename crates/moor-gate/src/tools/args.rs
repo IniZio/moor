@@ -23,6 +23,10 @@ pub(super) struct StartArgs {
     /// `proxy.allow` adds extra `METHOD /path` entries, each with `{repo}`, to a default Proxy
     /// rule for this Box only.
     pub(super) config: Option<String>,
+    /// Skip the repo's setup lines, on this machine and any later one: the Box is ready once the
+    /// repo is cloned and the agent installed, and the agent installs what it needs. False by
+    /// default.
+    pub(super) no_setup: Option<bool>,
     /// Gates the Box must pass before it counts as done, in the order they pass: each is
     /// evidence files the agent leaves, checks moor runs in the Box (a command, or `{run, says}` with
     /// a plain sentence of what must be true), and an owner approval. A Box

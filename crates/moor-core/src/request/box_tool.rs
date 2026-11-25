@@ -49,6 +49,9 @@ pub enum BoxCall {
         /// Repos it clones beside `repo`, in order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         also: Vec<ForgeRepo>,
+        /// Skip the repo's setup lines on every machine the Box gets.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        no_setup: bool,
     },
     /// Close one of the user's open work Boxes. It has no `force`: a Box that holds work not
     /// pushed stays open, as a person's `moor close` leaves it.

@@ -90,6 +90,7 @@ fn cold(cx: &Cx, store: &Store, claim: Claim, text: &str) -> Result<AskValue, Co
         placement: moor_core::request::Placement::default(),
         place: false,
         no_agent: false,
+        no_setup: false,
         cold: false,
         resume: false,
         repo: None,

@@ -189,6 +189,8 @@ pub(crate) struct BoxRow {
     /// The claimed place whose agent started the Box; none for a Box a person or a workflow
     /// started. A Box with a task runs no agent.
     pub(crate) task: Option<BoxId>,
+    /// Whether the Box was started with no setup, so no machine it gets runs the setup lines.
+    pub(crate) no_setup: bool,
 }
 
 impl BoxRow {

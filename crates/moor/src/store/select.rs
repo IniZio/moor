@@ -10,7 +10,7 @@ use super::{db, event_from_row, EventRow, StoreError};
 use crate::store::db::DbExt as _;
 
 /// The `boxes` columns a Box read takes first.
-const BOX_COLS: [Boxes; 15] = [
+const BOX_COLS: [Boxes; 16] = [
     Boxes::Id,
     Boxes::Name,
     Boxes::Repo,
@@ -26,6 +26,7 @@ const BOX_COLS: [Boxes; 15] = [
     Boxes::BaseRef,
     Boxes::Kind,
     Boxes::Task,
+    Boxes::NoSetup,
 ];
 /// The `box_state` columns a Box read takes next.
 const STATE_COLS: [BoxState; 16] = [

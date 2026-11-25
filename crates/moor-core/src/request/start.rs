@@ -17,6 +17,7 @@ impl StartReq {
             placement: Placement::FirstOnly,
             place: false,
             no_agent: false,
+            no_setup: false,
             cold: false,
             resume: false,
             repo: None,

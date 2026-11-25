@@ -93,6 +93,8 @@ pub struct SpecFields {
     /// The claimed place whose agent started the Box; none for a Box a person or a workflow
     /// started. A Box with a task runs no agent.
     pub task: Option<BoxId>,
+    /// Whether every machine the Box gets skips the repo's setup lines.
+    pub no_setup: bool,
     /// Issue reference.
     pub issue: Option<String>,
     /// The prompt the Box starts with.

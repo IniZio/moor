@@ -56,6 +56,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         model: None,
         node: args.node,
         no_agent: false,
+        no_setup: args.no_setup.unwrap_or(false),
         resume: false,
         repo: Some(repo),
         parent: None,
@@ -197,6 +198,7 @@ pub(crate) fn start_from_portal(
         base: new.base,
         node: new.node,
         config: None,
+        no_setup: None,
         wait: None,
     })?;
     send_early(controller, person, request, Reply::Started(Some(origin)))

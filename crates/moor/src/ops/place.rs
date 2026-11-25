@@ -318,6 +318,7 @@ pub(super) fn check_start(
         ("gates", req.gates.is_some()),
         ("resume", req.resume),
         ("no agent", req.no_agent),
+        ("no setup", req.no_setup),
     ];
     if let Some((what, _)) = named.iter().find(|(_, given)| *given) {
         return Err(CommandError::new(

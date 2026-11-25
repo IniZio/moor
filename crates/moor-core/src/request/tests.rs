@@ -33,6 +33,7 @@ fn with_args() -> Vec<Request> {
             model: None,
             node: None,
             no_agent: true,
+            no_setup: false,
             resume: false,
             repo: None,
             parent: None,

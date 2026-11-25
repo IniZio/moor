@@ -43,6 +43,9 @@ struct StartArgs {
     name: String,
     /// The repos, each `owner/name`, the Box's own first. Only your task's repos.
     repos: Vec<String>,
+    /// Skip the repo's setup lines, so the Box is ready once the repos are cloned; you install
+    /// what you need with `exec_in_box`. False by default.
+    no_setup: Option<bool>,
 }
 
 /// Arguments of `close_box`.
@@ -114,8 +117,9 @@ impl BoxTools {
     #[tool(
         description = "Start a Box for your user on your task's repos: the first is the Box's \
                        own, the rest are cloned beside it. The Box runs no agent: run commands in it with \
-                       exec_in_box. Only from an agent place a task has claimed. Answers once \
-                       the start ends."
+                       exec_in_box. Set no_setup to skip the repo's setup lines when the work \
+                       does not need them. Only from an agent place a task has claimed. \
+                       Answers once the start ends."
     )]
     async fn start_box(
         &self,
@@ -179,6 +183,7 @@ fn start_call(args: &StartArgs) -> Result<BoxCall, String> {
         name: BoxName::parse_allow_bare(&args.name).map_err(|e| e.to_string())?,
         repo,
         also: repos.collect::<Result<_, _>>()?,
+        no_setup: args.no_setup.unwrap_or(false),
     })
 }
 
