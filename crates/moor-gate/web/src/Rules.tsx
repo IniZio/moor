@@ -19,6 +19,11 @@ export function lineNumbers(text: string): string {
 	return lines.map((_, i) => i + 1).join('\n');
 }
 
+/** The rules after a save: the written text, with the lists the page read, since a write does not list them. */
+export function afterSave(read: RepoConfig, wrote: RepoConfig): RepoConfig {
+	return { ...wrote, seen: wrote.seen ?? read.seen };
+}
+
 /** A host as the lists show it: the port only when it is not 443. */
 export function hostPort(host: string, port: number): string {
 	return port === 443 || port === 0 ? host : `${host}:${port}`;
@@ -101,7 +106,7 @@ export function RepoRules({ csrf, repo }: { csrf: string; repo: string }) {
 		setProblem(null);
 		try {
 			const wrote = await repoSet(csrf, repo, draft, rules.revision, 'rules');
-			setRules(wrote);
+			setRules(afterSave(rules, wrote));
 			setDraft(wrote.text ?? draft);
 		} catch (err) {
 			setProblem({ text: failure(toError(err)), stale: err instanceof Conflict });

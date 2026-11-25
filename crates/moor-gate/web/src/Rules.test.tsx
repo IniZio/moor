@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import type { RepoConfig } from './api';
 import { all, textOf } from './testkit';
-import { hostPort, lineNumbers, rulesLine, Seen } from './Rules';
+import { afterSave, hostPort, lineNumbers, rulesLine, Seen } from './Rules';
 
 const rules = (over: Partial<RepoConfig> = {}): RepoConfig => ({
 	repo: 'acme/web',
@@ -46,4 +46,11 @@ test('the lists show each withheld request with its host and Boxes, and each dia
 	const rows = all(view, 'li').map((li) => textOf(li));
 	expect(rows).toEqual(['GET /userapi.github.com2', 'registry.npmjs.org212']);
 	expect(textOf(view)).toContain('Withheld in the last 7 days');
+});
+
+test('a save keeps the lists the page read, since the write reply has none', () => {
+	const seen = { days: 7, withheld: [{ request: 'GET /user', host: 'api.github.com', boxes: 1 }], dialled: [] };
+	const saved = afterSave(rules({ seen }), rules({ revision: 2, seen: null }));
+	expect(saved.revision).toBe(2);
+	expect(saved.seen).toEqual(seen);
 });
