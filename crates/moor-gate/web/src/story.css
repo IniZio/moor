@@ -21,6 +21,8 @@
 .t-th1 > .grow { flex: 1 1 auto; }
 .t-th-meta { display: flex; flex-wrap: wrap; align-items: baseline; margin: 2px 0 0; font-size: var(--app-text-sm); }
 .t-th-meta > * + *::before { content: ' · '; white-space: pre; }
+.t-th-meta.t-th-run { display: block; }
+.t-th-meta.t-th-run > *::before { content: none; }
 .t-th-meta .t-mono { font-size: var(--app-text-sm); }
 .t-th-meta a { color: inherit; }
 .t-box .t-stop { border-color: var(--moor-color-border-strong); color: inherit; }
