@@ -61,7 +61,7 @@ pub use user::{
 };
 pub use workflow::{
     WorkflowAddReq, WorkflowAnswerReq, WorkflowCmd, WorkflowEnableReq, WorkflowRemoveReq,
-    WorkflowRunListReq, WorkflowRunNowReq, WorkflowRunsReq,
+    WorkflowRunListReq, WorkflowRunNowReq, WorkflowRunReadReq, WorkflowRunsReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -219,9 +219,10 @@ pub enum Request {
     WorkflowSetEnabled(WorkflowEnableReq),
     /// The changes to the caller's user's workflow runs after a cursor, oldest first.
     WorkflowRuns(WorkflowRunsReq),
-    /// The latest runs of one of the caller's user's workflows, newest first, or one run with its
-    /// frozen plan.
+    /// Runs of one of the caller's user's workflows, newest first, or one with its frozen plan.
     WorkflowRunList(WorkflowRunListReq),
+    /// One run of any user's workflow, by its id, with its frozen plan.
+    WorkflowRunRead(WorkflowRunReadReq),
     /// Answer yes or no for the approve step one of the caller's user's runs waits at.
     WorkflowAnswer(WorkflowAnswerReq),
     /// Fire one of the caller's user's workflows once, now, for some or all of its repos.

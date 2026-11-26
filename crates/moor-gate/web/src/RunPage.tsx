@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-import { failure, type Line, type Run, runAnswer, runGet, type Step, toError } from './api';
+import { failure, type Line, type Run, runAnswer, runRead, type Step, toError } from './api';
 import { closingWaitWords, outcomeLine } from './gate';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
@@ -160,11 +160,11 @@ function Question({ run, csrf, onAnswered }: { run: Run; csrf: string; onAnswere
 	);
 }
 
-export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: number }) {
-	const { value: run, setValue, error, reload } = useLoad(() => runGet(name, id), `${name}/${id}`);
+export function RunPage({ csrf, id }: { csrf: string; id: number }) {
+	const { value: run, setValue, error, reload } = useLoad(() => runRead(id), String(id));
 	return (
 		<>
-			<p><a href={`#/workflows/${encodeURIComponent(name)}`}>{name}</a></p>
+			{run && <p>{run.yours ? <a href={`#/workflows/${encodeURIComponent(run.workflow)}`}>{run.workflow}</a> : run.workflow}</p>}
 			{error && <Failed error={error} retry={reload} />}
 			{!run && !error && <p class="muted" aria-busy="true">Loading run…</p>}
 			{run && (
@@ -174,10 +174,10 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 							<StatusIcon status={run.status} verdict={run.verdict} /> Run {run.id}
 						</h2>
 						<span class="pill">{run.label}</span>
-						{run.status === 'failure' && (
+						{run.yours && run.status === 'failure' && (
 							<RunNowButton csrf={csrf} name={run.workflow} onRan={reload} hint=" after this failed run" />
 						)}
-						{run.outcome === 'skipped_fork' && run.pull && (
+						{run.yours && run.outcome === 'skipped_fork' && run.pull && (
 							<RunNowButton csrf={csrf} name={run.workflow} onRan={reload} pull={run.pull} label="Run again" hint={` for ${run.pull} at its current head`} />
 						)}
 					</div>
@@ -191,7 +191,7 @@ export function RunPage({ csrf, name, id }: { csrf: string; name: string; id: nu
 						<WriteUp key={w.href} name={w.name} href={w.href} />
 					))}
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
-					<Question run={run} csrf={csrf} onAnswered={setValue} />
+					{run.yours && <Question run={run} csrf={csrf} onAnswered={setValue} />}
 					<ol class="steps">
 						{run.steps.map((s, i) => <StepItem key={s.id} step={s} number={i + 1} />)}
 						<OutcomeItem run={run} />

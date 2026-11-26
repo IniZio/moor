@@ -238,6 +238,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "workflow-set-enabled"
         | "workflow-runs"
         | "workflow-run-list"
+        | "workflow-run-read"
         | "workflow-answer"
         | "workflow-run-now"
         | "webhook-claim"

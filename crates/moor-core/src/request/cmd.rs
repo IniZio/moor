@@ -72,6 +72,7 @@ impl Request {
             Self::WorkflowSetEnabled(_) => "workflow-set-enabled",
             Self::WorkflowRuns(_) => "workflow-runs",
             Self::WorkflowRunList(_) => "workflow-run-list",
+            Self::WorkflowRunRead(_) => "workflow-run-read",
             Self::WorkflowAnswer(_) => "workflow-answer",
             Self::WorkflowRunNow(_) => "workflow-run-now",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",

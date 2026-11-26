@@ -167,6 +167,17 @@ pub struct WorkflowRunListReq {
     pub limit: Option<u32>,
 }
 
+/// Arguments of `workflow-run-read`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowRunReadReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The run's id, which names one run of any workflow.
+    pub run: i64,
+}
+
 /// A workflow request without its identity, as the controller runs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(
@@ -225,6 +236,11 @@ pub enum WorkflowCmd {
         /// Most runs to return.
         limit: Option<u32>,
     },
+    /// Read one run of any workflow by its id; any signed-in person may.
+    RunRead {
+        /// The run's id.
+        run: i64,
+    },
     /// Read changes to runs after a cursor.
     Runs {
         /// The cursor.
@@ -251,6 +267,7 @@ impl WorkflowCmd {
             Self::RunNow { .. } => "workflow-run-now",
             Self::Runs { .. } => "workflow-runs",
             Self::RunList { .. } => "workflow-run-list",
+            Self::RunRead { .. } => "workflow-run-read",
         }
     }
 }
@@ -309,6 +326,7 @@ pub(super) fn split(request: Request) -> Result<(Option<Identity>, WorkflowCmd),
                 limit: r.limit,
             },
         ),
+        Request::WorkflowRunRead(r) => (r.identity, WorkflowCmd::RunRead { run: r.run }),
         other => return Err(Box::new(other)),
     })
 }
@@ -323,6 +341,7 @@ pub(super) const fn own_identity(request: &Request) -> Option<&Identity> {
         | Request::WorkflowAnswer(WorkflowAnswerReq { identity, .. })
         | Request::WorkflowRunNow(WorkflowRunNowReq { identity, .. })
         | Request::WorkflowRunList(WorkflowRunListReq { identity, .. })
+        | Request::WorkflowRunRead(WorkflowRunReadReq { identity, .. })
         | Request::WorkflowRuns(WorkflowRunsReq { identity, .. }) => identity.as_ref(),
         _ => None,
     }

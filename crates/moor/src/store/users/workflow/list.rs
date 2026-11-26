@@ -34,4 +34,24 @@ impl Store {
             .map(|row| run_of(workflow, &row?))
             .collect()
     }
+
+    /// Run `id` of any workflow, when there is one.
+    pub(crate) fn workflow_run_by_id(&self, id: i64) -> Result<Option<WorkflowRun>, StoreError> {
+        let mut select = Query::select();
+        select
+            .column(WorkflowRuns::Workflow)
+            .columns(RUN_COLS)
+            .from(WorkflowRuns::Table)
+            .and_where(Expr::col(WorkflowRuns::Id).eq(id));
+        let found = self
+            .reader()?
+            .rows(&mut select, |r| {
+                Ok::<_, StoreError>((r.get::<_, i64>(0)?, read_run(r, 1)?))
+            })?
+            .next()
+            .transpose()?;
+        found
+            .map(|(workflow, row)| run_of(WorkflowId::new(workflow), &row))
+            .transpose()
+    }
 }

@@ -171,6 +171,8 @@ keep the pod's other ports open.
 
 `gate.boxTools: true` lets the gate's Box listener run `exec_in_box`, `exec_wait`, `start_box` and `close_box` for the agent in a claimed place. It needs `gate.stepReports`.
 
+With `gate.login` on, the controller's `portal_url` is `https://<host>`, so a run's Box gets its run page in `MOOR_RUN_URL`.
+
 `controller.agentPlaces.users` lists the emails of the users who get an agent place. Empty starts none. See [`agent_places`](config.md#agent_places).
 
 ## Run the controller without a volume

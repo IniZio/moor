@@ -124,6 +124,9 @@ fn delivered_run() -> Value {
     reason = "a fake controller that holds its state for the whole request"
 )]
 pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
+    if cmd == "workflow-run-read" {
+        return run_read::reply(who, inner);
+    }
     if !who.contains(OWNER) {
         return refusal(ErrorKind::Refused, "no workflow named weekly-deps");
     }
@@ -581,3 +584,4 @@ fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
 }
 mod pull;
 mod run_now;
+mod run_read;

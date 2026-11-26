@@ -258,7 +258,7 @@ fn claim(
 /// uses, and settles the claim with its Box or its refusal. Returns what to log.
 pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     let state = match cx.store() {
-        Ok(store) => start_box(cx, store, &job.firing),
+        Ok(store) => start_box(cx, store, job),
         Err(e) => RunState::Done(RunEnd::Refused {
             detail: e.error.to_string(),
         }),
@@ -298,9 +298,16 @@ pub(crate) fn run_start(cx: &Cx, job: &StartJob) -> Vec<String> {
     out
 }
 
-/// Starts the Box, or says why not.
-fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
+/// Starts the run's Box, with its run page's address in `MOOR_RUN_URL` when the portal's origin
+/// is known, or says why not.
+fn start_box(cx: &Cx, store: &Store, claimed: &StartJob) -> RunState {
+    let job = &claimed.firing;
     let refused = |detail: String| RunState::Done(RunEnd::Refused { detail });
+    let config =
+        match pull::with_run_url(cx.env().run_url(claimed.run.get()), job.config.as_deref()) {
+            Ok(config) => config,
+            Err(why) => return refused(why),
+        };
     match store.open_box_by_name(&job.name) {
         Ok(Some(_)) => {
             return refused(format!("a Box named {} is already open", job.name.as_str()))
@@ -311,7 +318,7 @@ fn start_box(cx: &Cx, store: &Store, job: &Firing) -> RunState {
     let req = StartReq {
         gates: job.gates.clone().map(Box::new),
         placement: moor_core::decide::schedule::Placement::FirstOnline,
-        config: job.config.clone(),
+        config,
         prompt: Some(job.prompt.clone()),
         repo: Some(job.repo.clone()),
         also: Some(job.also.clone()),

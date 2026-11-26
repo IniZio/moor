@@ -213,6 +213,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::WorkflowSetEnabled(_)
         | Request::WorkflowRuns(_)
         | Request::WorkflowRunList(_)
+        | Request::WorkflowRunRead(_)
         | Request::WorkflowAnswer(_)
         | Request::WorkflowRunNow(_)
         | Request::McpOAuthFinish(_)

@@ -23,6 +23,19 @@ pub(super) fn read_head(cx: &Cx, target: &PullTarget) -> Result<CommitSha, Comma
         .map_err(|why| CommandError::new(ErrorKind::Failed, why))
 }
 
+/// `config` with `MOOR_RUN_URL` added to its `env` when the run page's address `url` is known.
+pub(super) fn with_run_url(
+    url: Option<String>,
+    config: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(url) = url else {
+        return Ok(config.map(str::to_owned));
+    };
+    with_env(config, &[("MOOR_RUN_URL", url)])
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
 /// The override and prompt a run's Box starts with. A run for `pull` adds `MOOR_PULL_*` to the
 /// override's `env` and opens the prompt with a line naming the pull request.
 pub(super) fn run_input(

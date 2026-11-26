@@ -185,6 +185,7 @@ fn workflow_route(
             workflows::write(stream, gate, session, csrf, name, body.as_deref());
         }
         ("GET", Route::Run(name, id)) => workflows::run(stream, gate, session, name, id),
+        ("GET", Route::RunById(id)) => workflows::run_by_id(stream, gate, session, id),
         ("POST", Route::Answer(name, id)) => {
             workflows::answer(stream, gate, session, csrf, (name, id), body.as_deref());
         }

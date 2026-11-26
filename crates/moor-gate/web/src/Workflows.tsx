@@ -9,12 +9,14 @@ export type At =
 	| { page: 'new' }
 	| { page: 'workflow'; name: string }
 	| { page: 'edit'; name: string }
-	| { page: 'run'; name: string; id: number };
+	| { page: 'run'; name?: string; id: number };
 
 export function workflowsAt(hash: string): At | null {
 	const rest = hash.replace(/^#\/?/, '');
 	if (rest === 'workflows') return { page: 'list' };
 	if (rest === 'new-workflow') return { page: 'new' };
+	const run = /^runs\/(\d+)$/.exec(rest);
+	if (run) return { page: 'run', id: Number(run[1]) };
 	if (!rest.startsWith('workflows/')) return null;
 	const parts = rest.slice('workflows/'.length).split('/').map(decodeURIComponent);
 	const [name, runs, id] = parts;
@@ -38,7 +40,7 @@ export function Workflows({ csrf, at }: { csrf: string; at: At }) {
 			{at.page === 'new' && <WorkflowForm csrf={csrf} />}
 			{at.page === 'edit' && <WorkflowForm key={at.name} csrf={csrf} editing={at.name} />}
 			{at.page === 'workflow' && <WorkflowPage csrf={csrf} name={at.name} />}
-			{at.page === 'run' && <RunPage csrf={csrf} name={at.name} id={at.id} />}
+			{at.page === 'run' && <RunPage csrf={csrf} id={at.id} />}
 		</section>
 	);
 }

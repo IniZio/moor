@@ -292,6 +292,8 @@ const RunSchema = v.object({
 	question: v.nullish(v.object({ step: v.string(), text: v.string() })),
 	steps: v.array(StepSchema),
 	lines: v.array(LineSchema),
+	/** Whether the reader owns the run's workflow, so may answer and fire it. */
+	yours: v.optional(v.boolean(), true),
 });
 
 export type RunStatus = v.InferOutput<typeof StatusSchema>;
@@ -373,6 +375,11 @@ const PreviewSchema = v.object({ words: v.nullish(v.string()), next: v.array(v.n
 export async function schedulePreview(cron: string, timezone: string) {
 	const query = new URLSearchParams({ cron, timezone });
 	return answer(await fetch(`/account/api/schedule?${query}`), PreviewSchema);
+}
+
+/** Run `id` of anyone's workflow, which any signed-in person may read. */
+export async function runRead(id: number): Promise<Run> {
+	return answer(await fetch(`/account/api/runs/${id}`), RunSchema);
 }
 
 export async function runGet(name: string, id: number): Promise<Run> {
