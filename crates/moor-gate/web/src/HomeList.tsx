@@ -136,7 +136,7 @@ function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: num
 			<RepoCell repos={reposOf(t)} only={only} />
 			{everyone && <span class="t-rown">{t.owner ?? 'you'}</span>}
 			<span class="t-title">
-				{tag && <span class={t.issue ? 't-rkey t-rkey-issue' : 't-rkey'}>{tag}</span>}
+				{tag && <span class={t.issue ? 't-rtag t-rkey-issue' : 't-rtag'}>{tag}</span>}
 				{t.title}
 			</span>
 			<span class={`t-now${tone}`}>

@@ -165,7 +165,8 @@ details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-rc-2 { --t-rc: var(--moor-heather-400); }
 .t-rc-3 { --t-rc: var(--moor-moss-400); }
 .t-rc-4 { --t-rc: var(--moor-peat-400); }
-.t-rkey { margin-right: 8px; font: var(--moor-weight-body) var(--app-text-sm) var(--moor-font-mono); color: var(--moor-color-text-muted); }
+.t-rkey { grid-area: key; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--moor-weight-body) var(--app-text-sm) var(--moor-font-mono); color: var(--moor-color-text-muted); }
+.t-rtag { margin-right: 8px; font: var(--moor-weight-body) var(--app-text-sm) var(--moor-font-mono); color: var(--moor-color-text-muted); }
 .t-rkey-issue { text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 3px; }
 .t-rown { grid-area: own; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-title { grid-area: title; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
@@ -186,7 +187,7 @@ a.t-row[data-peek]:hover .t-age, a.t-row[data-peek]:focus-visible .t-age, a.t-ro
 	.t-filters, .t-home-tall .t-filters, .t-home-head .t-filters { position: static; flex-wrap: wrap; height: auto; margin: 14px 0 0; line-height: normal; }
 	.t-row { grid-template-columns: 1.1em minmax(0, 1fr) auto; grid-template-areas: "m repo time" ". title title" ". now now"; row-gap: 2px; column-gap: 8px; align-items: baseline; }
 	.t-row.t-everyone { grid-template-columns: 1.1em auto minmax(0, 1fr) auto; grid-template-areas: "m repo own time" ". title title title" ". now now now"; }
-	.t-rrepo:empty { display: none; }
+	.t-rrepo:empty, .t-rkey:empty { display: none; }
 	.t-title { white-space: normal; }
 	.t-now { white-space: normal; }
 	.t-row > .t-rrepo { justify-self: start; }
