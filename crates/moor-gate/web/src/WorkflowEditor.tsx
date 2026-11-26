@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { Conflict, failure, toError, type Workflow, workflowGet, workflowSet } from './api';
@@ -5,8 +6,8 @@ import { AutomationBox } from './AutomationBox';
 import { GatesPanel } from './Gates';
 import { GatesNote, PlanView } from './PlanView';
 
-/** The automation's prompt beside its file, and moor's reading of it below. */
-export function WorkflowEditor({ csrf, flow, onFlow }: { csrf: string; flow: Workflow; onFlow: (read: Workflow) => void }) {
+/** The automation's prompt beside its file, then `children`, then moor's reading of it when there is one. */
+export function WorkflowEditor({ csrf, flow, onFlow, children }: { csrf: string; flow: Workflow; onFlow: (read: Workflow) => void; children?: ComponentChildren }) {
 	const [prompt, setPrompt] = useState(flow.prompt);
 	const [read, setRead] = useState<string | null>(null);
 	const [showFile, setShowFile] = useState(true);
@@ -40,6 +41,7 @@ export function WorkflowEditor({ csrf, flow, onFlow }: { csrf: string; flow: Wor
 		}
 	};
 	const gated = flow.gates != null && flow.gates.length > 0 && flow.plan == null;
+	const planless = !gated && flow.plan == null && flow.plan_making == null;
 	return (
 		<>
 			<AutomationBox
@@ -63,7 +65,8 @@ export function WorkflowEditor({ csrf, flow, onFlow }: { csrf: string; flow: Wor
 				onReload={() => void reload()}
 				onToggle={() => setShowFile(!showFile)}
 			/>
-			{gated ? (
+			{children}
+			{planless ? null : gated ? (
 				<section class="plan-view" aria-label="Gates">
 					<GatesNote flow={flow} busy={busy || prompt !== flow.prompt} onAgain={() => void save(true)} />
 					<GatesPanel gates={flow.gates ?? []} outcomes={flow.outcomes} />

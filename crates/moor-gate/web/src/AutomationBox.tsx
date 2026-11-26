@@ -3,6 +3,43 @@ import { AutomationFile } from './AutomationFile';
 import { fileLines } from './promptFile';
 import { RepoName } from './HomeList';
 
+/** What fires it, on which repos, and who each run acts as, marked unless the person is writing; the zone and the next run sit in the hover title. */
+function Trigger({ flow, marked }: { flow: Workflow; marked: boolean }) {
+	const mark = marked ? 'psp k-enf' : undefined;
+	const words = flow.words ?? flow.cron ?? (flow.on_pull_request ? 'On every pull request' : 'By hand');
+	const next = flow.enabled && flow.next_text ? `next run ${flow.next_text}` : null;
+	const title = flow.cron == null ? undefined : [flow.cron, flow.timezone ?? 'UTC', next].filter(Boolean).join(' · ');
+	return (
+		<p class="trig">
+			<span class={mark} title={title}>
+				{words}
+			</span>
+			{flow.cron != null && flow.on_pull_request && (
+				<>
+					{' and '}
+					<span class={mark}>on every pull request</span>
+				</>
+			)}
+			{' · on '}
+			<span class={mark}>{flow.repos.join(', ')}</span>
+			{flow.run_as && (
+				<>
+					{' · acts as '}
+					<span class={mark}>{flow.run_as}</span>
+				</>
+			)}
+			{!flow.enabled && ' · disabled'}
+		</p>
+	);
+}
+
+/** Puts the caret at the end of the prompt, ready to write. */
+function editPrompt(e: { currentTarget: HTMLButtonElement }) {
+	const box = e.currentTarget.form?.querySelector<HTMLTextAreaElement>('textarea.promptbox');
+	box?.focus();
+	box?.setSelectionRange(box.value.length, box.value.length);
+}
+
 /** Where an edit of the prompt stands: as saved, being written, or read and ready to save. */
 export type Phase = 'saved' | 'writing' | 'read';
 
@@ -12,7 +49,7 @@ export function phaseOf(saved: string, prompt: string, read: string | null): Pha
 }
 
 const LEGEND: Record<Phase, string> = {
-	saved: 'The file is what each run gets. moor reads the prompt and makes the plan below.',
+	saved: 'The file is what each run gets.',
 	writing: 'The file is dimmed while you write. Read it to see the lines you changed.',
 	read: 'Lit lines are what you changed. Save keeps them.',
 };
@@ -45,6 +82,17 @@ export function AutomationBox(p: BoxProps) {
 				if (phase === 'read') p.onSave();
 			}}
 		>
+			<Trigger flow={p.flow} marked={phase !== 'writing'} />
+			<p class="rev">
+				revision {p.flow.revision}
+				{p.flow.plan_stale && <span class="pill warn">plan stale</span>}
+				<span class="grow" />
+				{phase === 'saved' && (
+					<button type="button" class="lnk" onClick={editPrompt}>
+						Edit
+					</button>
+				)}
+			</p>
 			<div class={p.showFile ? 'pgrid' : 'pgrid one'}>
 				<div class="pleft">
 					<textarea
