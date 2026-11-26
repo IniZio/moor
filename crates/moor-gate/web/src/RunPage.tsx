@@ -153,7 +153,7 @@ function Question({ run, csrf, onAnswered }: { run: Run; csrf: string; onAnswere
 		<div class="notice warn" role="group" aria-label="Question">
 			<p><strong>{run.question.text || 'This run waits for your answer.'}</strong></p>
 			<div class="actions">
-				<button disabled={busy} onClick={() => void answer(true)}>Yes</button>
+				<button class="btn primary" disabled={busy} onClick={() => void answer(true)}>Yes</button>
 				<button disabled={busy} onClick={() => void answer(false)}>No</button>
 			</div>
 			{problem && <p class="notice danger" role="alert">{problem}</p>}

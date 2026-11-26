@@ -79,24 +79,33 @@ function PlaceAsk({ box, needs, csrf, onSent }: { box: string; needs: Needs; csr
 /** A plain question the agent asks, which the conversation shows as its own; a permission, a gate or a plan keeps the page's card. */
 const plainQuestion = (d: BoxDetail): Needs | null => (d.state === 'needs_you' && d.needs?.kind === 'question' && !d.needs.gate && !d.needs.plan && !d.needs.approve ? d.needs : null);
 
-/** Keeps the conversation at its end as it grows while the person is there, as after they send; it stays put once they scroll up to read. */
-function follow(el: HTMLElement | null) {
+/** Keeps the conversation at its end as it grows while the person is there, as after they send or when a picture loads; it stays put once they scroll up to read. */
+export function follow(el: HTMLElement | null) {
 	if (!el) return;
 	let atEnd = el.scrollHeight <= el.clientHeight + 8;
+	const toEnd = () => atEnd && el.scrollTo({ top: el.scrollHeight });
+	const grown = new ResizeObserver(toEnd);
+	const watch = () => {
+		for (const child of el.children) grown.observe(child);
+	};
 	el.addEventListener('scroll', () => (atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 8));
-	new MutationObserver(() => atEnd && el.scrollTo({ top: el.scrollHeight })).observe(el, { childList: true, subtree: true });
+	new MutationObserver(() => {
+		watch();
+		toEnd();
+	}).observe(el, { childList: true, subtree: true });
+	watch();
 }
 
-/** A question's task, or a workflow run, as a conversation: the agent's open question at its end, and a box to write more in, with `you` as the name over the person's messages. Stop shows only while the agent works. A question's task has no Box of its own, so nothing more; a run's own Box keeps its terminal, changes and Close under the head's menu, its gates above the conversation, and Steer and Interrupt while the agent works. `tab` opens the terminal or the changes in place of the conversation. */
-export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You', tab = 'timeline', docs = null }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string; tab?: Tab; docs?: Docs | null }) {
+/** A question's task, or a workflow run, as a conversation: the agent's open question at its end, and a box to write more in, with `you` as the name over the person's messages. Stop shows only while the agent works. A question's task has no Box of its own, so nothing more; a run's own Box keeps its terminal, changes and Close under the head's menu, its gates above the conversation, and Steer and Interrupt while the agent works. `tab` opens the terminal or the changes in place of the conversation. Another person's task (`owner`) is only read: no answer, composer, Stop or menu. */
+export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You', tab = 'timeline', docs = null, owner }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string; tab?: Tab; docs?: Docs | null; owner?: string }) {
 	const run = !detail.task_at;
 	const work = run ? undefined : detail.task_boxes.at(-1);
 	const prBox = run ? detail.box : work?.name;
 	const prState = detail.pr && prBox ? <PrWord box={prBox} number={detail.pr.number} /> : undefined;
-	const asked = plainQuestion(detail);
+	const asked = owner ? null : plainQuestion(detail);
 	const running = RUNNING.includes(detail.state);
-	const actions = run ? <HeaderActions part={running ? undefined : 'more'} detail={detail} csrf={csrf} onDone={reload} changes /> : running ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null;
-	const view = !run ? null : tab === 'terminal' ? <TerminalTab box={detail.box} csrf={csrf} /> : tab === 'changes' ? <ChangesTab box={detail.box} seen={detail.last_event_at ?? detail.updated_at} /> : null;
+	const actions = owner ? <span class="t-readonly">{owner}'s task</span> : run ? <HeaderActions part={running ? undefined : 'more'} detail={detail} csrf={csrf} onDone={reload} changes /> : running ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null;
+	const view = !run || owner ? null : tab === 'terminal' ? <TerminalTab box={detail.box} csrf={csrf} /> : tab === 'changes' ? <ChangesTab box={detail.box} seen={detail.last_event_at ?? detail.updated_at} /> : null;
 	return (
 		<div class="t-box t-place">
 			<TaskHead t={detail} now={now} place asked={run ? detail.timeline[0]?.at : undefined} actions={actions} />
@@ -105,7 +114,7 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null, you =
 					{error}
 				</p>
 			)}
-			{(!run || detail.retryable) && <FailedCard detail={detail} csrf={csrf} onDone={reload} />}
+			{!owner && (!run || detail.retryable) && <FailedCard detail={detail} csrf={csrf} onDone={reload} />}
 			{run && detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} wait={detail.state === 'needs_you' ? detail.needs?.gate : null} /> : null}
 			{view ? (
 				<section class="t-pl-view">
@@ -119,7 +128,7 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null, you =
 					<PlaceStory detail={detail} you={you} prState={prState} end={asked ? <PlaceAsk box={detail.box} needs={asked} csrf={csrf} onSent={reload} key={asked.id} /> : card} />
 				</section>
 			)}
-			<Composer detail={detail} csrf={csrf} onSent={reload} plain={!(run && detail.state === 'working')} />
+			{owner ? <p class="t-readonly-note muted">You can read this task. Only {owner} can answer, steer or close it.</p> : <Composer detail={detail} csrf={csrf} onSent={reload} plain={!(run && detail.state === 'working')} />}
 		</div>
 	);
 }
