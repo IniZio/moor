@@ -11,6 +11,14 @@ import { Composer } from './Steer';
 import { TaskHead } from './TaskHead';
 import './place.css';
 
+/** Keeps the conversation at its end as it grows while the person is there, as after they send; it stays put once they scroll up to read. */
+function follow(el: HTMLElement | null) {
+	if (!el) return;
+	let atEnd = el.scrollHeight <= el.clientHeight + 8;
+	el.addEventListener('scroll', () => (atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 8));
+	new MutationObserver(() => atEnd && el.scrollTo({ top: el.scrollHeight })).observe(el, { childList: true, subtree: true });
+}
+
 /** How often the page of a task asked a moment ago looks again: the person is waiting on the answer. */
 const FAST_MS = 1000;
 
@@ -38,7 +46,7 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null, you =
 			{card}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
 			{detail.outputs.length > 0 && <OutputList outputs={detail.outputs} />}
-			<section>
+			<section class="t-pl-conv" ref={follow}>
 				<PlaceStory detail={detail} you={you} prState={prState} />
 			</section>
 			<Composer detail={detail} csrf={csrf} onSent={reload} plain />

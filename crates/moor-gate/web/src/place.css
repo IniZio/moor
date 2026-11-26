@@ -1,5 +1,6 @@
 /* A question's task page: the conversation, its cards and the message box. Sizes, the 880px column and the head come from the shared portal tokens. Every rule sits under .t-place or a t-pl class. */
-.t-box.t-place { display: flex; flex-direction: column; min-height: calc(100dvh - 82px); }
+.t-box.t-place { display: flex; flex-direction: column; height: calc(100dvh - 83px); }
+.t-place > .t-pl-conv { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .t-place .t-pl { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 4px; }
 .t-pl-you { align-self: flex-end; max-width: 78%; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .t-pl-meta { font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
@@ -9,9 +10,6 @@
 .t-pl-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .t-pl-text > :first-child { margin-top: 0; }
 .t-pl-text > :last-child { margin-bottom: 0; }
-.t-pl-note { margin: 0; padding: 2px 0; }
-.t-pl-note > :first-child { margin-top: 0; }
-.t-pl-note > :last-child { margin-bottom: 0; }
 .t-pl-fold { margin: -4px 0 0 calc(1.1em + 8px); font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 .t-pl-fold > summary { display: block; width: max-content; cursor: pointer; list-style: none; }
 .t-pl-fold > summary::-webkit-details-marker { display: none; }
