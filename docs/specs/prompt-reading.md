@@ -42,6 +42,7 @@ The owner approved these on 2026-11-26, after research against similar products.
     > 7. Derived list from a first run's traffic: later, as a draft only.
 
 14. **How this model is judged.** "Make sure our modeling is well thought out as long-term product." The owner would rather build it from what the product needs than follow existing ways. Other products are evidence here, not a template.
+15. **Ticks and accepts over MCP.** Yes over the person's own MCP connection, never from inside a Box (#20). The reply shows each line raw, and the page records who accepted it.
 
 ## What exists today
 
@@ -226,7 +227,7 @@ Read again after an edit makes a new reading. moor compares it with the held rea
 - **Added lines wait for a tick.** Each new `Allow` effect shows a tick box beside its phrase. Save stays off until each is ticked. A person who does not want a line changes the words that produce it.
 - **Nothing else needs a tick.** Lines that stay need none. New gates and `Withheld` effects only narrow what the agent may do.
 - **The first reading.** With no held reading, every line is new. The page lists each beside its phrase, and Save allows them in one act.
-- **Between an edit and the ticks, a run uses the held reading, unchanged.** A save over MCP cannot tick. Its reading waits as `reading_next`, with "N lines wait for you". Its removals wait with it. A person ticks the lines in the portal, and moor adopts it then. Until then the held reading runs and shows stale for `prompt`.
+- **Between an edit and the ticks, a run uses the held reading, unchanged.** A save over MCP that adds a line waits as `reading_next`, with "N lines wait for you". Its removals wait with it. The person ticks the lines in the portal, or their own agent ticks them with `accept_lines` over the person's MCP connection. moor adopts the reading then. Until then the held reading runs and shows stale for `prompt`. A Box-facing connection has no such tool, so a run cannot widen its own lines.
 
 **The other shape.** Save could hold the ticked lines and leave each unticked one out. We refuse it. A run would start with a phrase only partly held, and meet a refusal the page already knew. In every adopted reading the words and the held lines agree.
 
@@ -612,7 +613,7 @@ sequenceDiagram
   - Offer only answers moor can enforce, or an answer that keeps the words asked.
 - **How it hands in.** One MCP tool, `hand_in_reading`, on the Box-facing listener. Its JSON Schema comes from the Rust type `HandIn`, given in [the hand-in](#the-hand-in-from-slice-1-to-intents). The reader labels gates its own way, and moor issues the ids. Any harness that speaks MCP can be the reader. The reader is an agent in a Box today, and an idle agent place can take the job later.
 - **Step plans.** The reader may still leave a step plan in the plan file, as today. Then no reading is made. A plan file with gates is taken as a reading with effects and no phrases.
-- **Adoption.** A reading becomes the automation's when its source is the saved prompt, no question is open and each new line is ticked. The portal sends the id with Save. A save over MCP sends none, so moor reads the saved prompt and adopts that reading when it lands whole and adds no line. One with a question or a new line waits for a person, and the older reading holds until then.
+- **Adoption.** A reading becomes the automation's when its source is the saved prompt, no question is open and each new line is ticked. The portal sends the id with Save. A save over MCP sends none, so moor reads the saved prompt and adopts that reading when it lands whole and adds no line. One with a question or a new line waits, and the older reading holds until then. The person answers and ticks in the portal or over their own MCP connection.
 - **One-off tasks.** Start sends the reading id. moor refuses an open question or a stale context. It starts the Box with the reading's source as the prompt, its gates and its `may`, and keeps the id on the Box. Decision 8 stands, so `start_box` over MCP takes gates directly.
 - **Failure.** A failed reading shows its reason and a Read again button. moor never tries again by itself.
 
@@ -676,7 +677,7 @@ type ReadingView = {
 | `POST` start `{reading}` | Starts a one-off from a whole, current reading. |
 | Workflow and run views | Gain `reading: ReadingView \| null`. A front reads it as nullish, so it works against an older controller. A step-plan automation has none. A workflow with stored gates and no reading gets a view built at read time, with effects and no phrases. A workflow also gains `reading_next`, the reading of its saved prompt still in flight or open. A run view gains `refused`, each `credential_withheld` request of its Box with the row its shape matches, if any. |
 
-MCP gains the tools `read_prompt`, `get_reading` and `answer_reading`. The tool `add_workflow` takes an optional `reading`. The tool `list_workflows` returns each reading's state, stale reasons and open questions. After Read again, `effects[].held` tags each file line, and `gone` lists the held lines the new reading lacks. `get_reading` lists proposals and the lines that wait for a tick. MCP cannot tick or accept, per open question 3.
+MCP gains the tools `read_prompt`, `get_reading` and `answer_reading`. The tool `add_workflow` takes an optional `reading`. The tool `list_workflows` returns each reading's state, stale reasons and open questions. After Read again, `effects[].held` tags each file line, and `gone` lists the held lines the new reading lacks. `get_reading` lists proposals and the lines that wait for a tick, each raw with its phrase. `accept_lines` takes the keys of lines to tick and proposals to accept. It exists only on the person-facing server, never on the Box-facing one. The page records each as accepted by that person over MCP.
 
 A front draws marks from `runs` and `phrases` alone. It needs no offsets, so text in any script draws the same. The saved prompt is a marked block, and Edit swaps in the text field. Hovering a phrase lights each effect's line and the file's prompt line that holds the phrase. Hovering a file line lights its phrases.
 
@@ -784,7 +785,7 @@ Each slice ends in something a person sees on the fixture repo first, then on th
 | 3 | Forbidding words. `never`, the `merge` and `push` rows, `Withheld` effects and let-through notes. A rules save makes readings stale. | "Never merge" solid with two withheld requests. "Never push" dashed, naming the rule that lets it through. | A rules text that allows the merge marks the fixture stale for `rules`. Its next reading shows "never merge" dashed. |
 | 4 | The other rows. The prototype's twelve, with `status` and `app: true` where the App can write. The comparison pass, shown on each automation. | Each request clause of the fixture prompts is held or marked unmapped. The hand-written group tags each stored line. | The pass runs on every stored automation. Its counts go in the pull request. |
 | 5 | Read before Save, with ticks. Read it on a draft, and Save adopts by id. The diff by key, a tick per new line, removed lines dropped. The `reader` and `failed_at` columns. A failed reading shows Read again. | c1b and c1c. A new sentence asking for a status shows its new lines, each with a tick. Save is off until each is ticked. | Remove the comment sentence. Its lines show gone, and Save drops them with no tick. |
-| 6 | The reading writes `may`. The Proxy gets `may()` of the adopted reading beside the config's `proxy.allow`. A save over MCP with a new line waits for a person. | The fixture run posts its comment through a line a phrase produced. | A run on the fixture after Save. An MCP edit that adds a line leaves the held reading running. |
+| 6 | The reading writes `may`. The Proxy gets `may()` of the adopted reading beside the config's `proxy.allow`. A save over MCP with a new line waits for a tick. | The fixture run posts its comment through a line a phrase produced. | A run on the fixture after Save. An MCP edit that adds a line leaves the held reading running until `accept_lines`. The same call from a Box is refused. |
 | 7 | Proposals. `propose`, the separate group, acceptance one by one as child readings, lines carried across edits, the table page's list of accepted lines. | The release prompt's "draft the GitHub release" marked unmapped, with a proposed line and Accept. | Accept it. The child reading holds it with who and when. Save with it untouched holds nothing. |
 | 8 | Questions. Unclear phrases, answers, child readings, settled answers, Save waits. MCP `answer_reading`. | c1c. A dotted phrase with its question. Save is off until it is answered. | The chat sentence asks. "Remove the sentence" removes it and Save turns on. Read again does not ask it twice. |
 | 9 | Runs pin readings. `workflow_runs.reading`, the run page's "show" opens the pinned reading with gate states. | b2 and c2. The run's prompt with its marks, each gate's state beside its phrase. | Edit the automation after a run. The old run still shows the old reading. |
@@ -809,7 +810,6 @@ Each takes one word. Each has our recommendation.
 
 1. **Save when the reader failed?** The prompt saves and the older reading holds, marked stale. Recommend yes.
 2. **Start a one-off as written when the reader failed?** The Box holds only the repo's rules. Recommend yes.
-3. **Tick and accept over MCP?** Kept to the portal, so an agent cannot widen its own lines. Recommend no.
-4. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes.
-5. **Inbox item for a reading that waits?** A question or lines to tick, left by an MCP save. Recommend yes.
-6. **A pull request slot in the Proxy?** `{pull}` would let "this pull request" hold one pull request, not any. Recommend yes, after slice 10.
+3. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes.
+4. **Inbox item for a reading that waits?** A question or lines to tick, left by an MCP save. Recommend yes.
+5. **A pull request slot in the Proxy?** `{pull}` would let "this pull request" hold one pull request, not any. Recommend yes, after slice 10.
