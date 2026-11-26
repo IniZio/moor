@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use moor_core::domain::event::Event;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
 use moor_core::{BoxHandle, BoxId, Secret};
@@ -64,12 +65,16 @@ impl Drop for CaPair {
     }
 }
 
+/// A secret's name and, for the App's token, the repo (`owner/name`) it is for.
+type SecretKey = (SecretName, Option<String>);
+
 /// The last answers the controller gave to the reads a request makes, served while it is
 /// unavailable. A secret revoked meanwhile stays in use until the controller answers again.
 #[derive(Default)]
 struct LastAnswers {
-    /// Each secret by name, `None` when the user had none.
-    secrets: BTreeMap<SecretName, Option<Zeroizing<Vec<u8>>>>,
+    /// Each secret by name and, for the App's token, repo (`owner/name`); `None` when the user
+    /// had none.
+    secrets: BTreeMap<SecretKey, Option<Zeroizing<Vec<u8>>>>,
     /// What the Box held.
     hold: Option<Hold>,
 }
@@ -189,19 +194,28 @@ impl BoxLedger {
         })
     }
 
-    /// The secret `name` of the Box's user; the last answer while the controller is unavailable.
-    pub(crate) fn secret(&self, name: &SecretName) -> Result<Option<Secret>, LedgerError> {
+    /// The secret `name` of the Box's user, or the App's token for `repo` when `name` is the App's;
+    /// the last answer while the controller is unavailable.
+    pub(crate) fn secret(
+        &self,
+        name: &SecretName,
+        repo: Option<&ForgeRepo>,
+    ) -> Result<Option<Secret>, LedgerError> {
         let answer = self
             .ledger
-            .call::<Option<Vec<u8>>>(&Call::Secret { name: name.clone() })
+            .call::<Option<Vec<u8>>>(&Call::Secret {
+                name: name.clone(),
+                repo: repo.cloned(),
+            })
             .map(|bytes| bytes.map(Zeroizing::new));
+        let key = (name.clone(), repo.map(ToString::to_string));
         let mut last = self.last();
         let bytes = match answer {
             Ok(bytes) => {
-                last.secrets.insert(name.clone(), bytes.clone());
+                last.secrets.insert(key, bytes.clone());
                 bytes
             }
-            Err(e @ LedgerError::Unavailable(_)) => last.secrets.get(name).cloned().ok_or(e)?,
+            Err(e @ LedgerError::Unavailable(_)) => last.secrets.get(&key).cloned().ok_or(e)?,
             Err(e) => return Err(e),
         };
         drop(last);

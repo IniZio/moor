@@ -204,6 +204,7 @@ fn ready_box(store: &Store, user: moor_core::user::UserId) -> BoxId {
 /// `GET /ok` on `localhost:<port>`, with the `tool-token` secret as a bearer token.
 fn rule(port: u16) -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "tool".to_owned(),
         hosts: vec![format!("localhost:{port}")],

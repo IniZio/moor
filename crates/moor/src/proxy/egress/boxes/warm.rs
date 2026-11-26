@@ -94,7 +94,10 @@ impl Boxes {
             .filter(|r| r.credential != APP_CREDENTIAL)
         {
             let name = SecretName::parse(&rule.credential)?;
-            served.ledger.secret(&name).map_err(|e| e.to_string())?;
+            served
+                .ledger
+                .secret(&name, None)
+                .map_err(|e| e.to_string())?;
         }
         served.ledger.hold().map_err(|e| e.to_string())?;
         Ok(())

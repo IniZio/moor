@@ -282,7 +282,7 @@ impl Boxes {
         };
         let reads = Arc::clone(&ledger);
         let secrets: UserSecretsFn =
-            Arc::new(move |name| reads.secret(name).map_err(|e| e.to_string()));
+            Arc::new(move |name, repo| reads.secret(name, repo).map_err(|e| e.to_string()));
         let parts = Parts {
             ledger: &ledger,
             secrets: &secrets,

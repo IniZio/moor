@@ -61,6 +61,11 @@ pub struct ResolvedRule {
     /// none in a spec recorded before rules carried them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graphql: Option<Scope>,
+    /// For a rule that sends the GitHub App's token ([`APP_CREDENTIAL`]), the repo the token is
+    /// minted for; none in a spec recorded before rules carried it, which means the Box's first
+    /// repo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_repo: Option<ForgeRepo>,
 }
 
 /// The default rules by id.
@@ -141,7 +146,7 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 /// `box_env` names only the first repo. Rules that use `{repo}` are left out when `repos` is
 /// empty, unless they list an `{any_repo}` entry and `fetch_without_repo` is set, in which
 /// case only their `{repo}` entries are. Rules come out sorted by name, a rule's `app` lines
-/// right after it as a rule of their own named `<name>-app` that injects [`APP_CREDENTIAL`].
+/// right after it as one rule per repo, named `<name>-app`, that inject [`APP_CREDENTIAL`] for that repo.
 ///
 /// # Errors
 /// Returns [`ConfigError`] when the repo owner or name has characters outside
@@ -176,43 +181,62 @@ pub fn resolve_rules_over(
             continue;
         }
         let resolved = resolve_one(name, &rule, repos)?;
-        let app = app_rule(&resolved, &rule, repos);
+        let app = app_rules(&resolved, &rule, repos);
         out.push(resolved);
         out.extend(app);
     }
     Ok(out)
 }
 
-/// The rule that sends `rule`'s `app` lines, filled for `repos`, with `resolved`'s hosts and
-/// header; none when no line is left. Never one with no lines, which would serve every path.
-fn app_rule(resolved: &ResolvedRule, rule: &ToolRule, repos: &[ForgeRepo]) -> Option<ResolvedRule> {
-    let endpoint_rules: Vec<EndpointRule> = rule
+/// The rules that send `rule`'s `app` lines, filled for `repos`, with `resolved`'s hosts and
+/// header: one per Box repo, each with that repo's lines and its own token, the first named
+/// `<name>-app` and the rest `<name>-app-<n>` from 2. A line that names no `{repo}` goes to the
+/// first. None when no line is left. Never one with no lines, which would serve every path.
+fn app_rules(resolved: &ResolvedRule, rule: &ToolRule, repos: &[ForgeRepo]) -> Vec<ResolvedRule> {
+    let lines: Vec<(Vec<String>, String)> = rule
         .app
         .iter()
         .filter_map(|line| match parse_allow(line) {
-            Ok(Allow::Rule(methods, path)) => Some((methods, path)),
+            Ok(Allow::Rule(methods, path)) => Some((methods, fill_any_repo(&path))),
             _ => None,
         })
-        .flat_map(|(methods, path)| {
-            // The App's token covers the Box's first repo alone.
-            let paths = expand_path(&path, repos.get(..1).unwrap_or_default());
-            paths.into_iter().flat_map(move |path| {
-                methods.clone().into_iter().map(move |method| EndpointRule {
-                    method,
-                    path: path.clone(),
+        .collect();
+    repos
+        .iter()
+        .enumerate()
+        .filter_map(|(i, repo)| {
+            let endpoint_rules: Vec<EndpointRule> = lines
+                .iter()
+                .filter(|(_, path)| i == 0 || uses_repo(path))
+                .flat_map(|(methods, path)| {
+                    let path = if uses_repo(path) {
+                        fill_repo(path, &repo.owner, &repo.name)
+                    } else {
+                        path.clone()
+                    };
+                    methods.iter().map(move |method| EndpointRule {
+                        method: method.clone(),
+                        path: path.clone(),
+                    })
                 })
+                .collect();
+            let name = if i == 0 {
+                format!("{}-app", resolved.name)
+            } else {
+                format!("{}-app-{}", resolved.name, i + 1)
+            };
+            (!endpoint_rules.is_empty()).then(|| ResolvedRule {
+                name,
+                hosts: resolved.hosts.clone(),
+                credential: APP_CREDENTIAL.to_owned(),
+                inject: resolved.inject.clone(),
+                endpoint_rules,
+                box_env: BTreeMap::new(),
+                graphql: None,
+                app_repo: Some(repo.clone()),
             })
         })
-        .collect();
-    (!endpoint_rules.is_empty()).then(|| ResolvedRule {
-        name: format!("{}-app", resolved.name),
-        hosts: resolved.hosts.clone(),
-        credential: APP_CREDENTIAL.to_owned(),
-        inject: resolved.inject.clone(),
-        endpoint_rules,
-        box_env: BTreeMap::new(),
-        graphql: None,
-    })
+        .collect()
 }
 
 /// A repo owner or name safe to splice into a path: `[A-Za-z0-9._-]+`, not `.` or `..`.
@@ -288,6 +312,7 @@ fn resolve_one(
         .iter()
         .any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST));
     Ok(ResolvedRule {
+        app_repo: None,
         graphql: judged.then(|| rule.graphql.clone().unwrap_or_default()),
         hosts: rule
             .hosts

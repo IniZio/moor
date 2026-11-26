@@ -279,8 +279,10 @@ They are narrow, and moor refuses the config with the reason otherwise:
 - The name must be a default rule. These are `claude`, `github-api`,
   `github-git`, and `github-uploads`. A repo config cannot add a host or a credential.
 - The name `github-app` takes entries that go out as the GitHub App, not with
-  the person's token. They join the `app` lines of the `api.github.com` rule,
-  and cover the Box's first repo only.
+  the person's token. They join the `app` lines of the `api.github.com` rule.
+  Each request gets a token for the repo in its path, one of the Box's repos, from
+  the App's installation on that repo's owner. A repo the App is not installed on
+  is refused with the reason.
 - Each entry is `METHOD /path`, with an upper-case method. `*` is not a method
   and not an entry.
 - The path names `{repo}`, the Box's own repos. `{repo}` expands to every repo

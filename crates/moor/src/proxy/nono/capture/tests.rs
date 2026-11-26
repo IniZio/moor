@@ -127,6 +127,7 @@ fn debug_has_rule_names_only() {
 
 fn rule(name: &str, credential: &str) -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: name.to_owned(),
         hosts: vec!["example.com".to_owned()],
@@ -174,7 +175,7 @@ fn vaulted() -> Vaulted {
 impl Vaulted {
     fn secrets(&self, user: UserId) -> UserSecretsFn {
         let (store, vault) = (Arc::clone(&self.store), Arc::clone(&self.vault));
-        Arc::new(move |name| {
+        Arc::new(move |name, _| {
             store
                 .user_secret(&vault, user, name)
                 .map_err(|e| e.to_string())

@@ -36,7 +36,7 @@ fn rules(lines: &[&str]) -> Vec<ResolvedRule> {
 }
 
 fn rig(lines: &[&str]) -> Rig {
-    let secrets: UserSecretsFn = Arc::new(|name| {
+    let secrets: UserSecretsFn = Arc::new(|name, _| {
         let token = if name.as_str() == "github-app" {
             APP_TOKEN
         } else {
@@ -84,5 +84,58 @@ fn app_lines_go_out_with_the_app_token_and_reads_with_the_users() {
     for ((line, got), want) in auth.iter().zip(want) {
         assert_eq!(*got, want, "{line}");
     }
+    a.stop();
+}
+
+#[test]
+fn a_request_on_another_box_repo_goes_out_with_that_repos_app_token() {
+    let asked: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+    let log = Arc::clone(&asked);
+    let secrets: UserSecretsFn = Arc::new(move |name, repo| {
+        let token = if name.as_str() == "github-app" {
+            log.lock().unwrap().push(repo.map(ToString::to_string));
+            repo.map_or_else(|| "none".to_owned(), |r| format!("ghs_{}", r.name))
+        } else {
+            USER_TOKEN.to_owned()
+        };
+        Ok(Some(Secret::new(token.into_bytes())))
+    });
+    let mut config = ProxyConfig::default();
+    config.rules.insert(
+        "github-api".to_owned(),
+        ToolRule {
+            app: vec!["POST /repos/{repo}/issues/*/comments".to_owned()],
+            ..ToolRule::default()
+        },
+    );
+    let second = ForgeRepo::new("o", "second");
+    let rules: Vec<ResolvedRule> = resolve_rules(&config, &[app(), second.clone()], false)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.name.starts_with("github-api"))
+        .collect();
+    let a = rig_spec_with(app(), vec![second], rules, None, secrets);
+    let client = a.client();
+    for path in [
+        "/repos/o/app/issues/7/comments",
+        "/repos/o/second/issues/7/comments",
+        "/repos/o/third/issues/7/comments",
+    ] {
+        send(&client, "POST", path);
+    }
+    let auth: Vec<Option<String>> = a.seen().into_iter().map(|s| s.authorization).collect();
+    assert_eq!(
+        auth,
+        [
+            Some("token ghs_app".to_owned()),
+            Some("token ghs_second".to_owned()),
+            None
+        ]
+    );
+    let asked = asked.lock().unwrap().clone();
+    assert_eq!(
+        asked,
+        [Some("o/app".to_owned()), Some("o/second".to_owned())]
+    );
     a.stop();
 }

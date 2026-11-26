@@ -354,6 +354,7 @@ fn box_sink_swallows_store_errors() {
 /// A rule `gh` for `api.github.com:443`.
 fn gh_rule() -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "gh".to_owned(),
         hosts: vec!["api.github.com:443".to_owned()],

@@ -2,6 +2,7 @@
 //! call answers for that Box.
 
 use moor_core::domain::event::Event;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::SecretName;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,9 @@ pub(crate) enum Call {
     Secret {
         /// Which secret.
         name: SecretName,
+        /// For the App's token, the repo it is for; none means the Box's first repo.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<ForgeRepo>,
     },
     /// The spec the Box's Proxy starts from.
     Spec,

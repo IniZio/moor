@@ -23,6 +23,7 @@ const SECRET: &str = "test-token-1";
 /// One header-injecting rule for `localhost:<port>` that allows only `GET /ok`.
 fn rule(port: u16) -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "tool".to_owned(),
         hosts: vec![format!("localhost:{port}")],
@@ -115,7 +116,7 @@ fn engine_injects_the_credential_audits_requests_and_stops() {
         hands_inc: None,
     };
     let wiring = Wiring {
-        secrets: Arc::new(|name| {
+        secrets: Arc::new(|name, _| {
             assert_eq!(name.as_str(), "tool-token");
             Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
         }),
