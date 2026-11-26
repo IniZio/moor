@@ -255,7 +255,7 @@ function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDe
 				<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
 			</div>
 		);
-	if (detail.task_at) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} you={me} />;
+	if (detail.task_at || detail.workflow) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} you={me} tab={tab} docs={docs} />;
 	return (
 		<div class="t-box">
 			<TaskHead
@@ -263,7 +263,7 @@ function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDe
 				now={now}
 				asked={asked}
 				actions={<HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} />}
-				pr={<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? (detail.workflow?.pull ? Number(detail.workflow.pull.slice(detail.workflow.pull.lastIndexOf('#') + 1)) : null)} />}
+				pr={<PrHeader box={box} named={detail.pr} listed={detail.pr?.number ?? null} />}
 			/>
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{card}

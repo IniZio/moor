@@ -1,8 +1,8 @@
 import type { ComponentChildren } from 'preact';
 
-import type { BoxDetail, Entry } from './api';
+import type { BoxDetail, Entry, Evidence } from './api';
 import { Markdown } from './Markdown';
-import { ArtifactCard, BoxLine, PrCard } from './PlaceCards';
+import { ArtifactCard, BoxLine, OutputCard, PrCard } from './PlaceCards';
 import { exactTime } from './HomeList';
 import { clock, Line } from './Portal';
 import { foldWords, routine, ToolLine } from './Transcript';
@@ -105,6 +105,9 @@ const startOf = (t: Turn): number => Math.min(...[t.you, ...t.beats.flatMap((b) 
 /** The last index of `items` that `holds`, or -1. */
 const lastIndex = <T,>(items: readonly T[], holds: (item: T) => boolean): number => items.reduce((at, item, i) => (holds(item) ? i : at), -1);
 
+/** Whether the pull request is the one a workflow run was started for, which its head names, rather than one it made. */
+const ranFor = (d: BoxDetail) => !!d.pr && !!d.workflow?.pull?.endsWith(`#${d.pr.number}`);
+
 /** When the pull request first showed in the task: the first entry whose words or call mention its address, or NaN when none does. */
 function prSeenAt(pr: NonNullable<BoxDetail['pr']>, timeline: Entry[]): number {
 	const first = timeline.find((e) => [e.text, e.tool?.output?.text, JSON.stringify(e.tool?.input ?? '')].some((s) => s?.includes(pr.url)));
@@ -117,11 +120,17 @@ function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): 
 	const starts = turns.map(startOf);
 	const parts: Part[][] = turns.map((t) => t.beats.map((b) => beatPart(b, gates)));
 	const put = (at: number, node: ComponentChildren, rank = MADE) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, nodes: [node], rank });
+	const cards = (from: string, files: Evidence[]) => {
+		const newest = (name: string) => Math.max(...files.flatMap((f) => (f.name === name ? [f.version] : [])));
+		for (const a of files) put(Date.parse(a.created_at), <ArtifactCard a={a} newest={newest(a.name)} key={`a${from}/${a.name}@${a.version}`} />);
+	};
 	for (const box of detail.task_boxes) {
 		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.id}`} />);
-		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.id}/${a.name}@${a.version}`} />);
+		cards(String(box.id), box.artifacts);
 	}
-	const { pr } = detail;
+	if (!detail.task_at) cards('own', detail.artifacts);
+	const pr = ranFor(detail) ? null : detail.pr;
+	for (const o of detail.outputs) if (o.url !== pr?.url) put(o.first_at, <OutputCard o={o} key={`o${o.url}`} />);
 	const seen = pr ? prSeenAt(pr, detail.timeline) : NaN;
 	if (pr && !Number.isNaN(seen)) put(seen, <PrCard pr={pr} state={prState} key="pr" />, PR);
 	for (const list of parts) list.sort(byTime);
@@ -148,18 +157,37 @@ function Ended({ e }: { e: Entry }) {
 	);
 }
 
+/** A workflow run's first message is its automation's prompt: moor sent it, no person wrote it. */
+const runPrompt = (d: BoxDetail): Entry | undefined => (d.workflow ? d.timeline.find((e) => e.class === 'you') : undefined);
+
+/** The line a run opens with in place of the prompt, which `show` unfolds. */
+const firstLine = (prompt: string) => (
+	<details class="t-pl-first" key="first">
+		<summary>
+			Started by the automation, with its prompt. <span class="t-qlnk">show</span>
+		</summary>
+		<pre class="t-pl-prompt">{prompt}</pre>
+	</details>
+);
+
 /** When the person wrote: the clock, with the day too once it is not the day the task began. */
 const stamp = (at: string, began: string) => exactTime(at, Date.parse(began));
 
-/** A question's task as a conversation: the person's messages as bubbles under their name and time, then in the order they happened everything the agent said as a line with a quiet fold of the calls that led to it, the work Boxes it started as one line each, and what they made as cards. Only a failure that ended the task shows as an error. `end` closes the conversation, as the agent's open question does. `prState` says where the pull request stands, once the page has read it. */
+/** A question's task, or a workflow run opened by its automation's line, as a conversation: the person's messages as bubbles under their name and time, then in the order they happened everything the agent said as a line with a quiet fold of the calls that led to it, the work Boxes it started as one line each, and what they made as cards. Only a failure that ended the task shows as an error. `end` closes the conversation, as the agent's open question does. `prState` says where the pull request stands, once the page has read it. */
 export function PlaceStory({ detail, you, prState, end }: { detail: BoxDetail; you: string; prState?: ComponentChildren; end?: ComponentChildren }) {
-	const turns = turnsOf(detail.timeline, detail.state === 'failed');
-	if (!turns.length) return end ? <div class="t-pl">{end}</div> : <p class="t-empty">Nothing has happened yet.</p>;
+	const prompt = runPrompt(detail);
+	const first = prompt ? [firstLine(prompt.text)] : [];
+	const turns = turnsOf(
+		detail.timeline.filter((e) => e !== prompt),
+		detail.state === 'failed',
+	);
+	if (!turns.length) return end || prompt ? <div class="t-pl">{[...first, end]}</div> : <p class="t-empty">Nothing has happened yet.</p>;
 	const parts = partsOf(detail, turns, prState);
-	const began = turns.find((t) => t.you)?.you?.at ?? '';
+	const began = prompt?.at ?? turns.find((t) => t.you)?.you?.at ?? '';
 	return (
 		<div class="t-pl">
 			{[
+				...first,
 				...turns.flatMap((t, i) => [
 				...(t.you
 					? [

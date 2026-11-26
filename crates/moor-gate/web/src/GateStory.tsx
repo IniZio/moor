@@ -7,7 +7,7 @@ import './story.css';
 /** The states in which a gate is in hand. */
 const IN_HAND = new Set<GateRow['state']>(['working', 'asking', 'stuck', 'nocheck', 'failed']);
 
-type Docs = Pick<Workflow, 'gates' | 'outcomes'>;
+export type Docs = Pick<Workflow, 'gates' | 'outcomes'>;
 
 /** A gate's rule starts a sentence, except where it starts with the name moor. */
 const sentence = (rule: string) => (rule.startsWith('moor') ? rule : rule.charAt(0).toUpperCase() + rule.slice(1));
