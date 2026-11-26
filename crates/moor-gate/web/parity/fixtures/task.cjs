@@ -57,23 +57,24 @@ function design(step) {
 }
 function deps(after) {
   n = 0;
-  const tl = [moor(at(24, '09:00'), 'Started by the automation, with its prompt.'), ...cmds(at(24, '09:02'), 47), say(at(24, '09:20'), '5 packages have upgrades. 1 has a security advisory.')];
+  const tl = [{ ...you(at(24, '09:00'), 'Check every package for upgrades and security advisories. Open one pull request per safe upgrade; ask before a major one.'), kind: 'steered' }, ...cmds(at(24, '09:02'), 47), say(at(24, '09:20'), '5 packages have upgrades. 1 has a security advisory.')];
   if (after) tl.push(you(at(24, '09:41'), 'Skip it this time'), say(at(24, '09:42'), 'Left lodash at 4. Noted for tomorrow’s run.'));
   const needs = after ? null : { id: 'q2', kind: 'question', question: 'lodash 4 → 5 breaks 2 tests that pass on main. Open its pull request anyway?', detail: null, picks: [{ n: 1, label: 'Open it, marked failing', role: 'choice' }, { n: 2, label: 'Skip it this time', role: 'choice' }], other: 3, approve: null, plan: false, gate: null };
   const r = row({ box: after ? 'b3' : 'b2', repo: 'acme/api', branch: 'moor/deps-24-nov', title: 'Daily dependency check, 24 Nov', state: after ? 'done' : 'needs_you', line: after ? 'done' : 'needs you: one upgrade breaks 2 tests', at: tl[tl.length - 1].at, workflow: { name: 'Daily dependency check', pull: null }, needs });
   const arts = [ev('Upgrade report', at(24, '09:20'), true, 1), ev('Tests: branch against main', at(24, '09:20'), true)];
   if (after) arts.push(ev('Upgrade report', at(24, '09:42'), true, 2));
-  return detail(r, { timeline: tl, artifacts: arts, outputs: [out('Pull request #212', PR('acme/api', 212).url, at(24, '09:18')), out('Pull request #213', PR('acme/api', 213).url, at(24, '09:19'))] });
+  return detail(r, { timeline: tl, artifacts: arts, outputs: [out('Pull request #212', PR('acme/api', 212).url, at(24, '09:20')), out('Pull request #213', PR('acme/api', 213).url, at(24, '09:20'))] });
 }
 function evidence(ok) {
   n = 0;
   const e = ok ? { repo: 'acme/web', num: 482, sha: 'a41c9e2', pr: 'Fix date picker overflow on small screens', k: 18, first: 'Ran the check and the booking screen at three widths.', last: 'Evidence is on the pull request. Nothing is waiting on you.', t: '14:03' }
     : { repo: 'acme/api', num: 96, sha: 'c09d77a', pr: 'Rate-limit the export endpoint', k: 4, first: 'Ran the check. It failed, so I stopped there.', last: 'Evidence is on the pull request, marked failed. A new push will run this again.', t: '13:20' };
-  const tl = [say(at(24, e.t), e.first), ...cmds(at(24, e.t), e.k), say(at(24, e.t), e.last)];
+  const [t0, t1] = ok ? ['14:01', '14:02'] : ['13:18', '13:19'];
+  const tl = [...cmds(at(24, t0), e.k), say(at(24, t1), e.first), say(at(24, e.t), e.last)];
   const r = row({ box: ok ? 'c2' : 'c3', repo: e.repo, branch: 'moor/evidence-' + e.num, title: 'Evidence for #' + e.num + ' · ' + e.sha, state: ok ? 'done' : 'failed', line: ok ? 'evidence posted · checks pass' : 'failed: check did not pass', at: at(24, e.t), workflow: { name: 'Evidence on every pull request', pull: e.repo + '#' + e.num }, pr: PR(e.repo, e.num) });
-  const arts = [ev('Evidence', at(24, e.t), false)];
-  if (ok) arts.push(ev('Booking screen, before and after', at(24, e.t), true));
-  return detail(r, { timeline: tl, artifacts: arts, outputs: [out('Comment on pull request #' + e.num, PR(e.repo, e.num).url + '#issuecomment-1', at(24, e.t)), out('Status moor/evidence', PR(e.repo, e.num).url + '/checks', at(24, e.t))] });
+  const arts = [ev('Evidence', at(24, t1), false)];
+  if (ok) arts.push(ev('Booking screen, before and after', at(24, t1), true));
+  return detail(r, { timeline: tl, artifacts: arts, outputs: [out('Comment on pull request #' + e.num, PR(e.repo, e.num).url + '#issuecomment-1', at(24, t1)), out('Status moor/evidence', PR(e.repo, e.num).url + '/checks', at(24, t1))] });
 }
 const DETAILS = { a3: design(3), a4: design(4), b2: deps(false), b3: deps(true), c2: evidence(true), c3: evidence(false), h1: place(1), h2: place(2), h3: place(3), h4: place(4) };
 function api(state) {

@@ -68,12 +68,12 @@ const AUTO_PAIRS = [
   ['run group head link', null, '.auto .dayhead a'],
   ['run rows list', '#main .wrap > .rows', '.auto ul.runs'],
   ['run row', '#main a.run, #main div.run', '.auto ul.runs li > a'],
-  ['run status mark', '#main .run .smk', '.auto ul.runs .status'],
-  ['run repo or sha', '#main .run .rfirst', '.auto ul.runs .grow'],
+  ['run status mark', '#main .run .smk', '.auto ul.runs .smk'],
+  ['run repo or sha', '#main .run .rfirst', '.auto ul.runs .t-mono'],
   ['run sha mono', '#main .run .rfirst', '.auto ul.runs .t-mono'],
   ['run outcome words', '#main .run .rnow', '.auto ul.runs .outcome'],
-  ['run time', '#main .run .rtime', '.auto ul.runs li > a > .muted'],
-  ['run failed words', '#main .run .rnow.n-failed', null],
+  ['run time', '#main .run .rtime', '.auto ul.runs .rtime'],
+  ['run failed words', '#main .run .rnow.n-failed', '.auto ul.runs .outcome.n-failed'],
 ];
 const RULES_PAIRS = [
   ['top bar', '#top .bar', 'header.top .bar'],
