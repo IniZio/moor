@@ -47,7 +47,7 @@ export function App() {
 			<main>
 				<h1>moor</h1>
 				<p class="muted">Your session ended.</p>
-				<a class="button" href={signInHref()}>Sign in again</a>
+				<a class="btn primary" href={signInHref()}>Sign in again</a>
 			</main>
 		);
 	}

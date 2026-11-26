@@ -119,8 +119,7 @@ button:where(:hover:not(:disabled)), .button:where(:hover) { border-color: var(-
 button.primary, .button.primary { background: var(--moor-color-text); color: var(--moor-color-bg); border-color: var(--moor-color-text); font-weight: var(--moor-weight-strong); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
 button.quiet { background: transparent; border-color: transparent; padding: 4px 8px; }
-.t-btn { display: inline-block; padding: 8px 16px; line-height: inherit; border: 0; color: var(--moor-color-on-accent); font-weight: var(--moor-weight-strong); background: var(--moor-color-accent); }
-.t-btn:hover:not(:disabled) { background: var(--moor-color-accent-strong); }
+.t-btn, .t-btn:hover:not(:disabled) { height: 26px; padding: 0 11px; line-height: 1; border-color: var(--moor-color-text); color: var(--moor-color-bg); font-weight: var(--moor-weight-strong); background: var(--moor-color-text); }
 button.quiet:hover:not(:disabled) { background: var(--moor-color-bg-sunken); border-color: transparent; }
 
 :focus-visible { outline: 2px solid var(--moor-color-focus); outline-offset: 2px; }

@@ -9,7 +9,7 @@ import { blank, type Draft, fromFlow, takeDraft } from './WorkflowDraft';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
-/** The workflow form: a new one, a copy, a one-off made recurring, or an edit of `editing`. */
+/** The automation form: a new one, a copy, a one-off made recurring, or an edit of `editing`. */
 export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string }) {
 	const [opened] = useState(takeDraft);
 	const [flow, setFlow] = useState<Workflow | null>(null);
@@ -58,9 +58,9 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 	return (
 		<form class="wf-form" onSubmit={(e) => void submit(e)}>
 			<p>
-				<a href={flow ? `#/workflows/${encodeURIComponent(flow.name)}` : '#/workflows'}>{flow ? flow.name : 'All workflows'}</a>
+				<a href={flow ? `#/workflows/${encodeURIComponent(flow.name)}` : '#/workflows'}>{flow ? flow.name : 'Automations'}</a>
 			</p>
-			<h2>{flow ? `Edit ${flow.name}` : opened.copyOf ? `Duplicate ${opened.copyOf}` : 'New workflow'}</h2>
+			<h2>{flow ? `Edit ${flow.name}` : opened.copyOf ? `Duplicate ${opened.copyOf}` : 'New automation'}</h2>
 			<label>
 				Name
 				<input
@@ -71,7 +71,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 					placeholder="nightly-deps"
 					onInput={(e) => set({ name: e.currentTarget.value })}
 				/>
-				<span class="muted">{flow ? 'A workflow keeps its name.' : 'Lowercase letters, digits, dots, dashes and underscores.'}</span>
+				<span class="muted">{flow ? 'An automation keeps its name.' : 'Lowercase letters, digits, dots, dashes and underscores.'}</span>
 			</label>
 			<div class="wf-field">
 				<span>Repos</span>
@@ -86,7 +86,7 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			</label>
 			{flow?.has_plan && draft.prompt !== flow.prompt && (
 				<p class="notice warn" role="status">
-					moor made this workflow's plan from the old prompt. Saving keeps that plan, marked stale, until moor makes it again.
+					moor made this automation's plan from the old prompt. Saving keeps that plan, marked stale, until moor makes it again.
 				</p>
 			)}
 			{!flow && <p class="muted">Write the prompt only. moor reads the repos and the prompt, then makes the plan.</p>}
@@ -122,7 +122,9 @@ export function WorkflowForm({ csrf, editing }: { csrf: string; editing?: string
 			</details>
 			{problem?.text && <p class="notice danger" role="alert">{problem.text}</p>}
 			<div class="actions">
-				<button disabled={!ready}>{busy ? 'Saving…' : flow ? 'Save' : 'Create workflow'}</button>
+				<button class="btn primary" disabled={!ready}>
+					{busy ? 'Saving…' : flow ? 'Save' : 'Create automation'}
+				</button>
 				{problem?.stale && (
 					<button type="button" class="quiet" onClick={load}>
 						Discard mine and load theirs
