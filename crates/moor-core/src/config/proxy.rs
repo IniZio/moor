@@ -17,6 +17,7 @@ use super::{check, ConfigError};
 use crate::graphql_scope::Scope;
 use crate::user::SecretName;
 pub use allow::{GRAPHQL_ENTRY, GRAPHQL_HOST};
+pub(crate) use extra::check_entry as check_allow_entry;
 pub(super) use extra::check_extra_allow;
 pub use resolve::{
     default_graphql, default_rules, resolve_rules, resolve_rules_over, EndpointRule,
