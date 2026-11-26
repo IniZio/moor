@@ -3,12 +3,14 @@
 use moor_core::gate::Gates;
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_core::view::reading::ReadingView;
 use moor_core::view::workflow::{
     GatesBy, LastRunView, PlanMakingView, WorkflowListValue, WorkflowView,
 };
 use moor_core::workflow::{PlanDraft, PromptHash, Workflow};
 
 use super::next_due;
+use super::reading;
 use super::stream::run_view;
 use crate::error::CommandError;
 use crate::ops::users::to_value;
@@ -28,7 +30,8 @@ pub(super) fn list(
             None => None,
         };
         let making = drafts.remove(&w.id);
-        workflows.push(view(&w, now, (last_run, making)));
+        let held = reading::of(store, user, &w)?;
+        workflows.push(view(&w, now, (last_run, making, held)));
     }
     to_value(&WorkflowListValue { workflows })
 }
@@ -37,7 +40,7 @@ pub(super) fn list(
 fn view(
     w: &Workflow,
     now: Ts,
-    (last_run, plan_making): (Option<LastRunView>, Option<PlanDraft>),
+    (last_run, plan_making, reading): (Option<LastRunView>, Option<PlanDraft>, Option<ReadingView>),
 ) -> WorkflowView {
     let enabled = matches!(w.state, moor_core::workflow::WorkflowState::Enabled { .. });
     WorkflowView {
@@ -83,6 +86,7 @@ fn view(
             .as_ref()
             .map(Gates::outcome_docs)
             .filter(|o| !o.is_empty()),
+        reading,
         last_run,
     }
 }

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::reading::ReadingView;
 use crate::gate::GateDoc;
 
 /// The front a workflow came from, as shown.
@@ -154,6 +155,10 @@ pub struct WorkflowView {
     /// names none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcomes: Option<Vec<crate::gate::OutcomeDoc>>,
+    /// What moor made of the prompt: the reading the workflow holds, or its stored gates read as
+    /// effects with no phrases; none for a workflow with a step plan or no reading.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading: Option<ReadingView>,
     /// Its latest run, when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run: Option<LastRunView>,

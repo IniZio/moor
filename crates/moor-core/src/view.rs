@@ -16,6 +16,7 @@ pub mod node;
 pub mod output;
 pub mod progress;
 pub mod pulls;
+pub mod reading;
 pub mod repo_config;
 pub mod run;
 pub mod session;

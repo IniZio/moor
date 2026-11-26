@@ -232,7 +232,6 @@ impl Store {
     }
 
     /// `owner`'s reading `id`; none when there is none, or it is another person's.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the view reads it"))]
     pub(crate) fn reading(
         &self,
         owner: UserId,
@@ -270,7 +269,6 @@ impl Store {
 
     /// The id of the reading `owner`'s workflow `id` holds; none when it holds none, or there is
     /// no such workflow of `owner`'s.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the view reads it"))]
     pub(crate) fn workflow_reading(
         &self,
         owner: UserId,
