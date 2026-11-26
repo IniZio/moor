@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::template::{check_slots, fill_any_repo, fill_repo, uses_repo, ALLOW_SLOTS, ANY_REPO};
-use super::{parse_rules_text, ProxyConfig, ToolRule, DEFAULT_HEADER, GRAPHQL_HOST};
+use super::{
+    parse_rules_text, ProxyConfig, ToolRule, APP_CREDENTIAL, DEFAULT_HEADER, GRAPHQL_HOST,
+};
 use crate::config::ConfigError;
 use crate::graphql_scope::Scope;
 use crate::name::ForgeRepo;
@@ -138,7 +140,8 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 /// `{repo}` repeats once per repo in `repos`, and `{any_repo}` matches any one repo;
 /// `box_env` names only the first repo. Rules that use `{repo}` are left out when `repos` is
 /// empty, unless they list an `{any_repo}` entry and `fetch_without_repo` is set, in which
-/// case only their `{repo}` entries are. Rules come out sorted by name.
+/// case only their `{repo}` entries are. Rules come out sorted by name, a rule's `app` lines
+/// right after it as a rule of their own named `<name>-app` that injects [`APP_CREDENTIAL`].
 ///
 /// # Errors
 /// Returns [`ConfigError`] when the repo owner or name has characters outside
@@ -172,9 +175,44 @@ pub fn resolve_rules_over(
         if repos.is_empty() && (rule.requires_repo || (rule.needs_repo() && !serves_any)) {
             continue;
         }
-        out.push(resolve_one(name, &rule, repos)?);
+        let resolved = resolve_one(name, &rule, repos)?;
+        let app = app_rule(&resolved, &rule, repos);
+        out.push(resolved);
+        out.extend(app);
     }
     Ok(out)
+}
+
+/// The rule that sends `rule`'s `app` lines, filled for `repos`, with `resolved`'s hosts and
+/// header; none when no line is left. Never one with no lines, which would serve every path.
+fn app_rule(resolved: &ResolvedRule, rule: &ToolRule, repos: &[ForgeRepo]) -> Option<ResolvedRule> {
+    let endpoint_rules: Vec<EndpointRule> = rule
+        .app
+        .iter()
+        .filter_map(|line| match parse_allow(line) {
+            Ok(Allow::Rule(methods, path)) => Some((methods, path)),
+            _ => None,
+        })
+        .flat_map(|(methods, path)| {
+            // The App's token covers the Box's first repo alone.
+            let paths = expand_path(&path, repos.get(..1).unwrap_or_default());
+            paths.into_iter().flat_map(move |path| {
+                methods.clone().into_iter().map(move |method| EndpointRule {
+                    method,
+                    path: path.clone(),
+                })
+            })
+        })
+        .collect();
+    (!endpoint_rules.is_empty()).then(|| ResolvedRule {
+        name: format!("{}-app", resolved.name),
+        hosts: resolved.hosts.clone(),
+        credential: APP_CREDENTIAL.to_owned(),
+        inject: resolved.inject.clone(),
+        endpoint_rules,
+        box_env: BTreeMap::new(),
+        graphql: None,
+    })
 }
 
 /// A repo owner or name safe to splice into a path: `[A-Za-z0-9._-]+`, not `.` or `..`.

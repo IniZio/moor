@@ -1,5 +1,6 @@
 //! The controller's answers to the shared egress Proxy's calls for one Box.
 
+use moor_core::config::proxy::APP_CREDENTIAL;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
 use moor_core::user::SecretName;
@@ -10,7 +11,7 @@ use zeroize::Zeroizing;
 use super::super::hold::hold_of;
 use super::super::{AwakeTokens, BoxView, Call, Fault, Owner};
 use super::encode;
-use super::start;
+use super::{start, AppTokens, Sources};
 use crate::store::{Store, StoreError};
 use crate::vault::Vault;
 
@@ -23,7 +24,7 @@ fn reply<T: Serialize>(r: Result<T, StoreError>) -> Zeroizing<String> {
 /// the machine it holds among them, and its audit, never the lease or tunnel. Only `View` answers for a closed Box, and
 /// only the secrets its spec's rules name are read.
 pub(super) fn for_egress(
-    (store, vault): (&Store, &Vault),
+    (store, vault, app): Sources<'_>,
     box_id: BoxId,
     call: Call,
 ) -> Zeroizing<String> {
@@ -35,6 +36,9 @@ pub(super) fn for_egress(
         Call::View => reply(view(s, box_id)),
         Call::Spec => reply(s.proxy_spec(box_id)),
         Call::Ca => encode(&start::ca((s, vault), box_id)),
+        Call::Secret { name } if name.as_str() == APP_CREDENTIAL => {
+            encode(&app_token(s, app, box_id))
+        }
         Call::Secret { name } => encode(&secret((s, vault), box_id, &name)),
         Call::OpenLimit { rule } => reply(s.open_limits(box_id).map(|limits| {
             limits
@@ -114,6 +118,18 @@ fn view(store: &Store, box_id: BoxId) -> Result<Option<BoxView>, StoreError> {
             .as_ref()
             .is_some_and(|b| b.state == HandsState::Asleep),
     }))
+}
+
+/// The App's token for the Box's first repo, as bytes: never a secret a user holds.
+fn app_token(store: &Store, app: Option<&dyn AppTokens>, box_id: BoxId) -> Result<Vec<u8>, Fault> {
+    let app = app.ok_or_else(|| Fault::Refused("this controller has no GitHub App".to_owned()))?;
+    let repo = store
+        .proxy_spec(box_id)?
+        .and_then(|spec| spec.box_repo)
+        .ok_or_else(|| Fault::Refused(format!("Box {} has no repo", box_id.get())))?;
+    app.repo_token(&repo, store.now())
+        .map(|token| token.expose().to_vec())
+        .map_err(Fault::Refused)
 }
 
 /// The secret `name` of the Box's user as bytes.

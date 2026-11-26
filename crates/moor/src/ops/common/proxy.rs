@@ -2,7 +2,8 @@
 
 use moor_core::config::check::agent_env_refused;
 use moor_core::config::proxy::{
-    default_rules, parse_rules_text, resolve_rules_over, ResolvedRule, ToolRule,
+    default_rules, parse_rules_text, resolve_rules_over, ResolvedRule, ToolRule, APP_CREDENTIAL,
+    GRAPHQL_HOST,
 };
 use moor_core::request::RepoFile;
 use std::collections::BTreeMap;
@@ -46,7 +47,8 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
 /// a Box with no repo keeps git fetch access only when `fetch_without_repo` is set. The rules are
 /// the primary repo's rules text, or the default rules text when it has none stored or the Box
 /// has no repo. `extra` is the Box's own extra `allow` entries by rule id, from its repo config
-/// and override: they join this Box's rules and no other Box's.
+/// and override: they join this Box's rules and no other Box's. Entries under
+/// [`APP_CREDENTIAL`] join the `app` lines of the rule for the GitHub API.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
@@ -59,8 +61,14 @@ pub(crate) fn plan(
 ) -> Result<ProxyPlan, String> {
     let base = repo_rules(cx, repos.first())?;
     let mut proxy = cx.config().box_proxy(mcp);
-    for (name, entries) in extra {
-        if !base.contains_key(name) && !proxy.rules.contains_key(name) {
+    for (asked, entries) in extra {
+        let app = asked == APP_CREDENTIAL;
+        let name = if app {
+            github_rule(&base).unwrap_or_else(|| asked.clone())
+        } else {
+            asked.clone()
+        };
+        if !base.contains_key(&name) && !proxy.rules.contains_key(&name) {
             let whose = repos
                 .first()
                 .map_or_else(|| "the default".to_owned(), |r| format!("{r}'s"));
@@ -68,12 +76,9 @@ pub(crate) fn plan(
                 "this Box asks for extra allow entries on the rule for {name}, but {whose} rules have no such rule; add the entries to the repo's rules instead"
             ));
         }
-        proxy
-            .rules
-            .entry(name.clone())
-            .or_default()
-            .allow
-            .extend(entries.iter().cloned());
+        let rule = proxy.rules.entry(name).or_default();
+        let lines = if app { &mut rule.app } else { &mut rule.allow };
+        lines.extend(entries.iter().cloned());
     }
     let rules =
         resolve_rules_over(base, &proxy, repos, fetch_without_repo).map_err(|e| e.to_string())?;
@@ -81,6 +86,13 @@ pub(crate) fn plan(
         repos: repos.to_vec(),
         rules,
     })
+}
+
+/// The id of the rule in `base` that serves the GitHub API.
+fn github_rule(base: &BTreeMap<String, ToolRule>) -> Option<String> {
+    base.iter()
+        .find(|(_, r)| r.hosts.iter().any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST)))
+        .map(|(id, _)| id.clone())
 }
 
 /// The rules of `repo`'s stored rules text by id, or the default rules when it has none.

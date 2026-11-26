@@ -323,7 +323,7 @@ impl Store {
     }
 
     /// Current time from the clock seam.
-    pub(super) fn now(&self) -> Ts {
+    pub(crate) fn now(&self) -> Ts {
         self.clock.now()
     }
 }

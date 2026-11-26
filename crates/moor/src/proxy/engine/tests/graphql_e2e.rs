@@ -22,6 +22,7 @@ use ureq::Agent;
 
 use super::{Host, Running, Wiring};
 use crate::proxy::ledger::tests::box_ledger;
+use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::nono::tests::upstream::Upstream;
 use crate::testing::net::assert_closes;
 
@@ -289,6 +290,18 @@ pub(super) fn rig_spec(
     rules: Vec<ResolvedRule>,
     host_upstream: Option<&Upstream>,
 ) -> Rig {
+    let secrets: UserSecretsFn = Arc::new(|_| Ok(Some(Secret::new(SECRET.as_bytes().to_vec()))));
+    rig_spec_with(repo, other, rules, host_upstream, secrets)
+}
+
+/// [`rig_spec`], reading each secret with `secrets`.
+pub(super) fn rig_spec_with(
+    repo: ForgeRepo,
+    other: Vec<ForgeRepo>,
+    rules: Vec<ResolvedRule>,
+    host_upstream: Option<&Upstream>,
+    secrets: UserSecretsFn,
+) -> Rig {
     let host = Host::new();
     let up = start_github(host.dir.path());
     let mut upstream_ca = up.ca_path.clone();
@@ -313,7 +326,7 @@ pub(super) fn rig_spec(
         hands_inc: None,
     };
     let wiring = Wiring {
-        secrets: Arc::new(|_| Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))),
+        secrets,
         upstream_ca: Some(upstream_ca),
         upstream_dial: Some(up.addr),
         guard_exempt,

@@ -310,6 +310,11 @@ fn each_served_host_goes_through_the_proxy_only_when_configured() {
 
 /// The `github-api` allow entries of the rules `proxy` plans for a Box on `o/r` with `repo_yaml`.
 fn github_api_allowed(repo_yaml: &str) -> Vec<(String, String)> {
+    rule_lines(repo_yaml, "github-api")
+}
+
+/// The entries of rule `name` that `proxy` plans for a Box on `o/r` with `repo_yaml`.
+fn rule_lines(repo_yaml: &str, name: &str) -> Vec<(String, String)> {
     let dir = tempfile::tempdir().unwrap();
     let fake = FakeProxyHost::new();
     let mut r = rig(dir.path());
@@ -346,7 +351,7 @@ fn github_api_allowed(repo_yaml: &str) -> Vec<(String, String)> {
             _ => None,
         })
         .flatten()
-        .filter(|rule| rule.name == "github-api")
+        .filter(|rule| rule.name == name)
         .flat_map(|rule| rule.endpoint_rules)
         .map(|e| (e.method, e.path))
         .collect()
@@ -369,6 +374,18 @@ fn a_box_whose_config_asks_for_entries_gets_them_and_a_box_without_does_not() {
         "{without:?}"
     );
     assert_eq!(with.len(), without.len() + 2);
+}
+
+#[test]
+fn entries_asked_for_under_github_app_go_out_as_the_app_and_not_with_the_users_token() {
+    let status = ("POST".to_owned(), "/repos/o/r/statuses/*".to_owned());
+    let yaml = "proxy: {allow: {github-app: [\"POST /repos/{repo}/statuses/*\"]}}";
+    assert_eq!(
+        rule_lines(yaml, "github-api-app"),
+        std::slice::from_ref(&status)
+    );
+    assert!(!rule_lines(yaml, "github-api").contains(&status));
+    assert!(rule_lines("", "github-api-app").is_empty());
 }
 
 #[test]

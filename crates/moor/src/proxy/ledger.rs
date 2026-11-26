@@ -27,7 +27,7 @@ pub(crate) use boxes::{AwakeTokens, BoxLedger, BoxView, CaPair, Owner};
 use call::Call;
 pub(crate) use client::EgressLedger;
 pub(crate) use endpoint::{Endpoint, TlsFiles};
-pub(crate) use serve::{box_ca, serve, Keys};
+pub(crate) use serve::{box_ca, serve, AppTokens, Keys};
 
 use crate::store::StoreError;
 
