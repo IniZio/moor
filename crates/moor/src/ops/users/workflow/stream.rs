@@ -10,7 +10,7 @@ use moor_core::view::workflow::{
     WorkflowRunReadValue, WorkflowRunsValue,
 };
 use moor_core::workflow::{box_name, PullTarget, RunEnd, RunOutcome, RunState, WorkflowRun};
-use moor_core::ErrorKind;
+use moor_core::{BoxId, ErrorKind};
 
 use super::{parse_name, to_value};
 use crate::error::CommandError;
@@ -177,6 +177,14 @@ fn shown_plan(
         .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))
 }
 
+/// The contract version Box `id`'s first session read; none before one launched.
+fn contract_read(store: &Store, id: BoxId) -> Result<Option<u32>, CommandError> {
+    let first = store.first_event_of(id, "contract_given")?;
+    Ok(first
+        .and_then(|e| e.payload.get("version").and_then(serde_json::Value::as_u64))
+        .and_then(|v| u32::try_from(v).ok()))
+}
+
 /// `workflow-run-read`: run `id` of any workflow with its frozen plan, read by anyone signed in.
 pub(super) fn run_read(
     store: &Store,
@@ -188,14 +196,15 @@ pub(super) fn run_read(
     let w = store.workflow_by_id(run.workflow)?.ok_or_else(missing)?;
     let plan = shown_plan(store, &run, w.gates.as_ref(), &w.prompt)?;
     let view = run_view(store, w.name.as_str(), &run)?;
-    let outputs = match run.state.box_id() {
-        Some(id) => store.outputs_of(id)?,
-        None => Vec::new(),
+    let (outputs, contract) = match run.state.box_id() {
+        Some(id) => (store.outputs_of(id)?, contract_read(store, id)?),
+        None => (Vec::new(), None),
     };
     to_value(&WorkflowRunReadValue {
         workflow: w.name.to_string(),
         yours: w.owner == user,
         outputs,
+        contract,
         run: RunRowView {
             id: run.id.get(),
             run: view,
