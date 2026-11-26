@@ -2,14 +2,17 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { type BoxDetail, boxAnswer, failure, type Needs, toError } from './api';
+import { ChangesTab } from './Changes';
 import { HeaderActions, RUNNING } from './Ending';
+import { type Docs, GateStory } from './GateStory';
 import { FailedCard } from './Retry';
-import { OutputList } from './PlaceCards';
 import { PlaceStory } from './PlaceStory';
 import { PrWord } from './PrHeader';
 import { POLL_MS } from './Portal';
 import { Composer } from './Steer';
+import type { Tab } from './TaskPage';
 import { TaskHead } from './TaskHead';
+import { TerminalTab } from './Terminal';
 import './place.css';
 
 /** How often the page of a task asked a moment ago looks again: the person is waiting on the answer. */
@@ -84,25 +87,39 @@ function follow(el: HTMLElement | null) {
 	new MutationObserver(() => atEnd && el.scrollTo({ top: el.scrollHeight })).observe(el, { childList: true, subtree: true });
 }
 
-/** A question's task: the conversation, the agent's open question at its end, and a box to write more in, with `you` as the name over the person's messages. It has no work Box, so there is no branch, machine, changes, terminal or prompt to show, and Stop shows only while the agent works: it ends the agent and leaves the Box. */
-export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You' }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string }) {
-	const work = detail.task_boxes.at(-1);
-	const prState = detail.pr && work ? <PrWord box={work.name} number={detail.pr.number} /> : undefined;
+/** A question's task, or a workflow run, as a conversation: the agent's open question at its end, and a box to write more in, with `you` as the name over the person's messages. Stop shows only while the agent works. A question's task has no Box of its own, so nothing more; a run's own Box keeps its terminal, changes and Close under the head's menu, its gates above the conversation, and Steer and Interrupt while the agent works. `tab` opens the terminal or the changes in place of the conversation. */
+export function AskedTask({ detail, error, now, csrf, reload, card = null, you = 'You', tab = 'timeline', docs = null }: { detail: BoxDetail; error: string; now: number; csrf: string; reload: () => void; card?: ComponentChildren; you?: string; tab?: Tab; docs?: Docs | null }) {
+	const run = !detail.task_at;
+	const work = run ? undefined : detail.task_boxes.at(-1);
+	const prBox = run ? detail.box : work?.name;
+	const prState = detail.pr && prBox ? <PrWord box={prBox} number={detail.pr.number} /> : undefined;
 	const asked = plainQuestion(detail);
+	const running = RUNNING.includes(detail.state);
+	const actions = run ? <HeaderActions part={running ? undefined : 'more'} detail={detail} csrf={csrf} onDone={reload} changes /> : running ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null;
+	const view = !run ? null : tab === 'terminal' ? <TerminalTab box={detail.box} csrf={csrf} /> : tab === 'changes' ? <ChangesTab box={detail.box} seen={detail.last_event_at ?? detail.updated_at} /> : null;
 	return (
 		<div class="t-box t-place">
-			<TaskHead t={detail} now={now} actions={RUNNING.includes(detail.state) ? <HeaderActions part="stop" detail={detail} csrf={csrf} onDone={reload} /> : null} />
+			<TaskHead t={detail} now={now} place asked={run ? detail.timeline[0]?.at : undefined} actions={actions} />
 			{error && (
 				<p class="notice danger" role="alert">
 					{error}
 				</p>
 			)}
-			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
-			{detail.outputs.length > 0 && <OutputList outputs={detail.outputs} />}
-			<section class="t-pl-conv" ref={follow}>
-				<PlaceStory detail={detail} you={you} prState={prState} end={asked ? <PlaceAsk box={detail.box} needs={asked} csrf={csrf} onSent={reload} key={asked.id} /> : card} />
-			</section>
-			<Composer detail={detail} csrf={csrf} onSent={reload} plain />
+			{(!run || detail.retryable) && <FailedCard detail={detail} csrf={csrf} onDone={reload} />}
+			{run && detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} wait={detail.state === 'needs_you' ? detail.needs?.gate : null} /> : null}
+			{view ? (
+				<section class="t-pl-view">
+					<a class="t-pl-back" href={`#/box/${encodeURIComponent(detail.box)}`}>
+						← Back to the conversation
+					</a>
+					{view}
+				</section>
+			) : (
+				<section class="t-pl-conv" ref={follow}>
+					<PlaceStory detail={detail} you={you} prState={prState} end={asked ? <PlaceAsk box={detail.box} needs={asked} csrf={csrf} onSent={reload} key={asked.id} /> : card} />
+				</section>
+			)}
+			<Composer detail={detail} csrf={csrf} onSent={reload} plain={!(run && detail.state === 'working')} />
 		</div>
 	);
 }

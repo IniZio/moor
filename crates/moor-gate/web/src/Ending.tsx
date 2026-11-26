@@ -21,8 +21,8 @@ function whyNot(e: Error): string {
 	return e instanceof Refused && e.unsaved && (e.unsaved.ahead > 0 || e.unsaved.dirty > 0) ? unsavedWords(e.unsaved) : failure(e);
 }
 
-/** Stop beside the state (`part="stop"`), and the terminal and Close under a menu with a confirm (`part="more"`); Close removes the Box. Without a part, both. */
-export function HeaderActions({ detail, csrf, onDone, part }: { detail: BoxDetail; csrf: string; onDone: () => void; part?: 'stop' | 'more' }) {
+/** Stop beside the state (`part="stop"`), and the terminal, with `changes` the changes too, and Close under a menu with a confirm (`part="more"`); Close removes the Box. Without a part, both. */
+export function HeaderActions({ detail, csrf, onDone, part, changes = false }: { detail: BoxDetail; csrf: string; onDone: () => void; part?: 'stop' | 'more'; changes?: boolean }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [refused, setRefused] = useState('');
@@ -81,6 +81,11 @@ export function HeaderActions({ detail, csrf, onDone, part }: { detail: BoxDetai
 						<a class="t-more-item" href={`#/box/${encodeURIComponent(detail.box)}/terminal`} onClick={() => menu.current?.hidePopover()}>
 							Open the terminal
 						</a>
+						{changes && (
+							<a class="t-more-item" href={`#/box/${encodeURIComponent(detail.box)}/changes`} onClick={() => menu.current?.hidePopover()}>
+								See the changes
+							</a>
+						)}
 						<button
 							type="button"
 							class="t-more-item t-more-danger"
