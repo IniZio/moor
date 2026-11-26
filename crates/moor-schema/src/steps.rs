@@ -42,6 +42,7 @@ mod node_settings;
 mod pause_publish;
 mod proxy_key;
 mod proxy_state;
+mod readings;
 mod repo_config;
 mod repo_rules;
 mod resume_memory;
@@ -134,4 +135,5 @@ pub const STEPS: &[Step] = &[
     step("V105__repo_rules", repo_rules::write),
     step("V106__workflow_plan_draft", workflow_plan_draft::write),
     step("V107__box_outputs", box_outputs::write),
+    step("V108__readings", readings::write),
 ];
