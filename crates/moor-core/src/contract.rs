@@ -13,6 +13,12 @@ mod tests;
 /// The distro's contract file, the one source of every copy.
 pub const SOURCE: &str = include_str!("../../../agents/distro/contract.md");
 
+/// The folder of a Box's working directory whose top-level files moor collects for the person.
+pub const ARTIFACTS_DIR: &str = ".moor/artifacts";
+
+/// The folder of a Box's working directory whose `<kind>.md` files moor shows as reports.
+pub const REPORTS_DIR: &str = ".moor/reports";
+
 /// The lock file that pins [`SOURCE`]'s version to its sha256.
 pub const LOCK: &str = include_str!("../../../agents/distro/contract.lock");
 

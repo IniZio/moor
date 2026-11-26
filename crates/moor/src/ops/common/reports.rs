@@ -21,7 +21,7 @@ const MAX_FILES: usize = 50;
 /// Index file, relative to the workdir.
 const INDEX_FILE: &str = ".moor/reports.index";
 /// Reports directory, relative to the workdir.
-const REPORTS_DIR: &str = ".moor/reports";
+use moor_core::contract::REPORTS_DIR;
 
 /// Lists regular, non-symlink `*.md` files as `<name>\t<size>`; the index is truncated first.
 const INDEX_SCRIPT: &str = "mkdir -p .moor && : > .moor/reports.index && \
