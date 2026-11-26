@@ -355,7 +355,22 @@ The reader runbook is the first built-in skill, `moor-read-prompt`. It follows p
 - **The measure that ships it.** The comparison pass of decision 12 runs over every stored automation. The skill ships when the pass misses no hand-written `may` line. Each line must be reproduced or already allowed by the pinned rules. A second measure is agreement between two readers on effects, against today's 4 of 14.
 - **Before the skill ships.** Until `hand_in_reading` exists, the reader leaves its plan file as today. The skill's last step names the plan file.
 
-> **Prototype result, pending.** The built-in reader runbook is under test now. Fill this slot with the comparison pass numbers and the agreement numbers per condition.
+**Prototype result, 2026-11-26.** Real readers read six stored and mock prompts three times each, on two models, and two prompts the runbook had not seen.
+
+| | No runbook | Runbook, larger model | Runbook, smaller model | Reader labels intents, code expands |
+| --- | --- | --- | --- | --- |
+| `may` lines found | 44 of 66 | 66 of 66 | 54 of 66 | 66 of 66 on both models |
+| Same list on every run | 0.93 | 1.00 | 0.70 | 1.00 |
+| The 5 hand-written lines, missed per run | 1 | 0 | 1 in 3 runs | 0 |
+| Question raised on the unclear prompt | 0 of 3 | 3 of 3 | 3 of 3 | not tested |
+| Unseen prompts | not run | 18 of 18 | 18 of 18 | 9 of 18 |
+
+- The expected lines came from the runbook's own table, so 66 of 66 is partly built in. The hand-written lines, the unseen prompts and the run-to-run agreement do not depend on it.
+- Every miss of the smaller model is one slip. It skips an intent's other lines when the rules already allow the first.
+- Code expansion fails when an intent has no table row. The reader then writes the raw line itself.
+- Neither settles a write that must go out as the App, since no prompt wording asks for it.
+
+The runbook ships as the reader skill. Whether moor also expands intent labels from a table kept as a data file beside the skill is an open question for the owner.
 >
 > - If the runbook does not move either number against instructions alone, derivation moves into code. The runbook shrinks to quoting.
 > - An intent-labels-only reader may match or beat the full runbook. Then the table of intents and their requests becomes a data file in the distro. The skill and the hand-in check both read it, and the portal shows it raw.
@@ -425,3 +440,4 @@ Each takes one word. Each has our recommendation.
 5. **Put the situation's contract text in the moor MCP server's instructions?** Recommend yes.
 6. **Rename the Docker Box's two containers so "agent place" means one thing?** Recommend yes.
 7. **Mark contract restatements in a reading, dashed with a note?** Recommend yes, in slice 7.
+8. **Expand `may` lines from the reader's intent labels, with the table kept as a data file beside the skill and the raw lines always shown?** Recommend yes.
