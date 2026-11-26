@@ -2,11 +2,12 @@ import type { Workflow } from './api';
 import { AutomationFile } from './AutomationFile';
 import { fileLines } from './promptFile';
 import { RepoName } from './HomeList';
+import { firesOn } from './schedule';
 
 /** What fires it, on which repos, and who each run acts as, marked unless the person is writing; the zone and the next run sit in the hover title. */
 function Trigger({ flow, marked }: { flow: Workflow; marked: boolean }) {
 	const mark = marked ? 'psp k-enf' : undefined;
-	const words = flow.words ?? flow.cron ?? (flow.on_pull_request ? 'On every pull request' : 'By hand');
+	const words = firesOn(flow);
 	const next = flow.enabled && flow.next_text ? `next run ${flow.next_text}` : null;
 	const title = flow.cron == null ? undefined : [flow.cron, flow.timezone ?? 'UTC', next].filter(Boolean).join(' · ');
 	return (

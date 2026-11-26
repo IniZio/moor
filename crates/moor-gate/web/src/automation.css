@@ -51,16 +51,17 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .dayhead a { color: inherit; text-decoration: none; }
 .auto .dayhead a:hover { text-decoration: underline; }
 .auto ul.runs { margin: 0; border-top: 1px solid var(--moor-color-border); }
-.auto ul.runs li > a { display: grid; grid-template-columns: 1.1em 10.5rem minmax(0, 1fr) 7.5rem; gap: 10px; align-items: center; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--moor-color-border); border-radius: 0; background: none; font-size: 13px; }
+.auto ul.runs li > a { color: inherit; text-decoration: none; display: grid; grid-template-columns: 1.1em 10.5rem minmax(0, 1fr) 7.5rem; gap: 10px; align-items: center; padding: 5px 6px; border: 0; border-bottom: 1px solid var(--moor-color-border); border-radius: 0; background: none; font-size: 13px; }
 .auto ul.runs li > a:hover { background: var(--moor-color-bg-sunken); }
 .auto ul.runs .outcome:nth-child(2) { grid-column: 2 / 4; }
 .auto ul.runs .t-mono { font-size: 12px; }
-.auto .smk { display: inline-block; width: 1.1em; text-align: center; font-size: 12px; font-weight: var(--moor-weight-strong); }
-.auto .smk-needs { color: var(--state-needs); }
-.auto .smk-working { color: var(--moor-color-info); }
-.auto .smk-done, .auto .smk-settled { color: var(--moor-color-text-muted); }
-.auto .smk-failed { color: var(--moor-color-danger); }
-.auto .smk-warn { color: var(--moor-color-warning); }
+.auto .alist { margin-top: 8px; }
+.auto .alist .arow { display: grid; grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 10.5rem minmax(0, 16rem) 7.5rem; gap: 10px; align-items: center; padding: 5px 6px; border-bottom: 1px solid var(--moor-color-border); color: var(--moor-color-text); text-decoration: none; font-size: 13px; }
+.auto .alist .arow:hover { background: var(--moor-color-bg-sunken); }
+.auto .aname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
+.auto .atrig { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--moor-color-text-muted); }
+.auto .alast { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.auto .arow.off .aname { color: var(--moor-color-text-muted); }
 .auto .outcome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: var(--moor-weight-body); color: var(--moor-color-text-muted); }
 .auto .outcome.n-needs { color: var(--moor-color-accent-strong); }
 .auto .outcome.n-failed { color: var(--moor-color-danger); }

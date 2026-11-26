@@ -19,7 +19,7 @@ export function PullSwitch({ on, onChange }: { on: boolean; onChange: (on: boole
 				On pull request
 			</label>
 			<span class="muted" id="wf-pull-help">
-				Runs when a pull request is opened, marked ready, or pushed to, in this workflow's first repo. Needs the GitHub App.
+				Runs when a pull request is opened, marked ready, or pushed to, in this automation's first repo. Needs the GitHub App.
 				{locked && ' This controller has no GitHub App configured, so the switch is off.'}
 			</span>
 		</div>

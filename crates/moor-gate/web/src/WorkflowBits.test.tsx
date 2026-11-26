@@ -10,12 +10,13 @@ function look(status: Parameters<typeof StatusIcon>[0]['status'], verdict?: Para
 }
 
 test('a delivered run with no named outcome keeps the check mark and the word delivered', () => {
-	expect(look('success')).toEqual({ glyph: '✓', class: 'status success', title: 'delivered' });
-	expect(look('failure')).toEqual({ glyph: '✗', class: 'status failure', title: 'failed' });
+	expect(look('success')).toEqual({ glyph: '✓', class: 'smk smk-done', title: 'delivered' });
+	expect(look('failure')).toEqual({ glyph: '✗', class: 'smk smk-failed', title: 'failed' });
+	expect(look('waiting')).toEqual({ glyph: '●', class: 'smk smk-needs', title: 'waiting on you' });
 });
 
 test('a named outcome picks the icon by its tone and the tooltip names it', () => {
-	expect(look('success', { name: 'check passed', tone: 'good' })).toEqual({ glyph: '✓', class: 'status success', title: 'delivered: check passed' });
-	expect(look('success', { name: 'check failed', tone: 'bad' })).toEqual({ glyph: '!', class: 'status bad', title: 'delivered: check failed' });
-	expect(look('success', { name: 'nothing to do', tone: 'plain' })).toEqual({ glyph: '✓', class: 'status plain', title: 'delivered: nothing to do' });
+	expect(look('success', { name: 'check passed', tone: 'good' })).toEqual({ glyph: '✓', class: 'smk smk-done', title: 'delivered: check passed' });
+	expect(look('success', { name: 'check failed', tone: 'bad' })).toEqual({ glyph: '!', class: 'smk smk-warn', title: 'delivered: check failed' });
+	expect(look('success', { name: 'nothing to do', tone: 'plain' })).toEqual({ glyph: '✓', class: 'smk smk-done', title: 'delivered: nothing to do' });
 });

@@ -3,6 +3,9 @@ main.wide:has(> .rules-page) { max-width: 1320px; padding: 14px 20px 0; }
 /* A fixed-height column: the file fills what the window leaves between the head and the write box, so no page scroll. */
 .rules-page { container-type: inline-size; height: calc(100dvh - 37px - 14px); display: flex; flex-direction: column; --rules-narrow: max(18rem, calc(100dvh - 17rem)); }
 .rules-page h1 { margin: 0 0 2px; font-size: 18px; line-height: 1.2; scroll-margin-top: 48px; }
+.rules-switch .t-rmenu-pop { font: var(--moor-weight-body) var(--app-text) / 1.5 var(--moor-font-body); }
+.rules-switch .t-rmenu-pop a { color: var(--moor-color-text); text-decoration: none; }
+.rules-caret { font-size: 13px; color: var(--moor-color-text-muted); }
 .rules-rev { color: var(--moor-color-text-muted); font-size: var(--moor-text-xs); margin: 6px 0 8px; padding-bottom: 6px; min-height: 0; display: flex; align-items: center; border-bottom: 1px solid var(--moor-color-border); }
 .rules-file { font: var(--moor-weight-body) var(--moor-text-xs) / 16px var(--moor-font-mono); display: flex; flex-direction: column; max-height: 100%; min-width: 0; padding-bottom: 5px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-sunken); overflow: hidden; }
 .rules-head { font: 500 var(--moor-text-xs) / 16px var(--moor-font-mono); padding: 4px 10px 4px 38px; margin-bottom: 3px; border-bottom: 1px solid var(--moor-color-border); }
