@@ -60,6 +60,10 @@
       },
       {
         "method": "GET",
+        "path": "/repos/*/*/readme"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets"
       },
       {
