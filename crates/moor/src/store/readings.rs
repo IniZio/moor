@@ -138,9 +138,9 @@ fn gates_json(reading: &Reading) -> Result<Option<String>, StoreError> {
     )?))
 }
 
-/// Keeps `reading` in `tx` and makes its workflow hold it. A read with gates sets the
-/// workflow's gates and clears its plan, as gates moor made always have. A read with no gate
-/// leaves the workflow's gates and plan as they were. A refusal changes nothing.
+/// Keeps `reading` in `tx` and makes its workflow hold it in place of a step plan. A read with
+/// gates sets the workflow's gates; one with no gate leaves its gates as they were. A refusal
+/// changes nothing.
 pub(super) fn hold_in(tx: &dyn Db, reading: &Reading, since: i64) -> Result<Stored, StoreError> {
     let gates = gates_json(reading)?;
     let stored = insert_in(tx, reading, since)?;
@@ -149,11 +149,11 @@ pub(super) fn hold_in(tx: &dyn Db, reading: &Reading, since: i64) -> Result<Stor
         let mut held = Query::update();
         held.table(Workflows::Table)
             .value(Workflows::Reading, reading.id.as_str())
+            .value(Workflows::Plan, Option::<String>::None)
             .and_where(Expr::col(Workflows::Id).eq(of.get()))
             .and_where(Expr::col(Workflows::User).eq(reading.made_by.get()));
         if let Some(gates) = gates {
-            held.value(Workflows::Gates, gates)
-                .value(Workflows::Plan, Option::<String>::None);
+            held.value(Workflows::Gates, gates);
         }
         tx.run(&mut held)?;
     }

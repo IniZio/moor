@@ -278,3 +278,59 @@ fn an_accepted_reading_is_listed_as_current() {
     assert_eq!(shown["state"], "read");
     assert_eq!(shown["stale"], json!([]), "{shown}");
 }
+
+/// A step plan a reader may leave in place of a reading.
+const STEPS: &str = r#"{"steps": [{"id": "ship", "title": "Ship", "kind": "deliver",
+    "instructions": "post the comment", "done_when": "it is posted"}]}"#;
+
+impl Rig {
+    /// Asks for `id`'s prompt to be read again; the new reader's job and Box.
+    fn read_again(&self, id: WorkflowId) -> (DraftJob, BoxId) {
+        let store = self.cx.store().unwrap();
+        store
+            .set_plan_draft(id, Some(&PlanDraft::wanted(PROMPT.trim_end())))
+            .unwrap();
+        self.advance_to(60_000);
+        let job = self.plan_pass().expect("a Box is asked for");
+        start_draft(&self.cx, &job);
+        let box_id = self.open(&job).expect("the reader's Box is open");
+        (job, box_id)
+    }
+}
+
+#[test]
+fn a_reading_after_a_step_plan_leaves_no_step_plan_to_walk() {
+    let r = rig();
+    let (id, job, _) = r.reader();
+    r.leave_plan(&job, STEPS);
+    assert!(r.plan_pass().is_none());
+    assert!(!r.workflow(id).plan.is_single_of(PROMPT.trim_end()));
+    let (_, box_id) = r.read_again(id);
+    let no_gate = json!({
+        "phrases": [{"quote": {"exact": "ONE comment on that pull request"},
+                     "mark": {"kind": "held", "effects": ["comment"]}}],
+        "effects": [{"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT}]
+    });
+    r.hand_in(box_id, &no_gate).unwrap();
+    let w = r.workflow(id);
+    assert!(
+        w.plan.is_single_of(&w.prompt),
+        "the reading replaced the step plan"
+    );
+}
+
+#[test]
+fn a_step_plan_after_a_reading_leaves_no_reading_held() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let (job, _) = r.read_again(id);
+    r.leave_plan(&job, STEPS);
+    assert!(r.plan_pass().is_none());
+    assert!(!r.workflow(id).plan.is_single_of(PROMPT.trim_end()));
+    let shown = listed_reading(&r, id);
+    assert!(
+        shown.is_null(),
+        "a step-plan automation holds no reading: {shown}"
+    );
+}
