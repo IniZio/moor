@@ -22,9 +22,13 @@ export function Connect({ url }: { url: string | null }) {
 	return (
 		<section>
 			<h2>Connect</h2>
-			<ul class="cards">
-				{url && <Command label="Claude Code" line={`claude mcp add --transport http moor ${url}`} />}
-			</ul>
+			{url ? (
+				<ul class="cards">
+					<Command label="Claude Code" line={`claude mcp add --transport http moor ${url}`} />
+				</ul>
+			) : (
+				<p class="muted">This moor has no MCP URL set, so there is no command to copy.</p>
+			)}
 		</section>
 	);
 }

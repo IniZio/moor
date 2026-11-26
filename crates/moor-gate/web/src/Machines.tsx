@@ -92,7 +92,7 @@ function Settings({ csrf, node, onChanged }: { csrf: string; node: Node; onChang
 			{problem?.text && <p class="notice danger" role="alert">{problem.text}</p>}
 			{saved && <p class="notice ok" role="status">Saved.</p>}
 			<div class="actions">
-				<button disabled={busy || !dirty || !valid}>Save</button>
+				<button class="btn primary" disabled={busy || !dirty || !valid}>Save</button>
 				{problem?.stale && (
 					<button type="button" class="quiet" onClick={onChanged}>Discard mine and load theirs</button>
 				)}

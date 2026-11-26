@@ -56,7 +56,7 @@ function Row({ account, name, linked, onLinked }: { account: Account; name: stri
 						value={value}
 						onInput={(e) => setValue(e.currentTarget.value)}
 					/>
-					<button disabled={busy || value === ''}>{linked ? 'Replace' : 'Link'}</button>
+					<button class="btn primary" disabled={busy || value === ''}>{linked ? 'Replace' : 'Link'}</button>
 				</div>
 				{error && <p class="notice danger" role="alert">{error}</p>}
 			</form>

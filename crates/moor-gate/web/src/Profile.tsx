@@ -197,7 +197,7 @@ export function Profile({ csrf, githubLinked, onChanged }: { csrf: string; githu
 					</p>
 				)}
 				<div class="actions">
-					<button disabled={!!busy || !parsed.success || unchanged || !githubLinked}>{busy === 'save' ? 'Checking and saving…' : 'Save'}</button>
+					<button class="btn primary" disabled={!!busy || !parsed.success || unchanged || !githubLinked}>{busy === 'save' ? 'Checking and saving…' : 'Save'}</button>
 					<button type="button" class="quiet" disabled={!!busy || !parsed.success || !githubLinked} onClick={() => void run('check')}>
 						{busy === 'check' ? 'Checking…' : 'Check without saving'}
 					</button>

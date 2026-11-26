@@ -114,7 +114,7 @@ export function AddMachine({ csrf, server, nodes, reload }: { csrf: string; serv
 					</p>
 				)}
 				<div class="actions">
-					{(step?.at === 'expired' || step?.at === 'failed') && <button onClick={() => void mint()}>Make a new command</button>}
+					{(step?.at === 'expired' || step?.at === 'failed') && <button class="btn primary" onClick={() => void mint()}>Make a new command</button>}
 					<button class="quiet" onClick={close}>
 						{step?.at === 'linked' ? 'Done' : 'Close'}
 					</button>

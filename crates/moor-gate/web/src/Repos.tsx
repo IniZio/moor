@@ -35,7 +35,7 @@ function Picker({ repo }: { repo: string | null }) {
 				<datalist id="repos">
 					{repos.map((r) => <option key={r} value={r} />)}
 				</datalist>
-				<button disabled={!REPO.test(typed.trim())}>Open</button>
+				<button class="btn primary" disabled={!REPO.test(typed.trim())}>Open</button>
 			</div>
 		</form>
 	);
@@ -139,7 +139,7 @@ function Editor({ csrf, repo }: { csrf: string; repo: string }) {
 			{problem?.text && <pre class="notice danger" role="alert">{problem.text}</pre>}
 			{saved && <p class="notice ok" role="status">Saved. The config is at revision {config.revision}.</p>}
 			<div class="actions">
-				{editable && <button disabled={busy || !dirty}>Save</button>}
+				{editable && <button class="btn primary" disabled={busy || !dirty}>Save</button>}
 				<button type="button" class="quiet" disabled={busy} onClick={load}>
 					{problem?.stale ? 'Discard mine and load theirs' : 'Reload'}
 				</button>
