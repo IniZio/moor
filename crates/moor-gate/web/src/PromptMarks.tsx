@@ -8,7 +8,7 @@ export function PromptMarks({ reading, lit, onHover, onEdit }: { reading: Readin
 		<div class="pmarks" role="group" aria-label="Prompt" onClick={onEdit}>
 			{reading.runs.map((run, i) => {
 				const phrase = run.phrase ? phrases.get(run.phrase) : undefined;
-				if (!phrase || phrase.mark === 'unclear') return run.text;
+				if (!phrase) return run.text;
 				const on = { phrase: phrase.id };
 				return (
 					<span

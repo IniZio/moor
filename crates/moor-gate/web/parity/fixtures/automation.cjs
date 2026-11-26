@@ -17,20 +17,21 @@ const C1_RUNS = [
   run('failed', 'failed: check did not pass', '2026-11-24T13:20', 'acme/api#96', 'c09d77a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7'),
   run('done', 'evidence posted', '2026-11-23T16:30', 'acme/web#479', '1f2a8c4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f'),
 ];
-// What moor made of a prompt, as the controller's ReadingView sends it, for the phrases the mock draws. A part is [text] or [text, 's' | 'd', id, effect lines]; 's' is held and 'd' asked.
+// What moor made of a prompt, as the controller's ReadingView sends it, for the phrases the mock draws. A part is [text] or [text, 's' | 'd', id]; 's' is held and 'd' asked. An effect is [kind, line]; its key is the controller's Effect::key. The controller sends no withheld effect before slice 5; the mock's solid "never" phrases need one.
 function readingOf(source, parts, effectsOf) {
 	const runs = parts.map(([text, mark, id]) => (mark ? { text, phrase: id } : { text }));
 	if (runs.map((r) => r.text).join('') !== source) throw new Error('the parts of the reading do not add up to the prompt');
 	const effects = [];
 	const phrases = parts.filter(([, mark]) => mark).map(([, mark, id]) => {
 		const held = (effectsOf[id] ?? []).map(([kind, line]) => {
-			const e = effects.find((x) => x.kind === kind && x.line === line) ?? effects[effects.push({ id: 'e' + (effects.length + 1), kind, line, key: kind + ' ' + line, phrases: [] }) - 1];
+			const e = effects.find((x) => x.kind === kind && x.line === line) ?? effects[effects.push({ id: 'e' + (effects.length + 1), kind, line, key: kind === 'allow' ? `allow:github-api:${line}` : `${kind}:${line}`, phrases: [] }) - 1];
 			e.phrases.push(id);
 			return e.id;
 		});
 		return { id, mark: mark === 's' ? 'held' : 'asked', effects: held };
 	});
-	return { state: 'read', stale: [], source, runs, phrases, effects, gates: null, may: {} };
+	const may = effects.flatMap((e) => (e.kind === 'allow' ? [e.line] : []));
+	return { id: '0193a3e1-7c2b-7d4e-8f00-00000000000' + (source.length % 10), state: 'read', stale: [], source, reader: { harness: 'claude-code', model: null, instructions: 2 }, runs, phrases, effects, gates: null, may: may.length ? { 'github-api': may } : {} };
 }
 const B1_PARTS = [
   ['Check this repo for dependency upgrades and open one pull request for each, never as a draft.', 's', 'pr'], [' '],

@@ -226,26 +226,40 @@ const RunRowSchema = v.object({
 	detail: v.nullish(v.string()),
 });
 
-/** One reading of an automation's prompt, the slice 1 subset of the spec's ReadingView (docs/specs/prompt-reading.md, The API). The front draws marks from `runs` and `phrases` alone and never from offsets. Slice 1 sends held and asked phrases and gate, outcome and allow effects; the picklists also take the spec's other values so a later slice never fails the whole workflow's parse. */
+/** The items of an array that `item` parses; the rest are kinds a later controller sends, which this page draws nothing for. */
+const known = <T extends v.GenericSchema>(item: T) =>
+	v.pipe(
+		v.array(v.unknown()),
+		v.transform((xs) => xs.flatMap((x) => {
+			const r = v.safeParse(item, x);
+			return r.success ? [r.output] : [];
+		})),
+	);
+
+/** One reading of an automation's prompt as the controller's ReadingView sends it (docs/specs/prompt-reading.md, The API). The front draws marks from `runs` and `phrases` alone and never from offsets. A phrase, effect or stale reason of a kind not listed here is dropped, never a failed parse. */
 export const ReadingViewSchema = v.object({
+	id: v.nullish(v.string()),
 	state: v.picklist(['reading', 'read', 'failed']),
 	failed: v.nullish(v.string()),
 	/** What differs now from what the reader saw; empty when current. */
-	stale: v.optional(v.array(v.picklist(['prompt', 'repos', 'rules', 'reader'])), []),
+	stale: v.optional(known(v.picklist(['prompt', 'repos', 'rules', 'reader'])), []),
 	source: v.string(),
+	reader: v.nullish(v.object({ harness: v.string(), model: v.nullish(v.string()), instructions: v.number() })),
 	/** The source cut at phrase edges: the texts joined are the source, and `phrase` names the phrase a cut belongs to. */
 	runs: v.array(v.object({ text: v.string(), phrase: v.nullish(v.string()) })),
-	phrases: v.array(
+	phrases: known(
 		v.object({
 			id: v.string(),
-			/** Solid, dashed, or (a later slice) dotted. */
-			mark: v.picklist(['held', 'asked', 'unclear']),
+			/** Solid or dashed. */
+			mark: v.picklist(['held', 'asked']),
 			effects: v.array(v.string()),
+			why: v.nullish(v.string()),
 		}),
 	),
-	effects: v.array(
+	effects: known(
 		v.object({
 			id: v.string(),
+			/** `withheld` is a request the pinned rules refuse; the controller sends none before slice 5. */
 			kind: v.picklist(['gate', 'outcome', 'allow', 'withheld']),
 			/** What the file or the gate list shows: an allow's entry as written under its rule, a gate's or outcome's name. */
 			line: v.string(),
