@@ -7,6 +7,7 @@ use std::net::TcpStream;
 use std::time::SystemTime;
 
 use moor_core::name::ProfileSource;
+use moor_core::reading::{IntentTable, INTENTS_TEXT};
 use moor_core::request::{AsReq, Request as ControllerRequest, SecretSetReq, SecretValue};
 use moor_core::secret::{check_claude_token, check_github_token, Secret};
 use moor_core::user::SecretName;
@@ -39,6 +40,9 @@ const BODY_MAX: usize = 8192;
 
 /// The repo config routes: this alone lists the repos, this and `owner/name` reads and writes one.
 const REPOS: &str = "/account/api/repos";
+
+/// The intent table as it ships, raw, for anyone signed in.
+const INTENTS: &str = "/account/api/intents";
 
 /// Headers on the app page: its own script and styles, requests to itself, nothing framing it
 /// and nothing cached.
@@ -101,6 +105,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         }
         ("GET", API, Some(session)) => show(&mut stream, gate, login, &session),
         ("GET", REPOS, Some(session)) => repos::list(&mut stream, gate, &session),
+        ("GET", INTENTS, Some(_)) => json(&mut stream, "200 OK", &intents()),
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }
@@ -139,6 +144,12 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", p, None) if p.starts_with(API) => signed_out(&mut stream),
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
     }
+}
+
+/// The intent table this gate's moor ships: its version and its file, raw.
+fn intents() -> serde_json::Value {
+    let version = IntentTable::shipped().map(|t| t.version.0).ok();
+    serde_json::json!({"version": version, "text": INTENTS_TEXT})
 }
 
 /// Serves a Boxes route or a settings route.
