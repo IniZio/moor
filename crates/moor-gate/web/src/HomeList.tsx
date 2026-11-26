@@ -32,13 +32,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const two = (n: number) => String(n).padStart(2, '0');
 
-/** An exact time in the viewer's zone: the clock today, the day and clock this year, the year as well before that. */
-export function exactTime(iso: string | null | undefined, now: number): string {
+/** An exact time in the viewer's zone: the clock today, the day and clock this year, the year as well before that; `dated` keeps the day for today too. */
+export function exactTime(iso: string | null | undefined, now: number, dated = false): string {
 	const at = new Date(iso ?? '');
 	if (Number.isNaN(at.getTime())) return '';
 	const today = new Date(now);
 	const clock = `${two(at.getHours())}:${two(at.getMinutes())}`;
-	if (at.getFullYear() === today.getFullYear() && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()) return clock;
+	if (!dated && at.getFullYear() === today.getFullYear() && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()) return clock;
 	const day = `${at.getDate()} ${MONTHS[at.getMonth()]}`;
 	return at.getFullYear() === today.getFullYear() ? `${day} ${clock}` : `${day} ${at.getFullYear()} ${clock}`;
 }
@@ -107,11 +107,20 @@ export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr' | 'l
 	return <span class="t-rkey">{pr && !t.line.includes(pr) ? pr : ''}</span>;
 }
 
+/** What a row adds before its title: the tracker key, else the pull request number unless the line already names it. */
+function rowTag(t: Pick<BoxRow, 'issue' | 'workflow' | 'pr' | 'line'>): string {
+	if (t.issue) return issueKey(t.issue) ?? t.issue;
+	const number = t.workflow?.pull?.split('#').pop() ?? t.pr?.number;
+	const pr = number ? `PR #${number}` : '';
+	return pr && !t.line.includes(pr) ? pr : '';
+}
+
 function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: number; only: string; everyone: boolean; settled?: boolean; peeking?: boolean }) {
 	const s = STATES[t.state];
 	const gated = t.state === 'needs_you' || t.state === 'working' || t.failed ? gateLine(t.gate) : null;
 	const askable = !t.owner && peekable(t);
 	const outcome = outcomeTone(t);
+	const tag = rowTag(t);
 	const tone = t.state === 'needs_you' ? ' t-n-needs' : t.state === 'working' || t.state === 'setting_up' ? ' t-n-working' : isWarn(t.state, outcome) ? ' t-n-warn' : '';
 	return (
 		<a
@@ -125,16 +134,18 @@ function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: num
 				<Glyph state={t.state} stale={t.stale} outcome={outcome} settled={settled} />
 			</span>
 			<RepoCell repos={reposOf(t)} only={only} />
-			<Source t={t} />
 			{everyone && <span class="t-rown">{t.owner ?? 'you'}</span>}
-			<span class="t-title">{t.title}</span>
+			<span class="t-title">
+				{tag && <span class={t.issue ? 't-rtag t-rkey-issue' : 't-rtag'}>{tag}</span>}
+				{t.title}
+			</span>
 			<span class={`t-now${tone}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
 				{t.failed && !gated && <span class="t-failword">failed </span>}
 				{gated ?? t.line}
 			</span>
 			<time class="t-age" dateTime={t.last_event_at ?? t.updated_at}>
-				{exactTime(t.last_event_at ?? t.updated_at, now)}
+				{exactTime(t.last_event_at ?? t.updated_at, now, true)}
 			</time>
 			{askable && (
 				<span class="t-peekbtn" role="button" tabIndex={-1} data-peekbtn={t.box} title="Answer here (Space)">
@@ -248,7 +259,7 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 		rows: open.filter((t) => (repo || reposOf(t)[0] || '') === k).sort((a, b) => RANK[groupOf(a, now)] - RANK[groupOf(b, now)] || newest(a, b)),
 	}));
 	return (
-		<div class="t-home">
+		<div class={filter.grp === 'repo' ? 't-home t-home-tall' : repo ? 't-home t-home-head' : 't-home'}>
 			<Filters hash={bare} repos={known} repo={repo} grp={filter.grp} who={whoseHome(hash)} />
 			{filter.grp === 'repo' ? (
 				stacks.map((s) =>
@@ -266,21 +277,23 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 					<Section heading="Done" tone="done" rows={by('done')} now={now} only={repo} everyone={everyone} peeking={peeking} empty="None." />
 				</>
 			)}
-			<details class="t-settled">
-				<summary>
-					Settled
-					<span class="t-cnt">
-						<span class="t-sep"> · </span>
-						{settled.length}
-					</span>
-				</summary>
-				<div class="t-rows">
-					{settled.map((t) => (
-						<Row t={t} now={now} only={repo} everyone={everyone} key={t.box} settled peeking={t.box === peeking} />
-					))}
-				</div>
-				<p class="muted t-settled-note">Closed, or done and quiet for 7 days.</p>
-			</details>
+			{settled.length > 0 && (
+				<details class="t-settled">
+					<summary>
+						Settled
+						<span class="t-cnt">
+							<span class="t-sep"> · </span>
+							{settled.length}
+						</span>
+					</summary>
+					<div class="t-rows">
+						{settled.map((t) => (
+							<Row t={t} now={now} only={repo} everyone={everyone} key={t.box} settled peeking={t.box === peeking} />
+						))}
+					</div>
+					<p class="muted t-settled-note">Closed, or done and quiet for 7 days.</p>
+				</details>
+			)}
 			{!rows.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
 		</div>
 	);
