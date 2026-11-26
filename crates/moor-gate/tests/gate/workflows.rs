@@ -23,6 +23,7 @@ struct Held {
     on_pull_request: bool,
     waiting: bool,
     answered: Vec<String>,
+    reading: Value,
 }
 
 /// One `Held` per signed-in account, so tests that run side by side do not meet.
@@ -51,6 +52,7 @@ fn fresh() -> Held {
         on_pull_request: false,
         waiting: true,
         answered: Vec::new(),
+        reading: Value::Null,
     }
 }
 
@@ -136,7 +138,7 @@ pub(super) fn answer(who: &str, cmd: &str, inner: &Value) -> Response {
         json!({"name": "weekly-deps", "cron": "0 6 * * 1", "timezone": "UTC",
             "repos": ["acme/web"], "prompt": held.prompt, "enabled": held.enabled,
             "timeout_minutes": 180, "next_due": 9_999_000, "plan": held.plan,
-            "plan_stale": false, "revision": held.revision, "on_pull_request": held.on_pull_request,
+            "plan_stale": false, "reading": held.reading, "revision": held.revision, "on_pull_request": held.on_pull_request,
             "last_run": waiting_run(held)})
     };
     match cmd {
@@ -583,5 +585,6 @@ fn a_workflow_that_is_not_yours_or_does_not_exist_is_not_found_every_way() {
     assert_eq!(unknown.status, 404, "{}", unknown.body);
 }
 mod pull;
+mod reading;
 mod run_now;
 mod run_read;

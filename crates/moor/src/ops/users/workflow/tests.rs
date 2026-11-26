@@ -559,6 +559,7 @@ mod enabled_and_filter;
 mod keep_omitted;
 mod no_cron;
 mod plan;
+mod reading;
 mod run_read;
 
 #[test]

@@ -326,6 +326,7 @@ fn detail(gate: &Gate, session: &Session, name: &str) -> Result<Value, Failure> 
         map.insert("plan_edited".to_owned(), json!(edited));
         map.insert("plan_stale".to_owned(), json!(w.plan_stale));
         map.insert("gates_by".to_owned(), json!(w.gates_by));
+        map.insert("reading".to_owned(), json!(w.reading));
         map.insert("plan_making".to_owned(), json!(w.plan_making));
         map.insert("revision".to_owned(), json!(w.revision));
         map.insert("runs".to_owned(), json!(runs));
