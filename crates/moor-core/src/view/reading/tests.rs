@@ -122,13 +122,15 @@ fn read_of(source: &str, doc: &Value, allowed: &ProxyAllow) -> Reading {
     }
 }
 
-fn now<'a>(prompt: &'a str, allowed: &'a ProxyAllow) -> Current<'a> {
+pub(super) fn now<'a>(prompt: &'a str, allowed: &'a ProxyAllow) -> Current<'a> {
     Current {
         prompt,
         repos: &[],
         rules: &[],
         instructions: 1,
         allow: allowed,
+        rules_text: Box::leak(Box::new(crate::config::proxy::default_rules())),
+        table: crate::reading::IntentTable::shipped().ok(),
     }
 }
 
@@ -196,9 +198,9 @@ fn portal_c1() -> Value {
             {"id": "p5", "mark": "asked", "effects": []}
         ],
         "effects": [
-            {"id": "e1", "kind": "allow", "line": COMMENT, "key": "allow:github-api:POST /repos/{repo}/issues/*/comments", "phrases": ["p3"]},
-            {"id": "e2", "kind": "allow", "line": PATCH, "key": "allow:github-api:PATCH /repos/{repo}/issues/comments/*", "phrases": ["p3"]},
-            {"id": "e3", "kind": "allow", "line": STATUS, "key": "allow:github-api:POST /repos/{repo}/statuses/*", "phrases": ["p3"]}
+            {"id": "e1", "kind": "allow", "line": COMMENT, "key": "allow:github-api:POST /repos/{repo}/issues/*/comments", "phrases": ["p3"], "from": "listed"},
+            {"id": "e2", "kind": "allow", "line": PATCH, "key": "allow:github-api:PATCH /repos/{repo}/issues/comments/*", "phrases": ["p3"], "from": "listed"},
+            {"id": "e3", "kind": "allow", "line": STATUS, "key": "allow:github-api:POST /repos/{repo}/statuses/*", "phrases": ["p3"], "from": "listed"}
         ],
         "gates": null,
         "may": {"github-api": [COMMENT, PATCH, STATUS]}

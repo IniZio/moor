@@ -314,6 +314,38 @@ fn an_accepted_reading_is_listed_as_current() {
     assert_eq!(shown["stale"], json!([]), "{shown}");
 }
 
+#[test]
+fn the_listed_reading_shows_the_comment_lines_and_tags_each_hand_written_line() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let shown = listed_reading(&r, id);
+    assert_eq!(shown["table"], 1);
+    let comment = &shown["phrases"][1];
+    assert_eq!(comment["mark"], "held", "{shown}");
+    assert_eq!(comment["intents"][0]["intent"], "comment");
+    assert_eq!(
+        comment["intents"][0]["already"],
+        json!(["GET /repos/{repo}/issues/*/comments"])
+    );
+    let tags: Vec<(&str, &str)> = shown["handwritten"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| (h["line"].as_str().unwrap(), h["tag"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        tags,
+        [
+            (COMMENT, "reproduced"),
+            ("PATCH /repos/{repo}/issues/comments/*", "reproduced"),
+            ("POST /repos/{repo}/statuses/*", "missed"),
+            ("GET /repos/{repo}/commits/*/statuses", "missed"),
+            ("GET /repos/{repo}/pulls/*", "already_allowed"),
+        ]
+    );
+}
+
 /// A step plan a reader may leave in place of a reading.
 const STEPS: &str = r#"{"steps": [{"id": "ship", "title": "Ship", "kind": "deliver",
     "instructions": "post the comment", "done_when": "it is posted"}]}"#;

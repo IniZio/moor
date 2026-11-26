@@ -28,7 +28,7 @@ mod table;
 mod tests;
 
 pub use effect::{Change, Comparison, Effect, EffectKey, Origin};
-pub use expand::Pinned;
+pub use expand::{lets_through, Pinned};
 pub use hand_in::{EffectDoc, HandIn, IntentDoc, PhraseDoc};
 pub use id::{EffectId, IdError, PhraseId, ReadingId};
 pub use intent::{Found, IntentUse, Line, Polarity, SendAs, Unholdable};

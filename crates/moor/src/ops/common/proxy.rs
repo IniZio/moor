@@ -13,6 +13,7 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::Warning;
 
 use crate::cx::Cx;
+use crate::store::Store;
 
 /// Log lines kept when a start fails.
 pub(crate) const TAIL_LINES: usize = 20;
@@ -104,6 +105,14 @@ pub(crate) fn repo_rules(
         return Ok(default_rules());
     };
     let store = cx.store().map_err(|e| e.error.to_string())?;
+    stored_rules(store, repo)
+}
+
+/// As [`repo_rules`], read from `store`.
+pub(crate) fn stored_rules(
+    store: &Store,
+    repo: &ForgeRepo,
+) -> Result<BTreeMap<String, ToolRule>, String> {
     match store
         .repo_text(repo, RepoFile::Rules)
         .map_err(|e| e.to_string())?
