@@ -280,21 +280,23 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 				</form>
 				{rules.seen && <Seen seen={rules.seen} />}
 			</div>
-			<AgentLine ask={ask} />
-			{editable && (
-				<form class="rules-ask" onSubmit={send}>
-					<input
-						aria-label="Write to the agent"
-						placeholder="Write to the agent…"
-						value={words}
-						disabled={ask.at === 'sending' || ask.at === 'waiting'}
-						onInput={(e) => setWords(e.currentTarget.value)}
-					/>
-					<button class="primary" disabled={!words.trim() || ask.at === 'sending' || ask.at === 'waiting'}>
-						Send
-					</button>
-				</form>
-			)}
+			<div class="rules-dock">
+				<AgentLine ask={ask} />
+				{editable && (
+					<form class="rules-ask" onSubmit={send}>
+						<input
+							aria-label="Write to the agent"
+							placeholder="Write to the agent…"
+							value={words}
+							disabled={ask.at === 'sending' || ask.at === 'waiting'}
+							onInput={(e) => setWords(e.currentTarget.value)}
+						/>
+						<button class="primary" disabled={!words.trim() || ask.at === 'sending' || ask.at === 'waiting'}>
+							Send
+						</button>
+					</form>
+				)}
+			</div>
 		</section>
 	);
 }
