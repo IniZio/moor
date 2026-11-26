@@ -116,5 +116,6 @@ pub(super) const fn event_index(e: &Event) -> usize {
         Event::Workflow(WorkflowEvent::GateWaiting { .. }) => 103,
         Event::Workflow(WorkflowEvent::ReportRefused { .. }) => 104,
         Event::Workflow(WorkflowEvent::RunMoved { .. }) => 105,
+        Event::Contract(ContractEvent::ContractGiven { .. }) => 106,
     }
 }

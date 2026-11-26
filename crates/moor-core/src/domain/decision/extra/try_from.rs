@@ -184,6 +184,7 @@ impl TryFrom<Event> for ExtraEvent {
                 Ok(Self::TranscriptSkipped { trigger, reason })
             }
             Event::Restore(r) => Ok(Self::Restore(r)),
+            Event::Contract(c) => Ok(Self::Contract(c)),
             Event::Steered(s) => Ok(Self::Steered(s)),
             Event::ProxyStarted {
                 box_port,

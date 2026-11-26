@@ -98,6 +98,7 @@ impl Class {
             | "box_gone"
             | "box_deleted"
             | "session_started"
+            | "contract_given"
             | "session_ended"
             | "setup_finished"
             | "cloned"

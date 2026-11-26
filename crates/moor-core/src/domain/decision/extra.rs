@@ -350,6 +350,8 @@ pub enum ExtraEvent {
     },
     /// What new hands got back of the agent's conversation.
     Restore(crate::domain::event::RestoreEvent),
+    /// The contract a fresh session read.
+    Contract(crate::domain::event::ContractEvent),
 }
 mod convert;
 mod try_from;
