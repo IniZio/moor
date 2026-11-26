@@ -367,7 +367,7 @@ a.t-path:hover { text-decoration: underline; }
 .t-wform { padding: 6px 12px 10px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); }
 .t-wform textarea { field-sizing: content; display: block; margin: 0; width: 100%; min-height: 0; padding: 4px 0 6px; border: 0; background: none; box-shadow: none; font: inherit; font-size: 14px; line-height: 1.55; outline: none; resize: none; }
 .t-target { margin: 2px 0 0; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
-.t-target .t-tw { font-family: var(--moor-font-mono); font-size: var(--app-text); }
+.t-target .t-tw { font-family: var(--moor-font-mono); font-size: var(--app-text-sm); }
 .t-tnote { margin: 2px 0 0; font-size: var(--app-text-sm); }
 .t-whead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 2px; }
 .t-whead .grow { flex: 1 1 auto; }
