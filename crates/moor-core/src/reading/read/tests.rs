@@ -2,17 +2,11 @@
 
 use serde_json::json;
 
-use super::super::tests::{read, reader};
-use super::super::{Change, EffectKey, Read};
+use super::super::tests::{asked, held, read, reader};
+use super::super::{
+    Change, Effect, EffectId, EffectIds, EffectKey, Mark, Phrase, PhraseId, Quote, Read, Span,
+};
 use crate::gate::GatesDoc;
-
-fn asked(exact: &str) -> serde_json::Value {
-    json!({"quote": {"exact": exact}, "mark": {"kind": "asked"}})
-}
-
-fn held(exact: &str, labels: &[&str]) -> serde_json::Value {
-    json!({"quote": {"exact": exact}, "mark": {"kind": "held", "effects": labels}})
-}
 
 fn gate(label: &str, name: &str, check: &str) -> serde_json::Value {
     json!({"kind": "gate", "label": label, "gate": {"name": name, "checks": [check]}})
@@ -97,8 +91,8 @@ fn gates_keep_effect_order_and_are_none_without_a_gate() {
     let allow_only = read(
         source,
         json!({
-            "phrases": [held("post one comment", &["c"])],
-            "effects": [{"kind": "allow", "label": "c", "rule": "github-app", "entry": "POST /repos/{repo}/issues/*/comments"}],
+            "phrases": [{"quote": {"exact": "post one comment"}, "intents": [{"intent": "comment", "polarity": "do"}]}],
+            "effects": [],
         }),
     )
     .unwrap();
@@ -225,22 +219,42 @@ const SNAPSHOT: &str = r#"{
   }
 }"#;
 
+/// The read a slice-1 hand-in kept: a gate, and an allow equal to a config's `proxy.allow` line.
 fn snapshot_read() -> Read {
-    read(
-        "Take screenshots. Post one comment soon.",
-        json!({
-            "phrases": [
-                {"quote": {"exact": "Take screenshots"}, "mark": {"kind": "held", "effects": ["s"]}, "why": "a gate needs the files"},
-                {"quote": {"exact": "comment", "prefix": "one "}, "mark": {"kind": "held", "effects": ["c"]}},
-                asked("soon"),
-            ],
-            "effects": [
-                {"kind": "gate", "label": "s", "gate": {"name": "screenshots", "evidence": ["shot-*"]}},
-                {"kind": "allow", "label": "c", "rule": "github-app", "entry": "POST /repos/{repo}/issues/*/comments"},
-            ],
-        }),
+    let quote = |exact: &str, prefix: Option<&str>| Quote {
+        exact: exact.into(),
+        prefix: prefix.map(Into::into),
+        suffix: None,
+    };
+    let held = |e: usize| Mark::Held {
+        effects: EffectIds::try_from(vec![EffectId::nth(e)]).unwrap(),
+    };
+    let phrase =
+        |at: usize, quote: Quote, span: (usize, usize), mark: Mark, why: Option<&str>| Phrase {
+            id: PhraseId::nth(at),
+            quote,
+            at: Span::new(span.0, span.1),
+            mark,
+            intents: Vec::new(),
+            why: why.map(Into::into),
+        };
+    Read::new(
+        vec![
+            phrase(0, quote("Take screenshots", None), (0, 16), held(0), Some("a gate needs the files")),
+            phrase(1, quote("comment", Some("one ")), (27, 34), held(1), None),
+            phrase(2, quote("soon", None), (35, 39), Mark::Asked {}, None),
+        ],
+        vec![
+            serde_json::from_value(json!({"kind": "gate", "id": "e1", "doc": {"name": "screenshots", "evidence": ["shot-*"]}})).unwrap(),
+            Effect::Allow {
+                id: EffectId::nth(1),
+                rule: "github-app".into(),
+                entry: "POST /repos/{repo}/issues/*/comments".into(),
+                from: super::super::Origin::Listed,
+            },
+        ],
+        Some(reader()),
     )
-    .unwrap()
 }
 
 #[test]

@@ -1,14 +1,13 @@
-//! `reading-hand-in`: the Box reading an automation's prompt hands in phrases and effects. moor
-//! checks them against the saved prompt and the config's `proxy.allow`, keeps the reading with
-//! its gates in one transaction, and closes the Box. Each refusal says what to fix and is counted
+//! `reading-hand-in`: the Box reading an automation's prompt hands in phrases, intents and gates.
+//! moor places them in the saved prompt, expands the intents by the shipped table under the first
+//! repo's rules, keeps the reading with its gates in one transaction, and closes the Box. Each refusal says what to fix and is counted
 //! on the draft; the third fails the draft, naming the last.
 
 use std::fmt::Write as _;
 
-use moor_core::config::parse_repo;
 use moor_core::gate::Gates;
 use moor_core::reading::{
-    Context, ProxyAllow, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState,
+    Context, IntentTable, Pinned, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState,
 };
 use moor_core::request::{ReadingHandInReq, ReadingHandInValue};
 use moor_core::seam::clock::Ts;
@@ -16,8 +15,10 @@ use moor_core::workflow::{PlanDraft, PromptHash, Workflow, READER_INSTRUCTIONS};
 use moor_core::ErrorKind;
 
 use super::close;
+use crate::adapters::github::app::AppClient;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::proxy::repo_rules;
 use crate::store::{BoxRow, Store};
 
 /// The refusals a reader gets before its reading fails.
@@ -44,7 +45,15 @@ pub(crate) fn run(cx: &Cx, req: &ReadingHandInReq) -> Result<ReadingHandInValue,
     };
     let now = cx.clock().now();
     let reading = reading_for(store, &w, &row, (&draft, now))?;
-    match reading.hand_in(&req.reading, &proxy_allow(&w)) {
+    let table = IntentTable::shipped()
+        .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))?;
+    let rules =
+        repo_rules(cx, w.repos.first()).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
+    let pinned = Pinned {
+        rules: &rules,
+        app: cx.env().shared::<AppClient>().is_some(),
+    };
+    match reading.hand_in(&req.reading, table, &pinned) {
         Ok(read) => {
             let reply = format!(
                 "accepted: moor keeps {} phrases and {} effects. End your turn.",
@@ -150,6 +159,7 @@ fn reading_for(
             repos: w.repos.clone(),
             rules: store.rules_pins(&w.repos)?,
             instructions: READER_INSTRUCTIONS,
+            table: IntentTable::shipped().ok().map(|t| t.version),
         },
         made_by: w.owner,
         state: ReadingState::Reading {
@@ -161,15 +171,6 @@ fn reading_for(
             since,
         },
     })
-}
-
-/// The `proxy.allow` of `w`'s config; empty when it has none. A stored config parsed when saved.
-fn proxy_allow(w: &Workflow) -> ProxyAllow {
-    w.config
-        .as_deref()
-        .and_then(|text| parse_repo("the automation's config", text).ok())
-        .map(|c| c.proxy.allow)
-        .unwrap_or_default()
 }
 
 /// A new reading id: a version 7 UUID of `now` and random bits.

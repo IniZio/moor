@@ -3,11 +3,11 @@
 
 use super::PlanDoc;
 use crate::gate::GatesDoc;
-use crate::reading::HandIn;
+use crate::reading::{HandIn, IntentTable};
 
 /// The version of what a reader is told: [`draft_prompt`]'s instructions. Bump it with every change
 /// to them, so a reading says which instructions it was read under.
-pub const READER_INSTRUCTIONS: u32 = 2;
+pub const READER_INSTRUCTIONS: u32 = 3;
 
 /// The evidence file a drafted or proposed plan is left in.
 pub const PLAN_FILE: &str = "plan.json";
@@ -68,24 +68,33 @@ fn how_to_gate() -> String {
     )
 }
 
-/// How to hand in a reading through moor's `hand_in_reading` tool, with its quoting rules.
+/// How to hand in a reading through moor's `hand_in_reading` tool: its quoting rules and the
+/// intent list, generated from the shipped table so the two cannot drift.
 fn how_to_hand_in() -> String {
     let schema = schemars::schema_for!(HandIn);
     let schema = serde_json::to_string(&schema).unwrap_or_default();
+    let list = IntentTable::shipped()
+        .map(IntentTable::list)
+        .unwrap_or_default();
     format!(
         "Hand in a reading with the hand_in_reading tool of the moor MCP server. It takes \
-         phrases of the prompt and the effects moor holds the agent to. Quote the prompt's own \
-         words in `exact`, copied, never reworded. When those words occur more than once in \
-         the prompt, add a `prefix` (the words just before) or a `suffix` (the words just \
-         after) that picks one. Make one phrase per clause moor can hold, and never let two \
-         phrases share words. Mark a phrase held only when it names at least one effect by \
-         its label; mark every other phrase you quote asked. A clause with a part moor can hold \
-         and a part it can only ask is two phrases. Every effect must be named by a held \
-         phrase. An allow effect must be a line the config's proxy.allow already lists, copied \
-         under the same rule: name no other. When moor refuses a hand-in it says which quote \
-         or effect is wrong; fix that one and hand in again. Three refusals end the reading. \
-         Once moor answers accepted, end your turn. The tool's input matches this \
-         schema:\n{schema}"
+         phrases of the prompt, the intents their words name, and the gates and outcomes they \
+         hold. Quote the prompt's own words in `exact`, copied, never reworded. When those \
+         words occur more than once in the prompt, add a `prefix` (the words just before) or a \
+         `suffix` (the words just after) that picks one. Make one phrase per clause, and never \
+         let two phrases share words. In a phrase's `holds`, name the labels of the gates and \
+         outcomes it holds. In its `intents`, name each request its words ask for, with \
+         polarity do, or forbid, with polarity never. moor decides what is held. Pick the name \
+         from this list:\n{list}\nFor a request no name fits, use a name of your own, lower case \
+         words joined by -; moor holds nothing for it. Set `repo` only when the words name one \
+         of the repos, and `as` to app only when the words ask for the write to show as the \
+         GitHub App. Write no may line or proxy.allow entry: moor writes \
+         the lines from the names. A phrase with \
+         neither holds nor intents is only asked. A clause with a part moor can hold and a part \
+         it can only ask is two phrases. Every gate and outcome must be held by a phrase. When \
+         moor refuses a hand-in it says which quote, intent or effect is wrong; fix that one and \
+         hand in again. Three refusals end the reading. Once moor answers accepted, end your \
+         turn. The tool's input matches this schema:\n{schema}"
     )
 }
 
@@ -117,7 +126,7 @@ pub fn draft_prompt(prompt: &str, config: Option<&str>) -> String {
         "{DRAFT_HEAD} Only read: change no file, branch or pull request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\n{config}Read the repos to see what the \
          prompt needs, then give moor its reading in one of two ways. Each run starts a new Box \
          on its own branch, so name no branch, Box or folder of this one.\n\nWhen the prompt \
-         names gates, or anything moor can hold, such as a line of the config's proxy.allow, \
+         names gates, or a request moor can hold, such as one the intent list below names, \
          hand in a reading.\n\n{}\n\n{}\n\nWhen the prompt instead calls for steps a run \
          walks, write a plan as .moor/artifacts/{PLAN_FILE} and nothing else, then end your \
          turn.\n\n{}",
@@ -186,6 +195,16 @@ mod tests {
             "proxy.allow",
         ] {
             assert!(asked.contains(rule), "the instructions state {rule}");
+        }
+    }
+
+    #[test]
+    fn the_reader_is_told_every_intent_of_the_shipped_table() {
+        let asked = draft_prompt("Post one comment.", None);
+        let table = IntentTable::shipped().unwrap();
+        for intent in &table.intents {
+            let line = format!("- {}: {}", intent.name, intent.words);
+            assert!(asked.contains(&line), "{line}");
         }
     }
 }

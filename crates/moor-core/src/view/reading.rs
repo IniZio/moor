@@ -325,7 +325,7 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>) -> Vec<PhraseView> {
                     .filter(|e| alive.contains(e))
                     .map(ToString::to_string)
                     .collect(),
-                Mark::Asked {} => Vec::new(),
+                Mark::Asked {} | Mark::Unmapped {} => Vec::new(),
             };
             PhraseView {
                 id: p.id.to_string(),

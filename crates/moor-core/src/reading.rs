@@ -15,9 +15,11 @@ use crate::user::UserId;
 use crate::workflow::{PromptHash, WorkflowId};
 
 mod effect;
+mod expand;
 mod glob;
 mod hand_in;
 mod id;
+mod intent;
 mod place;
 mod read;
 mod refusal;
@@ -25,9 +27,11 @@ mod table;
 #[cfg(test)]
 mod tests;
 
-pub use effect::{Change, Comparison, Effect, EffectKey};
-pub use hand_in::{EffectDoc, HandIn, MarkDoc, PhraseDoc};
+pub use effect::{Change, Comparison, Effect, EffectKey, Origin};
+pub use expand::Pinned;
+pub use hand_in::{EffectDoc, HandIn, IntentDoc, PhraseDoc};
 pub use id::{EffectId, IdError, PhraseId, ReadingId};
+pub use intent::{Found, IntentUse, Line, Polarity, SendAs, Unholdable};
 pub use read::{EffectIds, Mark, Phrase, Quote, Read, Run, Span};
 pub use refusal::Refusal;
 pub use table::{
@@ -58,15 +62,25 @@ pub struct Reading {
 
 impl Reading {
     /// The read `doc` hands in for this reading's source, with moor's ids, when every quote
-    /// places and every effect checks; `allow` is the workflow config's `proxy.allow`.
+    /// places and every effect checks; each intent is expanded by `table` under `pinned`.
     ///
     /// # Errors
     /// [`Refusal`] naming the first phrase or effect that does not hold.
-    pub fn hand_in(&self, doc: &HandIn, allow: &ProxyAllow) -> Result<Read, Refusal> {
+    pub fn hand_in(
+        &self,
+        doc: &HandIn,
+        table: &IntentTable,
+        pinned: &Pinned<'_>,
+    ) -> Result<Read, Refusal> {
         let ReadingState::Reading { by, .. } = &self.state else {
             return Err(Refusal::NotReading);
         };
-        hand_in::check(doc, &self.source, allow, by.clone())
+        let against = hand_in::Against {
+            repos: &self.context.repos,
+            table,
+            pinned,
+        };
+        hand_in::check(doc, &self.source, &against, by.clone())
     }
 }
 
@@ -90,6 +104,9 @@ pub struct Context {
     pub rules: Vec<RulesPin>,
     /// The version of the reader's instructions.
     pub instructions: u32,
+    /// The intent table it was expanded with; none before intents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<TableVersion>,
 }
 
 /// One rules text a reading was read against.

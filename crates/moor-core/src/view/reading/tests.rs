@@ -8,7 +8,7 @@ use super::{Current, ReadingView};
 use crate::gate::GatesDoc;
 use crate::name::{BoxName, ForgeRepo};
 use crate::reading::{
-    Context, HandIn, ProxyAllow, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
+    Context, ProxyAllow, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
 };
 use crate::seam::clock::Ts;
 use crate::user::UserId;
@@ -39,7 +39,58 @@ fn allow(entries: &[&str]) -> ProxyAllow {
     )])
 }
 
-/// A reading of `source` that reader "claude" read, with moor's checks applied to `doc`.
+/// The read a slice-1 hand-in `doc` kept for `source`: its quotes placed, its labels as ids and
+/// each allow as listed in the config. Slice 1's hand-in no longer exists, so its rows are built.
+fn slice_one(source: &str, doc: &Value) -> Read {
+    let effects = doc["effects"].as_array().unwrap();
+    let id = |label: &Value| {
+        let at = effects.iter().position(|e| &e["label"] == label).unwrap();
+        format!("e{}", at + 1)
+    };
+    let phrases: Vec<Value> = doc["phrases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            let exact = p["quote"]["exact"].as_str().unwrap();
+            let start = source.find(exact).unwrap();
+            let mark = match p["mark"]["kind"].as_str() {
+                Some("held") => json!({"kind": "held", "effects": p["mark"]["effects"].as_array().unwrap().iter().map(id).collect::<Vec<_>>()}),
+                _ => json!({"kind": "asked"}),
+            };
+            (start, json!({"quote": p["quote"], "at": {"start": start, "end": start + exact.len()}, "mark": mark, "why": p["why"]}))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>()
+        .into_values()
+        .enumerate()
+        .map(|(at, mut p)| {
+            p["id"] = json!(format!("p{}", at + 1));
+            if p["why"].is_null() {
+                p.as_object_mut().unwrap().remove("why");
+            }
+            p
+        })
+        .collect();
+    let effects: Vec<Value> = effects
+        .iter()
+        .enumerate()
+        .map(|(at, e)| {
+            let mut e = e.clone();
+            let o = e.as_object_mut().unwrap();
+            o.remove("label");
+            o.insert("id".into(), json!(format!("e{}", at + 1)));
+            if let Some(gate) = o.remove("gate") {
+                o.insert("doc".into(), gate);
+            }
+            e
+        })
+        .collect();
+    let reader = json!({"box_name": "acme/reader-1", "harness": "claude", "model": "opus"});
+    serde_json::from_value(json!({"phrases": phrases, "effects": effects, "reader": reader}))
+        .unwrap()
+}
+
+/// A reading of `source` that reader "claude" read, as slice 1 kept `doc`.
 fn read_of(source: &str, doc: &Value, allowed: &ProxyAllow) -> Reading {
     let reading = Reading {
         id: ReadingId::parse("01936a3e-7c2b-7d4e-8f00-0123456789ab").unwrap(),
@@ -51,6 +102,7 @@ fn read_of(source: &str, doc: &Value, allowed: &ProxyAllow) -> Reading {
             repos: repos(),
             rules: pins(),
             instructions: 1,
+            table: None,
         },
         made_by: UserId::new(1),
         state: ReadingState::Reading {
@@ -62,8 +114,8 @@ fn read_of(source: &str, doc: &Value, allowed: &ProxyAllow) -> Reading {
             since: Ts::from_millis(1),
         },
     };
-    let doc: HandIn = serde_json::from_value(doc.clone()).unwrap();
-    let read = reading.hand_in(&doc, allowed).unwrap();
+    let _ = allowed;
+    let read = slice_one(source, doc);
     Reading {
         state: ReadingState::Read(read),
         ..reading

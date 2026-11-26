@@ -1,12 +1,10 @@
 //! What a workflow's list shows of its reading: the held one judged against now, stored gates
 //! read as effects, nothing for a step plan, and nothing of another person's.
 
-use std::collections::BTreeMap;
-
 use moor_core::gate::{GateDoc, Gates};
 use moor_core::name::{BoxName, ForgeRepo};
 use moor_core::reading::{
-    Context, HandIn, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
+    Context, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
 };
 use moor_core::request::{RepoFile, WorkflowCmd};
 use moor_core::seam::clock::Ts;
@@ -64,6 +62,7 @@ fn read_reading(of: WorkflowId, who: &Identity, f: &Fixture, rules: u64) -> Read
                 revision: rules,
             }],
             instructions: READER_INSTRUCTIONS,
+            table: None,
         },
         made_by: user,
         state: ReadingState::Reading {
@@ -75,19 +74,25 @@ fn read_reading(of: WorkflowId, who: &Identity, f: &Fixture, rules: u64) -> Read
             since: Ts::from_millis(1),
         },
     };
-    let doc: HandIn = serde_json::from_value(json!({
+    // Slice 1 kept this read from a hand-in whose allow equalled the config's proxy.allow line.
+    let at = |exact: &str| {
+        let start = PROMPT.find(exact).unwrap();
+        json!({"start": start, "end": start + exact.len()})
+    };
+    let read: Read = serde_json::from_value(json!({
         "phrases": [
-            {"quote": {"exact": "Take screenshots of each page"}, "mark": {"kind": "held", "effects": ["shots"]}},
-            {"quote": {"exact": "Post one comment on the pull request"}, "mark": {"kind": "held", "effects": ["comment"]}}
+            {"id": "p1", "quote": {"exact": "Take screenshots of each page"}, "at": at("Take screenshots of each page"),
+             "mark": {"kind": "held", "effects": ["e1"]}},
+            {"id": "p2", "quote": {"exact": "Post one comment on the pull request"}, "at": at("Post one comment on the pull request"),
+             "mark": {"kind": "held", "effects": ["e2"]}}
         ],
         "effects": [
-            {"kind": "gate", "label": "shots", "gate": {"name": "screenshots", "evidence": ["shot-*"]}},
-            {"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT}
-        ]
+            {"kind": "gate", "id": "e1", "doc": {"name": "screenshots", "evidence": ["shot-*"]}},
+            {"kind": "allow", "id": "e2", "rule": "github-api", "entry": COMMENT}
+        ],
+        "reader": {"box_name": "o/reader-1", "harness": "claude"}
     }))
     .unwrap();
-    let allow = BTreeMap::from([("github-api".to_owned(), vec![COMMENT.to_owned()])]);
-    let read = reading.hand_in(&doc, &allow).unwrap();
     Reading {
         state: ReadingState::Read(read),
         ..reading

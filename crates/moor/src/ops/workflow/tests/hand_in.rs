@@ -8,6 +8,7 @@
     reason = "a test indexes what it just read and walks one scenario step by step"
 )]
 
+use moor_core::reading::{Effect, Origin};
 use moor_core::request::{ReadingHandInReq, ReadingHandInValue, UserCmd, WorkflowCmd};
 use moor_core::workflow::{
     PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName,
@@ -29,20 +30,27 @@ const CONFIG: &str = include_str!("fixtures/pr-evidence.config.yaml");
 const GATES: &str = include_str!("fixtures/pr-evidence.gates.json");
 const COMMENT: &str = "POST /repos/{repo}/issues/*/comments";
 
-/// A hand-in that holds the one comment by its allow line and the done gate by its report.
+/// A hand-in that holds the one comment by its intent and the done gate by its report.
 fn whole() -> Value {
     json!({
         "phrases": [
             {"quote": {"exact": "ONE comment on that pull request"},
-             "mark": {"kind": "held", "effects": ["comment"]}},
-            {"quote": {"exact": "call report_step for gate done"},
-             "mark": {"kind": "held", "effects": ["done"]}},
-            {"quote": {"exact": "Never push a branch"}, "mark": {"kind": "asked"}}
+             "intents": [{"intent": "comment", "polarity": "do"}]},
+            {"quote": {"exact": "call report_step for gate done"}, "holds": ["done"]},
+            {"quote": {"exact": "Never push a branch"}}
         ],
         "effects": [
-            {"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT},
             {"kind": "gate", "label": "done", "gate": {"name": "done", "evidence": ["posted.md"]}}
         ]
+    })
+}
+
+/// A hand-in that holds only the one comment, by its intent.
+fn comment_only() -> Value {
+    json!({
+        "phrases": [{"quote": {"exact": "ONE comment on that pull request"},
+                     "intents": [{"intent": "comment", "polarity": "do"}]}],
+        "effects": []
     })
 }
 
@@ -187,7 +195,7 @@ fn an_accepted_hand_in_stores_the_reading_with_its_gates_clears_the_draft_and_cl
             "call report_step for gate done"
         ]
     );
-    assert_eq!(read.effects().len(), 2);
+    assert_eq!(read.effects().len(), 3);
     assert_eq!(
         read.reader().map(|by| by.box_name.as_str()),
         Some(job.req.name.as_str())
@@ -195,16 +203,48 @@ fn an_accepted_hand_in_stores_the_reading_with_its_gates_clears_the_draft_and_cl
 }
 
 #[test]
-fn an_allow_effect_not_in_proxy_allow_is_refused_by_name() {
+fn the_comment_intent_holds_its_row_lines_less_the_read_the_rules_allow() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let store = r.cx.store().unwrap();
+    let held = store.workflow_reading(REQUESTER_USER, id).unwrap().unwrap();
+    let reading = store.reading(REQUESTER_USER, &held).unwrap().unwrap();
+    assert_eq!(reading.context.table.map(|t| t.0), Some(1));
+    let moor_core::reading::ReadingState::Read(read) = &reading.state else {
+        panic!("{:?}", reading.state)
+    };
+    let lines: Vec<_> = read
+        .effects()
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Allow {
+                rule, entry, from, ..
+            } => Some((rule.as_str(), entry.as_str(), *from)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("github-api", COMMENT, Origin::Table),
+            (
+                "github-api",
+                "PATCH /repos/{repo}/issues/comments/*",
+                Origin::Table
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_repo_the_automation_lacks_is_refused_by_name() {
     let r = rig();
     let (id, _, box_id) = r.reader();
     let mut doc = whole();
-    doc["effects"][0]["entry"] = json!("PUT /repos/{repo}/pulls/*/merge");
+    doc["phrases"][0]["intents"][0]["repo"] = json!("acme/elsewhere");
     let why = r.hand_in(box_id, &doc).unwrap_err().error.to_string();
-    assert!(
-        why.contains("comment") && why.contains("PUT /repos/{repo}/pulls/*/merge"),
-        "{why}"
-    );
+    assert!(why.contains("acme/elsewhere"), "{why}");
     assert_eq!(r.draft(id).unwrap().refused, 1);
     assert!(r.workflow(id).gates.is_none());
 }
@@ -243,12 +283,7 @@ fn a_reading_with_no_gate_leaves_the_gates_the_workflow_had() {
     let job = r.plan_pass().expect("a Box is asked for");
     start_draft(&r.cx, &job);
     let box_id = r.open(&job).unwrap();
-    let doc = json!({
-        "phrases": [{"quote": {"exact": "ONE comment on that pull request"},
-                     "mark": {"kind": "held", "effects": ["comment"]}}],
-        "effects": [{"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT}]
-    });
-    r.hand_in(box_id, &doc).unwrap();
+    r.hand_in(box_id, &comment_only()).unwrap();
     assert_eq!(gate_names(&r.workflow(id)), ["done"]);
     let now = store.workflow_reading(REQUESTER_USER, id).unwrap();
     assert!(now.is_some() && now != first, "the new reading is held");
@@ -306,12 +341,7 @@ fn a_reading_after_a_step_plan_leaves_no_step_plan_to_walk() {
     assert!(r.plan_pass().is_none());
     assert!(!r.workflow(id).plan.is_single_of(PROMPT.trim_end()));
     let (_, box_id) = r.read_again(id);
-    let no_gate = json!({
-        "phrases": [{"quote": {"exact": "ONE comment on that pull request"},
-                     "mark": {"kind": "held", "effects": ["comment"]}}],
-        "effects": [{"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT}]
-    });
-    r.hand_in(box_id, &no_gate).unwrap();
+    r.hand_in(box_id, &comment_only()).unwrap();
     let w = r.workflow(id);
     assert!(
         w.plan.is_single_of(&w.prompt),

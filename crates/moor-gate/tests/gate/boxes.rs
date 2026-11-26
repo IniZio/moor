@@ -400,11 +400,34 @@ fn an_output_without_a_box_header_or_refused_by_moor_reaches_the_agent_as_an_err
 }
 
 #[test]
+fn hand_in_reading_names_each_intent_of_the_shipped_table() {
+    let l = listener(true);
+    let reply = l.rpc(Some("7"), "tools/list", json!({}));
+    let tools = reply["result"]["tools"].as_array().unwrap();
+    let tool = tools
+        .iter()
+        .find(|t| t["name"] == "hand_in_reading")
+        .unwrap();
+    let said = tool["description"].as_str().unwrap();
+    let table = moor_core::reading::IntentTable::shipped().unwrap();
+    for intent in &table.intents {
+        assert!(
+            said.contains(&format!("- {}: {}", intent.name, intent.words)),
+            "{said}"
+        );
+    }
+    let phrase = &tool["inputSchema"]["$defs"]["PhraseDoc"]["properties"];
+    assert!(
+        phrase.get("intents").is_some() && phrase.get("holds").is_some(),
+        "{tool}"
+    );
+}
+
+#[test]
 fn a_hand_in_reaches_the_controller_for_the_box_the_proxy_named_and_a_refusal_reaches_the_agent() {
     let l = listener(true);
     let call = |exact: &str| {
-        let doc = json!({"phrases": [{"quote": {"exact": exact}, "mark": {"kind": "asked"}}],
-            "effects": []});
+        let doc = json!({"phrases": [{"quote": {"exact": exact}}], "effects": []});
         l.rpc(
             Some("41"),
             "tools/call",

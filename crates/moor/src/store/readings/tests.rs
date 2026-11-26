@@ -1,13 +1,12 @@
 //! Where a reading is kept: written once, held with its gates in one transaction, and never read
 //! through another person's workflow.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use moor_core::gate::Gates;
 use moor_core::name::{BoxName, ForgeRepo};
 use moor_core::reading::{
-    Context, HandIn, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
+    Context, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
 };
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
@@ -83,16 +82,26 @@ impl Rig {
     }
 }
 
-fn effects() -> serde_json::Value {
-    json!([
-        {"kind": "gate", "label": "shots", "gate": {"name": "screenshots", "evidence": ["shot-*"]}},
-        {"kind": "allow", "label": "comment", "rule": "github-app",
-         "entry": "POST /repos/{repo}/issues/*/comments"}
-    ])
-}
-
-fn held(exact: &str, label: &str) -> serde_json::Value {
-    json!({"quote": {"exact": exact}, "mark": {"kind": "held", "effects": [label]}, "why": "moor holds it"})
+/// A slice-1 read: each phrase placed in `SOURCE` and held, a gate and an allow the config listed.
+fn slice_one_read() -> Read {
+    let held = |id: &str, exact: &str, effect: &str| {
+        let start = SOURCE.find(exact).unwrap();
+        json!({"id": id, "quote": {"exact": exact}, "at": {"start": start, "end": start + exact.len()},
+               "mark": {"kind": "held", "effects": [effect]}, "why": "moor holds it"})
+    };
+    serde_json::from_value(json!({
+        "phrases": [
+            held("p1", "Take screenshots of each page", "e1"),
+            held("p2", "Post one comment on the pull request", "e2"),
+        ],
+        "effects": [
+            {"kind": "gate", "id": "e1", "doc": {"name": "screenshots", "evidence": ["shot-*"]}},
+            {"kind": "allow", "id": "e2", "rule": "github-app",
+             "entry": "POST /repos/{repo}/issues/*/comments"}
+        ],
+        "reader": {"box_name": "acme/reader-1", "harness": "claude"}
+    }))
+    .unwrap()
 }
 
 /// A reading of Alice's workflow that is read: two held phrases, a gate and a `may` line.
@@ -110,6 +119,7 @@ fn read_reading(of: WorkflowId, by: UserId, id: &str) -> Reading {
                 revision: 3,
             }],
             instructions: 1,
+            table: None,
         },
         made_by: by,
         state: ReadingState::Reading {
@@ -121,19 +131,7 @@ fn read_reading(of: WorkflowId, by: UserId, id: &str) -> Reading {
             since: Ts::from_millis(1),
         },
     };
-    let doc: HandIn = serde_json::from_value(json!({
-        "phrases": [
-            held("Take screenshots of each page", "shots"),
-            held("Post one comment on the pull request", "comment"),
-        ],
-        "effects": effects(),
-    }))
-    .unwrap();
-    let allow = BTreeMap::from([(
-        "github-app".to_owned(),
-        vec!["POST /repos/{repo}/issues/*/comments".to_owned()],
-    )]);
-    let read = reading.hand_in(&doc, &allow).unwrap();
+    let read = slice_one_read();
     Reading {
         state: ReadingState::Read(read),
         ..reading
