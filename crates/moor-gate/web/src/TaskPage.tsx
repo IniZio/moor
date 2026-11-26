@@ -242,7 +242,8 @@ function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDe
 	};
 	const { needs, owner } = detail;
 	const asked = detail.timeline.find((e) => e.class === 'you')?.at;
-	if (owner) return <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
+	const conversation = Boolean(detail.task_at || detail.workflow);
+	if (owner) return conversation ? <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} you={me} docs={docs} owner={owner} /> : <ReadOnlyTask detail={detail} owner={owner} error={error} now={now} tab={tab} base={base} label={label} docs={docs} />;
 	const card =
 		detail.state !== 'needs_you' ? null : needs?.plan ? (
 			<PlanCard detail={detail} needs={needs} csrf={csrf} onSent={reload} key={needs.id} />
@@ -255,7 +256,7 @@ function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDe
 				<p class="muted">This one has no answers to pick from here. Answer it from the terminal or from Claude Code.</p>
 			</div>
 		);
-	if (detail.task_at || detail.workflow) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} you={me} tab={tab} docs={docs} />;
+	if (conversation) return <AskedTask detail={detail} error={error} now={now} csrf={csrf} reload={reload} card={card} you={me} tab={tab} docs={docs} />;
 	return (
 		<div class="t-box">
 			<TaskHead

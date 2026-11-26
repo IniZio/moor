@@ -218,6 +218,18 @@ test('the message box of a question\'s task is one field and Send', async () => 
 	expect(textOf(view)).not.toMatch(/Steer|Interrupt|reaches the agent/);
 });
 
+test('another person\'s task opens on the conversation to read, with no answer, message box, Stop or menu', async () => {
+	const detail = await detailOf([...ASKED, said(2, 4, 'x')], 'working');
+	const view = AskedTask({ detail: { ...detail, owner: 'bo@example.com' }, error: '', now: 0, csrf: 'c', reload: () => {}, you: 'ann', owner: 'bo@example.com' });
+	const parts = [view.props.children].flat(3);
+	expect(parts.some((c) => isValidElement(c) && c.type === Composer)).toBe(false);
+	const head = parts.find((c) => isValidElement(c) && c.type === TaskHead);
+	const actions = isValidElement(head) ? (head.props as { actions: ComponentChild }).actions : undefined;
+	expect(isStop(actions)).toBe(false);
+	expect(textOf(actions)).toBe("bo@example.com's task");
+	expect(textOf(view)).toContain('Only bo@example.com can answer, steer or close it.');
+});
+
 test('a question\'s task page marks itself for its own density and asks for the plain message box', async () => {
 	const detail = await detailOf([...ASKED, said(2, 4, 'x')]);
 	const view = AskedTask({ detail, error: '', now: 0, csrf: 'c', reload: () => {}, you: 'ann' });
