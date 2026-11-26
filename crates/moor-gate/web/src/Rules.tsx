@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { type BoxDetail, Conflict, type RepoConfig, type RulesSeen, boxGet, repoGet, repoSet, failure, rulesAsk, toError } from './api';
 import { phaseOf } from './AutomationBox';
-import { type DiffLine, diffLines, proposalOf, scrubbed, textLines, unredact } from './rulesDiff';
+import { type DiffLine, diffLines, litRequests, proposalOf, scrubbed, textLines, unredact } from './rulesDiff';
 import './rules.css';
 
 /** The repo a `#/repos/owner/name/rules` address names; null for any other page. */
@@ -21,7 +21,7 @@ export function rulesLine(rules: RepoConfig): string {
 	const shared = `Shared by everyone who works on ${rules.repo}`;
 	if (rules.revision === 0) return `${shared} · the default rules`;
 	const day = rules.edited_at ? new Date(rules.edited_at) : null;
-	const on = day && !Number.isNaN(day.getTime()) ? ` ${day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : '';
+	const on = day && !Number.isNaN(day.getTime()) ? ` ${day.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '';
 	const by = rules.edited_by ? ` · edited by ${rules.edited_by}${on}` : '';
 	return `${shared} · revision ${rules.revision}${by}`;
 }
@@ -43,29 +43,30 @@ export function hostPort(host: string, port: number): string {
 }
 
 /** What the repo's Boxes met under the rules: requests sent on without the secret, and hosts reached without the Proxy. */
-export function Seen({ seen }: { seen: RulesSeen }) {
+export function Seen({ seen, lit, onPick }: { seen: RulesSeen; lit?: ReadonlySet<string>; onPick?: (w: RulesSeen['withheld'][number]) => void }) {
 	return (
 		<aside class="rules-seen">
-			<h3>Withheld in the last {seen.days} days</h3>
+			<h3 title="A Box reports each request once, so the number counts Boxes.">Withheld in the last {seen.days} days</h3>
 			{seen.withheld.length ? (
 				<ul class="seen-rows">
 					{seen.withheld.map((w) => (
-						<li key={`${w.request} ${w.host}`}>
-							<code>{w.request}</code>
-							<code class="muted">{w.host}</code>
-							<span class="seen-n" title="Boxes that reported it">{w.boxes}</span>
+						<li key={`${w.request} ${w.host}`} class={lit?.has(w.request) ? 'lit' : undefined}>
+							<button type="button" class="seen-row" onClick={() => onPick?.(w)}>
+								<code>{w.request}</code>
+								<code class="host">{w.host}</code>
+								<span class="seen-n" title="Boxes that reported it">{w.boxes}</span>
+							</button>
 						</li>
 					))}
 				</ul>
 			) : (
 				<p class="muted">Nothing was withheld.</p>
 			)}
-			<p class="muted seen-note">A Box reports each request once, so the number counts Boxes.</p>
-			<h3>Dialled directly</h3>
+			<h3 title="Docker Boxes only. An address is a connection that skipped the Box's own proxy.">Dialled directly</h3>
 			{seen.dialled.length ? (
 				<ul class="seen-rows">
 					{seen.dialled.map((d) => (
-						<li key={hostPort(d.host, d.port)}>
+						<li key={hostPort(d.host, d.port)} class="seen-row dim">
 							<code>{hostPort(d.host, d.port)}</code>
 							<span class="seen-n">{d.count}</span>
 						</li>
@@ -74,7 +75,6 @@ export function Seen({ seen }: { seen: RulesSeen }) {
 			) : (
 				<p class="muted">No host yet.</p>
 			)}
-			<p class="muted seen-note">Docker Boxes only. An address is a connection that skipped the Box's own proxy.</p>
 		</aside>
 	);
 }
@@ -125,6 +125,7 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 	const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
 	const [words, setWords] = useState('');
 	const [ask, setAsk] = useState<Ask>({ at: 'idle' });
+	const writeBox = useRef<HTMLTextAreaElement>(null);
 
 	const load = async () => {
 		setProblem(null);
@@ -224,6 +225,13 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 	};
 	const editable = rules.can_edit;
 	const numbers = lineNumbers(draft);
+	const lines = phase === 'read' ? diffLines(textLines(saved), textLines(draft)) : null;
+	const lit = lines && rules.seen ? litRequests(lines.filter((l) => l.kind === 'add').map((l) => l.text), rules.seen.withheld.map((w) => w.request), repo) : undefined;
+	const pick = (w: { request: string; host: string }) => {
+		if (!editable || ask.at === 'sending' || ask.at === 'waiting') return;
+		setWords(`Let ${w.request} through to ${w.host}.`);
+		writeBox.current?.focus();
+	};
 	return (
 		<section class="rules-page">
 			<h1>{rules.repo}</h1>
@@ -237,7 +245,7 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 				<form class="rules-file" onSubmit={save}>
 					<div class="rules-head">rules.yaml</div>
 					{phase === 'read' ? (
-						<RulesDiff lines={diffLines(textLines(saved), textLines(draft))} />
+						<RulesDiff lines={lines ?? []} />
 					) : (
 						<div class={phase === 'writing' ? 'rules-body dim' : 'rules-body'}>
 							<pre class="rules-gutter" aria-hidden="true">{numbers}</pre>
@@ -278,20 +286,28 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 						</div>
 					)}
 				</form>
-				{rules.seen && <Seen seen={rules.seen} />}
+				{rules.seen && <Seen seen={rules.seen} lit={lit} onPick={pick} />}
 			</div>
 			<div class="rules-dock">
 				<AgentLine ask={ask} />
 				{editable && (
 					<form class="rules-ask" onSubmit={send}>
-						<input
+						<textarea
+							ref={writeBox}
+							rows={1}
 							aria-label="Write to the agent"
 							placeholder="Write to the agent…"
 							value={words}
 							disabled={ask.at === 'sending' || ask.at === 'waiting'}
 							onInput={(e) => setWords(e.currentTarget.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+									e.preventDefault();
+									e.currentTarget.form?.requestSubmit();
+								}
+							}}
 						/>
-						<button class="primary" disabled={!words.trim() || ask.at === 'sending' || ask.at === 'waiting'}>
+						<button class="primary" disabled={ask.at === 'sending' || ask.at === 'waiting'}>
 							Send
 						</button>
 					</form>

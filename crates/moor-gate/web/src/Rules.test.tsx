@@ -22,6 +22,7 @@ test('saved rules name their revision and who last edited them', () => {
 	const line = rulesLine(rules({ revision: 12, edited_by: 'alice', edited_at: '2026-11-18T10:00:00Z' }));
 	expect(line.startsWith('Shared by everyone who works on acme/web · revision 12 · edited by alice ')).toBe(true);
 	expect(line).toContain('18');
+	expect(line.endsWith(' 18 Nov')).toBe(true);
 });
 
 test('each line of the text gets one number, and a closing newline adds none', () => {
@@ -46,6 +47,7 @@ test('the lists show each withheld request with its host and Boxes, and each dia
 	const rows = all(view, 'li').map((li) => textOf(li));
 	expect(rows).toEqual(['GET /userapi.github.com2', 'registry.npmjs.org212']);
 	expect(textOf(view)).toContain('Withheld in the last 7 days');
+	expect(all(view, 'button').length).toBe(1);
 });
 
 test('a save keeps the lists the page read, since the write reply has none', () => {
