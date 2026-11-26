@@ -26,7 +26,7 @@ use advance::finish_runs;
 pub(crate) use answer::run as answer_run;
 pub(crate) use box_closed::settle_closed_box;
 pub(crate) use check::{run_check, CheckJob};
-pub(crate) use derive::{pass as plan_pass, start_draft, DraftJob};
+pub(crate) use derive::{hand_in as reading_hand_in, pass as plan_pass, start_draft, DraftJob};
 use facts::history;
 pub(crate) use now::{run as run_now, spawn_start};
 use previous::close_previous;

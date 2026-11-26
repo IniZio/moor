@@ -43,7 +43,7 @@ impl Moor {
         }
     }
 
-    /// Run `step-report` for `caller`, which must be a front whose config sets
+    /// Run `step-report`, `output-report` or `reading-hand-in` for `caller`, which must be a front whose config sets
     /// `step_reports: true`. The front names the Box from its transport and asserts no identity.
     pub(crate) fn call_step_report(
         &self,
@@ -67,9 +67,13 @@ impl Moor {
                     serde_json::to_value(ops::output_report::run(&self.cx, req)?)
                         .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))
                 }
+                Request::ReadingHandIn(req) => {
+                    serde_json::to_value(ops::workflow::reading_hand_in(&self.cx, req)?)
+                        .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))
+                }
                 _ => Err(CommandError::new(
                     ErrorKind::Internal,
-                    "not a step-report or output-report request",
+                    "not a request for a Box from the gate",
                 )),
             }
         };

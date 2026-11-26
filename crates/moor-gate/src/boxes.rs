@@ -1,7 +1,9 @@
 //! The Box-facing listener: one MCP server, `moor`, with `report_step` for the agent in a Box to
-//! report the step of its workflow run, `report_output` for what it made outside moor, and `exec_in_box`, `exec_wait`, `start_box` and `close_box`
-//! for the agent in a claimed agent place to use its user's work Boxes. Every Box lists all six; the
-//! controller refuses the place tools to any Box but a claimed place.
+//! report the step of its workflow run, `report_output` for what it made outside moor,
+//! `hand_in_reading` for the Box reading an automation's prompt, and `exec_in_box`, `exec_wait`,
+//! `start_box` and `close_box` for the agent in a claimed agent place to use its user's work
+//! Boxes. Every Box lists all seven; the controller refuses the place tools to any Box but a
+//! claimed place, and `hand_in_reading` to any Box but a reader.
 //!
 //! A Box holds no token. The shared Proxy routes `moor.moor.internal` to this listener and
 //! stamps `X-Moor-Box: <box id>`, dropping any such header the Box sent. Only the Proxy reaches
@@ -22,7 +24,11 @@ use hyper::service::{service_fn, Service as _};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use moor_client::{Client, ClientError};
-use moor_core::request::{OutputReportReq, Request as ControllerRequest, StepReportReq};
+use moor_core::reading::HandIn;
+use moor_core::request::{
+    OutputReportReq, ReadingHandInReq, ReadingHandInValue, Request as ControllerRequest,
+    StepReportReq,
+};
 use moor_core::response::ExitClass;
 use moor_core::view::output::OutputReportValue;
 use moor_core::view::workflow::StepReportValue;
@@ -181,6 +187,38 @@ impl BoxTools {
                 &controller,
                 ControllerRequest::OutputReport(req),
                 "report_output",
+            )
+        };
+        match tokio::task::spawn_blocking(sent).await {
+            Ok(Ok(value)) => CallToolResult::success(vec![ContentBlock::text(value.reply)]),
+            Ok(Err(why)) => failed(why),
+            Err(e) => failed(format!("the call did not finish: {e}")),
+        }
+    }
+
+    /// Hands in what the caller's Box read in an automation's prompt.
+    #[tool(
+        description = "Hand in your reading of the automation prompt moor asked you to read: \
+                       phrases quoted from the prompt, each held by the effects moor checks or \
+                       only asked, and the effects. moor answers accepted, or says which quote \
+                       or effect to fix before you hand in again."
+    )]
+    async fn hand_in_reading(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(reading): Parameters<HandIn>,
+    ) -> CallToolResult {
+        let box_id = match box_of(&context) {
+            Ok(id) => id,
+            Err(why) => return failed(why),
+        };
+        let req = ReadingHandInReq { box_id, reading };
+        let controller = self.controller.clone();
+        let sent = move || {
+            send::<ReadingHandInValue>(
+                &controller,
+                ControllerRequest::ReadingHandIn(req),
+                "hand_in_reading",
             )
         };
         match tokio::task::spawn_blocking(sent).await {

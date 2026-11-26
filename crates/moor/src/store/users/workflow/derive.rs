@@ -1,11 +1,13 @@
-//! moor's reading of a workflow's prompt: where it stands, and storing the plan or gates made.
+//! moor's reading of a workflow's prompt: where it stands, and storing the plan or reading made.
 
-use moor_core::workflow::{PlanDraft, PromptHash, Reading, WorkflowId};
+use moor_core::reading::{Reading, ReadingOf};
+use moor_core::workflow::{Plan, PlanDraft, PromptHash, WorkflowId};
 use moor_schema::tables::Workflows;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::corrupt;
 use crate::store::db::{self, DbExt as _, OptionalExtension as _};
+use crate::store::readings::{hold_in, Stored};
 use crate::store::{Store, StoreError};
 
 /// `draft` as the JSON the column keeps.
@@ -106,19 +108,10 @@ impl Store {
         .collect()
     }
 
-    /// Stores `reading` as workflow `id`'s and clears its draft, only while the workflow's prompt
-    /// is the one it was made from. A plan clears the gates and gates clear the plan, so a
-    /// workflow keeps one reading. Its revision stays: the reading is moor's, not an edit. True
-    /// when it was stored.
-    pub(crate) fn store_made_reading(
-        &self,
-        id: WorkflowId,
-        reading: &Reading,
-    ) -> Result<bool, StoreError> {
-        let (plan, gates) = match reading {
-            Reading::Plan(p) => (Some(p.to_json()?), None),
-            Reading::Gates(g) => (None, Some(serde_json::to_string(&g.doc())?)),
-        };
+    /// Stores `plan` as workflow `id`'s and clears its draft, only while the workflow's prompt is
+    /// the one it was made from. A plan clears the gates, as gates clear the plan. Its revision
+    /// stays: the plan is moor's, not an edit. True when it was stored.
+    pub(crate) fn store_made_plan(&self, id: WorkflowId, plan: &Plan) -> Result<bool, StoreError> {
         let mut writer = self.writer();
         let tx = writer.immediate()?;
         let prompt: Option<String> = tx
@@ -130,7 +123,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        if prompt.is_none_or(|p| Some(&PromptHash::of(&p)) != reading.made_from()) {
+        if prompt.is_none_or(|p| PromptHash::of(&p) != plan.made_from) {
             drop(tx);
             drop(writer);
             return Ok(false);
@@ -138,13 +131,63 @@ impl Store {
         tx.run(
             Query::update()
                 .table(Workflows::Table)
-                .value(Workflows::Plan, plan)
-                .value(Workflows::Gates, gates)
+                .value(Workflows::Plan, Some(plan.to_json()?))
+                .value(Workflows::Gates, Option::<String>::None)
                 .value(Workflows::PlanDraft, Option::<String>::None)
                 .and_where(Expr::col(Workflows::Id).eq(id.get())),
         )?;
         tx.commit()?;
         drop(writer);
         Ok(true)
+    }
+
+    /// Keeps `reading`, which the reader of draft `was` read, as its workflow's, and clears
+    /// `was`, in one transaction. False, with nothing written, when `was` is no longer the
+    /// workflow's draft, the prompt is no longer the one read, or the reading is refused.
+    pub(crate) fn hold_reader_read(
+        &self,
+        reading: &Reading,
+        was: &PlanDraft,
+    ) -> Result<bool, StoreError> {
+        let ReadingOf::Automation(id) = reading.of;
+        let since = self.now().as_millis();
+        let was = json_of(was)?;
+        let mut writer = self.writer();
+        let tx = writer.immediate()?;
+        let row: Option<(String, Option<String>)> = tx
+            .row(
+                Query::select()
+                    .columns([Workflows::Prompt, Workflows::PlanDraft])
+                    .from(Workflows::Table)
+                    .and_where(Expr::col(Workflows::Id).eq(id.get()))
+                    .and_where(Expr::col(Workflows::User).eq(reading.made_by.get())),
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let current = row.is_some_and(|(prompt, draft)| {
+            PromptHash::of(&prompt) == reading.context.source_hash && draft == Some(was)
+        });
+        if !current {
+            drop(tx);
+            drop(writer);
+            return Ok(false);
+        }
+        let held = matches!(
+            hold_in(&tx, reading, since)?,
+            Stored::Written | Stored::Same
+        );
+        if held {
+            tx.run(
+                Query::update()
+                    .table(Workflows::Table)
+                    .value(Workflows::PlanDraft, Option::<String>::None)
+                    .and_where(Expr::col(Workflows::Id).eq(id.get())),
+            )?;
+            tx.commit()?;
+        } else {
+            drop(tx);
+        }
+        drop(writer);
+        Ok(held)
     }
 }

@@ -136,6 +136,28 @@ fn gates_json(reading: &Reading) -> Result<Option<String>, StoreError> {
     )?))
 }
 
+/// Keeps `reading` in `tx` and makes its workflow hold it. A read with gates sets the
+/// workflow's gates and clears its plan, as gates moor made always have. A read with no gate
+/// leaves the workflow's gates and plan as they were. A refusal changes nothing.
+pub(super) fn hold_in(tx: &dyn Db, reading: &Reading, since: i64) -> Result<Stored, StoreError> {
+    let gates = gates_json(reading)?;
+    let stored = insert_in(tx, reading, since)?;
+    if matches!(stored, Stored::Written | Stored::Same) {
+        let ReadingOf::Automation(of) = reading.of;
+        let mut held = Query::update();
+        held.table(Workflows::Table)
+            .value(Workflows::Reading, reading.id.as_str())
+            .and_where(Expr::col(Workflows::Id).eq(of.get()))
+            .and_where(Expr::col(Workflows::User).eq(reading.made_by.get()));
+        if let Some(gates) = gates {
+            held.value(Workflows::Gates, gates)
+                .value(Workflows::Plan, Option::<String>::None);
+        }
+        tx.run(&mut held)?;
+    }
+    Ok(stored)
+}
+
 /// A `readings` row as read, before it is parsed.
 struct Kept {
     /// `of_workflow`.
@@ -197,26 +219,13 @@ impl Store {
     }
 
     /// Keeps `reading` and makes its workflow hold it, with the gates its read holds, in one
-    /// transaction, so the reading and `workflows.gates` never differ. A read with no gate
-    /// leaves the workflow no gates. A refusal changes nothing.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the hand-in calls it"))]
+    /// transaction, so the reading and `workflows.gates` never differ. See [`hold_in`].
+    #[cfg_attr(not(test), expect(dead_code, reason = "Save calls it"))]
     pub(crate) fn hold_read(&self, reading: &Reading) -> Result<Stored, StoreError> {
         let since = self.now().as_millis();
-        let gates = gates_json(reading)?;
         let mut writer = self.writer();
         let tx = writer.immediate()?;
-        let stored = insert_in(&tx, reading, since)?;
-        if matches!(stored, Stored::Written | Stored::Same) {
-            let ReadingOf::Automation(of) = reading.of;
-            tx.run(
-                Query::update()
-                    .table(Workflows::Table)
-                    .value(Workflows::Reading, reading.id.as_str())
-                    .value(Workflows::Gates, gates)
-                    .and_where(Expr::col(Workflows::Id).eq(of.get()))
-                    .and_where(Expr::col(Workflows::User).eq(reading.made_by.get())),
-            )?;
-        }
+        let stored = hold_in(&tx, reading, since)?;
         tx.commit()?;
         drop(writer);
         Ok(stored)

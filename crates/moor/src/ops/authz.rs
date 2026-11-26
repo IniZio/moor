@@ -141,7 +141,9 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::WebhookClaim(_) | Request::WebhookReport(_) => {
             Some(crate::ops::webhook_outbox::FRONT_ONLY)
         }
-        Request::StepReport(_) | Request::OutputReport(_) => Some(STEP_REPORT_FRONT_ONLY),
+        Request::StepReport(_) | Request::OutputReport(_) | Request::ReadingHandIn(_) => {
+            Some(STEP_REPORT_FRONT_ONLY)
+        }
         Request::BoxTool(_) => Some(crate::ops::box_tool::FRONT_ONLY),
         Request::MachinePair(_) => Some(crate::ops::machine_pair::FRONT_ONLY),
         Request::GitHubHook(_) => Some(crate::ops::github_hook::FRONT_ONLY),

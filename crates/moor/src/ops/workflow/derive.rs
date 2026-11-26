@@ -1,7 +1,8 @@
-//! moor reads a workflow's prompt into a plan or gates. A write that changes the prompt asks for a
-//! reading; this pass starts a short Box that reads the repos and leaves `plan.json`, stores that
-//! reading when the prompt is still the one it was made from, and closes the Box. Nothing else
-//! stores one. Storing a plan clears the gates and storing gates clears the plan. Gates a person
+//! moor reads a workflow's prompt into a plan or a reading. A write that changes the prompt asks
+//! for one; this pass starts a short Box that reads the repos and either hands in a reading
+//! ([`hand_in`]) or leaves `plan.json`, which the pass stores when the prompt is still the one it
+//! was made from, closing the Box. Nothing else stores one. A plan clears the gates and a reading
+//! with gates clears the plan. Gates a person
 //! wrote stay until the owner asks moor to make the reading again. A Box that ends without a
 //! reading leaves the reason, and moor tries again only when the prompt changes or the owner asks:
 //! no try repeats on its own.
@@ -13,7 +14,7 @@ use moor_core::request::ArtifactReadReq;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
 use moor_core::workflow::{
-    draft_prompt, plan_box_name, PlanDraft, PromptHash, Reading, Workflow, WorkflowId, PLAN_FILE,
+    draft_prompt, plan_box_name, PlanDraft, PromptHash, ReaderLeft, Workflow, WorkflowId, PLAN_FILE,
 };
 use moor_core::StartReq;
 
@@ -21,6 +22,9 @@ use super::close_open_box;
 use crate::cx::Cx;
 use crate::ops::{artifacts, start};
 use crate::store::Store;
+
+mod hand_in;
+pub(crate) use hand_in::run as hand_in;
 
 /// How long a Box asked for may go unseen before moor gives up on it.
 const UNSEEN_MS: i64 = 10 * 60_000;
@@ -193,13 +197,18 @@ fn harvest(
         return Ok(());
     };
     if let Some(text) = plan_text(cx, store, &row)? {
-        return match Reading::parse(&text, &w.prompt) {
-            Ok(reading) => {
+        return match ReaderLeft::parse(&text, &w.prompt) {
+            Ok(ReaderLeft::Plan(plan)) => {
                 close(cx, store, name);
                 store
-                    .store_made_reading(w.id, &reading)
+                    .store_made_plan(w.id, &plan)
                     .map(|_| ())
                     .map_err(|e| e.to_string())
+            }
+            Ok(ReaderLeft::Gates(gates)) => {
+                close(cx, store, name);
+                hand_in::hold_gates(cx, store, (w, draft), &row, &gates)
+                    .map_err(|e| e.error.to_string())
             }
             Err(errors) => fail(format!(
                 "the plan the Box left is not valid: {}",

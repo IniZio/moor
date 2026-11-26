@@ -19,7 +19,7 @@ pub use brief::{split_start_prompt, CheckSays, StartStep};
 pub use doc::{PlanDoc, PlanError, StepDoc};
 pub use draft::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, APPROVE_PLAN, PLAN_FILE,
-    PLAN_QUESTION, REVISE_PLAN,
+    PLAN_QUESTION, READER_INSTRUCTIONS, REVISE_PLAN,
 };
 
 /// A step's id: 1-32 bytes of `[a-z0-9-]`, starting with a letter. Stable across recompiles, so
