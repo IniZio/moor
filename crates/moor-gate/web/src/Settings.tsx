@@ -1,6 +1,7 @@
 import type { Account } from './api';
 import { AddMachine } from './AddMachine';
 import { Connect } from './Connect';
+import { ContractPage } from './Contract';
 import { Machines } from './Machines';
 import { Profile } from './Profile';
 import { Repos } from './Repos';
@@ -14,6 +15,7 @@ const SECTIONS = {
 	secrets: { label: 'Secrets', href: '#/settings/secrets' },
 	repos: { label: 'Repos', href: '#/repos' },
 	connect: { label: 'Connect', href: '#/settings/connect' },
+	contract: { label: 'Agent contract', href: '#/settings/contract' },
 } as const;
 
 export type Section = keyof typeof SECTIONS;
@@ -64,6 +66,7 @@ export function Settings({ account, hash, onChanged }: { account: Account; hash:
 				{section === 'secrets' && <Secrets account={account} onLinked={onChanged} />}
 				{section === 'repos' && <Repos csrf={account.csrf} repo={repoAt(hash)} />}
 				{section === 'connect' && <Connect url={account.connect.mcp_url} />}
+				{section === 'contract' && <ContractPage />}
 			</div>
 		</div>
 	);
