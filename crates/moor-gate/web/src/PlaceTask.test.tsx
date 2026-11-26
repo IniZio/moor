@@ -254,3 +254,7 @@ test('the question shows its answers as small buttons, the first one filled, and
 	expect(own).toBe(1);
 });
 
+test('the head of a question\'s task leaves the pull request to its card', async () => {
+	const detail = { ...(await detailOf([...ASKED])), pr: { repo: 'acme/web', number: 14, url: 'https://github.com/acme/web/pull/14' } };
+	expect(textOf(TaskHead({ t: detail, now: 0, actions: null }))).not.toContain('PR #14');
+});
