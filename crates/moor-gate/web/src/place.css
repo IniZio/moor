@@ -26,6 +26,10 @@ a.t-pl-box:hover { color: var(--moor-color-text); }
 .t-pl-outs > p { margin: 0; }
 .t-pl-art, .t-pl-pr, .t-pl-out { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); overflow: hidden; }
 .t-pl-pic { padding: 6px 10px; background: var(--moor-color-bg-sunken); border-bottom: 1px solid var(--moor-color-border); }
+.t-pl-doc { max-height: 240px; overflow: hidden; font-size: var(--app-text-sm); }
+.t-pl-doc:empty { display: none; }
+.t-pl-doc :is(h1, h2, h3, h4) { margin: 0 0 3px; font: var(--moor-weight-strong) var(--app-text-sm) / 1.45 var(--moor-font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--moor-color-text-muted); }
+.t-pl-doc p { margin: 0 0 4px; line-height: 1.55; }
 .t-pl-pic img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; }
 .t-pl-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 6px 2px 10px; }
 .t-pl-glyph { display: inline-flex; color: var(--moor-color-text-muted); }
