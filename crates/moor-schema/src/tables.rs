@@ -50,6 +50,7 @@ tables! {
         NoSetup }
     PlaceClaims { Box, User, Repos, Prompt, ClaimedAt, ServedAt, SteeredAt }
     BoxGateLines { Box, N, At, Entry }
+    BoxOutputs { Box, Url, Kind, Title, FirstAt, LastAt }
     BoxState { Box, State, StateReason, OpenName, OpenBranch, Node, Prompt, HeldPrompt, IntentKind,
         IntentPid, IntentRun, IntentAt, SetupFailedAt, StepsPendingAt, IdleSince, LaunchFailure,
         ResumeFirstAt, UpdatedAt, ArchiveDue, Wanted, WantedForce, WantedReason, WantedAt, Effect,

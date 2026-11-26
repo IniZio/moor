@@ -559,6 +559,7 @@ mod gated;
 mod hook;
 mod hook_log;
 mod manual;
+mod outputs;
 mod plan;
 mod previous;
 mod pull;

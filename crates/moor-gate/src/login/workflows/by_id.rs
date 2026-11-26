@@ -29,6 +29,7 @@ pub(crate) fn run_by_id(stream: &mut TcpStream, gate: &Gate, session: &Session, 
             let mut view = run_view(&read.workflow, &read.run);
             if let Value::Object(map) = &mut view {
                 map.insert("yours".to_owned(), json!(read.yours));
+                map.insert("outputs".to_owned(), json!(read.outputs));
             }
             json(stream, "200 OK", &view);
         }

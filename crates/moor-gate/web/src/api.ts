@@ -271,6 +271,15 @@ const StepSchema = v.object({
 	expects: v.array(v.object({ name: v.string() })),
 });
 
+/** Something a Box's agent made outside moor, such as a pull request comment. */
+const OutputSchema = v.object({
+	kind: v.string(),
+	url: v.string(),
+	title: v.string(),
+	first_at: v.number(),
+	last_at: v.number(),
+});
+
 const RunSchema = v.object({
 	workflow: v.string(),
 	id: v.number(),
@@ -294,6 +303,8 @@ const RunSchema = v.object({
 	lines: v.array(LineSchema),
 	/** Whether the reader owns the run's workflow, so may answer and fire it. */
 	yours: v.optional(v.boolean(), true),
+	/** What the run's Box made outside moor, oldest first. */
+	outputs: v.optional(v.array(OutputSchema), []),
 });
 
 export type RunStatus = v.InferOutput<typeof StatusSchema>;
@@ -560,6 +571,8 @@ const BoxDetailFields = v.object({
 	from_workflow: v.optional(v.boolean(), false),
 	/** The work Boxes a question's place started, oldest first; none from a controller that predates them. */
 	task_boxes: v.optional(v.array(TaskBoxSchema), []),
+	/** What the agent, and a place's work Boxes, made outside moor, oldest first. */
+	outputs: v.optional(v.array(OutputSchema), []),
 });
 
 const BoxDetailSchema = v.pipe(BoxDetailFields, v.transform(spoken));
@@ -574,6 +587,7 @@ export type Tool = v.InferOutput<typeof ToolSchema>;
 export type Clipped = v.InferOutput<typeof BodySchema>;
 export type Evidence = v.InferOutput<typeof EvidenceSchema>;
 export type TaskBox = v.InferOutput<typeof TaskBoxSchema>;
+export type Output = v.InferOutput<typeof OutputSchema>;
 export type Tally = v.InferOutput<typeof TallySchema>;
 
 /** The person's open tasks, or every person's with `everyone`. */

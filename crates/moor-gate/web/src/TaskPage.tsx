@@ -7,6 +7,7 @@ import { ChangesTab, changesLabel } from './Changes';
 import { HeaderActions } from './Ending';
 import { GateCard } from './Gates';
 import { GateStory, PromptFold } from './GateStory';
+import { OutputList } from './PlaceCards';
 import { PlanCard, PlanRail } from './PlanCard';
 import { handedImages } from './Peek';
 import { PrHeader } from './PrHeader';
@@ -270,6 +271,7 @@ function TaskPage({ detail, error, now, tab, csrf, me, reload }: { detail: BoxDe
 			{detail.stale && <p class="t-stalebar">No event for over 30 minutes. {detail.line}</p>}
 			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} wait={detail.state === 'needs_you' ? needs?.gate : null} /> : null}
 			<PromptFold prompt={detail.prompt} />
+			<OutputList outputs={detail.outputs} />
 			<nav class="t-tabs" role="tablist">
 				{SHOWN_TABS.map((t) => (
 					<a class="t-tab" role="tab" aria-selected={tab === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>
@@ -327,6 +329,7 @@ function ReadOnlyTask({
 			{error && <p class="notice danger" role="alert">{error}</p>}
 			{detail.gate?.gates.length ? <GateStory gate={detail.gate} docs={docs} card={null} /> : null}
 			<PromptFold prompt={detail.prompt} />
+			<OutputList outputs={detail.outputs} />
 			<nav class="t-tabs" role="tablist">
 				{READ_TABS.map((t) => (
 					<a class="t-tab" role="tab" aria-selected={shown === t} href={t === 'timeline' ? base : `${base}/${t}`} key={t}>

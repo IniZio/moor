@@ -48,6 +48,18 @@ fn the_first_message_says_how_to_reach_report_step_in_words_any_agent_follows() 
 }
 
 #[test]
+fn the_first_message_asks_for_each_outside_write_with_report_output() {
+    let text = gates().first_message("Fix the typo.");
+    assert!(
+        text.contains(
+            "After each write outside moor, such as a pull request comment, call \
+             report_output with its kind, URL and title."
+        ),
+        "{text}"
+    );
+}
+
+#[test]
 fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
     let text = gates().first_message("Fix the typo.\n");
     assert!(

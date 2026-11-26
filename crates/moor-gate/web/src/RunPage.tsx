@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 
 import { failure, type Line, type Run, runAnswer, runRead, type Step, toError } from './api';
 import { closingWaitWords, outcomeLine } from './gate';
+import { OutputList } from './PlaceCards';
 import { RunNowButton } from './RunNow';
 import { useLoad } from './useLoad';
 import { duration, Failed, StatusIcon, when } from './WorkflowBits';
@@ -190,6 +191,7 @@ export function RunPage({ csrf, id }: { csrf: string; id: number }) {
 					{runWriteUps(run).map((w) => (
 						<WriteUp key={w.href} name={w.name} href={w.href} />
 					))}
+					<OutputList outputs={run.outputs} />
 					{run.detail && <pre class="notice danger">{run.detail}</pre>}
 					{run.yours && <Question run={run} csrf={csrf} onAnswered={setValue} />}
 					<ol class="steps">

@@ -15,10 +15,30 @@ pub(super) fn reply(who: &str, inner: &Value) -> Response {
     };
     run["plan"] = held.plan.unwrap_or(Value::Null);
     let yours = who.contains(OWNER);
+    let outputs = if inner["run"] == 6 {
+        json!([{"kind": "github.comment", "url": "https://example.com/acme/web/pull/3#c1",
+            "title": "Evidence", "first_at": 1, "last_at": 2}])
+    } else {
+        json!([])
+    };
     Response::ok(
         "x",
-        Some(json!({"workflow": "weekly-deps", "yours": yours, "run": run})),
+        Some(json!({"workflow": "weekly-deps", "yours": yours, "run": run, "outputs": outputs})),
     )
+}
+
+#[test]
+fn a_run_read_carries_what_its_box_made_outside_moor() {
+    let w = world(true, &[]);
+    let bob = as_user(&w, "bob-22");
+    let done = json_of(&get(&w.addr, "/account/api/runs/6", Some(&bob)));
+    assert_eq!(done["outputs"][0]["title"], "Evidence");
+    assert_eq!(
+        done["outputs"][0]["url"],
+        "https://example.com/acme/web/pull/3#c1"
+    );
+    let waiting = json_of(&get(&w.addr, "/account/api/runs/7", Some(&bob)));
+    assert_eq!(waiting["outputs"], json!([]));
 }
 
 #[test]

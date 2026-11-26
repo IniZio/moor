@@ -201,6 +201,34 @@ fn two_task_boxes_of_one_name_each_read_their_own_file() {
     }
 }
 
+/// Records an output titled `title` for Box `id`.
+fn output(cx: &Cx, id: BoxId, title: &str) {
+    let url = format!("https://example.com/acme/web/pull/1#{title}");
+    let out = moor_core::output::Output::parse("github.comment", &url, title).unwrap();
+    cx.store()
+        .unwrap()
+        .put_output(id, &out, cx.clock().now())
+        .unwrap();
+}
+
+#[test]
+fn a_place_lists_its_own_outputs_and_its_work_boxes_and_a_work_box_only_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
+    let place = claimed(&cx, "taken");
+    let work = started_by(&cx, "w", place);
+    let other = claimed(&cx, "other");
+    output(&cx, place, "from-place");
+    output(&cx, work, "from-work");
+    output(&cx, other, "elsewhere");
+    let titles = |name: &str| -> Vec<String> {
+        let shown = run(&cx, &req(Some(name), None)).unwrap().outputs;
+        shown.into_iter().map(|o| o.title).collect()
+    };
+    assert_eq!(titles("taken"), ["from-place", "from-work"]);
+    assert_eq!(titles("w"), ["from-work"]);
+}
+
 #[test]
 fn a_work_box_lists_no_task_boxes() {
     let dir = tempfile::tempdir().unwrap();

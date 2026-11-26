@@ -65,8 +65,12 @@ pub use workflow::{
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
+mod show;
+pub use show::ShowReq;
 mod steer;
 pub use steer::SteerReq;
+mod output_report;
+pub use output_report::OutputReportReq;
 mod step_report;
 pub use step_report::StepReportReq;
 mod box_tool;
@@ -268,6 +272,9 @@ pub enum Request {
     /// What the agent in a Box reports for the step its run is at; only a front with
     /// `step_reports: true`, which names the Box from its transport.
     StepReport(StepReportReq),
+    /// Something the agent in a Box made outside moor; only a front with `step_reports: true`,
+    /// which names the Box from its transport.
+    OutputReport(OutputReportReq),
     /// What the agent in a claimed agent place asks of its user's Boxes; only a front with
     /// `box_tools: true`, which names the place from its transport.
     BoxTool(BoxToolReq),
@@ -355,43 +362,6 @@ pub struct StartReq {
     /// a place.
     #[serde(skip)]
     pub task: Option<BoxId>,
-}
-
-/// Arguments of `show`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "JSON wire shape is a public contract"
-)]
-pub struct ShowReq {
-    /// The Box, in any state: by name, the newest Box of that name; all open Boxes when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "box")]
-    pub target: Option<BoxTarget>,
-    /// Number of events to include.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub events: Option<u32>,
-    /// Include agent state.
-    #[serde(default)]
-    pub agent: bool,
-    /// Include reports.
-    #[serde(default)]
-    pub reports: bool,
-    /// Include the latest version of each artifact.
-    #[serde(default)]
-    pub artifacts: bool,
-    /// Include pane contents.
-    #[serde(default)]
-    pub pane: bool,
-    /// Place the agent's saved transcript in the timeline: each tool call and message. Left out
-    /// when false, so a controller that predates it still reads every other `show`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub transcript: bool,
-    /// Read every user's Boxes, not only the caller's: a list holds each user's open Boxes and
-    /// the Box named may be another user's. It reaches no pane and grants no write.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub everyone: bool,
 }
 
 #[cfg(test)]

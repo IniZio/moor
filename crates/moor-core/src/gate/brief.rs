@@ -51,8 +51,9 @@ impl Gates {
              only when all have passed. Report only the gate that is in hand: a report for any \
              other is refused. The first gate is in hand now. moor tells you when each gate is in \
              hand. report_step is a tool of the moor MCP server; load it first if your tools \
-             are loaded on demand. Leave each evidence file in .moor/artifacts/.\n\n{}{}",
+             are loaded on demand. Leave each evidence file in .moor/artifacts/. {}\n\n{}{}",
             prompt.trim_end(),
+            crate::output::REPORT_OUTPUT_BRIEF,
             lines.join("\n"),
             self.outcomes_brief()
         )

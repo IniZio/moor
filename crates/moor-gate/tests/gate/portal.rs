@@ -81,7 +81,9 @@ fn place(name: &str) -> Response {
             "content_type": "image/png", "size": 10, "sha256": "0",
             "created_at": "2026-11-24T11:10:00Z"}]});
     let shown = json!({"box": boxed, "events": [], "timeline": [], "artifacts": [],
-        "task_boxes": [work]});
+        "task_boxes": [work], "outputs": [{"kind": "github.comment",
+            "url": "https://example.com/acme/web/pull/3#c1", "title": "Evidence",
+            "first_at": 1, "last_at": 2}]});
     Response::ok("x", Some(shown))
 }
 
@@ -269,6 +271,28 @@ fn two_work_boxes_of_one_name_each_link_and_open_their_own_file() {
             .unwrap();
         assert_eq!(asked["request"]["box"], json!({"id": id}), "{file}");
     }
+}
+
+#[test]
+fn a_task_s_page_carries_its_outputs_and_a_box_without_any_an_empty_list() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-12");
+    let place = json_of(&get(
+        &w.addr,
+        "/account/api/box?box=web%2Fplace",
+        Some(&cookie),
+    ));
+    assert_eq!(
+        place["outputs"],
+        json!([{"kind": "github.comment", "url": "https://example.com/acme/web/pull/3#c1",
+            "title": "Evidence", "first_at": 1, "last_at": 2}])
+    );
+    let plain = json_of(&get(
+        &w.addr,
+        "/account/api/box?box=web%2Fask",
+        Some(&cookie),
+    ));
+    assert_eq!(plain["outputs"], json!([]));
 }
 
 #[test]

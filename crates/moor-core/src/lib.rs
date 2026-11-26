@@ -18,6 +18,7 @@ pub mod gate;
 pub mod graphql_scope;
 pub mod inbox;
 pub mod name;
+pub mod output;
 pub mod profile;
 pub mod progress;
 pub mod request;

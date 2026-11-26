@@ -7,6 +7,7 @@ use moor_core::progress::transcript::Transcript;
 use moor_core::progress::{Class, TimelineEntry};
 use moor_core::seam::clock::Ts;
 use moor_core::view::gate::GateView;
+use moor_core::view::output::OutputView;
 use moor_core::view::{
     ApprovalView, ArtifactView, AttentionView, BoxView, EventView, HeldMachineView,
     MachineHoldState, PaneView, ReportView, SaidView, ShowView, TaskBoxView,
@@ -96,6 +97,20 @@ fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, Comma
         .iter()
         .map(artifact_view)
         .collect())
+}
+
+/// What Box `id` and its work Boxes `task_boxes` made outside moor, oldest first.
+fn outputs_of(
+    store: &Store,
+    id: BoxId,
+    task_boxes: &[TaskBoxView],
+) -> Result<Vec<OutputView>, CommandError> {
+    let mut outputs = store.outputs_of(id)?;
+    for t in task_boxes {
+        outputs.extend(store.outputs_of(t.id)?);
+    }
+    outputs.sort_by_key(|o| o.first_at);
+    Ok(outputs)
 }
 
 /// The work Boxes the agent of place `place` started, oldest first, as the task shows them.
@@ -257,6 +272,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         .transpose()?;
     let reports = req.reports.then(|| reports_of(store, row.id)).transpose()?;
     let task_boxes = task_boxes_of(store, &row)?;
+    let outputs = outputs_of(store, row.id, &task_boxes)?;
     Ok(ShowView {
         boxes: None,
         boxed: Some(detail),
@@ -266,6 +282,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         artifacts,
         timeline,
         task_boxes,
+        outputs,
     })
 }
 
@@ -356,6 +373,7 @@ fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, Com
         artifacts: None,
         timeline: None,
         task_boxes: Vec::new(),
+        outputs: Vec::new(),
     })
 }
 

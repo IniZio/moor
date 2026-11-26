@@ -188,9 +188,14 @@ pub(super) fn run_read(
     let w = store.workflow_by_id(run.workflow)?.ok_or_else(missing)?;
     let plan = shown_plan(store, &run, w.gates.as_ref(), &w.prompt)?;
     let view = run_view(store, w.name.as_str(), &run)?;
+    let outputs = match run.state.box_id() {
+        Some(id) => store.outputs_of(id)?,
+        None => Vec::new(),
+    };
     to_value(&WorkflowRunReadValue {
         workflow: w.name.to_string(),
         yours: w.owner == user,
+        outputs,
         run: RunRowView {
             id: run.id.get(),
             run: view,

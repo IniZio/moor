@@ -61,13 +61,17 @@ impl Moor {
                     ))
                 }
             }
-            let Request::StepReport(req) = request else {
-                return Err(CommandError::new(
+            match request {
+                Request::StepReport(req) => ops::step_report(&self.cx, req),
+                Request::OutputReport(req) => {
+                    serde_json::to_value(ops::output_report::run(&self.cx, req)?)
+                        .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))
+                }
+                _ => Err(CommandError::new(
                     ErrorKind::Internal,
-                    "not a step-report request",
-                ));
-            };
-            ops::step_report(&self.cx, req)
+                    "not a step-report or output-report request",
+                )),
+            }
         };
         match run() {
             Ok(value) => Response::ok(name, Some(value)),

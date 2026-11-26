@@ -18,7 +18,7 @@ pub(super) fn front_request(env: &Env, peer: &Peer, request: &Request) -> Option
     );
     let pair = matches!(request, Request::MachinePair(_) | Request::GitHubHook(_));
     if matches!(peer.caller, Ok(Caller::Runner))
-        || !(outbox || pair || matches!(request, Request::StepReport(_)))
+        || !(outbox || pair || matches!(request, Request::StepReport(_) | Request::OutputReport(_)))
     {
         return None;
     }

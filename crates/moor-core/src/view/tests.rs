@@ -177,6 +177,7 @@ fn show_view_keys_match_wire_shape() {
         artifacts: None,
         timeline: None,
         task_boxes: Vec::new(),
+        outputs: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -201,6 +202,7 @@ fn show_view_absent_sections_are_null() {
         artifacts: None,
         timeline: None,
         task_boxes: Vec::new(),
+        outputs: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -221,6 +223,7 @@ fn show_view_single_box_omits_boxes() {
         artifacts: None,
         timeline: None,
         task_boxes: Vec::new(),
+        outputs: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(v).ok(),

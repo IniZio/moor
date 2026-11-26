@@ -142,6 +142,7 @@ impl Request {
             | Self::MachineLinks(_)
             | Self::MachineBox(_)
             | Self::StepReport(_)
+            | Self::OutputReport(_)
             | Self::BoxTool(_)
             | Self::MachinePair(_)
             | Self::GitHubHook(_)
