@@ -226,6 +226,39 @@ const RunRowSchema = v.object({
 	detail: v.nullish(v.string()),
 });
 
+/** One reading of an automation's prompt, the slice 1 subset of the spec's ReadingView (docs/specs/prompt-reading.md, The API). The front draws marks from `runs` and `phrases` alone and never from offsets. Slice 1 sends held and asked phrases and gate, outcome and allow effects; the picklists also take the spec's other values so a later slice never fails the whole workflow's parse. */
+export const ReadingViewSchema = v.object({
+	state: v.picklist(['reading', 'read', 'failed']),
+	failed: v.nullish(v.string()),
+	/** What differs now from what the reader saw; empty when current. */
+	stale: v.optional(v.array(v.picklist(['prompt', 'repos', 'rules', 'reader'])), []),
+	source: v.string(),
+	/** The source cut at phrase edges: the texts joined are the source, and `phrase` names the phrase a cut belongs to. */
+	runs: v.array(v.object({ text: v.string(), phrase: v.nullish(v.string()) })),
+	phrases: v.array(
+		v.object({
+			id: v.string(),
+			/** Solid, dashed, or (a later slice) dotted. */
+			mark: v.picklist(['held', 'asked', 'unclear']),
+			effects: v.array(v.string()),
+		}),
+	),
+	effects: v.array(
+		v.object({
+			id: v.string(),
+			kind: v.picklist(['gate', 'outcome', 'allow', 'withheld']),
+			/** What the file or the gate list shows: an allow's entry as written under its rule, a gate's or outcome's name. */
+			line: v.string(),
+			key: v.string(),
+			phrases: v.array(v.string()),
+		}),
+	),
+	/** The gates the gate engine gets, as the workflow's own `gates` show them. */
+	gates: v.nullish(v.unknown()),
+	/** The extra Proxy entries, rule to entries, as the workflow's `may` shows them. */
+	may: v.optional(v.record(v.string(), v.array(v.string())), {}),
+});
+
 const WorkflowSchema = v.object({
 	...WorkflowRowSchema.entries,
 	timeout_minutes: v.number(),
@@ -245,6 +278,8 @@ const WorkflowSchema = v.object({
 	run_as: v.optional(v.string(), ''),
 	/** The extra Proxy entries the workflow's config asks for, rule to entries as written, or why the config does not parse. */
 	may: v.optional(v.object({ allow: v.optional(v.record(v.string(), v.array(v.string()))), error: v.optional(v.string()) }), {}),
+	/** What moor made of the prompt, when it has read it; an older controller sends none. */
+	reading: v.nullish(ReadingViewSchema),
 });
 
 const LineSchema = v.object({
@@ -310,6 +345,7 @@ const RunSchema = v.object({
 export type RunStatus = v.InferOutput<typeof StatusSchema>;
 export type WorkflowRow = v.InferOutput<typeof WorkflowRowSchema>;
 export type Workflow = v.InferOutput<typeof WorkflowSchema>;
+export type ReadingView = v.InferOutput<typeof ReadingViewSchema>;
 export type RunRow = v.InferOutput<typeof RunRowSchema>;
 export type Run = v.InferOutput<typeof RunSchema>;
 export type Step = v.InferOutput<typeof StepSchema>;

@@ -16,6 +16,10 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .trig { margin: 2px 0 2px; font-size: 13px; color: var(--moor-color-text-muted); }
 .auto .psp { text-decoration-skip-ink: none; text-underline-offset: 0.22em; text-decoration-thickness: 1.5px; border-radius: 2px; }
 .auto .psp.k-enf { text-underline-offset: 0.3em; text-decoration-line: underline; text-decoration-style: solid; text-decoration-color: var(--moor-color-text); }
+.auto .psp.k-ask { text-decoration-line: underline; text-decoration-style: dashed; text-decoration-color: var(--moor-color-text-muted); font-style: italic; }
+.auto .pmarks .psp { cursor: pointer; }
+.auto .pmarks .psp:focus-visible { outline: 2px solid var(--moor-color-border-strong); outline-offset: 1px; }
+.auto .psp.nlit { background: color-mix(in srgb, var(--moor-color-text) 11%, transparent); }
 .auto .lnk { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
 .auto .lnk:hover:not(:disabled) { background: none; color: var(--moor-color-text); }
 .auto .rev { display: flex; align-items: center; gap: var(--moor-space-2); margin: 4px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--moor-color-border); font-size: 12px; color: var(--moor-color-text-muted); }
@@ -25,6 +29,10 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .pgrid.one { grid-template-columns: minmax(0, 1fr); }
 .auto .pleft { min-width: 0; }
 .auto textarea.promptbox { display: block; width: 100%; box-sizing: border-box; field-sizing: content; min-height: 0; resize: none; margin: 0; padding: 8px 12px; font-family: var(--moor-font-body); font-size: 14px; font-weight: var(--moor-weight-body); line-height: 1.55; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); color: var(--moor-color-text); box-shadow: none; }
+/* the saved prompt drawn with its marks; the field stays in the page, unseen, until Edit or a click puts the caret in it */
+.auto .pmarks { box-sizing: border-box; margin: 0; padding: 8px 12px; font-family: var(--moor-font-body); font-size: 14px; font-weight: var(--moor-weight-body); line-height: 1.55; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); color: var(--moor-color-text); white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.auto .pleft.marked textarea.promptbox:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; pointer-events: none; }
+.auto .pleft.marked:has(textarea.promptbox:focus) .pmarks { display: none; }
 .auto textarea.promptbox:focus { outline: none; border-color: var(--moor-color-text-muted); }
 .auto .legend { margin: 8px 0 0; font-size: 12px; color: var(--moor-color-text-muted); }
 .auto .rows { border-top: 1px solid var(--moor-color-border); }
@@ -38,7 +46,8 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .fl { counter-increment: fl; color: var(--moor-color-text-muted); padding: 0 10px 0 38px; text-indent: -38px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .auto .fl::before { content: counter(fl); display: inline-block; width: 28px; margin-right: 10px; text-indent: 0; text-align: right; color: var(--moor-color-text-muted); opacity: 0.7; }
 .auto .fl.comment, .auto .fl.sep, .auto .fc { color: var(--moor-color-text-muted); }
-.auto .fl.fadd { background: color-mix(in srgb, var(--moor-color-text) 8%, transparent); box-shadow: inset 2px 0 0 var(--moor-color-text-muted); }
+.auto .fl.flit, .auto .fl.fadd { background: color-mix(in srgb, var(--moor-color-text) 8%, transparent); box-shadow: inset 2px 0 0 var(--moor-color-text-muted); }
+.auto .t-rules-list li.lit { background: color-mix(in srgb, var(--moor-color-text) 6%, transparent); }
 .auto .fl .pnew { float: right; margin: 0 0 0 8px; text-indent: 0; font-family: var(--moor-font-body); font-size: 12px; color: var(--moor-color-text-muted); }
 .auto .pfoot { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 26px; }
 .auto .pfoot .grow { flex: 1; }

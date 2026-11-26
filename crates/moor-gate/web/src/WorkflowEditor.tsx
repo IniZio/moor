@@ -5,6 +5,7 @@ import { Conflict, failure, toError, type Workflow, workflowGet, workflowSet } f
 import { AutomationBox } from './AutomationBox';
 import { GatesPanel } from './Gates';
 import { GatesNote, PlanView } from './PlanView';
+import { type Hover, litGates, marksOf } from './promptFile';
 
 /** The automation's prompt beside its file, then `children`, then moor's reading of it when there is one. */
 export function WorkflowEditor({ csrf, flow, onFlow, children }: { csrf: string; flow: Workflow; onFlow: (read: Workflow) => void; children?: ComponentChildren }) {
@@ -14,6 +15,7 @@ export function WorkflowEditor({ csrf, flow, onFlow, children }: { csrf: string;
 	const [busy, setBusy] = useState(false);
 	const [problem, setProblem] = useState<{ text: string; stale: boolean } | null>(null);
 	const [saved, setSaved] = useState(false);
+	const [hover, setHover] = useState<Hover>(null);
 
 	const adopt = (next: Workflow) => {
 		onFlow(next);
@@ -41,6 +43,7 @@ export function WorkflowEditor({ csrf, flow, onFlow, children }: { csrf: string;
 		}
 	};
 	const gated = flow.gates != null && flow.gates.length > 0 && flow.plan == null;
+	const on = marksOf(flow.reading, prompt) ? hover : null;
 	const planless = !gated && flow.plan == null && flow.plan_making == null;
 	return (
 		<>
@@ -64,12 +67,14 @@ export function WorkflowEditor({ csrf, flow, onFlow, children }: { csrf: string;
 				}}
 				onReload={() => void reload()}
 				onToggle={() => setShowFile(!showFile)}
+				hover={on}
+				onHover={setHover}
 			/>
 			{children}
 			{planless ? null : gated ? (
 				<section class="plan-view" aria-label="Gates">
 					<GatesNote flow={flow} busy={busy || prompt !== flow.prompt} onAgain={() => void save(true)} />
-					<GatesPanel gates={flow.gates ?? []} outcomes={flow.outcomes} />
+					<GatesPanel gates={flow.gates ?? []} outcomes={flow.outcomes} lit={litGates(flow.reading, on)} />
 				</section>
 			) : (
 				<PlanView flow={flow} busy={busy || prompt !== flow.prompt} onAgain={() => void save(true)} />
