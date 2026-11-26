@@ -1,17 +1,23 @@
 /* The automation page: the prompt beside its file (mocks b1, c1), compact density. */
-main.wide:has(> section > .auto) { max-width: 1280px; }
-.auto .wf-actions { gap: 6px; }
-.auto .wf-actions button, .auto .pfoot .btn { height: 24px; padding: 0 9px; font: inherit; font-size: var(--app-text-sm); font-weight: var(--moor-weight-body); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); color: var(--moor-color-text); line-height: 1; cursor: pointer; }
-.auto .wf-actions button.wf-danger { color: var(--moor-color-danger); }
+main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; padding-right: 20px; }
+.auto .wf-actions { display: flex; align-items: center; gap: 8px; margin: -4px 0; }
+.auto .wf-more, .auto .pfoot .btn { height: 24px; padding: 0 9px; font: inherit; font-size: var(--app-text-sm); font-weight: var(--moor-weight-body); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); color: var(--moor-color-text); line-height: 1; cursor: pointer; }
+.auto .wf-more { padding: 0 8px; font-size: 14px; letter-spacing: 1px; }
+.auto .wf-more:hover:not(:disabled), .auto .pfoot .btn:not(.primary):hover:not(:disabled) { background: var(--moor-color-bg-raised); border-color: var(--moor-color-text-muted); }
+.wf-menu { position: fixed; min-width: 190px; padding: 4px; border-color: var(--moor-color-border-strong); }
+.wf-menu:popover-open { display: grid; }
+.wf-menu a, .wf-menu button { display: block; width: 100%; height: auto; font: inherit; font-size: 13px; font-weight: var(--moor-weight-body); line-height: 1.4; text-align: left; padding: 5px 10px; border: 0; background: none; color: var(--moor-color-text); border-radius: var(--moor-radius-sm); cursor: pointer; text-decoration: none; }
+.wf-menu a:hover, .wf-menu button:hover:not(:disabled) { background: var(--moor-color-bg-sunken); }
+.wf-menu .wf-danger { color: var(--moor-color-danger); }
 .auto .pfoot .btn.primary { background: var(--moor-color-text); color: var(--moor-color-bg); border-color: var(--moor-color-text); font-weight: var(--moor-weight-strong); }
-.auto .pfoot .btn:disabled, .auto .wf-actions button:disabled { opacity: 0.5; cursor: default; }
-.auto .back a, .auto .rev a { color: var(--moor-color-text-muted); }
-.auto .back { margin: 0 0 var(--moor-space-2); font-size: var(--moor-text-sm); }
-.auto .pagehead { display: flex; align-items: center; gap: var(--moor-space-3); }
-.auto .pagehead h1 { margin: 0 auto 0 0; }
-.auto .pagehead .wf-actions { margin: 0; }
+.auto .pfoot .btn:disabled, .auto .wf-more:disabled { opacity: 0.4; cursor: default; }
+.auto .pagehead { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.auto .pagehead h1 { margin: 0 auto 0 0; font-size: 18px; line-height: 1.2; }
 .auto .trig { margin: 2px 0 2px; font-size: 13px; color: var(--moor-color-text-muted); }
-.auto .trig .t-mono { font-size: 12px; color: var(--moor-color-text); }
+.auto .psp { text-decoration-skip-ink: none; text-underline-offset: 0.22em; text-decoration-thickness: 1.5px; border-radius: 2px; }
+.auto .psp.k-enf { text-underline-offset: 0.3em; text-decoration-line: underline; text-decoration-style: solid; text-decoration-color: var(--moor-color-text); }
+.auto .lnk { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
+.auto .lnk:hover:not(:disabled) { background: none; color: var(--moor-color-text); }
 .auto .rev { display: flex; align-items: center; gap: var(--moor-space-2); margin: 4px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--moor-color-border); font-size: 12px; color: var(--moor-color-text-muted); }
 .auto .rev .grow { flex: 1; }
 .auto h2.sub { margin: 12px 0 4px; font-size: var(--moor-text-sm); font-weight: var(--moor-weight-strong); }

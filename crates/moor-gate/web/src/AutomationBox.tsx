@@ -3,6 +3,42 @@ import { AutomationFile } from './AutomationFile';
 import { fileLines } from './promptFile';
 import { RepoName } from './HomeList';
 
+/** What fires it, on which repos, and who each run acts as; the zone and the next run sit in the hover title. */
+function Trigger({ flow }: { flow: Workflow }) {
+	const words = flow.words ?? flow.cron ?? (flow.on_pull_request ? 'On every pull request' : 'By hand');
+	const next = flow.enabled && flow.next_text ? `next run ${flow.next_text}` : null;
+	const title = flow.cron == null ? undefined : [flow.cron, flow.timezone ?? 'UTC', next].filter(Boolean).join(' · ');
+	return (
+		<p class="trig">
+			<span class="psp k-enf" title={title}>
+				{words}
+			</span>
+			{flow.cron != null && flow.on_pull_request && (
+				<>
+					{' and '}
+					<span class="psp k-enf">on every pull request</span>
+				</>
+			)}
+			{' · on '}
+			<span class="psp k-enf">{flow.repos.join(', ')}</span>
+			{flow.run_as && (
+				<>
+					{' · acts as '}
+					<span class="psp k-enf">{flow.run_as}</span>
+				</>
+			)}
+			{!flow.enabled && ' · disabled'}
+		</p>
+	);
+}
+
+/** Puts the caret at the end of the prompt, ready to write. */
+function editPrompt(e: { currentTarget: HTMLButtonElement }) {
+	const box = e.currentTarget.form?.querySelector<HTMLTextAreaElement>('textarea.promptbox');
+	box?.focus();
+	box?.setSelectionRange(box.value.length, box.value.length);
+}
+
 /** Where an edit of the prompt stands: as saved, being written, or read and ready to save. */
 export type Phase = 'saved' | 'writing' | 'read';
 
@@ -45,6 +81,17 @@ export function AutomationBox(p: BoxProps) {
 				if (phase === 'read') p.onSave();
 			}}
 		>
+			<Trigger flow={p.flow} />
+			<p class="rev">
+				revision {p.flow.revision}
+				{p.flow.plan_stale && <span class="pill warn">plan stale</span>}
+				<span class="grow" />
+				{phase === 'saved' && (
+					<button type="button" class="lnk" onClick={editPrompt}>
+						Edit
+					</button>
+				)}
+			</p>
 			<div class={p.showFile ? 'pgrid' : 'pgrid one'}>
 				<div class="pleft">
 					<textarea
