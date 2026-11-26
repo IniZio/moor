@@ -30,7 +30,7 @@ code, pre, kbd { font-size: var(--app-text-sm); }
 main.app-home, main.app-box { margin: 0 auto; padding: 18px 20px 28px; }
 main.app-home { max-width: calc(var(--app-wide) + 40px); }
 main.wide { padding-top: 18px; padding-bottom: 28px; }
-main.app-box { max-width: calc(var(--app-col) + 40px); }
+main.app-box { max-width: calc(var(--app-col) + 40px); padding-top: 8px; padding-bottom: 0; }
 
 /* buttons */
 .btn { font: inherit; font-weight: var(--moor-weight-body); display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--moor-color-border-strong); background: var(--moor-color-bg-raised); color: var(--moor-color-text); border-radius: var(--moor-radius-sm); height: 26px; padding: 0 11px; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer; }
@@ -46,7 +46,7 @@ main.app-box { max-width: calc(var(--app-col) + 40px); }
 /* top bar */
 header.top { position: sticky; top: 0; z-index: 20; margin: 0; display: block; border-bottom: 1px solid var(--moor-color-border); background: var(--moor-color-bg); }
 .bar { display: flex; align-items: center; flex-wrap: nowrap; gap: 0 16px; height: 36px; max-width: 1180px; margin: 0 auto; padding: 0 20px; font-size: inherit; }
-.brand { font-family: var(--moor-font-heading); font-weight: var(--moor-weight-heading); font-size: 14px; line-height: 1.5; text-decoration: none; margin-right: 4px; padding: 0; letter-spacing: 0; color: inherit; }
+.brand { font-family: var(--moor-font-heading); font-weight: var(--moor-weight-heading); font-size: 14px; line-height: 1.45; text-decoration: none; margin-right: 4px; padding: 0; letter-spacing: 0; color: inherit; }
 header.top .nav { align-self: stretch; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: var(--moor-color-text-muted); padding: 0; border-radius: 0; border-bottom: 2px solid transparent; font-weight: var(--moor-weight-body); background: none; }
 header.top .nav:hover:not(:disabled) { color: var(--moor-color-text); background: none; }
 header.top .nav[aria-current="page"] { color: var(--moor-color-text); border-bottom-color: var(--moor-color-text); background: none; font-weight: var(--moor-weight-body); }

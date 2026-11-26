@@ -15,9 +15,10 @@
 .t-close-go { background: var(--moor-color-danger-soft); border-color: var(--moor-color-danger); color: var(--moor-color-danger); }
 .t-close-go:hover:not(:disabled) { background: color-mix(in srgb, var(--moor-color-danger) 22%, var(--moor-color-danger-soft)); border-color: var(--moor-color-danger); }
 
-.t-say { position: sticky; bottom: 10px; z-index: 2; margin-top: 26px; padding: 3px 3px 3px 10px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); box-shadow: 0 10px 0 0 var(--moor-color-bg); }
+.t-say { position: sticky; bottom: 10px; z-index: 2; margin: 4px 0 10px; padding: 3px 3px 3px 10px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); }
+.t-say::after { content: ''; position: absolute; inset: 100% -1px auto; height: 10px; background: var(--moor-color-bg); }
 .t-say-row { display: flex; align-items: center; gap: 8px; }
-.t-say textarea { flex: 1; min-width: 0; margin: 0; padding: 3px 0; border: 0; border-radius: 0; background: transparent; font: inherit; line-height: 1.5; color: inherit; resize: none; outline: none; field-sizing: content; max-height: 8lh; }
+.t-say textarea { flex: 1; min-width: 0; margin: 0; padding: 3px 0; border: 0; border-radius: 0; background: transparent; font: inherit; line-height: 1.45; color: inherit; resize: none; outline: none; field-sizing: content; max-height: 8lh; }
 .t-say-foot { display: flex; align-items: center; gap: var(--moor-space-3); margin-top: 2px; }
 .t-say-hint { flex: 1; margin: 0; font-size: var(--app-text-sm); }
 .t-say-off { margin: 0; }
