@@ -125,8 +125,10 @@ kbd { font-size: var(--app-text-xs); padding: 0 0.3rem; border: 1px solid var(--
 details[open] > summary > .t-chev { transform: rotate(90deg); }
 
 /* Tasks home: filters, sections, rows and the Settled shelf, after the portal mock. */
-.t-filters { display: flex; align-items: center; gap: 18px; margin: 18px 0 0; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
-.t-filters > :last-child { margin-left: auto; }
+.t-home { position: relative; display: flow-root; }
+.t-filters { position: absolute; top: 14px; right: 0; display: flex; align-items: center; gap: 18px; height: 14.4px; font-size: var(--app-text-sm); line-height: 14.4px; color: var(--moor-color-text-muted); }
+.t-home-tall .t-filters, .t-home-head .t-filters { height: 19.5px; line-height: 19.5px; }
+.t-home-head .t-filters { top: 24px; }
 .t-filters a { color: var(--moor-color-text-muted); text-decoration: none; }
 .t-filters a:hover { color: var(--moor-color-text); }
 .t-filters a[aria-current] { color: var(--moor-color-text); font-weight: var(--moor-weight-strong); }
@@ -136,7 +138,7 @@ details[open] > summary > .t-chev { transform: rotate(90deg); }
 .t-sep { display: none; }
 .t-grp .t-empty { padding: 6px; font-size: var(--app-text-sm); }
 .t-grp-repo h2, .t-repohead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 4px; padding: 0 6px; font-family: var(--moor-font-body); font-size: var(--app-text); font-weight: 560; line-height: 1.5; text-transform: none; letter-spacing: 0; color: var(--moor-color-text); }
-.t-repohead { margin-top: 22px; }
+.t-repohead { margin-top: 24px; }
 .t-repohead .t-rname .t-mono, .t-grp-repo h2 .t-rname .t-mono { font-size: var(--app-text); }
 .t-rname { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .t-rname .t-mono { font-size: var(--app-text-sm); }
@@ -181,6 +183,7 @@ a.t-row[data-peek]:hover .t-age, a.t-row[data-peek]:focus-visible .t-age, a.t-ro
 .t-settled[open] summary::before { content: '▾'; }
 .t-settled-note { margin: 8px 0 0; }
 @media (max-width: 760px) {
+	.t-filters, .t-home-tall .t-filters, .t-home-head .t-filters { position: static; flex-wrap: wrap; height: auto; margin: 14px 0 0; line-height: normal; }
 	.t-row { grid-template-columns: 1.1em minmax(0, 1fr) auto; grid-template-areas: "m repo time" ". title title" ". now now"; row-gap: 2px; column-gap: 8px; align-items: baseline; }
 	.t-row.t-everyone { grid-template-columns: 1.1em auto minmax(0, 1fr) auto; grid-template-areas: "m repo own time" ". title title title" ". now now now"; }
 	.t-rrepo:empty { display: none; }
@@ -361,7 +364,7 @@ a.t-path:hover { text-decoration: underline; }
 .t-clip-note { margin: 0.25rem 0 0; font-size: var(--app-text-sm); color: var(--moor-color-text-muted); }
 
 /* The write field: one line closed, the task form open. Menus open under their word in the sentence. */
-.t-write { --prose: Charter, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'DejaVu Serif', serif; margin: 0 0 var(--moor-space-5); }
+.t-write { --prose: Charter, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'DejaVu Serif', serif; margin: 0; }
 .t-writeline { display: block; width: 100%; margin: 0; font: inherit; font-family: var(--prose); font-size: 1.15rem; padding: 12px 16px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); background: var(--moor-color-bg-raised); color: inherit; }
 .t-writeline::placeholder, .t-wform textarea::placeholder { color: var(--moor-color-text-muted); }
 .t-wform { padding: 6px 12px 10px; border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); }

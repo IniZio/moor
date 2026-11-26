@@ -32,13 +32,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const two = (n: number) => String(n).padStart(2, '0');
 
-/** An exact time in the viewer's zone: the clock today, the day and clock this year, the year as well before that. */
-export function exactTime(iso: string | null | undefined, now: number): string {
+/** An exact time in the viewer's zone: the clock today, the day and clock this year, the year as well before that; `dated` keeps the day for today too. */
+export function exactTime(iso: string | null | undefined, now: number, dated = false): string {
 	const at = new Date(iso ?? '');
 	if (Number.isNaN(at.getTime())) return '';
 	const today = new Date(now);
 	const clock = `${two(at.getHours())}:${two(at.getMinutes())}`;
-	if (at.getFullYear() === today.getFullYear() && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()) return clock;
+	if (!dated && at.getFullYear() === today.getFullYear() && at.getMonth() === today.getMonth() && at.getDate() === today.getDate()) return clock;
 	const day = `${at.getDate()} ${MONTHS[at.getMonth()]}`;
 	return at.getFullYear() === today.getFullYear() ? `${day} ${clock}` : `${day} ${at.getFullYear()} ${clock}`;
 }
@@ -145,7 +145,7 @@ function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: num
 				{gated ?? t.line}
 			</span>
 			<time class="t-age" dateTime={t.last_event_at ?? t.updated_at}>
-				{exactTime(t.last_event_at ?? t.updated_at, now)}
+				{exactTime(t.last_event_at ?? t.updated_at, now, true)}
 			</time>
 			{askable && (
 				<span class="t-peekbtn" role="button" tabIndex={-1} data-peekbtn={t.box} title="Answer here (Space)">
@@ -259,7 +259,7 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 		rows: open.filter((t) => (repo || reposOf(t)[0] || '') === k).sort((a, b) => RANK[groupOf(a, now)] - RANK[groupOf(b, now)] || newest(a, b)),
 	}));
 	return (
-		<div class="t-home">
+		<div class={filter.grp === 'repo' ? 't-home t-home-tall' : repo ? 't-home t-home-head' : 't-home'}>
 			<Filters hash={bare} repos={known} repo={repo} grp={filter.grp} who={whoseHome(hash)} />
 			{filter.grp === 'repo' ? (
 				stacks.map((s) =>
@@ -277,21 +277,23 @@ export function HomeListView({ rows, now, hash }: { rows: BoxRow[]; now: number;
 					<Section heading="Done" tone="done" rows={by('done')} now={now} only={repo} everyone={everyone} peeking={peeking} empty="None." />
 				</>
 			)}
-			<details class="t-settled">
-				<summary>
-					Settled
-					<span class="t-cnt">
-						<span class="t-sep"> · </span>
-						{settled.length}
-					</span>
-				</summary>
-				<div class="t-rows">
-					{settled.map((t) => (
-						<Row t={t} now={now} only={repo} everyone={everyone} key={t.box} settled peeking={t.box === peeking} />
-					))}
-				</div>
-				<p class="muted t-settled-note">Closed, or done and quiet for 7 days.</p>
-			</details>
+			{settled.length > 0 && (
+				<details class="t-settled">
+					<summary>
+						Settled
+						<span class="t-cnt">
+							<span class="t-sep"> · </span>
+							{settled.length}
+						</span>
+					</summary>
+					<div class="t-rows">
+						{settled.map((t) => (
+							<Row t={t} now={now} only={repo} everyone={everyone} key={t.box} settled peeking={t.box === peeking} />
+						))}
+					</div>
+					<p class="muted t-settled-note">Closed, or done and quiet for 7 days.</p>
+				</details>
+			)}
 			{!rows.length && <p class="t-empty">No tasks yet. Start one with New task, or from Claude Code with the moor tools.</p>}
 		</div>
 	);
