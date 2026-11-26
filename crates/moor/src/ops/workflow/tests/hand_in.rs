@@ -261,7 +261,11 @@ fn listed_reading(r: &Rig, id: WorkflowId) -> Value {
     let list = UserCmd::Workflow(WorkflowCmd::List);
     let v = crate::ops::users::run(&r.cx, &vault, &requester(), &list).unwrap();
     let name = r.workflow(id).name.to_string();
-    let w = v["workflows"].as_array().unwrap().iter().find(|w| w["name"] == name.as_str());
+    let w = v["workflows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == name.as_str());
     w.expect("the workflow is listed")["reading"].clone()
 }
 

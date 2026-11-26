@@ -6,7 +6,9 @@
 //! lookup here carries that person, so a reading is never found through another's workflow.
 
 use moor_core::gate::Gates;
-use moor_core::reading::{Context, Read, Reading, ReadingId, ReadingOf, ReadingState};
+use moor_core::name::ForgeRepo;
+use moor_core::reading::{Context, Read, Reading, ReadingId, ReadingOf, ReadingState, RulesPin};
+use moor_core::request::RepoFile;
 use moor_core::user::UserId;
 use moor_core::workflow::WorkflowId;
 use moor_schema::tables::{Readings, Workflows};
@@ -205,6 +207,19 @@ impl Kept {
 }
 
 impl Store {
+    /// The rules texts a Box of `repos` follows now: the first repo's stored rules, or the
+    /// default rules. A reading pins these, and is stale when they differ later.
+    pub(crate) fn rules_pins(&self, repos: &[ForgeRepo]) -> Result<Vec<RulesPin>, StoreError> {
+        let stored = match repos.first() {
+            Some(repo) => self.repo_text(repo, RepoFile::Rules)?.map(|row| RulesPin {
+                repo: Some(repo.clone()),
+                revision: row.revision,
+            }),
+            None => None,
+        };
+        Ok(vec![stored.unwrap_or(RulesPin::DEFAULT)])
+    }
+
     /// Keeps `reading`, which must be in state read, for the person who made it. The read is
     /// written once: the same read again changes nothing, another read under a kept id is refused.
     #[cfg_attr(not(test), expect(dead_code, reason = "the hand-in and Save call it"))]

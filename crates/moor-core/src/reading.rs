@@ -96,6 +96,14 @@ pub struct RulesPin {
     pub revision: u64,
 }
 
+impl RulesPin {
+    /// The default rules: no stored row, so no save changes their revision.
+    pub const DEFAULT: Self = Self {
+        repo: None,
+        revision: 0,
+    };
+}
+
 /// Where the job that makes a reading stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadingState {
