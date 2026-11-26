@@ -11,5 +11,5 @@ Each screen prints one line. It gives the share of pixels that differ, the text 
 
 - `states.cjs` holds the screens, the selector pairs and the clicks on each side.
 - `fixtures/` holds the API answers per area (task, automation, rules), with the mock's own data.
-- `ceilings.cjs` holds today's numbers. It is a ratchet. Lower a ceiling when a screen gets closer to the mock. Raise one only with the reason written on the line above it.
+- `ceilings.cjs` holds today's numbers. It is a ratchet. Lower a ceiling when a screen gets closer to the mock. Raise one only with the reason in its `raisedBecause` field.
 - A mask or a skipped screen needs its reason beside it in `states.cjs`.
