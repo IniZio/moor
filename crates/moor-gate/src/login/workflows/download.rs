@@ -36,6 +36,10 @@ pub(crate) fn artifact(stream: &mut TcpStream, gate: &Gate, session: &Session, q
         pairs.get("name").map_or("", String::as_str),
         version,
     );
+    let wanted = wanted.map(|w| Wanted {
+        everyone: true,
+        ..w
+    });
     let found = wanted.and_then(|w| artifact::find(&gate.controller, &session.person, &w));
     let found = match found {
         Ok(found) => found,

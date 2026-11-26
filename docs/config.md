@@ -372,6 +372,7 @@ same directory.
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 | `github_app` | none | The GitHub App the operator created for this install. See [`github_app`](#github_app). |
 | `agent_places` | none | The users who may have an agent place. See [`agent_places`](#agent_places). |
+| `portal_url` | none | The portal's origin, such as `https://moor.example.com`. A run's Box gets its run page in `MOOR_RUN_URL`. The chart sets it from `host` when `gate.login` is on. |
 
 ### `fronts`
 

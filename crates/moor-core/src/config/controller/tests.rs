@@ -363,3 +363,26 @@ fn a_remote_front_needs_ledger_tls_and_takes_no_command() {
     let fine = format!("{tls}{remote}");
     assert!(parse_controller("c.yaml", &fine).is_ok());
 }
+
+#[test]
+fn portal_url_is_an_origin_read_without_its_trailing_slash() {
+    let c = parse_controller("c.yaml", "portal_url: https://moor.example.com/\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        c.portal_origin().as_deref(),
+        Some("https://moor.example.com")
+    );
+    assert_eq!(ControllerConfig::default().portal_origin(), None);
+    for bad in [
+        "moor.example.com",
+        "https://",
+        "https://moor.example.com/portal",
+        "ftp://x",
+    ] {
+        assert_eq!(
+            err(&format!("portal_url: {bad}\n")).path,
+            "portal_url",
+            "{bad}"
+        );
+    }
+}

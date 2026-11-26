@@ -15,7 +15,7 @@ use moor_core::workflow::{
 use moor_core::ErrorKind;
 
 use self::list::list;
-use self::stream::{run_list, runs};
+use self::stream::{run_list, run_read, runs};
 use super::to_value;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -85,6 +85,7 @@ pub(super) fn run(
             run,
             limit,
         } => run_list(store, user, workflow, *run, *limit),
+        WorkflowCmd::RunRead { run } => run_read(store, user, *run),
     }
 }
 

@@ -78,6 +78,8 @@ pub struct Env {
     front_box_tools: Arc<BTreeSet<String>>,
     /// The emails of the users who may have an agent place, lowercased.
     agent_place_users: Arc<BTreeSet<String>>,
+    /// The portal's origin, without a trailing `/`, when the controller config names it.
+    portal_origin: Option<Arc<str>>,
     /// The shortest gap a workflow's cron may have between firings.
     workflow_min_interval: Option<Duration>,
     /// What the controller opened once for every request and tick, such as the state store, by type.
@@ -217,6 +219,20 @@ impl Env {
     /// The emails of the users who may have an agent place, lowercased.
     pub(crate) fn agent_place_users(&self) -> impl Iterator<Item = &str> {
         self.agent_place_users.iter().map(String::as_str)
+    }
+
+    /// Set the portal's origin, without a trailing `/`.
+    #[must_use]
+    pub fn with_portal_origin(mut self, origin: Option<String>) -> Self {
+        self.portal_origin = origin.map(Arc::from);
+        self
+    }
+
+    /// The address of run `run`'s page, when the portal's origin is known.
+    pub(crate) fn run_url(&self, run: i64) -> Option<String> {
+        self.portal_origin
+            .as_deref()
+            .map(|origin| format!("{origin}/#/runs/{run}"))
     }
 
     /// Whether `email` is on the list of users who may have an agent place.

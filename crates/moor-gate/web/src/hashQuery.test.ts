@@ -30,5 +30,6 @@ test('the other routes read as they did, with or without a filter after them', (
 	}
 	expect(pathOf('#/box/a%2Fb/evidence?repo=acme/web')).toBe('#/box/a%2Fb/evidence');
 	expect(workflowsAt(pathOf('#/workflows/ci/runs/3?grp=repo'))).toEqual({ page: 'run', name: 'ci', id: 3 });
+	expect(workflowsAt(pathOf('#/runs/12'))).toEqual({ page: 'run', id: 12 });
 	expect(sectionAt(pathOf('#/settings/machines?repo=a/b'))).toBe('machines');
 });

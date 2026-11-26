@@ -10,7 +10,7 @@ import './automation.css';
 function RunItem({ flow, r }: { flow: Workflow; r: RunRow }) {
 	return (
 		<li>
-			<a href={`#/workflows/${encodeURIComponent(flow.name)}/runs/${r.id}`}>
+			<a href={`#/runs/${r.id}`}>
 				<StatusIcon status={r.status} verdict={r.verdict} />
 				<span class="grow">{r.pull && r.head_sha ? <span class="t-mono">{shortSha(r.head_sha)}</span> : r.trigger}</span>
 				<span class="muted">{when(r.due_at)}</span>

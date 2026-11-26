@@ -125,6 +125,7 @@ impl Request {
             | Self::WorkflowSetEnabled(_)
             | Self::WorkflowRuns(_)
             | Self::WorkflowRunList(_)
+            | Self::WorkflowRunRead(_)
             | Self::WorkflowAnswer(_)
             | Self::WorkflowRunNow(_)
             | Self::McpOAuthFinish(_)

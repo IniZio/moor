@@ -559,6 +559,7 @@ mod enabled_and_filter;
 mod keep_omitted;
 mod no_cron;
 mod plan;
+mod run_read;
 
 #[test]
 fn a_delivered_run_lists_the_outcome_moor_found_and_stays_finished() {

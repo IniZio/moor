@@ -7,7 +7,7 @@ use moor_core::gate::Gates;
 use moor_core::user::UserId;
 use moor_core::view::workflow::{
     ChangeView, HistoryLineView, LastRunView, OriginView, RunRowView, WorkflowRunListValue,
-    WorkflowRunsValue,
+    WorkflowRunReadValue, WorkflowRunsValue,
 };
 use moor_core::workflow::{box_name, PullTarget, RunEnd, RunOutcome, RunState, WorkflowRun};
 use moor_core::ErrorKind;
@@ -175,6 +175,28 @@ fn shown_plan(
     }
     serde_json::to_value(store.run_plan(run.id, prompt)?.to_doc())
         .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))
+}
+
+/// `workflow-run-read`: run `id` of any workflow with its frozen plan, read by anyone signed in.
+pub(super) fn run_read(
+    store: &Store,
+    user: UserId,
+    id: i64,
+) -> Result<serde_json::Value, CommandError> {
+    let missing = || CommandError::new(ErrorKind::Refused, format!("no run {id}"));
+    let run = store.workflow_run_by_id(id)?.ok_or_else(missing)?;
+    let w = store.workflow_by_id(run.workflow)?.ok_or_else(missing)?;
+    let plan = shown_plan(store, &run, w.gates.as_ref(), &w.prompt)?;
+    let view = run_view(store, w.name.as_str(), &run)?;
+    to_value(&WorkflowRunReadValue {
+        workflow: w.name.to_string(),
+        yours: w.owner == user,
+        run: RunRowView {
+            id: run.id.get(),
+            run: view,
+            plan: Some(plan),
+        },
+    })
 }
 
 /// `workflow-run-list`: the latest runs of one workflow, or one run with its frozen plan.

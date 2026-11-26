@@ -13,6 +13,7 @@ use moor_core::view::workflow::{
 };
 use serde_json::{json, Value};
 
+mod by_id;
 mod download;
 mod file;
 mod form;
@@ -22,6 +23,7 @@ mod save;
 mod schedule;
 mod verdict;
 
+pub(super) use by_id::run_by_id;
 pub(super) use download::artifact;
 pub(super) use form::{create, edit, remove, switch};
 pub(super) use now::run_now;
@@ -36,6 +38,9 @@ use crate::{tools, Gate};
 
 /// What a workflow is read and written under: this, then its name.
 const PREFIX: &str = "/account/api/workflows";
+
+/// What a run is read under by its id alone: this, then the id.
+const RUNS: &str = "/account/api/runs/";
 
 /// The largest plan write the page reads: the controller's own cap on a plan, with room for
 /// the prompt and JSON escapes.
@@ -55,6 +60,8 @@ pub(super) enum Route<'a> {
     One(&'a str),
     /// One run of a workflow.
     Run(&'a str, i64),
+    /// One run of any workflow, by its id, which any signed-in person may read.
+    RunById(i64),
     /// The answer to the approve step one run waits at.
     Answer(&'a str, i64),
     /// A run of the workflow fired now.
@@ -76,6 +83,9 @@ pub(super) fn route(path: &str) -> Option<Route<'_>> {
     }
     if path == "/account/api/schedule" {
         return Some(Route::Schedule);
+    }
+    if let Some(id) = path.strip_prefix(RUNS) {
+        return id.parse().ok().map(Route::RunById);
     }
     let rest = path.strip_prefix(PREFIX)?;
     if rest.is_empty() {

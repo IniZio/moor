@@ -264,7 +264,7 @@ fn step_view(
 }
 
 /// The run page's data: the run, its question when it waits, and each step of the frozen plan.
-fn run_view(workflow: &str, row: &RunRowView) -> Value {
+pub(super) fn run_view(workflow: &str, row: &RunRowView) -> Value {
     let run = &row.run;
     let (started, ended) = span(run);
     let steps_doc: Vec<Value> = row

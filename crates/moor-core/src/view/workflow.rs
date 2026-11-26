@@ -268,6 +268,17 @@ pub struct RunRowView {
     pub plan: Option<serde_json::Value>,
 }
 
+/// Value of `workflow-run-read`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowRunReadValue {
+    /// The name of the run's workflow, as its owner knows it.
+    pub workflow: String,
+    /// Whether the reader owns the workflow, so may answer and fire it.
+    pub yours: bool,
+    /// The run with its frozen plan.
+    pub run: RunRowView,
+}
+
 /// Value of `workflow-run-list`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowRunListValue {

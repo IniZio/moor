@@ -95,6 +95,39 @@ fn a_run_for_a_pull_request_names_its_box_for_it_and_gives_it_the_pull_request()
 }
 
 #[test]
+fn a_run_box_gets_its_run_page_address_when_the_portal_is_known() {
+    let (mut r, engine) = rig_seeing_launches();
+    r.cx =
+        r.cx.with_env(|e| e.with_portal_origin(Some("https://moor.example.com".to_owned())));
+    let id = r.put(180);
+    r.advance_to(5_000);
+    fire(&r, None).unwrap();
+    let run = r.latest(id).id.get();
+    let launch = engine.launches().pop().expect("an agent was launched");
+    let env = launch.proxy.map(|p| p.box_env.clone()).unwrap_or_default();
+    let url = env
+        .iter()
+        .find(|(k, _)| k == "MOOR_RUN_URL")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        url,
+        Some(format!("https://moor.example.com/#/runs/{run}").as_str())
+    );
+}
+
+#[test]
+fn a_run_box_gets_no_run_page_address_without_the_portal() {
+    let (r, engine) = rig_seeing_launches();
+    let id = r.put(180);
+    r.advance_to(5_000);
+    fire(&r, None).unwrap();
+    assert_eq!(r.latest(id).cause, RunCause::Manual { pull: None });
+    let launch = engine.launches().pop().expect("an agent was launched");
+    let env = launch.proxy.map(|p| p.box_env.clone()).unwrap_or_default();
+    assert!(env.iter().all(|(k, _)| k != "MOOR_RUN_URL"), "{env:?}");
+}
+
+#[test]
 fn a_run_without_a_pull_request_gets_no_pull_request_variables() {
     let (r, engine) = rig_seeing_launches();
     let id = r.put(180);

@@ -52,6 +52,9 @@ pub struct ControllerConfig {
     /// The users who may have an agent place, which is also the switch: with no one listed, no
     /// place starts for anyone.
     pub agent_places: AgentPlaces,
+    /// The origin the portal is served at, such as `https://moor.example.com`; a run's Box gets
+    /// its run page's address under it. None gives Boxes no portal links.
+    pub portal_url: Option<String>,
 }
 
 /// The `agent_places` entry: who gets a place, a repo-less Box the agent waits in before any task.
@@ -226,6 +229,15 @@ impl ControllerConfig {
             .collect()
     }
 
+    /// The portal's origin without a trailing `/`, when one is set.
+    #[must_use]
+    pub fn portal_origin(&self) -> Option<String> {
+        self.portal_url
+            .as_deref()
+            .map(|url| url.trim().trim_end_matches('/').to_owned())
+            .filter(|url| !url.is_empty())
+    }
+
     /// The shortest gap a workflow's cron may have between two firings.
     #[must_use]
     pub fn workflow_min_interval(&self) -> Duration {
@@ -281,6 +293,16 @@ fn check_intervals(cfg: &ControllerConfig, file: &str) -> Result<(), ConfigError
     Ok(())
 }
 
+/// Whether `url` is `http(s)://host[:port]`, with at most a trailing `/`.
+fn is_origin(url: &str) -> bool {
+    let rest = url
+        .trim()
+        .strip_prefix("https://")
+        .or_else(|| url.trim().strip_prefix("http://"));
+    rest.map(|r| r.strip_suffix('/').unwrap_or(r))
+        .is_some_and(|host| !host.is_empty() && !host.contains(['/', '?', '#', '@', ' ']))
+}
+
 /// Parses and validates a controller config document.
 ///
 /// # Errors
@@ -294,6 +316,15 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         }
     }
     check_intervals(&cfg, file)?;
+    if let Some(url) = &cfg.portal_url {
+        if !is_origin(url) {
+            return Err(ConfigError::new(
+                "portal_url",
+                "must be an http(s) origin such as https://moor.example.com, with no path",
+            )
+            .in_file(file));
+        }
+    }
     if let Some((key, why)) = cfg.blobs.problem() {
         return Err(ConfigError::new(key, why).in_file(file));
     }
