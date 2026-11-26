@@ -107,11 +107,20 @@ export function Source({ t }: { t: Pick<BoxRow, 'issue' | 'workflow' | 'pr' | 'l
 	return <span class="t-rkey">{pr && !t.line.includes(pr) ? pr : ''}</span>;
 }
 
+/** What a row adds before its title: the tracker key, else the pull request number unless the line already names it. */
+function rowTag(t: Pick<BoxRow, 'issue' | 'workflow' | 'pr' | 'line'>): string {
+	if (t.issue) return issueKey(t.issue) ?? t.issue;
+	const number = t.workflow?.pull?.split('#').pop() ?? t.pr?.number;
+	const pr = number ? `PR #${number}` : '';
+	return pr && !t.line.includes(pr) ? pr : '';
+}
+
 function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: number; only: string; everyone: boolean; settled?: boolean; peeking?: boolean }) {
 	const s = STATES[t.state];
 	const gated = t.state === 'needs_you' || t.state === 'working' || t.failed ? gateLine(t.gate) : null;
 	const askable = !t.owner && peekable(t);
 	const outcome = outcomeTone(t);
+	const tag = rowTag(t);
 	const tone = t.state === 'needs_you' ? ' t-n-needs' : t.state === 'working' || t.state === 'setting_up' ? ' t-n-working' : isWarn(t.state, outcome) ? ' t-n-warn' : '';
 	return (
 		<a
@@ -125,9 +134,11 @@ function Row({ t, now, only, everyone, settled, peeking }: { t: BoxRow; now: num
 				<Glyph state={t.state} stale={t.stale} outcome={outcome} settled={settled} />
 			</span>
 			<RepoCell repos={reposOf(t)} only={only} />
-			<Source t={t} />
 			{everyone && <span class="t-rown">{t.owner ?? 'you'}</span>}
-			<span class="t-title">{t.title}</span>
+			<span class="t-title">
+				{tag && <span class={t.issue ? 't-rkey t-rkey-issue' : 't-rkey'}>{tag}</span>}
+				{t.title}
+			</span>
 			<span class={`t-now${tone}`}>
 				{t.stale && <span class="t-warn">⚠ stale </span>}
 				{t.failed && !gated && <span class="t-failword">failed </span>}
