@@ -71,8 +71,8 @@ const reading = (over: Partial<ReadingView> = {}): ReadingView => ({
 	source: SRC,
 	runs: [{ text: 'Run the check.', phrase: 'p1' }, { text: ' ' }, { text: 'Post one comment', phrase: 'p2' }, { text: ' on the pull request. Say what you did not run.' }],
 	phrases: [
-		{ id: 'p1', mark: 'asked', effects: [] },
-		{ id: 'p2', mark: 'held', effects: ['e1'] },
+		{ id: 'p1', mark: 'asked', effects: [], intents: [] },
+		{ id: 'p2', mark: 'held', effects: ['e1'], intents: [] },
 	],
 	effects: [{ id: 'e1', kind: 'allow', line: COMMENT, key: 'allow github-api ' + COMMENT, phrases: ['p2'] }],
 	gates: null,

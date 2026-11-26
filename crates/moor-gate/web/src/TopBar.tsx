@@ -5,6 +5,7 @@ import { Glyph, STATES } from './Glyph';
 import { pathOf } from './hashQuery';
 import { InboxView } from './Inbox';
 import { sectionAt } from './Settings';
+import { intentsAt } from './Intents';
 import { rulesAt, rulesHref } from './Rules';
 import { currentTheme, setTheme, type Theme } from './theme';
 import { workflowsAt } from './Workflows';
@@ -145,7 +146,7 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 	const [repos, setRepos] = useState<string[]>([]);
 	useEffect(() => void repoList().then(setRepos, () => setRepos([])), []);
 	const team = rows.find((t) => t.repo && repos.includes(t.repo))?.repo ?? repos[0];
-	const here = workflowsAt(path) ? 'automations' : rulesAt(path) ? 'team' : sectionAt(path) ? 'you' : 'tasks';
+	const here = workflowsAt(path) ? 'automations' : rulesAt(path) || intentsAt(path) ? 'team' : sectionAt(path) ? 'you' : 'tasks';
 	const current = (key: string) => (key === here ? 'page' : undefined);
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {

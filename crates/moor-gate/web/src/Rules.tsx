@@ -260,7 +260,11 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 	return (
 		<section class="rules-page">
 			<RepoSwitch repo={rules.repo} />
-			<p class="rules-rev">{rulesLine(rules)}</p>
+			<p class="rules-rev">
+				{rulesLine(rules)}
+				<span class="grow" />
+				<a href="#/intents">Intent table</a>
+			</p>
 			{!editable && (
 				<p class="notice warn" role="status">
 					Your GitHub account cannot push to this repo, so you can read its rules here and not change them.

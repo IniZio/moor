@@ -52,8 +52,8 @@ const read = (over: Partial<ReadingView> = {}): ReadingView => ({
 	source: SRC,
 	runs,
 	phrases: [
-		{ id: 'p1', mark: 'asked', effects: [] },
-		{ id: 'p2', mark: 'held', effects: ['e1', 'e2'] },
+		{ id: 'p1', mark: 'asked', effects: [], intents: [] },
+		{ id: 'p2', mark: 'held', effects: ['e1', 'e2'], intents: [] },
 	],
 	effects: [
 		{ id: 'e1', kind: 'allow', line: COMMENT, key: 'allow ' + COMMENT, phrases: ['p2'] },
@@ -86,7 +86,7 @@ test('the file lists the phrases of each line: an allow line by its effect, a pr
 });
 
 test('a phrase over two sentences is on both lines, and a script with no sentence stop is one line', () => {
-	const two = read({ runs: [{ text: 'Run the check. Post one comment', phrase: 'p1' }, { text: ' on the pull request. Say what you did not run.' }], phrases: [{ id: 'p1', mark: 'asked', effects: [] }], effects: [] });
+	const two = read({ runs: [{ text: 'Run the check. Post one comment', phrase: 'p1' }, { text: ' on the pull request. Say what you did not run.' }], phrases: [{ id: 'p1', mark: 'asked', effects: [], intents: [] }], effects: [] });
 	const lines = fileLines(flow({ prompt: SRC, reading: two }), SRC).filter((l) => l.kind === 'prompt');
 	expect(lines.map((l) => l.phrases)).toEqual([['p1'], ['p1'], []]);
 	const cjk = '运行检查，发布一条评论';
@@ -116,4 +116,25 @@ test('hovering a phrase names the gates it produced, and an asked phrase names n
 	expect(litGates(read(), { phrase: 'p1' })).toEqual([]);
 	expect(litGates(read(), { line: 3 })).toEqual([]);
 	expect(litGates(null, { phrase: 'p2' })).toEqual([]);
+});
+
+test('each hand-written may line carries its tag under a hand-written note', () => {
+	const handwritten = [
+		{ rule: 'github-api', line: COMMENT, tag: 'reproduced' as const },
+		{ rule: 'github-api', line: 'GET /repos/{repo}/pulls/*', tag: 'already_allowed' as const },
+	];
+	const lines = mayLines({ allow: { 'github-api': [COMMENT, 'GET /repos/{repo}/pulls/*', 'POST /repos/{repo}/statuses/*'] } }, handwritten);
+	expect(lines.map((l) => [l.text, l.tag])).toEqual([
+		['may:', undefined],
+		['  # hand-written', undefined],
+		['  github-api:', undefined],
+		[`    - ${COMMENT}`, 'a phrase holds it'],
+		['    - GET /repos/{repo}/pulls/*', 'the rules allow it already'],
+		['    - POST /repos/{repo}/statuses/*', undefined],
+	]);
+});
+
+test('a reading whose only phrase moor has no rule for still draws its marks', () => {
+	const only = read({ phrases: [{ id: 'p2', mark: 'unmapped', effects: [], intents: [] }], effects: [] });
+	expect(marksOf(only, SRC)).not.toBeNull();
 });
