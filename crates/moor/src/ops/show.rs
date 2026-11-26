@@ -266,6 +266,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         artifacts,
         timeline,
         task_boxes,
+        outputs: store.outputs_of(row.id)?,
     })
 }
 
@@ -356,6 +357,7 @@ fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, Com
         artifacts: None,
         timeline: None,
         task_boxes: Vec::new(),
+        outputs: Vec::new(),
     })
 }
 

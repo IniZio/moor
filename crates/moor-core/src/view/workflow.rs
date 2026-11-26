@@ -277,6 +277,9 @@ pub struct WorkflowRunReadValue {
     pub yours: bool,
     /// The run with its frozen plan.
     pub run: RunRowView,
+    /// What the run's Box made outside moor, oldest first.
+    #[serde(default)]
+    pub outputs: Vec<super::output::OutputView>,
 }
 
 /// Value of `workflow-run-list`.

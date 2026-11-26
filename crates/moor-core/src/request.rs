@@ -67,6 +67,8 @@ mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 mod steer;
 pub use steer::SteerReq;
+mod output_report;
+pub use output_report::OutputReportReq;
 mod step_report;
 pub use step_report::StepReportReq;
 mod box_tool;
@@ -268,6 +270,9 @@ pub enum Request {
     /// What the agent in a Box reports for the step its run is at; only a front with
     /// `step_reports: true`, which names the Box from its transport.
     StepReport(StepReportReq),
+    /// Something the agent in a Box made outside moor; only a front with `step_reports: true`,
+    /// which names the Box from its transport.
+    OutputReport(OutputReportReq),
     /// What the agent in a claimed agent place asks of its user's Boxes; only a front with
     /// `box_tools: true`, which names the place from its transport.
     BoxTool(BoxToolReq),

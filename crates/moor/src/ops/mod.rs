@@ -36,6 +36,7 @@ mod node_add;
 mod node_settings;
 mod nodes;
 mod open_session;
+pub(crate) mod output_report;
 mod place;
 pub(crate) mod pulls;
 mod repo_config;
@@ -127,7 +128,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Refused,
             webhook_outbox::FRONT_ONLY,
         )),
-        Request::StepReport(_) => Err(CommandError::new(
+        Request::StepReport(_) | Request::OutputReport(_) => Err(CommandError::new(
             ErrorKind::Refused,
             authz::STEP_REPORT_FRONT_ONLY,
         )),

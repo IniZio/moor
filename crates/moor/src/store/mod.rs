@@ -63,6 +63,7 @@ pub(crate) use machine_pairings::{Pairing, Polled};
 pub(crate) use profile_failed::ProfileFailedRow;
 pub(crate) mod lease;
 mod open;
+pub(crate) mod outputs;
 pub(crate) use open::Database;
 mod place;
 mod places;

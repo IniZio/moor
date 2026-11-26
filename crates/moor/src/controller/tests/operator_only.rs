@@ -56,6 +56,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "workflow-answer" => json!({"cmd": kind, "workflow": "n", "answer": "yes"}),
         "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
         "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
+        "output-report" => json!({"cmd": kind, "box_id": 1, "kind": "github.comment",
+            "url": "https://example.com/c", "title": "t"}),
         "step-report" => json!({"cmd": kind, "box_id": 1,
             "report": {"step": "a", "result": "ok", "evidence": [], "note": ""}}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
@@ -74,7 +76,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
 /// The controller config flag a front needs for `kind`, a request it sends for a Box.
 fn front_flag(kind: &str) -> Option<&'static str> {
     match kind {
-        "step-report" => Some("`step_reports: true`"),
+        "step-report" | "output-report" => Some("`step_reports: true`"),
         "box-tool" => Some("`box_tools: true`"),
         _ => None,
     }

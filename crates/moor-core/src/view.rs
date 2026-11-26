@@ -13,6 +13,7 @@ pub mod gate;
 pub mod inspect;
 pub mod machine;
 pub mod node;
+pub mod output;
 pub mod progress;
 pub mod pulls;
 pub mod repo_config;
@@ -337,6 +338,9 @@ pub struct ShowView {
     /// The work Boxes a claimed place's agent started, oldest first; empty for any other Box.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub task_boxes: Vec<TaskBoxView>,
+    /// What the selected Box's agent made outside moor, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<output::OutputView>,
 }
 
 /// `value` of `close`.

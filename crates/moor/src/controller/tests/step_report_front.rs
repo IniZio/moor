@@ -46,3 +46,28 @@ fn only_a_front_with_step_reports_true_reports_a_step() {
     );
     refused(&ask(&socket("web"), &report), "`step_reports: true`");
 }
+
+#[test]
+fn only_a_front_with_step_reports_true_reports_an_output() {
+    let dir = tempfile::tempdir().expect("dir");
+    let cfg = config(
+        dir.path(),
+        "fronts:\n  gate:\n    step_reports: true\n  web: {}\n",
+    );
+    let running = start(&env_with(dir.path(), &[]), &cfg).expect("start");
+    let sink: Sink = Arc::new(Mutex::new(Buf::default()));
+    running.serve_in_background(sink);
+    let socket = |ns: &str| {
+        dir.path()
+            .join("state")
+            .join("fronts")
+            .join(ns)
+            .join("front")
+    };
+    let report = json!({
+        "cmd": "output-report", "box_id": 7, "kind": "github.comment",
+        "url": "https://example.com/acme/web/pull/5#c1", "title": "Evidence"
+    });
+    refused(&ask(&socket("gate"), &report), "no Box 7");
+    refused(&ask(&socket("web"), &report), "`step_reports: true`");
+}

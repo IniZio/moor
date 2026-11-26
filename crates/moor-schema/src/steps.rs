@@ -14,6 +14,7 @@ mod box_gates;
 mod box_hands;
 mod box_inbox;
 mod box_no_setup;
+mod box_outputs;
 mod box_places;
 mod box_state;
 mod checkpoint_base;
@@ -132,4 +133,5 @@ pub const STEPS: &[Step] = &[
     step("V104__box_no_setup", box_no_setup::write),
     step("V105__repo_rules", repo_rules::write),
     step("V106__workflow_plan_draft", workflow_plan_draft::write),
+    step("V107__box_outputs", box_outputs::write),
 ];
