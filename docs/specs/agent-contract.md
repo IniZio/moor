@@ -7,6 +7,7 @@ An agent that moor runs behaves the same in every project, and no prompt restate
 - **From scratch.** The owner prefers building from scratch over following existing ways. The owner confirmed the reading "write contract and skills fresh from what each agent situation needs, not migrate today's texts sentence by sentence". No statement exists because an old text had it.
 - **Long-term modeling.** "make sure our modeling is well thought out as long-term product".
 - **A prompt may relax a rule by naming the act** (#12). A rule that must never bend moves to enforcement. The contract then only says the act is refused and what to do.
+- **Rules an agent writes save without a second yes** (#17, answered no to making them wait). The person asked the agent for the change, and the rules page shows every line raw.
 - **An agent distro, no hard-coded policy.** The contract, skills and scripts ship as files. Rules show raw and in full.
 - **Vendor, model and harness agnostic.** No setup step. Few key concepts.
 - **Prompts are the source.** The reader marks each enforceable clause with an intent name and its quote. A data-file table expands intents into rule lines. The generated intent list is always loaded for the reader. See [prompt-reading.md](prompt-reading.md).
@@ -293,7 +294,7 @@ What the harness adapter alone decides:
 - A prompt that says "merge it when green" names the act. "Do whatever it takes" names none.
 - On conflict, the agent follows the nearer words. Its final message names the statement key it set aside and the words that asked.
 - When moor refuses, the agent says what was refused and what it would have done. It tries no other route.
-- No words widen enforcement. Only the rules text and a reading's `may` lines do, and a person sees both raw before they apply.
+- No words widen enforcement. Only the rules text and a reading's `may` lines do, and a person can read both raw.
 
 ```mermaid
 flowchart TB
@@ -330,10 +331,9 @@ Each item makes a statement or its gap impossible, with where it lives.
 3. **Pull request approval.** Default rules. `POST /repos/{repo}/pulls/*/reviews` passes today. A reading's allow line restores it when a prompt names the act.
 4. **Closing a pull request.** A Proxy body match on the `state` field of `PATCH /repos/{repo}/pulls/*` and of the `updatePullRequest` mutation. Both pass today.
 5. **Writes from the reader.** Reader launch. Its Box gets a read-only rules set.
-6. **Rules widened through an agent.** `set_repo_config` for rules. A save that adds lines waits for the person's yes on the rules page. A save that only removes lines applies at once.
-7. **Skipping the reader runbook.** `hand_in_reading` requires the runbook version, which only the skill's body holds.
-8. **A repo skill named `moor-*`.** The profile writer refuses to link it and records an event.
-9. **Nested artifact files.** Collection records each file it skipped below the top level, so the person and the agent see why it is missing.
+6. **Skipping the reader runbook.** `hand_in_reading` requires the runbook version, which only the skill's body holds.
+7. **A repo skill named `moor-*`.** The profile writer refuses to link it and records an event.
+8. **Nested artifact files.** Collection records each file it skipped below the top level, so the person and the agent see why it is missing.
 
 Some gaps close by providing, not explaining. Every Box and agent place image ships gh. The install recipe in today's brief then goes.
 
@@ -484,7 +484,6 @@ Checked at 25b86767c.
 Each takes one word. Each has a recommendation.
 
 1. **Withhold pull request approval in the default rules?** Approval then needs a prompt that names it. Recommend yes.
-2. **Make a rules save that adds lines through an agent wait for the person's yes?** Recommend yes.
-3. **Ship gh in every Box and place image?** The install recipe then goes, with no skill for it. Recommend yes.
-4. **List a repo's own skills in the always-loaded facts?** Recommend yes.
-5. **Put the `operator` section in the person-facing server's instructions?** Recommend yes.
+2. **Ship gh in every Box and place image?** The install recipe then goes, with no skill for it. Recommend yes.
+3. **List a repo's own skills in the always-loaded facts?** Recommend yes.
+4. **Put the `operator` section in the person-facing server's instructions?** Recommend yes.
