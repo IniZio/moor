@@ -89,12 +89,8 @@ serves the portal at. No new chart value and no gitops change. A self-hosted
 controller sets `portal_url` in its controller config. Without it, Boxes get no
 link variables.
 
-Every Box gets:
-
-| Variable | Value |
-| --- | --- |
-| `MOOR_BOX_URL` | `<portal_url>/#/box/<box name, / as %2F>` |
-| `MOOR_RUN_URL` | `<portal_url>/#/runs/<run id>`, run Boxes only |
+A run's Box gets `MOOR_RUN_URL`, `<portal_url>/#/runs/<run id>`. A task Box
+gets a link variable when a task kind needs one.
 
 Run ids are global, so `#/runs/<id>` names one run for everyone. The portal
 reads it through a new `run-read` request that takes only the id. Any
