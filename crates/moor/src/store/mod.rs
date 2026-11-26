@@ -72,6 +72,7 @@ pub(crate) use pressure::SuspendCheck;
 mod box_config;
 mod gate;
 mod proxy;
+mod readings;
 pub(super) mod reads;
 mod repo;
 pub(crate) mod repo_config;
