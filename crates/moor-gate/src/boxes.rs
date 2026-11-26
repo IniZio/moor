@@ -1,6 +1,6 @@
 //! The Box-facing listener: one MCP server, `moor`, with `report_step` for the agent in a Box to
-//! report the step of its workflow run, and `exec_in_box`, `exec_wait`, `start_box` and `close_box`
-//! for the agent in a claimed agent place to use its user's work Boxes. Every Box lists all five; the
+//! report the step of its workflow run, `report_output` for what it made outside moor, and `exec_in_box`, `exec_wait`, `start_box` and `close_box`
+//! for the agent in a claimed agent place to use its user's work Boxes. Every Box lists all six; the
 //! controller refuses the place tools to any Box but a claimed place.
 //!
 //! A Box holds no token. The shared Proxy routes `moor.moor.internal` to this listener and
@@ -22,8 +22,9 @@ use hyper::service::{service_fn, Service as _};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use moor_client::{Client, ClientError};
-use moor_core::request::{Request as ControllerRequest, StepReportReq};
+use moor_core::request::{OutputReportReq, Request as ControllerRequest, StepReportReq};
 use moor_core::response::ExitClass;
+use moor_core::view::output::OutputReportValue;
 use moor_core::view::workflow::StepReportValue;
 use moor_core::workflow::{StepId, StepReport, StepResult};
 use moor_core::BoxId;
@@ -34,6 +35,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{tool, tool_handler, tool_router, RoleServer, ServerHandler};
 use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq as _;
@@ -80,6 +82,18 @@ struct ReportArgs {
     note: String,
 }
 
+/// Arguments of `report_output`.
+#[derive(Deserialize, JsonSchema)]
+struct OutputArgs {
+    /// What it is, 1 to 3 dot-separated words of a-z, 0-9 and -, such as `github.comment`,
+    /// `github.status` or `figma.comment`.
+    kind: String,
+    /// Where it lives, its `https` address.
+    url: String,
+    /// One line that names it, at most 200 bytes.
+    title: String,
+}
+
 /// The tools the Box's agent gets; one copy per MCP session.
 #[derive(Clone)]
 struct BoxTools {
@@ -124,8 +138,52 @@ impl BoxTools {
             },
         };
         let controller = self.controller.clone();
-        match tokio::task::spawn_blocking(move || send(&controller, req)).await {
+        let sent = move || {
+            send::<StepReportValue>(
+                &controller,
+                ControllerRequest::StepReport(req),
+                "report_step",
+            )
+        };
+        match tokio::task::spawn_blocking(sent).await {
             Ok(Ok(value)) if value.error => failed(value.reply),
+            Ok(Ok(value)) => CallToolResult::success(vec![ContentBlock::text(value.reply)]),
+            Ok(Err(why)) => failed(why),
+            Err(e) => failed(format!("the call did not finish: {e}")),
+        }
+    }
+
+    /// Records something the caller's Box made outside moor.
+    #[tool(
+        description = "Report something you made outside moor, such as a pull request comment, \
+                       a commit status or a Figma comment, so your run and task pages list it. \
+                       Call it once after each such write, with its kind, its https URL and a \
+                       one-line title. Reporting the same URL again updates it."
+    )]
+    async fn report_output(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<OutputArgs>,
+    ) -> CallToolResult {
+        let box_id = match box_of(&context) {
+            Ok(id) => id,
+            Err(why) => return failed(why),
+        };
+        let req = OutputReportReq {
+            box_id,
+            kind: args.kind,
+            url: args.url,
+            title: args.title,
+        };
+        let controller = self.controller.clone();
+        let sent = move || {
+            send::<OutputReportValue>(
+                &controller,
+                ControllerRequest::OutputReport(req),
+                "report_output",
+            )
+        };
+        match tokio::task::spawn_blocking(sent).await {
             Ok(Ok(value)) => CallToolResult::success(vec![ContentBlock::text(value.reply)]),
             Ok(Err(why)) => failed(why),
             Err(e) => failed(format!("the call did not finish: {e}")),
@@ -162,14 +220,16 @@ fn failed(why: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(why)])
 }
 
-/// Sends `req` to the controller; what it tells the agent, or why it could not.
-fn send(controller: &Client, req: StepReportReq) -> Result<StepReportValue, String> {
+/// Sends `req` for `tool` to the controller; what it tells the agent, or why it could not.
+fn send<T: DeserializeOwned>(
+    controller: &Client,
+    req: ControllerRequest,
+    tool: &str,
+) -> Result<T, String> {
     let down = |e: &ClientError| {
-        format!("moor could not be reached ({e}). Nothing is recorded; call report_step again.")
+        format!("moor could not be reached ({e}). Nothing is recorded; call {tool} again.")
     };
-    let reply = controller
-        .request(ControllerRequest::StepReport(req), |_| {})
-        .map_err(|e| down(&e))?;
+    let reply = controller.request(req, |_| {}).map_err(|e| down(&e))?;
     if reply.class != ExitClass::Ok {
         return Err(reply
             .error
@@ -199,7 +259,7 @@ fn carries_key(headers: &http::HeaderMap, key: &str) -> bool {
 }
 
 impl Boxes {
-    /// A listener whose `report_step` reports through `controller`.
+    /// A listener whose tools report through `controller`.
     ///
     /// # Errors
     /// The async runtime could not start.

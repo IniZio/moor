@@ -85,6 +85,8 @@ fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
                         tx.send(frame["request"].clone()).unwrap();
                         let envelope = if frame["request"]["cmd"] == "box-tool" {
                             box_tool(&frame, &mut reply)
+                        } else if frame["request"]["cmd"] == "output-report" {
+                            output(&frame["request"])
                         } else {
                             let step = frame["request"]["report"]["step"].as_str().unwrap_or("");
                             answer(step)
@@ -160,6 +162,27 @@ fn box_tool(frame: &Value, _out: &mut dyn Write) -> Response {
         );
     }
     Response::ok("start", Some(json!({"name": req["call"]["name"]})))
+}
+
+/// The fake controller's answer to an `output-report`: a title of `full` is refused, as a Box
+/// at its limit is.
+fn output(req: &Value) -> Response {
+    if req["title"] == "full" {
+        let view = ErrorView {
+            kind: ErrorKind::Refused,
+            message: "this Box already has 100 outputs".to_owned(),
+            hints: vec![],
+            context: vec![],
+            detail: None,
+        };
+        return Response::err("output-report", view);
+    }
+    Response::ok(
+        "output-report",
+        Some(
+            json!({"reply": format!("kept {} {}", req["kind"].as_str().unwrap(), req["url"].as_str().unwrap())}),
+        ),
+    )
 }
 
 fn answer(step: &str) -> Response {
@@ -244,6 +267,20 @@ impl Listener {
     }
 }
 
+impl Listener {
+    /// `report_output` of `title` as Box `box_header`.
+    fn report_output(&self, box_header: Option<&str>, title: &str) -> Value {
+        let reply = self.rpc(
+            box_header,
+            "tools/call",
+            json!({"name": "report_output", "arguments": {
+                "kind": "github.comment", "url": "https://example.com/acme/pull/1#c1",
+                "title": title}}),
+        );
+        reply["result"].clone()
+    }
+}
+
 fn text(result: &Value) -> &str {
     result["content"][0]["text"].as_str().unwrap_or_default()
 }
@@ -261,6 +298,7 @@ fn only_the_moor_server_with_report_step_and_the_place_tools_is_served() {
             "close_box",
             "exec_in_box",
             "exec_wait",
+            "report_output",
             "report_step",
             "start_box"
         ],
@@ -312,6 +350,35 @@ fn the_report_reaches_the_controller_for_the_box_the_proxy_named_and_no_other() 
             "step": "delivered", "result": "ok", "evidence": ["a.md"], "note": "n"}})
     );
     assert_eq!(l.seen.recv().unwrap()["box_id"], 42);
+}
+
+#[test]
+fn an_output_reaches_the_controller_for_the_box_the_proxy_named() {
+    let l = listener(true);
+    let result = l.report_output(Some("41"), "Evidence comment");
+    assert_eq!(
+        text(&result),
+        "kept github.comment https://example.com/acme/pull/1#c1",
+        "{result}"
+    );
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "output-report", "box_id": 41, "kind": "github.comment",
+            "url": "https://example.com/acme/pull/1#c1", "title": "Evidence comment"})
+    );
+}
+
+#[test]
+fn an_output_without_a_box_header_or_refused_by_moor_reaches_the_agent_as_an_error() {
+    let l = listener(true);
+    let unnamed = l.report_output(None, "Evidence comment");
+    assert_eq!(unnamed["isError"], true, "{unnamed}");
+    assert!(l.seen.try_recv().is_err());
+    let full = l.report_output(Some("7"), "full");
+    assert_eq!(full["isError"], true, "{full}");
+    assert_eq!(text(&full), "this Box already has 100 outputs", "{full}");
+    let away = listener(false).report_output(Some("7"), "Evidence comment");
+    assert!(text(&away).contains("call report_output again"), "{away}");
 }
 
 #[test]

@@ -24,7 +24,9 @@
 .t-pl-ended pre { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; }
 .t-pl-box { display: block; width: max-content; margin: -4px 0 0 calc(1.1em + 8px); font-size: var(--app-text-sm); color: var(--moor-color-text-muted); text-decoration: none; }
 a.t-pl-box:hover { color: var(--moor-color-text); }
-.t-pl-art, .t-pl-pr { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); overflow: hidden; }
+.t-pl-outs { display: grid; gap: 4px; margin: 8px 0; }
+.t-pl-outs > p { margin: 0; }
+.t-pl-art, .t-pl-pr, .t-pl-out { border: 1px solid var(--moor-color-border); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); overflow: hidden; }
 .t-pl-pic { padding: 6px 10px; background: var(--moor-color-bg-sunken); border-bottom: 1px solid var(--moor-color-border); }
 .t-pl-pic img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; }
 .t-pl-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 6px 2px 10px; }

@@ -11,6 +11,7 @@ use moor_core::name::BoxName;
 use moor_core::progress::PrLink;
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::response::ExitClass;
+use moor_core::view::output::OutputView;
 use moor_core::view::ArtifactView;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -157,6 +158,9 @@ struct Shown {
     /// The work Boxes a question's place started; none sent for any other Box.
     #[serde(default)]
     task_boxes: Vec<TaskBox>,
+    /// What the Box's agent, and a place's work Boxes, made outside moor.
+    #[serde(default)]
+    outputs: Vec<OutputView>,
 }
 
 /// The pull request's page, rebuilt from the repo the controller knows and a number.
@@ -283,6 +287,7 @@ pub(super) fn read(stream: &mut TcpStream, gate: &Gate, session: &Session, query
             "task_boxes".to_owned(),
             task_boxes::shown(&shown.task_boxes),
         );
+        map.insert("outputs".to_owned(), json!(shown.outputs));
         let run_again = again::failed_run_of(gate, session, shown.boxed.as_ref());
         map.insert("run_again".to_owned(), run_again);
         map.insert("from_workflow".to_owned(), json!(again::names_a_run(boxed)));

@@ -48,8 +48,9 @@ fn a_reported_output_is_kept_once_per_url_and_a_bad_one_is_refused_with_why() {
     assert!(again.reply.starts_with("updated"), "{}", again.reply);
     let kept = r.cx.store().unwrap().outputs_of(box_id).unwrap();
     assert_eq!(kept.len(), 1);
-    assert_eq!(kept[0].title, "Evidence, edited");
-    assert_eq!(kept[0].kind, "github.comment");
+    let one = kept.first().unwrap();
+    assert_eq!(one.title, "Evidence, edited");
+    assert_eq!(one.kind, "github.comment");
     let bad = output_report::run(&r.cx, &report(box_id, "GitHub", "t")).unwrap_err();
     assert!(bad.error.to_string().contains("kind"), "{}", bad.error);
 }

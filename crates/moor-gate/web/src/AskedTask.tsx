@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import type { BoxDetail } from './api';
 import { HeaderActions, RUNNING } from './Ending';
 import { FailedCard } from './Retry';
+import { OutputList } from './PlaceCards';
 import { PlaceStory } from './PlaceStory';
 import { PrWord } from './PrHeader';
 import { POLL_MS } from './Portal';
@@ -36,6 +37,7 @@ export function AskedTask({ detail, error, now, csrf, reload, card = null, you =
 			)}
 			{card}
 			<FailedCard detail={detail} csrf={csrf} onDone={reload} />
+			{detail.outputs.length > 0 && <OutputList outputs={detail.outputs} />}
 			<section>
 				<PlaceStory detail={detail} you={you} prState={prState} />
 			</section>

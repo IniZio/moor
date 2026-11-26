@@ -1,6 +1,8 @@
 import type { ComponentChildren } from 'preact';
 
-import type { BoxDetail, Evidence, TaskBox } from './api';
+import type { BoxDetail, Evidence, Output, TaskBox } from './api';
+import { when } from './WorkflowBits';
+import './place.css';
 
 /** The states of a work Box that still has a terminal to open. */
 const OPEN = ['starting', 'running', 'asleep'];
@@ -17,6 +19,13 @@ const GLYPH = {
 		<>
 			<path d="M4 1.5h5l3 3V14H4z" />
 			<path d="M9 1.5v3h3" />
+		</>
+	),
+	link: (
+		<>
+			<path d="M6.5 9.5l3-3" />
+			<path d="M7 4.5l1.2-1.2a2.5 2.5 0 0 1 3.5 3.5L10.5 8" />
+			<path d="M9 11.5l-1.2 1.2a2.5 2.5 0 0 1-3.5-3.5L5.5 8" />
 		</>
 	),
 	pr: (
@@ -107,5 +116,28 @@ export function PrCard({ pr, state }: { pr: NonNullable<BoxDetail['pr']>; state?
 		<article class="t-pl-pr">
 			<Card glyph="pr" name={`Pull request #${pr.number}`} where="GitHub" note={state} href={pr.url} />
 		</article>
+	);
+}
+
+/** What the agent made outside moor, one quiet card each: its title opens it, then its kind and when it was first reported. Nothing when there is none. */
+export function OutputList({ outputs }: { outputs: Output[] }) {
+	if (!outputs.length) return null;
+	return (
+		<section class="t-pl-outs" aria-label="Outputs">
+			<p class="muted">Outputs</p>
+			{outputs.map((o) => (
+				<article class="t-pl-out" key={o.url}>
+					<div class="t-pl-row">
+						<CardGlyph kind="link" />
+						<a class="t-pl-name" href={o.url} target="_blank" rel="noopener">
+							{o.title}
+						</a>
+						<span class="t-pl-sum">
+							{o.kind} · {when(o.first_at)}
+						</span>
+					</div>
+				</article>
+			))}
+		</section>
 	);
 }
