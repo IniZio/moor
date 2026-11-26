@@ -551,6 +551,7 @@ mod also;
 mod approve;
 mod auto_close;
 mod check;
+mod contract;
 mod death_cap;
 mod derive;
 mod derive_gates;

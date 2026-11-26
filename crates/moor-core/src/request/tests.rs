@@ -40,6 +40,7 @@ fn with_args() -> Vec<Request> {
             also: None,
             identity: None,
             task: None,
+            run: false,
         }),
         Request::Run(RunReq {
             box_name: n("a"),

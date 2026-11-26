@@ -228,6 +228,7 @@ fn a_recovered_run_of_a_gated_workflow_starts_at_its_first_gate() {
         parent: None,
         identity: None,
         task: None,
+        run: false,
     };
     crate::ops::start::run(&r.cx, &req).unwrap();
     resolve_interrupted(&r.cx);

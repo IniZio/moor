@@ -13,7 +13,9 @@ use moor_core::domain::inbox::{Delivery, InboxKind};
 use moor_core::domain::place::BoxKind;
 use moor_core::domain::session_state::SessionState;
 use moor_core::gate::Gates;
-use moor_core::seam::engine::{EngineError, HeldRepo, LaunchPrompt, LaunchReq, SessionRef};
+use moor_core::seam::engine::{
+    EngineError, HeldRepo, LaunchPrompt, LaunchReq, RunLaunch, SessionRef,
+};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, StartReq};
 
@@ -93,6 +95,7 @@ fn launch_or_skip(
     if resume.is_none() {
         launch.prompt = queued_or(store, id, first_prompt(req))?;
     }
+    launch.run = req.run.then_some(RunLaunch { link: None });
     launch.resume = resume;
     let cfg = settings()?;
     with_profile(store, &mut launch, &cfg)?;
@@ -198,6 +201,7 @@ pub(super) fn begin(
     cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut launch = launch.clone();
+    contract::situate(store, row.id, &mut launch, cfg)?;
     let restored = restore::before_resume(cx, store, row.id, &mut launch)?;
     // The step starts first, so a process cut off from here on is not read as `--no-agent`.
     timed(cx, store, row.id, PostCloneStep::Launch, || {
@@ -290,6 +294,9 @@ fn record_session(
         session.id
     };
     store.begin_launch_with(id, &sref, launch.prompt.text(), restored)?;
+    if launch.resume.is_none() && !launch.place {
+        contract::given(store, id)?;
+    }
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
     }
@@ -348,6 +355,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         strip_env,
         prompt: LaunchPrompt::None,
         place: matches!(row.kind, BoxKind::Place(_)),
+        run: None,
     })
 }
 
@@ -385,6 +393,7 @@ pub(super) fn first_prompt(req: &StartReq) -> LaunchPrompt {
     LaunchPrompt::Text(gates.map_or_else(|| asked.clone(), |g| g.first_message(&asked)))
 }
 
+mod contract;
 mod failed;
 
 use failed::record_failure;

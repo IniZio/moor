@@ -8,7 +8,9 @@ use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, Place, StepDone
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::agent_env;
-use super::super::brief::{render, BriefInput};
+use moor_core::contract::{contract, skills, SkillEntry};
+
+use super::super::brief::{render, situations, BriefInput};
 use super::super::claude::Claude;
 use super::super::codex::Codex;
 use super::super::profile_writer::{ProfileCtx, ProfileWriter};
@@ -54,6 +56,32 @@ impl Plan {
         self.tags.push(tag);
         self.steps.push(step);
     }
+}
+
+/// Each built-in skill a work Box (a run's when `run`) lists, placed under `cred`, with the step
+/// that writes it there.
+fn skill_files(cred: &BoxPath, run: bool) -> Result<Vec<(SkillEntry, BoxStep)>, Failure> {
+    let all = skills().map_err(|e| fail("brief", &e))?;
+    let listed = all
+        .iter()
+        .filter(|s| s.situations.iter().any(|x| situations(run).contains(x)));
+    let mut out = Vec::new();
+    for s in listed {
+        let path = BoxPath::under(cred.as_str(), &format!("skills/{}/SKILL.md", s.name))
+            .map_err(|e| fail("brief", &e))?;
+        let entry = SkillEntry {
+            name: s.name,
+            description: s.description,
+            path: path.as_str().to_owned(),
+        };
+        let put = BoxStep::Put {
+            path,
+            bytes: s.file.as_bytes().to_vec(),
+            mode: 0o600,
+        };
+        out.push((entry, put));
+    }
+    Ok(out)
 }
 
 /// The script that exits non-zero when the agent command is not on the `PATH` the launch uses.
@@ -133,6 +161,12 @@ impl Launch<'_> {
             .map_err(|e| fail("hooks", &e))?;
         let preseed = self.profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
         let writers = self.profile_setups()?;
+        let contract = contract().map_err(|e| fail("brief", &e))?;
+        let (skills, skill_puts): (Vec<SkillEntry>, Vec<BoxStep>) = if req.place {
+            (Vec::new(), Vec::new())
+        } else {
+            skill_files(cred, req.run.is_some())?.into_iter().unzip()
+        };
         let brief = render(&BriefInput {
             name: req.box_name.as_str(),
             issue: req.issue.as_deref(),
@@ -142,6 +176,10 @@ impl Launch<'_> {
             shape: req.shape,
             repos: &req.repos,
             place: req.place,
+            contract,
+            run: req.run.as_ref(),
+            moor_tools: req.mcp.contains_key("moor"),
+            skills: &skills,
         });
         let path = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         let bytes = brief.into_bytes();
@@ -153,6 +191,9 @@ impl Launch<'_> {
                 mode: 0o600,
             },
         );
+        for put in skill_puts {
+            plan.push(Tag::Brief, put);
+        }
         let written = writers.iter().flat_map(|w| &w.files);
         for file in hooks.files.iter().chain(&preseed.files).chain(written) {
             let put = BoxStep::Put {

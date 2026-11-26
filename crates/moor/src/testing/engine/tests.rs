@@ -64,6 +64,7 @@ fn counts_are_kept_per_session() {
 fn launch_req() -> LaunchReq {
     LaunchReq {
         place: false,
+        run: None,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
