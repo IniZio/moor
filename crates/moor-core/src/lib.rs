@@ -21,6 +21,7 @@ pub mod name;
 pub mod output;
 pub mod profile;
 pub mod progress;
+pub mod reading;
 pub mod request;
 pub mod response;
 pub mod seam;

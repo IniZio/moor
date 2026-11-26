@@ -18,6 +18,7 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_path_to_error = "0.1.20"
 sha2 = "0.10"
 thiserror = "2"
+unicode-normalization = "0.1"
 url = "2"
 zeroize = "1"
 
