@@ -342,12 +342,10 @@ fn a_plan_that_is_a_bare_list_is_told_to_be_an_object_with_steps() {
 }
 
 #[test]
-fn the_first_prompt_says_where_report_step_lives_and_how_to_load_it() {
+fn the_first_prompt_names_report_step_and_no_harness_tool() {
     let text = parse(&[deliver("a")]).unwrap().start_prompt("do it");
-    assert!(
-        text.contains("`moor` MCP server") && text.contains("ToolSearch"),
-        "{text}"
-    );
+    assert!(text.contains("call report_step"), "{text}");
+    assert!(!text.contains("ToolSearch"), "{text}");
 }
 
 #[test]

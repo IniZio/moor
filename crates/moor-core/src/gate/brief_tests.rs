@@ -32,31 +32,19 @@ fn gates() -> Gates {
 }
 
 #[test]
-fn the_first_message_says_how_to_reach_report_step_in_words_any_agent_follows() {
+fn the_first_message_holds_gate_facts_and_no_conduct_the_contract_states() {
     let text = gates().first_message("Fix the typo.");
-    assert!(
-        text.contains(
-            "report_step is a tool of the moor MCP server; load it first if your tools are \
-             loaded on demand."
-        ),
-        "{text}"
-    );
-    assert!(
-        !text.contains("ToolSearch"),
-        "no one harness's tool: {text}"
-    );
-}
-
-#[test]
-fn the_first_message_asks_for_each_outside_write_with_report_output() {
-    let text = gates().first_message("Fix the typo.");
-    assert!(
-        text.contains(
-            "After each write outside moor, such as a pull request comment, call \
-             report_output with its kind, URL and title."
-        ),
-        "{text}"
-    );
+    for conduct in [
+        "ToolSearch",
+        "load it first",
+        "report_output",
+        "Report only the gate",
+        "Never fake",
+        "nothing to do",
+    ] {
+        assert!(!text.contains(conduct), "{conduct}: {text}");
+    }
+    assert!(text.contains("The first gate is in hand now."), "{text}");
 }
 
 #[test]
@@ -79,17 +67,9 @@ fn the_first_message_lists_each_gate_with_its_evidence_and_who_runs_what() {
 }
 
 #[test]
-fn the_first_message_says_the_gates_go_in_order_and_that_moor_says_when_one_is_in_hand() {
+fn the_first_message_says_the_gates_go_in_order() {
     let text = gates().first_message("Fix the typo.\n");
     assert!(text.contains("in this order, one at a time"), "{text}");
-    assert!(
-        text.contains("moor tells you when each gate is in hand"),
-        "{text}"
-    );
-    assert!(
-        text.contains("Report only the gate that is in hand"),
-        "{text}"
-    );
 }
 
 #[test]
@@ -227,7 +207,7 @@ fn the_owners_note_splits_out_of_a_no_whatever_it_holds() {
 }
 
 #[test]
-fn the_preamble_names_the_outcomes_and_says_moor_decides_them() {
+fn the_preamble_lists_the_outcomes_in_the_order_moor_tries_them() {
     let outcomes: Vec<OutcomeDoc> = serde_json::from_value(serde_json::json!([
         {"name": "nothing to do", "says": "The pull request is closed or moved.", "tone": "plain",
          "checks": [{"run": "true", "says": "The pull request is not open."}], "anytime": true},
@@ -236,11 +216,7 @@ fn the_preamble_names_the_outcomes_and_says_moor_decides_them() {
     .unwrap();
     let with = Gates::parse(&gates().docs(), &outcomes).unwrap();
     let first = with.first_message("Collect evidence.");
-    assert!(
-        first.contains("not yours to say: moor decides it"),
-        "{first}"
-    );
-    assert!(first.contains("Never fake evidence"), "{first}");
+    assert!(first.contains("in the order moor tries them"), "{first}");
     assert!(
         first.contains("- `nothing to do`: The pull request is closed or moved. (anytime) It holds when: “The pull request is not open.”"),
         "{first}"

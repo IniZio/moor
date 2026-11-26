@@ -49,13 +49,3 @@ fn an_output_needs_an_https_url_and_a_one_line_title() {
         );
     }
 }
-
-#[test]
-fn a_run_s_first_prompt_asks_for_each_outside_write_with_report_output() {
-    let text = crate::workflow::Plan::single("p").start_prompt("do it");
-    assert!(text.contains(super::REPORT_OUTPUT_BRIEF), "{text}");
-    assert!(
-        super::REPORT_OUTPUT_BRIEF.contains("call report_output with its kind, URL and title"),
-        "{text}"
-    );
-}
