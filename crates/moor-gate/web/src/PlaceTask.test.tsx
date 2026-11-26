@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test';
 import { type ComponentChild, isValidElement } from 'preact';
 
 import { type BoxDetail, boxGet, type Entry } from './api';
-import { AskedTask } from './AskedTask';
+import { AskedTask, AskView } from './AskedTask';
 import { HeaderActions } from './Ending';
 import { PlaceStory } from './PlaceStory';
 import { Composer, SayView } from './Steer';
@@ -230,5 +230,27 @@ test('a message on a later day than the task began says the day as well as the t
 	const next = new Date(2026, 10, 25, 9, 12).toISOString();
 	const view = await story([...ASKED, said(2, 4, 'A.'), { id: 3, at: next, kind: 'steered', class: 'you', text: 'Round it.' }]);
 	expect(byClass(view, 't-pl-meta').map(textOf)).toEqual(['ann · 17:43', 'ann · 25 Nov 09:12']);
+});
+
+test('the agent\'s question closes the conversation, after everything it said', async () => {
+	const detail = await detailOf([...ASKED, said(2, 4, 'Wrote the spec.')]);
+	const view = PlaceStory({ detail, you: 'ann', end: <section class="t-pl-ask" /> });
+	const kinds = ((view as El).props.children as El[]).flat().map((p) => classes(p).find((c) => c.startsWith('t-pl-')));
+	expect(kinds).toEqual(['t-pl-you', 't-pl-say', 't-pl-ask']);
+});
+
+test('the question shows its answers as small buttons, the first one filled, and a link to answer in your own words', () => {
+	const picked: number[] = [];
+	let own = 0;
+	const needs = { id: 'q1', kind: 'question' as const, question: 'Build it like this?', detail: null, picks: [{ n: 1, label: 'Build it', role: 'choice' as const }, { n: 2, label: 'Change the spec', role: 'choice' as const }], other: 3, approve: null, plan: false, gate: null };
+	const view = AskView({ needs, busy: false, error: '', pick: (n) => picked.push(n), own: () => own++ });
+	const buttons = all(view, 'button');
+	expect(buttons.map(textOf)).toEqual(['Build it', 'Change the spec', 'or answer in your own words']);
+	expect(buttons.map((b) => classes(b).join(' '))).toEqual(['t-qbtn t-qbtn-primary', 't-qbtn', 't-qlnk']);
+	expect(textOf(view)).not.toContain('Your input is needed');
+	buttons[1]?.props.onClick?.();
+	buttons[2]?.props.onClick?.();
+	expect(picked).toEqual([2]);
+	expect(own).toBe(1);
 });
 
