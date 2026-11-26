@@ -128,10 +128,9 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Refused,
             webhook_outbox::FRONT_ONLY,
         )),
-        Request::StepReport(_) | Request::OutputReport(_) => Err(CommandError::new(
-            ErrorKind::Refused,
-            authz::STEP_REPORT_FRONT_ONLY,
-        )),
+        Request::StepReport(_) | Request::OutputReport(_) | Request::ReadingHandIn(_) => Err(
+            CommandError::new(ErrorKind::Refused, authz::STEP_REPORT_FRONT_ONLY),
+        ),
         Request::BoxTool(_) => Err(CommandError::new(ErrorKind::Refused, box_tool::FRONT_ONLY)),
         Request::MachinePair(_) => Err(CommandError::new(
             ErrorKind::Refused,

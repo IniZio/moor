@@ -8,9 +8,9 @@ use crate::env::Env;
 use crate::Moor;
 
 /// Answers `request` when it is one only a front may send, and which a front sends with no
-/// identity to authorize: the webhook outbox, `step-report`, `machine-pair` and `github-hook`. None for
-/// every other request, and for these when the runner sends them, which the usual authorization
-/// then refuses.
+/// identity to authorize: the webhook outbox, `step-report`, `output-report`, `reading-hand-in`,
+/// `machine-pair` and `github-hook`. None for every other request, and for these when the runner
+/// sends them, which the usual authorization then refuses.
 pub(super) fn front_request(env: &Env, peer: &Peer, request: &Request) -> Option<Response> {
     let outbox = matches!(
         request,
@@ -18,7 +18,12 @@ pub(super) fn front_request(env: &Env, peer: &Peer, request: &Request) -> Option
     );
     let pair = matches!(request, Request::MachinePair(_) | Request::GitHubHook(_));
     if matches!(peer.caller, Ok(Caller::Runner))
-        || !(outbox || pair || matches!(request, Request::StepReport(_) | Request::OutputReport(_)))
+        || !(outbox
+            || pair
+            || matches!(
+                request,
+                Request::StepReport(_) | Request::OutputReport(_) | Request::ReadingHandIn(_)
+            ))
     {
         return None;
     }

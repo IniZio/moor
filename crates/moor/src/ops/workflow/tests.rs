@@ -556,6 +556,7 @@ mod derive;
 mod derive_gates;
 mod eligible;
 mod gated;
+mod hand_in;
 mod hook;
 mod hook_log;
 mod manual;

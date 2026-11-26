@@ -3,6 +3,11 @@
 
 use super::PlanDoc;
 use crate::gate::GatesDoc;
+use crate::reading::HandIn;
+
+/// The version of what a reader is told: [`draft_prompt`]'s instructions. Bump it with every change
+/// to them, so a reading says which instructions it was read under.
+pub const READER_INSTRUCTIONS: u32 = 2;
 
 /// The evidence file a drafted or proposed plan is left in.
 pub const PLAN_FILE: &str = "plan.json";
@@ -38,9 +43,8 @@ fn how_to_gate() -> String {
     let schema = schemars::schema_for!(GatesDoc);
     let schema = serde_json::to_string(&schema).unwrap_or_default();
     format!(
-        "Write gates instead of a plan when the prompt has each run pass named gates in order \
-         (it says moor holds the run open until its gates pass, or asks for report_step for a \
-         gate). Then the file is an object with `gates` and `outcomes` and no `steps`. Name \
+        "Hand in gates when the prompt has each run pass named gates in order (it says moor \
+         holds the run open until its gates pass, or asks for report_step for a gate). Name \
          one gate for each gate the prompt names, in its order, each with the evidence files the \
          prompt names for it, and no file it does not name. An evidence name is a flat file \
          name, or a prefix ending in * that covers names with a number in them, such as pr-* \
@@ -59,8 +63,29 @@ fn how_to_gate() -> String {
          the config gives for that where it has them. moor tries the outcomes in order once \
          every gate passed, and the first whose checks all pass is the run's verdict; only the \
          last one may have no check. Mark an outcome anytime when it can end a run before its \
-         gates pass, such as nothing to do. Leave out made_from. The gates are JSON that \
-         matches this schema:\n{schema}"
+         gates pass, such as nothing to do. Each gate and outcome you hand in is one entry of \
+         `gates` or `outcomes` in this schema, without made_from:\n{schema}"
+    )
+}
+
+/// How to hand in a reading through moor's `hand_in_reading` tool, with its quoting rules.
+fn how_to_hand_in() -> String {
+    let schema = schemars::schema_for!(HandIn);
+    let schema = serde_json::to_string(&schema).unwrap_or_default();
+    format!(
+        "Hand in a reading with the hand_in_reading tool of the moor MCP server. It takes \
+         phrases of the prompt and the effects moor holds the agent to. Quote the prompt's own \
+         words in `exact`, copied, never reworded. When those words occur more than once in \
+         the prompt, add a `prefix` (the words just before) or a `suffix` (the words just \
+         after) that picks one. Make one phrase per clause moor can hold, and never let two \
+         phrases share words. Mark a phrase held only when it names at least one effect by \
+         its label; mark every other phrase you quote asked. A clause with a part moor can hold \
+         and a part it can only ask is two phrases. Every effect must be named by a held \
+         phrase. An allow effect must be a line the config's proxy.allow already lists, copied \
+         under the same rule: name no other. When moor refuses a hand-in it says which quote \
+         or effect is wrong; fix that one and hand in again. Three refusals end the reading. \
+         Once moor answers accepted, end your turn. The tool's input matches this \
+         schema:\n{schema}"
     )
 }
 
@@ -73,8 +98,10 @@ pub fn is_draft_prompt(text: &str) -> bool {
     text.starts_with(DRAFT_HEAD)
 }
 
-/// What a short Box that reads a workflow's prompt is asked, for the workflow prompt `prompt`
-/// and the config `config` its runs' Boxes get: a plan, or gates when the prompt names them.
+/// What a short Box that reads the workflow prompt `prompt` is asked, with `config` its runs get.
+///
+/// It hands in a reading when the prompt names gates or anything moor can hold, and leaves a
+/// step plan as a file otherwise.
 #[must_use]
 pub fn draft_prompt(prompt: &str, config: Option<&str>) -> String {
     let config = config
@@ -88,12 +115,16 @@ pub fn draft_prompt(prompt: &str, config: Option<&str>) -> String {
         .unwrap_or_default();
     format!(
         "{DRAFT_HEAD} Only read: change no file, branch or pull request.\n\nThe workflow prompt:\n\"\"\"\n{}\n\"\"\"\n\n{config}Read the repos to see what the \
-         prompt needs, then write moor's reading of it: a plan, or gates. Each run starts a new Box \
-         on its own branch, so name no branch, Box or folder of this one.\n\n{}\n\n{}\n\nWrite \
-         the plan or the gates as .moor/artifacts/{PLAN_FILE} and nothing else, then end your turn.",
+         prompt needs, then give moor its reading in one of two ways. Each run starts a new Box \
+         on its own branch, so name no branch, Box or folder of this one.\n\nWhen the prompt \
+         names gates, or anything moor can hold, such as a line of the config's proxy.allow, \
+         hand in a reading.\n\n{}\n\n{}\n\nWhen the prompt instead calls for steps a run \
+         walks, write a plan as .moor/artifacts/{PLAN_FILE} and nothing else, then end your \
+         turn.\n\n{}",
         prompt.trim(),
-        how_to_write(),
-        how_to_gate()
+        how_to_hand_in(),
+        how_to_gate(),
+        how_to_write()
     )
 }
 
@@ -142,5 +173,19 @@ mod tests {
         assert!(asked.contains("\"done_when\"") && asked.contains("\"evidence\""));
         assert!(asked.contains(".moor/artifacts/plan.json"));
         assert!(is_draft_prompt(&asked) && !is_draft_prompt("Bump the deps."));
+    }
+
+    #[test]
+    fn a_draft_prompt_asks_for_a_hand_in_by_the_prompts_own_words() {
+        let asked = draft_prompt("Post one comment. Never merge.", None);
+        assert!(asked.contains("hand_in_reading") && asked.contains("\"exact\""));
+        for rule in [
+            "prompt's own",
+            "prefix",
+            "one phrase per clause",
+            "proxy.allow",
+        ] {
+            assert!(asked.contains(rule), "the instructions state {rule}");
+        }
     }
 }

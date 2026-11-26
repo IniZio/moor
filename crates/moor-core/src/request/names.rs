@@ -143,6 +143,7 @@ impl Request {
             | Self::MachineBox(_)
             | Self::StepReport(_)
             | Self::OutputReport(_)
+            | Self::ReadingHandIn(_)
             | Self::BoxTool(_)
             | Self::MachinePair(_)
             | Self::GitHubHook(_)

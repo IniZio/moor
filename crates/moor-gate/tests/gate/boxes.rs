@@ -87,6 +87,8 @@ fn listener_keyed(controller_up: bool, key: Option<&str>) -> Listener {
                             box_tool(&frame, &mut reply)
                         } else if frame["request"]["cmd"] == "output-report" {
                             output(&frame["request"])
+                        } else if frame["request"]["cmd"] == "reading-hand-in" {
+                            hand_in(&frame["request"])
                         } else {
                             let step = frame["request"]["report"]["step"].as_str().unwrap_or("");
                             answer(step)
@@ -183,6 +185,21 @@ fn output(req: &Value) -> Response {
             json!({"reply": format!("kept {} {}", req["kind"].as_str().unwrap(), req["url"].as_str().unwrap())}),
         ),
     )
+}
+
+/// The fake controller's answer to a `reading-hand-in`: a first quote of `nowhere` is refused.
+fn hand_in(req: &Value) -> Response {
+    if req["reading"]["phrases"][0]["quote"]["exact"] == "nowhere" {
+        let view = ErrorView {
+            kind: ErrorKind::Refused,
+            message: "quote `nowhere` is not in the prompt; copy the prompt's own words".to_owned(),
+            hints: vec![],
+            context: vec![],
+            detail: None,
+        };
+        return Response::err("reading-hand-in", view);
+    }
+    Response::ok("reading-hand-in", Some(json!({"reply": "accepted"})))
 }
 
 fn answer(step: &str) -> Response {
@@ -298,6 +315,7 @@ fn only_the_moor_server_with_report_step_and_the_place_tools_is_served() {
             "close_box",
             "exec_in_box",
             "exec_wait",
+            "hand_in_reading",
             "report_output",
             "report_step",
             "start_box"
@@ -379,6 +397,33 @@ fn an_output_without_a_box_header_or_refused_by_moor_reaches_the_agent_as_an_err
     assert_eq!(text(&full), "this Box already has 100 outputs", "{full}");
     let away = listener(false).report_output(Some("7"), "Evidence comment");
     assert!(text(&away).contains("call report_output again"), "{away}");
+}
+
+#[test]
+fn a_hand_in_reaches_the_controller_for_the_box_the_proxy_named_and_a_refusal_reaches_the_agent() {
+    let l = listener(true);
+    let call = |exact: &str| {
+        let doc = json!({"phrases": [{"quote": {"exact": exact}, "mark": {"kind": "asked"}}],
+            "effects": []});
+        l.rpc(
+            Some("41"),
+            "tools/call",
+            json!({"name": "hand_in_reading", "arguments": doc}),
+        )["result"]
+            .clone()
+    };
+    let accepted = call("Never merge");
+    assert_eq!(text(&accepted), "accepted", "{accepted}");
+    let seen = l.seen.recv().unwrap();
+    assert_eq!(seen["cmd"], "reading-hand-in");
+    assert_eq!(seen["box_id"], 41);
+    assert_eq!(
+        seen["reading"]["phrases"][0]["quote"]["exact"],
+        "Never merge"
+    );
+    let refused = call("nowhere");
+    assert_eq!(refused["isError"], true, "{refused}");
+    assert!(text(&refused).contains("`nowhere`"), "{refused}");
 }
 
 #[test]

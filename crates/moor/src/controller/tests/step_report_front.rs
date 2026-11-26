@@ -71,3 +71,28 @@ fn only_a_front_with_step_reports_true_reports_an_output() {
     refused(&ask(&socket("gate"), &report), "no Box 7");
     refused(&ask(&socket("web"), &report), "`step_reports: true`");
 }
+
+#[test]
+fn only_a_front_with_step_reports_true_hands_in_a_reading() {
+    let dir = tempfile::tempdir().expect("dir");
+    let cfg = config(
+        dir.path(),
+        "fronts:\n  gate:\n    step_reports: true\n  web: {}\n",
+    );
+    let running = start(&env_with(dir.path(), &[]), &cfg).expect("start");
+    let sink: Sink = Arc::new(Mutex::new(Buf::default()));
+    running.serve_in_background(sink);
+    let socket = |ns: &str| {
+        dir.path()
+            .join("state")
+            .join("fronts")
+            .join(ns)
+            .join("front")
+    };
+    let hand_in = json!({
+        "cmd": "reading-hand-in", "box_id": 7,
+        "reading": {"phrases": [], "effects": []}
+    });
+    refused(&ask(&socket("gate"), &hand_in), "no Box 7");
+    refused(&ask(&socket("web"), &hand_in), "`step_reports: true`");
+}

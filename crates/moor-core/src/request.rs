@@ -71,6 +71,8 @@ mod steer;
 pub use steer::SteerReq;
 mod output_report;
 pub use output_report::OutputReportReq;
+mod reading_hand_in;
+pub use reading_hand_in::{ReadingHandInReq, ReadingHandInValue};
 mod step_report;
 pub use step_report::StepReportReq;
 mod box_tool;
@@ -275,6 +277,9 @@ pub enum Request {
     /// Something the agent in a Box made outside moor; only a front with `step_reports: true`,
     /// which names the Box from its transport.
     OutputReport(OutputReportReq),
+    /// The reading the Box reading an automation's prompt hands in; only a front with
+    /// `step_reports: true`, which names the Box from its transport.
+    ReadingHandIn(ReadingHandInReq),
     /// What the agent in a claimed agent place asks of its user's Boxes; only a front with
     /// `box_tools: true`, which names the place from its transport.
     BoxTool(BoxToolReq),

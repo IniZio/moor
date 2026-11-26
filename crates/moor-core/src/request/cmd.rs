@@ -93,6 +93,7 @@ impl Request {
             Self::WebhookReport(_) => "webhook-report",
             Self::StepReport(_) => "step-report",
             Self::OutputReport(_) => "output-report",
+            Self::ReadingHandIn(_) => "reading-hand-in",
             Self::BoxTool(_) => "box-tool",
             Self::MachinePair(_) => "machine-pair",
             Self::GitHubHook(_) => "github-hook",

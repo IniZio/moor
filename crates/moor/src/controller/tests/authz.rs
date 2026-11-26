@@ -245,6 +245,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "webhook-report"
         | "step-report"
         | "output-report"
+        | "reading-hand-in"
         | "box-tool"
         | "box-rsync"
         | "machine-hold"

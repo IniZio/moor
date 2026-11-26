@@ -274,14 +274,15 @@ mod tests;
 
 pub use box_name::{box_name, plan_box_name};
 pub use cause::{CommitSha, PullError, PullRef, PullTarget, RunCause};
-pub use derive::{PlanDraft, Reading};
+pub use derive::{PlanDraft, ReaderLeft};
 pub use gated::{gated_move, GatedMove, Standing};
 pub use gated_history::gate_history;
 pub use history::HistoryEntry;
 pub use plan::{
     draft_prompt, is_draft_prompt, plan_first_prompt, split_plan_first, split_start_prompt,
     CheckSays, Evidence, EvidenceName, Next, Plan, PlanDoc, PlanError, PromptHash, StartStep, Step,
-    StepDoc, StepId, StepKind, Tries, APPROVE_PLAN, PLAN_FILE, PLAN_QUESTION, REVISE_PLAN,
+    StepDoc, StepId, StepKind, Tries, APPROVE_PLAN, PLAN_FILE, PLAN_QUESTION, READER_INSTRUCTIONS,
+    REVISE_PLAN,
 };
 pub use report::{
     Answer, StepReport, StepResult, EVIDENCE_MAX, EVIDENCE_NAMES_MAX, EVIDENCE_NAME_MAX, NOTE_MAX,
