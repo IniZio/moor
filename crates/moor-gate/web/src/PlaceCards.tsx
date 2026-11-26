@@ -1,6 +1,7 @@
-import type { ComponentChildren } from 'preact';
+import { type ComponentChildren, render } from 'preact';
 
 import type { BoxDetail, Evidence, Output, TaskBox } from './api';
+import { Markdown } from './Markdown';
 import { when } from './WorkflowBits';
 import './place.css';
 
@@ -95,15 +96,29 @@ function Card({ glyph, name, where, note, href, children }: { glyph: keyof typeo
 	);
 }
 
-/** A file a work Box left: the picture inline when it is one, then its name and a link that opens it. */
+/** The kinds of file whose words a card shows. */
+const WORDS = /^text\/|json|yaml|markdown/;
+
+/** Fills a file card's frame with the file's words, once, when the file turns out to be text; the frame stays hidden otherwise. */
+function showWords(el: HTMLDivElement | null) {
+	const href = el?.dataset.href;
+	if (!el || !href) return;
+	fetch(href)
+		.then(async (res) => (res.ok && WORDS.test(res.headers.get('content-type') ?? '') ? render(<Markdown text={(await res.text()).slice(0, 4000)} />, el) : undefined))
+		.catch(() => undefined);
+}
+
+/** A file a work Box left: the picture, or the start of its words, inline above its name and a link that opens it. */
 export function ArtifactCard({ a }: { a: Evidence }) {
 	return (
 		<article class="t-pl-art">
 			<Card glyph={a.image ? 'image' : 'doc'} name={a.name} note={a.image ? undefined : kb(a.size)} href={a.href}>
-				{a.image && (
+				{a.image ? (
 					<div class="t-pl-pic">
 						<img src={a.href} alt={a.name} loading="lazy" />
 					</div>
+				) : (
+					WORDS.test(a.content_type) && <div class="t-pl-pic t-pl-doc" data-href={a.href} ref={showWords} />
 				)}
 			</Card>
 		</article>

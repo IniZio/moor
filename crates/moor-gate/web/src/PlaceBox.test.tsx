@@ -61,11 +61,11 @@ const order = (view: ComponentChild) => ((view as El).props.children as El[]).fl
 
 const TWO_TURNS = [you(1, 0, 'Where is the booking fee calculated?'), said(2, 1, 'In src/booking/fee.ts.'), you(3, 4, 'Make it 3% above 500.'), said(4, 5, 'That means running the app, so I started a Box.'), said(5, 10, 'Changed the rate.')];
 
-test('a work Box is one line in the turn that holds its start, above the answer of the agent', async () => {
+test('a work Box is one line in the turn that holds its start, between the agent\'s lines by time', async () => {
 	const view = await story(TWO_TURNS, { task_boxes: [WORK_BOX()] });
 	const lines = byClass(view, 't-pl-box');
 	expect(lines).toHaveLength(1);
-	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-box', 't-pl-say', 't-pl-fold']);
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-box', 't-pl-say']);
 });
 
 test('a running Box line names the repo and the ready time and opens the Box terminal', async () => {
@@ -105,7 +105,7 @@ test('an image the Box left is a card with the picture inline and an Open link, 
 	expect(textOf(card)).toContain('booking.png');
 	const open = all(card, 'a').find((a) => textOf(a) === 'Open') as El;
 	expect(open.props.href).toBe(img.props.src as string);
-	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-box', 't-pl-art', 't-pl-say', 't-pl-fold']);
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-box', 't-pl-art', 't-pl-say']);
 });
 
 test('a file that is not an image is a card with its name and size and no picture', async () => {
@@ -125,7 +125,7 @@ test('the pull request is a card with its number and a link, above the line that
 	expect(textOf(card)).toContain('Pull request #15');
 	const open = all(card, 'a').find((a) => textOf(a) === 'Open') as El;
 	expect(open.props.href).toBe(url);
-	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-box', 't-pl-pr', 't-pl-say', 't-pl-fold']);
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-box', 't-pl-pr', 't-pl-say']);
 });
 
 test('the pull request card says where the pull request stands when the page has read it', async () => {
@@ -140,7 +140,7 @@ test('a task with no work Box and no pull request shows neither', async () => {
 	const view = await story(TWO_TURNS);
 	expect(byClass(view, 't-pl-box')).toHaveLength(0);
 	expect(byClass(view, 't-pl-pr')).toHaveLength(0);
-	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-fold']);
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-say']);
 });
 
 test('a detail from a controller that sends no task_boxes still parses', async () => {
@@ -154,5 +154,5 @@ test('the pull request card sits after the Box line of the Box that opened it, n
 	const timeline = [...TWO_TURNS.slice(0, 4), opened, said(5, 10, 'Opened the pull request.'), you(6, 30, 'Also add a test.'), said(7, 40, 'Added the test.')];
 	const boxes = [WORK_BOX(), WORK_BOX({ started_at: at(31) })].map((b, i) => ({ ...b, name: `${WORK}-${i}` }));
 	const view = await story(timeline, { task_boxes: boxes, pr: { repo: 'acme/clinic-prototype', number: 15, url } });
-	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-box', 't-pl-pr', 't-pl-say', 't-pl-fold', 't-pl-you', 't-pl-box', 't-pl-say']);
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-box', 't-pl-pr', 't-pl-say', 't-pl-fold', 't-pl-you', 't-pl-box', 't-pl-say']);
 });

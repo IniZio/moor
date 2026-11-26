@@ -30,7 +30,7 @@ export function TaskHead({ t, now, actions, pr, asked }: { t: HeadFields; now: n
 					</span>
 				))}
 				{t.issue && <span class="t-th-issue t-mono">{t.issue}</span>}
-				{t.pr && (
+				{t.pr && !t.task_at && (
 					<a class="t-th-pr" href={t.pr.url} target="_blank" rel="noopener">
 						PR #{t.pr.number}
 					</a>

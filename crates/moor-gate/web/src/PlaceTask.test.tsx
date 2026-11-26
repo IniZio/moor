@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from 'bun:test';
 import { type ComponentChild, isValidElement } from 'preact';
 
 import { type BoxDetail, boxGet, type Entry } from './api';
-import { AskedTask } from './AskedTask';
+import { AskedTask, AskView } from './AskedTask';
 import { HeaderActions } from './Ending';
 import { PlaceStory } from './PlaceStory';
 import { Composer, SayView } from './Steer';
@@ -136,7 +136,7 @@ test('a second question starts a second turn with its own bubble, answer and fol
 	expect(byClass(view, 't-pl-fold')).toHaveLength(2);
 });
 
-test('only the last words of a turn are a diamond line; the lines before them sit in the turn\'s fold with its calls, in order', async () => {
+test('every message of the agent is its own diamond line, with the calls that led up to it folded under it', async () => {
 	const view = await story([
 		...ASKED,
 		said(2, 3, 'Need gh; install it.'),
@@ -145,18 +145,13 @@ test('only the last words of a turn are a diamond line; the lines before them si
 		call(5, 4, 'Ran gh --version'),
 		said(6, 5, 'It is **src/main.rs**.'),
 	]);
-	const lines = byClass(view, 't-pl-say');
-	expect(lines).toHaveLength(1);
-	expect(textOf(lines[0])).toContain('src/main.rs');
-	const [fold] = byClass(view, 't-pl-fold') as [El];
-	expect(textOf(fold)).toContain('Ran 2 commands');
-	const body = textOf(byClass(fold, 't-pl-body')[0]);
-	expect(body).toContain('Need gh; install it.');
-	expect(body).toContain('Let me confirm.');
-	expect(body.indexOf('Need gh')).toBeLessThan(body.indexOf('apt-get'));
-	expect(body.indexOf('apt-get')).toBeLessThan(body.indexOf('Let me confirm.'));
-	expect(body.indexOf('Let me confirm.')).toBeLessThan(body.indexOf('gh --version'));
-	expect(outside((view as El).props.children)).not.toMatch(/Need gh|Let me confirm/);
+	expect(byClass(view, 't-pl-say').map(textOf)).toEqual(['◆Need gh; install it.', '◆Let me confirm.', '◆It is src/main.rs.']);
+	const kinds = ((view as El).props.children as El[]).flat().map((p) => classes(p).find((c) => c.startsWith('t-pl-')));
+	expect(kinds).toEqual(['t-pl-you', 't-pl-say', 't-pl-say', 't-pl-fold', 't-pl-say', 't-pl-fold']);
+	const [first, second] = byClass(view, 't-pl-fold').map(textOf);
+	expect(first).toContain('apt-get');
+	expect(first).not.toContain('gh --version');
+	expect(second).toContain('gh --version');
 });
 
 test('a turn of words alone is one diamond line and no fold', async () => {
@@ -165,17 +160,16 @@ test('a turn of words alone is one diamond line and no fold', async () => {
 	expect(byClass(view, 't-pl-fold')).toHaveLength(0);
 });
 
-test('two lines of words and no calls show the last as the answer and fold the first', async () => {
+test('two messages and no calls are two diamond lines and no fold', async () => {
 	const view = await story([...ASKED, said(2, 3, 'Looking.'), said(3, 4, 'Found it.')]);
-	expect(textOf(byClass(view, 't-pl-say')[0])).toContain('Found it.');
-	expect(textOf(byClass(view, 't-pl-fold')[0])).toContain('1 note');
-	expect(textOf(byClass(view, 't-pl-body')[0])).toContain('Looking.');
+	expect(byClass(view, 't-pl-say').map(textOf)).toEqual(['◆Looking.', '◆Found it.']);
+	expect(byClass(view, 't-pl-fold')).toHaveLength(0);
 });
 
-test('a failure after the last words still ends the task when interim lines are folded', async () => {
+test('a failure after the agent\'s last words still ends the task', async () => {
 	const view = await story([...ASKED, said(2, 3, 'Trying.'), said(3, 4, 'Cloning.'), failed(6, 5, 'Ran git clone (exit 128)')], 'failed');
 	expect(byClass(view, 't-pl-ended')).toHaveLength(1);
-	expect(textOf(byClass(view, 't-pl-say')[0])).toContain('Cloning.');
+	expect(byClass(view, 't-pl-say').map(textOf)).toEqual(['◆Trying.', '◆Cloning.']);
 });
 
 /** What the task page puts at the right of its header. */
@@ -230,4 +224,37 @@ test('a question\'s task page marks itself for its own density and asks for the 
 	expect(view.props.class).toContain('t-place');
 	const composer = [view.props.children].flat(3).find((c) => isValidElement(c) && c.type === Composer);
 	expect(isValidElement(composer) && composer.props.plain).toBe(true);
+});
+
+test('a message on a later day than the task began says the day as well as the time', async () => {
+	const next = new Date(2026, 10, 25, 9, 12).toISOString();
+	const view = await story([...ASKED, said(2, 4, 'A.'), { id: 3, at: next, kind: 'steered', class: 'you', text: 'Round it.' }]);
+	expect(byClass(view, 't-pl-meta').map(textOf)).toEqual(['ann · 17:43', 'ann · 25 Nov 09:12']);
+});
+
+test('the agent\'s question closes the conversation, after everything it said', async () => {
+	const detail = await detailOf([...ASKED, said(2, 4, 'Wrote the spec.')]);
+	const view = PlaceStory({ detail, you: 'ann', end: <section class="t-pl-ask" /> });
+	const kinds = ((view as El).props.children as El[]).flat().map((p) => classes(p).find((c) => c.startsWith('t-pl-')));
+	expect(kinds).toEqual(['t-pl-you', 't-pl-say', 't-pl-ask']);
+});
+
+test('the question shows its answers as small buttons, the first one filled, and a link to answer in your own words', () => {
+	const picked: number[] = [];
+	let own = 0;
+	const needs = { id: 'q1', kind: 'question' as const, question: 'Build it like this?', detail: null, picks: [{ n: 1, label: 'Build it', role: 'choice' as const }, { n: 2, label: 'Change the spec', role: 'choice' as const }], other: 3, approve: null, plan: false, gate: null };
+	const view = AskView({ needs, busy: false, error: '', pick: (n) => picked.push(n), own: () => own++ });
+	const buttons = all(view, 'button');
+	expect(buttons.map(textOf)).toEqual(['Build it', 'Change the spec', 'or answer in your own words']);
+	expect(buttons.map((b) => classes(b).join(' '))).toEqual(['t-qbtn t-qbtn-primary', 't-qbtn', 't-qlnk']);
+	expect(textOf(view)).not.toContain('Your input is needed');
+	buttons[1]?.props.onClick?.();
+	buttons[2]?.props.onClick?.();
+	expect(picked).toEqual([2]);
+	expect(own).toBe(1);
+});
+
+test('the head of a question\'s task leaves the pull request to its card', async () => {
+	const detail = { ...(await detailOf([...ASKED])), pr: { repo: 'acme/web', number: 14, url: 'https://github.com/acme/web/pull/14' } };
+	expect(textOf(TaskHead({ t: detail, now: 0, actions: null }))).not.toContain('PR #14');
 });

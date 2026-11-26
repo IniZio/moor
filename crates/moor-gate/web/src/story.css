@@ -33,6 +33,16 @@
 .t-box .t-wait-q { margin: 0 0 8px; font: var(--moor-weight-heading) var(--moor-text-lg) / 1.2 var(--moor-font-heading); }
 .t-box .t-wait-btns { margin-top: 12px; }
 
+/* The agent's open question on a question's task: inline at the end of the conversation, small answers, the first one filled. */
+.t-pl-ask { padding: 6px 10px 7px; border: 1px solid var(--moor-color-accent); border-radius: var(--moor-radius-sm); background: var(--moor-color-accent-soft); }
+.t-pl-aq { margin: 0; font-weight: var(--moor-weight-strong); }
+.t-pl-aacts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; }
+.t-qbtn { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-sm); background: var(--moor-color-bg-raised); color: var(--moor-color-text); font: inherit; font-size: var(--app-text-sm); line-height: 1; cursor: pointer; }
+.t-qbtn:hover:not(:disabled) { border-color: var(--moor-color-text-muted); }
+.t-qbtn-primary { background: var(--moor-color-text); border-color: var(--moor-color-text); color: var(--moor-color-bg); font-weight: var(--moor-weight-strong); }
+.t-qbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.t-qlnk { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: var(--app-text-sm); text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
+
 .t-story { margin: 0; }
 .t-sg-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--moor-color-border); }
 .t-sg { border-bottom: 1px solid var(--moor-color-border); }
