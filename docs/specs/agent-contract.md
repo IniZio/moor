@@ -8,6 +8,8 @@ An agent that moor runs behaves the same in every project, and no prompt restate
 - **Long-term modeling.** "make sure our modeling is well thought out as long-term product".
 - **A prompt may relax a rule by naming the act** (#12). A rule that must never bend moves to enforcement. The contract then only says the act is refused and what to do.
 - **Rules an agent writes save without a second yes** (#17, answered no to making them wait). The person asked the agent for the change, and the rules page shows every line raw.
+- **Pull request approval is withheld in the default rules** (#16). Approval then needs a prompt that names it.
+- **gh ships in every Box and place image. A repo's own skills are listed in the always-loaded facts. The `operator` section goes in the person-facing server's instructions** (#18).
 - **An agent distro, no hard-coded policy.** The contract, skills and scripts ship as files. Rules show raw and in full.
 - **Vendor, model and harness agnostic.** No setup step. Few key concepts.
 - **Prompts are the source.** The reader marks each enforceable clause with an intent name and its quote. A data-file table expands intents into rule lines. The generated intent list is always loaded for the reader. See [prompt-reading.md](prompt-reading.md).
@@ -478,12 +480,3 @@ Checked at 25b86767c.
 | Harnesses | moor launches Claude Code. The Codex adapter writes a profile only. |
 | Repo skills | Linked into the harness's skills from the repo's `.agents/skills` folder. |
 | `hand_in_reading` | Not built yet. Slice 3 depends on it. |
-
-## Open questions
-
-Each takes one word. Each has a recommendation.
-
-1. **Withhold pull request approval in the default rules?** Approval then needs a prompt that names it. Recommend yes.
-2. **Ship gh in every Box and place image?** The install recipe then goes, with no skill for it. Recommend yes.
-3. **List a repo's own skills in the always-loaded facts?** Recommend yes.
-4. **Put the `operator` section in the person-facing server's instructions?** Recommend yes.
