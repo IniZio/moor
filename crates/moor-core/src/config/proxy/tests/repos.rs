@@ -183,8 +183,22 @@ fn github_api_reads_any_repo_with_get_alone() {
             "GET /repos/*/*/contents",
             "GET /repos/*/*/contents/**",
             "GET /repos/*/*/git/trees/**",
+            "GET /repos/*/*/readme",
         ]
     );
+}
+
+#[test]
+fn github_api_readme_of_any_repo_is_read_only() {
+    let rules = resolve_rules(&ProxyConfig::default(), &app_and_lib(), false).expect("resolves");
+    let api = rules.iter().find(|r| r.name == "github-api").expect("api");
+    let readme: Vec<String> = api
+        .endpoint_rules
+        .iter()
+        .filter(|e| e.path.ends_with("/readme"))
+        .map(|e| format!("{} {}", e.method, e.path))
+        .collect();
+    assert_eq!(readme, ["GET /repos/*/*/readme"]);
 }
 
 #[test]

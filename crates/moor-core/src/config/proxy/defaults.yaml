@@ -22,6 +22,7 @@ rules:
       - "GET /repos/{any_repo}/contents"
       - "GET /repos/{any_repo}/contents/**"
       - "GET /repos/{any_repo}/git/trees/**"
+      - "GET /repos/{any_repo}/readme"
       - "GET /repos/{repo}"
       - "GET|POST /repos/{repo}/pulls"
       - "GET|PATCH /repos/{repo}/pulls/*"
