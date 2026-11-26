@@ -60,8 +60,7 @@ export function zones(): string[] {
 	}
 }
 
-/** A schedule as a person reads it: the words the gate gave, else the raw cron, with the zone. A workflow with no cron reads as the words alone. */
-export function scheduleText(words: string | null | undefined, cron: string | null | undefined, zone: string | null | undefined): string {
-	if (cron == null) return words ?? 'By hand';
-	return `${words ?? cron} (${zone ?? 'UTC'})`;
+/** What fires an automation, as a person reads it: the words the gate gave, else the raw cron, else the pull request trigger. */
+export function firesOn(w: { words?: string | null; cron?: string | null; on_pull_request?: boolean }): string {
+	return w.words ?? w.cron ?? (w.on_pull_request ? 'On every pull request' : 'By hand');
 }

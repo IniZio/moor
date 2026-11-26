@@ -1,73 +1,48 @@
 import { workflowList, type WorkflowRow } from './api';
-import { scheduleText } from './schedule';
-import { RunNowButton } from './RunNow';
+import { RepoCell } from './HomeList';
+import { rowTime } from './runGroups';
+import { firesOn } from './schedule';
 import { useLoad } from './useLoad';
-import { Failed, PullTag, RepoSet, StatusIcon, when } from './WorkflowBits';
+import { Failed, markOf, StatusIcon } from './WorkflowBits';
 
-function Row({ w, csrf, onRan }: { w: WorkflowRow; csrf: string; onRan: () => void }) {
+/** One automation as a flat row: name, what fires it, its repos, its last run and when that was. Run now and switching it off sit in the automation's ⋯ menu. */
+function Row({ w }: { w: WorkflowRow }) {
+	const last = w.last;
 	return (
-		<li>
-			<div class="row-head">
-				<a href={`#/workflows/${encodeURIComponent(w.name)}`}><strong>{w.name}</strong></a>
-				<span class="pills">
-					{w.plan_stale && <span class="pill warn">plan stale</span>}
-					<span class={w.enabled ? 'pill ok' : 'pill'}>{w.enabled ? 'enabled' : 'disabled'}</span>
-				</span>
-			</div>
-			<dl class="facts">
-				<dt>Repos</dt>
-				<dd>
-					<RepoSet repos={w.repos} />
-				</dd>
-				<dt>Schedule</dt>
-				<dd title={w.cron ?? undefined}>
-					{scheduleText(w.words, w.cron, w.timezone)}
-					{w.on_pull_request && (
-						<>
-							{' '}
-							<PullTag />
-						</>
-					)}
-				</dd>
-				<dt>Last run</dt>
-				<dd>
-					{w.last ? (
-						<>
-							<StatusIcon status={w.last.status} verdict={w.last.verdict} /> {w.last.label}
-							{w.last.status === 'failure' && (
-								<>
-									{' '}
-									<RunNowButton csrf={csrf} name={w.name} onRan={onRan} hint=" after its failed last run" />
-								</>
-							)}
-						</>
-					) : (
-						'none yet'
-					)}
-				</dd>
-				{w.cron != null && (
+		<a class={w.enabled ? 'arow' : 'arow off'} href={`#/workflows/${encodeURIComponent(w.name)}`}>
+			<span class="aname">{w.name}</span>
+			<span class="atrig" title={w.cron == null ? undefined : [w.cron, w.timezone ?? 'UTC'].join(' · ')}>
+				{firesOn(w)}
+				{w.cron != null && w.on_pull_request && ' and on every pull request'}
+				{!w.enabled && ' · off'}
+			</span>
+			<RepoCell repos={w.repos} only="" />
+			<span class="alast">
+				{last ? (
 					<>
-						<dt>Next due</dt>
-						<dd>{w.enabled ? (w.next_text ?? when(w.next_due)) : 'disabled'}</dd>
+						<StatusIcon status={last.status} verdict={last.verdict} />
+						<span class={`outcome n-${markOf(last.status, last.verdict).look}`}>{last.label}</span>
 					</>
+				) : (
+					<span class="outcome">no runs yet</span>
 				)}
-			</dl>
-			{w.last?.status !== 'failure' && (
-				<p class="run-now">
-					<RunNowButton csrf={csrf} name={w.name} onRan={onRan} />
-				</p>
-			)}
-		</li>
+			</span>
+			<span class="rtime">{last ? rowTime(last.due_at) : ''}</span>
+		</a>
 	);
 }
 
-export function List({ csrf }: { csrf: string }) {
+export function List() {
 	const { value, error, reload } = useLoad(workflowList, 'list');
 	if (error) return <Failed error={error} retry={reload} />;
-	if (!value) return <p class="muted" aria-busy="true">Loading workflows…</p>;
+	if (!value) return <p class="muted" aria-busy="true">Loading automations…</p>;
 	return value.length === 0 ? (
-		<p class="muted">No workflows yet. Make one with New workflow, or from a finished task with Make this recurring.</p>
+		<p class="muted">No automations yet. Make one with New automation, or from a finished task with Make this recurring.</p>
 	) : (
-		<ul class="cards">{value.map((w) => <Row key={w.name} w={w} csrf={csrf} onRan={() => void reload()} />)}</ul>
+		<div class="rows alist">
+			{value.map((w) => (
+				<Row key={w.name} w={w} />
+			))}
+		</div>
 	);
 }

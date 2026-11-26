@@ -1,38 +1,17 @@
-import { type RunRow, type RunStatus, workflowGet, type Workflow } from './api';
+import { type RunRow, workflowGet, type Workflow } from './api';
 import { groupByDay, groupByPull, rowTime, shortSha } from './runGroups';
 import { useLoad } from './useLoad';
-import { Failed } from './WorkflowBits';
+import { Failed, markOf, StatusIcon } from './WorkflowBits';
 import { WorkflowActions } from './WorkflowActions';
 import { WorkflowEditor } from './WorkflowEditor';
 import './automation.css';
 
-/** Each run state as the row marks it: its glyph, the look its mark and words take, and the word a reader hears. */
-const MARK: Record<RunStatus, { glyph: string; look: string; word: string }> = {
-	queued: { glyph: '○', look: 'settled', word: 'queued' },
-	running: { glyph: '◐', look: 'working', word: 'running' },
-	waiting: { glyph: '●', look: 'needs', word: 'waiting on you' },
-	success: { glyph: '✓', look: 'done', word: 'delivered' },
-	failure: { glyph: '✗', look: 'failed', word: 'failed' },
-	stopped: { glyph: '■', look: 'settled', word: 'declined' },
-	skipped: { glyph: '–', look: 'settled', word: 'skipped' },
-};
-
-/** A delivered run whose outcome reads bad is marked as a warning, never as a failure. */
-function markOf(r: RunRow) {
-	const m = MARK[r.status];
-	if (r.status !== 'success' || !r.verdict) return m;
-	const word = `${m.word}: ${r.verdict.name}`;
-	return r.verdict.tone === 'bad' ? { glyph: '!', look: 'warn', word } : { ...m, word };
-}
-
 function RunItem({ r }: { r: RunRow }) {
-	const m = markOf(r);
+	const m = markOf(r.status, r.verdict);
 	return (
 		<li>
 			<a href={`#/runs/${r.id}`}>
-				<span class={`smk smk-${m.look}`} role="img" aria-label={m.word} title={m.word}>
-					{m.glyph}
-				</span>
+				<StatusIcon status={r.status} verdict={r.verdict} />
 				{r.pull && r.head_sha && <span class="t-mono">{shortSha(r.head_sha)}</span>}
 				<span class={`outcome n-${m.look}`}>{r.label}</span>
 				<span class="rtime">{rowTime(r.due_at)}</span>

@@ -2,6 +2,7 @@ import { RunPage } from './RunPage';
 import { WorkflowForm } from './WorkflowForm';
 import { List } from './WorkflowList';
 import { WorkflowPage } from './WorkflowPage';
+import './automation.css';
 
 /** What the address names under `#/workflows`: nothing, a workflow, or one of its runs. */
 export type At =
@@ -29,13 +30,15 @@ export function Workflows({ csrf, at }: { csrf: string; at: At }) {
 	return (
 		<section>
 			{at.page === 'list' && (
-				<>
-					<div class="row-head wf-head">
-						<h2>Workflows</h2>
-						<a class="button" href="#/new-workflow">New workflow</a>
+				<div class="auto">
+					<div class="pagehead">
+						<h1>Automations</h1>
+						<a class="btn sm" href="#/new-workflow">
+							New automation
+						</a>
 					</div>
-					<List csrf={csrf} />
-				</>
+					<List />
+				</div>
 			)}
 			{at.page === 'new' && <WorkflowForm csrf={csrf} />}
 			{at.page === 'edit' && <WorkflowForm key={at.name} csrf={csrf} editing={at.name} />}

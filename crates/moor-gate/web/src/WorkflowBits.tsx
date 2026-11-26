@@ -1,18 +1,28 @@
 import type { RunStatus } from './api';
 import type { Verdict } from './gate';
+import { rowTime } from './runGroups';
 
-const ICONS: Record<RunStatus, { glyph: string; word: string }> = {
-	queued: { glyph: '○', word: 'queued' },
-	running: { glyph: '●', word: 'running' },
-	waiting: { glyph: '◷', word: 'waiting on you' },
-	success: { glyph: '✓', word: 'delivered' },
-	failure: { glyph: '✗', word: 'failed' },
-	stopped: { glyph: '■', word: 'declined' },
-	skipped: { glyph: '–', word: 'skipped' },
+/** Each run state as its mark shows it: the glyph, the look the mark and its words take, and the word a reader hears. */
+const MARK: Record<RunStatus, { glyph: string; look: string; word: string }> = {
+	queued: { glyph: '○', look: 'settled', word: 'queued' },
+	running: { glyph: '◐', look: 'working', word: 'running' },
+	waiting: { glyph: '●', look: 'needs', word: 'waiting on you' },
+	success: { glyph: '✓', look: 'done', word: 'delivered' },
+	failure: { glyph: '✗', look: 'failed', word: 'failed' },
+	stopped: { glyph: '■', look: 'settled', word: 'declined' },
+	skipped: { glyph: '–', look: 'settled', word: 'skipped' },
 };
 
+/** A delivered run whose outcome reads bad is marked as a warning, never as a failure. */
+export function markOf(status: RunStatus, verdict?: Verdict | null) {
+	const m = MARK[status];
+	if (status !== 'success' || !verdict) return m;
+	const word = `${m.word}: ${verdict.name}`;
+	return verdict.tone === 'bad' ? { glyph: '!', look: 'warn', word } : { ...m, word };
+}
+
 export function when(ms: number | null | undefined): string {
-	return ms == null ? 'none' : new Date(ms).toLocaleString();
+	return ms == null ? 'none' : rowTime(ms);
 }
 
 export function duration(ms: number | null | undefined): string {
@@ -23,53 +33,22 @@ export function duration(ms: number | null | undefined): string {
 	return mins < 60 ? `${mins}m ${secs % 60}s` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-/** A delivered run's icon follows the tone of the outcome it found: a bad one is still a delivered run, shown as a warning mark and never as a failure. */
 export function StatusIcon({ status, verdict }: { status: RunStatus; verdict?: Verdict | null }) {
-	const icon = ICONS[status];
-	if (status !== 'success' || !verdict) return <span class={`status ${status}`} role="img" aria-label={icon.word} title={icon.word}>{icon.glyph}</span>;
-	const word = `${icon.word}: ${verdict.name}`;
-	const tone = verdict.tone === 'good' ? 'success' : verdict.tone;
-	return <span class={`status ${tone}`} role="img" aria-label={word} title={word}>{verdict.tone === 'bad' ? '!' : icon.glyph}</span>;
+	const m = markOf(status, verdict);
+	return (
+		<span class={`smk smk-${m.look}`} role="img" aria-label={m.word} title={m.word}>
+			{m.glyph}
+		</span>
+	);
 }
 
 export function Failed({ error, retry }: { error: string; retry: () => void }) {
 	return (
 		<>
-			<p class="notice danger" role="alert">{error}</p>
+			<p class="notice danger" role="alert">
+				{error}
+			</p>
 			<button onClick={retry}>Try again</button>
 		</>
-	);
-}
-
-/** Marks a workflow that also runs on pull requests. */
-export function PullTag() {
-	return (
-		<span class="pill ok" title="Runs on pull requests">
-			PR
-		</span>
-	);
-}
-
-/** A run's pull request, `OWNER/NAME#NUMBER`, as a link to it on GitHub. */
-export function PullLink({ pull }: { pull: string }) {
-	const m = /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(pull);
-	if (!m) return <span class="muted">{pull}</span>;
-	return (
-		<a class="run-pr" href={`https://github.com/${m[1]}/pull/${m[2]}`} target="_blank" rel="noopener noreferrer">
-			{pull}
-		</a>
-	);
-}
-
-/** A workflow's repos in order: the agent starts in the first, and the rest are cloned with it. */
-export function RepoSet({ repos }: { repos: string[] }) {
-	return (
-		<span class="repo-set">
-			{repos.map((r, i) => (
-				<span key={r} class={i === 0 ? 'pill ok' : 'pill'} title={i === 0 ? 'The agent starts here' : undefined}>
-					{r}
-				</span>
-			))}
-		</span>
 	);
 }
