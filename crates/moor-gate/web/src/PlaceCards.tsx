@@ -79,7 +79,7 @@ export function BoxLine({ box }: { box: TaskBox }) {
 
 const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-function Card({ glyph, name, where, note, href, children }: { glyph: keyof typeof GLYPH; name: string; where?: string; note?: ComponentChildren; href: string; children?: ComponentChildren }) {
+function Card({ glyph, name, where, note, href, tail, children }: { glyph: keyof typeof GLYPH; name: string; where?: string; note?: ComponentChildren; href: string; tail?: ComponentChildren; children?: ComponentChildren }) {
 	return (
 		<>
 			{children}
@@ -88,6 +88,7 @@ function Card({ glyph, name, where, note, href, children }: { glyph: keyof typeo
 				<span class="t-pl-name">{name}</span>
 				{where && <span class="t-pl-where">in {where}</span>}
 				<span class="t-pl-sum">{note}</span>
+				{tail}
 				<a class="btn sm" href={href} target="_blank" rel="noopener">
 					Open
 				</a>
@@ -108,11 +109,33 @@ function showWords(el: HTMLDivElement | null) {
 		.catch(() => undefined);
 }
 
-/** A file a work Box left: the picture, or the start of its words, inline above its name and a link that opens it. */
-export function ArtifactCard({ a }: { a: Evidence }) {
+const cardId = (name: string, version: number) => `t-art-${encodeURIComponent(name)}-${version}`;
+
+/** Its versions up to its own as chips, the newest one filled; an older version is dimmed and links to the newest. */
+function Versions({ a, newest }: { a: Evidence; newest: number }) {
 	return (
-		<article class="t-pl-art">
-			<Card glyph={a.image ? 'image' : 'doc'} name={a.name} note={a.image ? undefined : kb(a.size)} href={a.href}>
+		<>
+			{a.version < newest && (
+				<button type="button" class="t-pl-newer" onClick={() => document.getElementById(cardId(a.name, newest))?.scrollIntoView({ block: 'center' })}>
+					newer: v{newest}
+				</button>
+			)}
+			<span class="t-pl-chips">
+				{Array.from({ length: a.version }, (_, i) => (
+					<span class={i + 1 === newest ? 't-pl-chip t-on' : 't-pl-chip'} key={i}>
+						v{i + 1}
+					</span>
+				))}
+			</span>
+		</>
+	);
+}
+
+/** A file a Box left: the picture, or the start of its words, inline above its name, its versions and a link that opens it. `newest` is the latest version of the same name. */
+export function ArtifactCard({ a, newest = a.version }: { a: Evidence; newest?: number }) {
+	return (
+		<article class={a.version < newest ? 't-pl-art t-pl-sup' : 't-pl-art'} id={cardId(a.name, a.version)}>
+			<Card glyph={a.image ? 'image' : 'doc'} name={a.name} note={a.image ? undefined : kb(a.size)} href={a.href} tail={<Versions a={a} newest={newest} />}>
 				{a.image ? (
 					<div class="t-pl-pic">
 						<img src={a.href} alt={a.name} loading="lazy" />
@@ -130,6 +153,19 @@ export function PrCard({ pr, state }: { pr: NonNullable<BoxDetail['pr']>; state?
 	return (
 		<article class="t-pl-pr">
 			<Card glyph="pr" name={`Pull request #${pr.number}`} where="GitHub" note={state} href={pr.url} />
+		</article>
+	);
+}
+
+/** Where an output lives, as its card names it: GitHub, or none for another site. */
+const onGitHub = (url: string) => /^https:\/\/github\.com\//.test(url);
+
+/** Something the agent made outside moor, as a card: its title, where it lives and a link that opens it. */
+export function OutputCard({ o }: { o: Output }) {
+	const github = onGitHub(o.url);
+	return (
+		<article class="t-pl-out">
+			<Card glyph={github ? 'pr' : 'link'} name={o.title} where={github ? 'GitHub' : undefined} href={o.url} />
 		</article>
 	);
 }
