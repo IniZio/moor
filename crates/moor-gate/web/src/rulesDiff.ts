@@ -32,6 +32,22 @@ export function diffLines(prev: string[], next: string[]): DiffLine[] {
 	return out;
 }
 
+/** The withheld requests an added rule line lets through: `METHOD /path` entries, `{repo}` for the repo and `*` for one path segment. */
+export function litRequests(added: string[], requests: string[], repo: string): Set<string> {
+	const out = new Set<string>();
+	for (const line of added) {
+		const entry = line.replace(/^\s*-\s*/, '').replace(/^(["'])(.*)\1$/, '$2').trim();
+		if (!/^[A-Z]+ \//.test(entry)) continue;
+		const source = entry
+			.split(/(\{repo\}|\*)/)
+			.map((part) => (part === '{repo}' ? repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : part === '*' ? '[^/]+' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+			.join('');
+		const rule = new RegExp(`^${source}$`);
+		for (const r of requests) if (rule.test(r)) out.add(r);
+	}
+	return out;
+}
+
 /** What moor writes in place of a credential-shaped part when it keeps an agent's words. */
 const REDACTED = '[redacted]';
 

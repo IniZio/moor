@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { diffLines, proposalOf, scrubbed, textLines, unredact } from './rulesDiff';
+import { diffLines, litRequests, proposalOf, scrubbed, textLines, unredact } from './rulesDiff';
 
 test('a diff keeps the common lines and marks what was added and taken out, in reading order', () => {
 	const prev = ['rules:', '  allow:', '    - GET /user', '    - GET /repos/{repo}'];
@@ -35,4 +35,12 @@ test('a kept line the scrub cut comes back as the saved line; a new one stays cu
 	expect(back).toBe('rules:\n  - secret: anthropic_key\n  - secret: [redacted]\n');
 	expect(scrubbed(back)).toBe(true);
 	expect(scrubbed(unredact(base, 'rules:\n  - secret: [redacted]\n'))).toBe(false);
+});
+
+test('an added rule lights the withheld requests it lets through, with {repo} and * read as the mock does', () => {
+	const asked = ['POST /repos/acme/web/issues/482/comments', 'DELETE /repos/acme/web/git/refs/heads/tmp', 'POST /repos/other/web/issues/9/comments'];
+	const added = ['      - POST /repos/{repo}/issues/*/comments', '    secret: github'];
+	expect([...litRequests(added, asked, 'acme/web')]).toEqual([asked[0]]);
+	expect(litRequests([], asked, 'acme/web').size).toBe(0);
+	expect(litRequests(['      - "GET /user"'], ['GET /user'], 'acme/web').size).toBe(1);
 });
