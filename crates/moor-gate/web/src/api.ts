@@ -152,6 +152,16 @@ export async function repoSet(csrf: string, repo: string, text: string, revision
 	return answer(res, RepoConfigSchema);
 }
 
+/** Sends the person's words about a repo's rules to their agent place, with the rules the page shows; answers the place that took it. */
+export async function rulesAsk(csrf: string, repo: string, body: { words: string; text: string; withheld: string[] }): Promise<{ box: string; no_idle_place?: string | null }> {
+	const res = await fetch('/account/api/rules/ask', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
+		body: JSON.stringify({ repo, ...body }),
+	});
+	return answer(res, v.object({ box: v.string(), no_idle_place: v.nullish(v.string()) }));
+}
+
 /** Replaces a node's cap (none for no cap) and labels, against the revision the page read. */
 export async function nodeSet(
 	csrf: string,

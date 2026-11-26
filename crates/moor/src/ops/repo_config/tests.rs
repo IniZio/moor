@@ -175,3 +175,16 @@ fn text_over_the_cap_is_refused() {
         ErrorKind::Usage
     );
 }
+
+#[test]
+fn a_write_names_its_editor_by_the_email_of_their_user() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = operator(dir.path(), &Arc::new(FakeForge::new()));
+    let me = moor_core::user::Identity::parse("local:1000").unwrap();
+    let email = moor_core::user::Email::parse("alice@example.com").unwrap();
+    cx.store().unwrap().enroll(&me, Some(&email)).unwrap();
+    let wrote = set(&cx, &set_req("setup: [a]\n", Some(0))).unwrap();
+    assert_eq!(wrote.edited_by.as_deref(), Some("alice@example.com"));
+    let read = get(&cx, &get_req()).unwrap();
+    assert_eq!(read.edited_by.as_deref(), Some("alice@example.com"));
+}

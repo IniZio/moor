@@ -1,4 +1,5 @@
 import type { Workflow } from './api';
+import { diffLines } from './rulesDiff';
 
 /** One line of the automation's file: a header line, a comment, the separator, or a line of the prompt. */
 export type FileLine = { text: string; kind: 'head' | 'comment' | 'sep' | 'prompt'; lit: boolean };
@@ -35,26 +36,9 @@ export function promptLines(prompt: string): string[] {
 
 /** Which of `next` are not in a longest common run with `prev`: the lines a change added or rewrote. */
 export function changed(prev: string[], next: string[]): boolean[] {
-	const n = prev.length;
-	const m = next.length;
-	const best: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-	for (let i = n - 1; i >= 0; i--) {
-		for (let j = m - 1; j >= 0; j--) {
-			best[i][j] = prev[i] === next[j] ? best[i + 1][j + 1] + 1 : Math.max(best[i + 1][j], best[i][j + 1]);
-		}
-	}
-	const lit = new Array<boolean>(m).fill(true);
-	let i = 0;
-	let j = 0;
-	while (i < n && j < m) {
-		if (prev[i] === next[j]) {
-			lit[j] = false;
-			i++;
-			j++;
-		} else if (best[i + 1][j] >= best[i][j + 1]) i++;
-		else j++;
-	}
-	return lit;
+	return diffLines(prev, next)
+		.filter((l) => l.kind !== 'del')
+		.map((l) => l.kind === 'add');
 }
 
 /** The whole file: `on`, `repos`, `run_as`, `may`, then the prompt, its lines lit where `prompt` differs from the saved one. */

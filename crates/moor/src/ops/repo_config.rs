@@ -8,7 +8,7 @@ use moor_core::config::parse_repo;
 use moor_core::config::proxy::{parse_rules_text, DEFAULT_RULES_TEXT};
 use moor_core::request::{RepoConfigGetReq, RepoConfigSetReq, RepoFile};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::user::Viewer;
+use moor_core::user::{Identity, Viewer};
 use moor_core::view::repo_config::RepoConfigValue;
 
 mod seen;
@@ -43,6 +43,7 @@ enum Need {
 pub(crate) fn get(cx: &Cx, req: &RepoConfigGetReq) -> Result<RepoConfigValue, CommandError> {
     let who = check(cx, &req.repo, Need::See)?;
     let mut read = value(
+        cx,
         &req.repo,
         req.file,
         cx.store()?.repo_text(&req.repo, req.file)?,
@@ -82,7 +83,7 @@ pub(crate) fn set(cx: &Cx, req: &RepoConfigSetReq) -> Result<RepoConfigValue, Co
     {
         Wrote::Written(row) => Ok(RepoConfigValue {
             can_edit: true,
-            ..value(&req.repo, req.file, Some(row))
+            ..value(cx, &req.repo, req.file, Some(row))
         }),
         Wrote::Stale { current } => {
             let what = noun(req.file);
@@ -144,17 +145,28 @@ const fn noun(file: RepoFile) -> &'static str {
 }
 
 /// The view of `row`, the repo's stored `file`.
-fn value(repo: &ForgeRepo, file: RepoFile, row: Option<RepoConfigRow>) -> RepoConfigValue {
+fn value(cx: &Cx, repo: &ForgeRepo, file: RepoFile, row: Option<RepoConfigRow>) -> RepoConfigValue {
     RepoConfigValue {
         repo: repo.clone(),
         file,
         revision: row.as_ref().map_or(0, |r| r.revision),
-        edited_by: row.as_ref().map(|r| r.edited_by.clone()),
+        edited_by: row.as_ref().map(|r| editor(cx, &r.edited_by)),
         edited_at: row.as_ref().map(|r| rfc3339(r.edited_at)),
         text: row.map(|r| r.text),
         can_edit: false,
         seen: None,
     }
+}
+
+/// Who `label`, the identity a write recorded, names as a person reads it: the email of the user
+/// it is linked to, or the label itself when it has none.
+fn editor(cx: &Cx, label: &str) -> String {
+    let email = Identity::parse(label).ok().and_then(|identity| {
+        let store = cx.store().ok()?;
+        let user = store.user_of(&identity).ok()??;
+        store.email_of(user).ok()?
+    });
+    email.unwrap_or_else(|| label.to_owned())
 }
 
 #[cfg(test)]
