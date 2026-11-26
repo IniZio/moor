@@ -3,39 +3,40 @@ import type { ComponentChildren } from 'preact';
 import type { BoxDetail, Entry } from './api';
 import { Markdown } from './Markdown';
 import { ArtifactCard, BoxLine, PrCard } from './PlaceCards';
+import { exactTime } from './HomeList';
 import { clock, Line } from './Portal';
 import { foldWords, routine, ToolLine } from './Transcript';
 
-/** One question and what came of it: the person's message, the agent's last words as the answer, and everything else the agent did or said before them as its work. */
-type Turn = { you?: Entry; answer?: Entry; work: Entry[]; ended?: Entry };
+/** Something the agent said, under it the calls and notes that led up to it; or, before it speaks again, the calls since it last did. */
+type Beat = { line?: Entry; work: Entry[] };
+
+/** One message of the person and what the agent did after it, and the failure that ended the task when it ended there. */
+type Turn = { you?: Entry; beats: Beat[]; ended?: Entry };
 
 const failing = (e: Entry) => e.class === 'error' || !!e.tool?.failed;
 
-/** The question's task cut at each message of the person; a turn's setup notes are dropped, its last words are the answer, and its calls, errors and earlier words are its work. When the task failed, the last failure nothing from the agent followed ends it. */
+/** The question's task cut at each message of the person and, inside a turn, at each message of the agent; setup notes are dropped. When the task failed, the last failure nothing from the agent followed ends it. */
 function turnsOf(entries: Entry[], failed: boolean): Turn[] {
 	const turns: Turn[] = [];
-	let turn: Turn = { work: [] };
-	/** Takes the turn's last words out of its work, and returns how many work entries came before them. */
-	const settle = (): number => {
-		const at = turn.work.map((e) => e.class).lastIndexOf('message');
-		if (at >= 0) turn.answer = turn.work.splice(at, 1)[0];
-		return Math.max(at, 0);
-	};
+	let turn: Turn = { beats: [] };
+	let work: Entry[] = [];
 	const close = (ends = false) => {
-		const settled = settle();
-		if (ends) {
-			const at = lastFailing(turn.work);
-			if (at >= settled) turn.ended = turn.work.splice(at, 1)[0];
-		}
-		if (turn.you || turn.answer || turn.work.length || turn.ended) turns.push(turn);
-		turn = { work: [] };
+		const at = ends ? lastFailing(work) : -1;
+		if (at >= 0) turn.ended = work.splice(at, 1)[0];
+		if (work.length) turn.beats.push({ work });
+		if (turn.you || turn.beats.length || turn.ended) turns.push(turn);
+		turn = { beats: [] };
+		work = [];
 	};
 	for (const e of entries) {
 		if (e.class === 'you') {
 			close();
 			turn.you = e;
+		} else if (e.class === 'message') {
+			turn.beats.push({ line: e, work });
+			work = [];
 		} else if (e.class !== 'routine' && e.class !== 'hidden' && e.class !== 'turn') {
-			turn.work.push(e);
+			work.push(e);
 		}
 	}
 	close(failed);
@@ -55,28 +56,51 @@ function workWords(work: Entry[]): string {
 	return said || plural(work.length, 'note', 'notes');
 }
 
-/** A part of a turn's conversation: the agent's answer, or what its work Boxes made, in the order they happened. */
-type Part = { at: number; node: ComponentChildren; answer?: boolean; pr?: boolean };
+/** A part of a turn's conversation: something the agent said with its fold, or what its work Boxes made, in the order they happened. */
+type Part = { at: number; nodes: ComponentChildren[]; rank: number; said?: boolean };
 
-/** Parts in time order; at the same moment the pull request card comes first, then the answer, then the rest. */
-const byTime = (x: Part, y: Part) => x.at - y.at || rank(x) - rank(y);
-const rank = (p: Part) => (p.pr ? 0 : p.answer ? 1 : 2);
+/** At the same moment the pull request card comes first, then the agent's words, then the rest. */
+const PR = 0;
+const SAID = 1;
+const MADE = 2;
+const byTime = (x: Part, y: Part) => x.at - y.at || x.rank - y.rank;
 
-const answerPart = (e: Entry): Part => ({
-	at: Date.parse(e.at),
-	answer: true,
-	node: (
-		<div class="t-pl-say" key={`s${e.key ?? e.id}`}>
-			<span class="t-pl-mark">◆</span>
-			<div class="t-pl-text">
-				<Markdown text={e.text} />
-			</div>
+const fold = (work: Entry[], gates: readonly string[], key: string) => (
+	<details class="t-pl-fold" key={key}>
+		<summary>
+			<span class="t-chev">▸</span> {workWords(work)}
+		</summary>
+		<div class="t-pl-body">
+			{work.map((e) => (
+				<Work entry={e} gates={gates} key={e.key ?? e.id} />
+			))}
 		</div>
-	),
-});
+	</details>
+);
+
+const beatPart = ({ line, work }: Beat, gates: readonly string[]): Part => {
+	const first = line ?? (work[0] as Entry);
+	const id = first.key ?? first.id;
+	const folded = work.length ? [fold(work, gates, `f${id}`)] : [];
+	if (!line) return { at: Date.parse(first.at), rank: SAID, nodes: folded };
+	return {
+		at: Date.parse(line.at),
+		rank: SAID,
+		said: true,
+		nodes: [
+			<div class="t-pl-say" key={`s${id}`}>
+				<span class="t-pl-mark">◆</span>
+				<div class="t-pl-text">
+					<Markdown text={line.text} />
+				</div>
+			</div>,
+			...folded,
+		],
+	};
+};
 
 /** When a turn began: its message, or the first thing it holds when the agent spoke first. */
-const startOf = (t: Turn): number => Math.min(...[t.you, t.answer, ...t.work].flatMap((e) => (e ? [Date.parse(e.at)] : [])));
+const startOf = (t: Turn): number => Math.min(...[t.you, ...t.beats.flatMap((b) => [b.line, ...b.work])].flatMap((e) => (e ? [Date.parse(e.at)] : [])));
 
 /** The last index of `items` that `holds`, or -1. */
 const lastIndex = <T,>(items: readonly T[], holds: (item: T) => boolean): number => items.reduce((at, item, i) => (holds(item) ? i : at), -1);
@@ -87,34 +111,29 @@ function prSeenAt(pr: NonNullable<BoxDetail['pr']>, timeline: Entry[]): number {
 	return first ? Date.parse(first.at) : NaN;
 }
 
-/** The parts of each turn: its answer, and the work Box lines and cards that happened in it. A Box part goes to the last turn that began no later than it, or the first, and follows the answer of the same moment. The pull request card sits where the pull request first showed, after the Box line of the Box that opened it. When nothing shows it, the card sits above the answer of the last turn, or at its end when there is none. */
+/** The parts of each turn: what the agent said, and the work Box lines and cards that happened in it. A Box part goes to the last turn that began no later than it, or the first. The pull request card sits where the pull request first showed, after the Box line of the Box that opened it. When nothing shows it, the card sits above the agent's last words in the last turn, or at its end when there are none. */
 function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): Part[][] {
+	const gates = detail.gate?.gates ?? [];
 	const starts = turns.map(startOf);
-	const parts: Part[][] = turns.map((t) => (t.answer ? [answerPart(t.answer)] : []));
-	const put = (at: number, node: ComponentChildren, pr = false) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, node, pr });
+	const parts: Part[][] = turns.map((t) => t.beats.map((b) => beatPart(b, gates)));
+	const put = (at: number, node: ComponentChildren, rank = MADE) => parts[Math.max(0, lastIndex(starts, (s) => s <= at))]?.push({ at, nodes: [node], rank });
 	for (const box of detail.task_boxes) {
 		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.id}`} />);
 		for (const a of box.artifacts) put(Date.parse(a.created_at), <ArtifactCard a={a} key={`a${box.id}/${a.name}@${a.version}`} />);
 	}
 	const { pr } = detail;
 	const seen = pr ? prSeenAt(pr, detail.timeline) : NaN;
-	if (pr && !Number.isNaN(seen)) put(seen, <PrCard pr={pr} state={prState} key="pr" />, true);
+	if (pr && !Number.isNaN(seen)) put(seen, <PrCard pr={pr} state={prState} key="pr" />, PR);
 	for (const list of parts) list.sort(byTime);
 	const last = parts.at(-1);
 	if (pr && Number.isNaN(seen) && last) {
-		const above = lastIndex(last, (p) => !!p.answer);
-		last.splice(above < 0 ? last.length : above, 0, { at: 0, node: <PrCard pr={pr} state={prState} key="pr" /> });
+		const above = lastIndex(last, (p) => !!p.said);
+		last.splice(above < 0 ? last.length : above, 0, { at: 0, rank: PR, nodes: [<PrCard pr={pr} state={prState} key="pr" />] });
 	}
 	return parts;
 }
 
 function Work({ entry, gates }: { entry: Entry; gates: readonly string[] }) {
-	if (entry.class === 'message')
-		return (
-			<div class="t-pl-note">
-				<Markdown text={entry.text} />
-			</div>
-		);
 	if (entry.tool) return <ToolLine e={entry} when={clock(entry.at)} />;
 	if (entry.class === 'step') return <p class="t-pl-step t-mono">{entry.text}</p>;
 	return <Line e={entry} gates={gates} />;
@@ -129,42 +148,34 @@ function Ended({ e }: { e: Entry }) {
 	);
 }
 
-/** A question's task as a conversation: the person's messages as bubbles under their name and time, the work Boxes its agent started as one line each with what they made as cards, the agent's last words as a line, one quiet fold of its work and earlier words under it, and only a failure that ended the task as an error. `prState` says where the pull request stands, once the page has read it. */
-export function PlaceStory({ detail, you, prState }: { detail: BoxDetail; you: string; prState?: ComponentChildren }) {
+/** When the person wrote: the clock, with the day too once it is not the day the task began. */
+const stamp = (at: string, began: string) => exactTime(at, Date.parse(began));
+
+/** A question's task as a conversation: the person's messages as bubbles under their name and time, then in the order they happened everything the agent said as a line with a quiet fold of the calls that led to it, the work Boxes it started as one line each, and what they made as cards. Only a failure that ended the task shows as an error. `end` closes the conversation, as the agent's open question does. `prState` says where the pull request stands, once the page has read it. */
+export function PlaceStory({ detail, you, prState, end }: { detail: BoxDetail; you: string; prState?: ComponentChildren; end?: ComponentChildren }) {
 	const turns = turnsOf(detail.timeline, detail.state === 'failed');
-	if (!turns.length) return <p class="t-empty">Nothing has happened yet.</p>;
-	const gates = detail.gate?.gates ?? [];
+	if (!turns.length) return end ? <div class="t-pl">{end}</div> : <p class="t-empty">Nothing has happened yet.</p>;
 	const parts = partsOf(detail, turns, prState);
+	const began = turns.find((t) => t.you)?.you?.at ?? '';
 	return (
 		<div class="t-pl">
-			{turns.flatMap((t, i) => [
+			{[
+				...turns.flatMap((t, i) => [
 				...(t.you
 					? [
 							<div class="t-pl-you" key={`y${i}`}>
 								<span class="t-pl-meta">
-									{you} · {clock(t.you.at)}
+									{you} · {stamp(t.you.at, began)}
 								</span>
 								<span class="t-pl-bubble">{t.you.text === '(interrupt)' ? <em>Interrupted the agent's turn</em> : t.you.text}</span>
 							</div>,
 						]
 					: []),
-				...(parts[i] ?? []).map((p) => p.node),
-				...(t.work.length
-					? [
-							<details class="t-pl-fold" key={`f${i}`}>
-								<summary>
-									<span class="t-chev">▸</span> {workWords(t.work)}
-								</summary>
-								<div class="t-pl-body">
-									{t.work.map((e) => (
-										<Work entry={e} gates={gates} key={e.key ?? e.id} />
-									))}
-								</div>
-							</details>,
-						]
-					: []),
+				...(parts[i] ?? []).flatMap((p) => p.nodes),
 				...(t.ended ? [<Ended e={t.ended} key={`e${i}`} />] : []),
-			])}
+				]),
+				...(end ? [end] : []),
+			]}
 		</div>
 	);
 }
