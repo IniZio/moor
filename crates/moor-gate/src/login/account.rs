@@ -20,7 +20,7 @@ use serde_json::json;
 use super::routes::{page, read_body, Request};
 use super::secrets::{rows, Row};
 use super::{check_csrf, csrf_token, Login, Session};
-use super::{nodes, portal, repos, settings, workflows};
+use super::{contract, nodes, portal, repos, settings, workflows};
 use crate::{log, tools, Gate};
 
 /// The app's built files: `index.html` and `assets/`. Built by `build.rs`, not committed.
@@ -106,6 +106,7 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("GET", API, Some(session)) => show(&mut stream, gate, login, &session),
         ("GET", REPOS, Some(session)) => repos::list(&mut stream, gate, &session),
         ("GET", INTENTS, Some(_)) => json(&mut stream, "200 OK", &intents()),
+        ("GET", contract::PATH, Some(_)) => json(&mut stream, "200 OK", &contract::view()),
         ("GET", p, Some(session)) if repos::named(p).is_some() => {
             repos::read(&mut stream, gate, &session, p);
         }

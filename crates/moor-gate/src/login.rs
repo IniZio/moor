@@ -4,6 +4,7 @@
 //! the key can serve them, and a restart that keeps the key ends no session.
 
 pub(crate) mod account;
+mod contract;
 mod cookie;
 mod kept;
 mod nodes;
