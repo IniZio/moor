@@ -33,6 +33,7 @@ mod inbox;
 mod pulls;
 mod retry;
 mod row;
+mod rules_ask;
 mod start;
 mod steer;
 mod task_boxes;
@@ -71,6 +72,7 @@ pub(super) fn serves(method: &str, path: &str) -> bool {
                 | "/account/api/box/close"
                 | "/account/api/inbox/read"
                 | "/account/api/inbox/clear"
+                | "/account/api/rules/ask"
         )
     )
 }
@@ -126,6 +128,9 @@ pub(super) fn serve(
         }
         ("POST", "/account/api/inbox/clear") => {
             inbox::clear(stream, gate, session, req.csrf, body.as_deref());
+        }
+        ("POST", "/account/api/rules/ask") => {
+            rules_ask::ask(stream, (gate, login), session, req.csrf, body.as_deref());
         }
         ("POST", _) => start::start(stream, gate, login, session, req.csrf, body.as_deref()),
         (_, "/account/api/inbox") => inbox::list(stream, gate, session),

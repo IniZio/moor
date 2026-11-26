@@ -5,6 +5,7 @@ import { Glyph, STATES } from './Glyph';
 import { pathOf } from './hashQuery';
 import { InboxView } from './Inbox';
 import { sectionAt } from './Settings';
+import { rulesAt } from './Rules';
 import { currentTheme, setTheme, type Theme } from './theme';
 import { workflowsAt } from './Workflows';
 
@@ -141,7 +142,7 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 		return () => removeEventListener('hashchange', on);
 	}, []);
 	const path = pathOf(hash);
-	const here = workflowsAt(path) ? 'automations' : sectionAt(path) ? 'team' : 'tasks';
+	const here = workflowsAt(path) ? 'automations' : sectionAt(path) || rulesAt(path) ? 'team' : 'tasks';
 	const current = (key: string) => (key === here ? 'page' : undefined);
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { Conflict, type RepoConfig, repoGet, repoList, repoSet, failure, toError } from './api';
 import { GitHubApp } from './GitHubApp';
-import { RepoRules } from './Rules';
+import { rulesHref } from './Rules';
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 
@@ -158,7 +158,9 @@ export function Repos({ csrf, repo }: { csrf: string; repo: string | null }) {
 				<Picker repo={repo} />
 				{repo && REPO.test(repo) ? (
 					<>
-						<RepoRules key={repo} csrf={csrf} repo={repo} />
+						<p>
+							<a href={rulesHref(repo)}>Proxy rules of {repo}</a>: what its Boxes may send with a secret, and what they met.
+						</p>
 						<ul class="cards">
 							<li><Editor key={repo} csrf={csrf} repo={repo} /></li>
 						</ul>

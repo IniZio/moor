@@ -4,6 +4,7 @@ import { Connect } from './Connect';
 import { Machines } from './Machines';
 import { Profile } from './Profile';
 import { Repos } from './Repos';
+import { rulesAt } from './Rules';
 import { Secrets } from './Secrets';
 import './settingsPage.css';
 
@@ -24,7 +25,7 @@ function isSection(name: string): name is Section {
 /** The settings section the address names: `#/settings[/<section>]`, or `#/repos[/owner/name]` for Repos; null for any other page. */
 export function sectionAt(hash: string): Section | null {
 	const rest = hash.replace(/^#\/?/, '');
-	if (rest === 'repos' || rest.startsWith('repos/')) return 'repos';
+	if (rest === 'repos' || (rest.startsWith('repos/') && !rulesAt(hash))) return 'repos';
 	if (rest === 'settings') return 'machines';
 	const name = rest.startsWith('settings/') ? rest.slice('settings/'.length) : null;
 	return name !== null && isSection(name) ? name : null;

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import type { RepoConfig } from './api';
 import { all, textOf } from './testkit';
-import { afterSave, hostPort, lineNumbers, rulesLine, Seen } from './Rules';
+import { afterSave, hostPort, lineNumbers, replyOf, RulesDiff, rulesAt, rulesLine, Seen, spans } from './Rules';
 
 const rules = (over: Partial<RepoConfig> = {}): RepoConfig => ({
 	repo: 'acme/web',
@@ -53,4 +53,40 @@ test('a save keeps the lists the page read, since the write reply has none', () 
 	const saved = afterSave(rules({ seen }), rules({ revision: 2, seen: null }));
 	expect(saved.revision).toBe(2);
 	expect(saved.seen).toEqual(seen);
+});
+
+test("the agent's quoted parts read as code", () => {
+	const out = spans('I added `- "GET /user"` under `api.github.com`.');
+	expect(out.length).toBe(5);
+	expect(textOf(out[1] as never)).toBe('- "GET /user"');
+});
+
+test('only a repo rules address opens the rules page', () => {
+	expect(rulesAt('#/repos/acme/web/rules')).toBe('acme/web');
+	expect(rulesAt('#/repos/acme/web')).toBeNull();
+	expect(rulesAt('#/repos/acme/web/rules/x')).toBeNull();
+});
+
+const said = (at: string, text: string) => ({ id: 1, at, kind: 'said', class: 'message' as const, text });
+
+test("the agent's reply is its newest yaml block since the task was asked, and only words once it stopped", () => {
+	const detail = (timeline: ReturnType<typeof said>[], state = 'working') => ({ task_at: '2026-11-26T10:00:00Z', state: state as 'working', timeline });
+	const old = said('2026-11-26T09:00:00Z', 'Old.\n```yaml\nrules: []\n```');
+	expect(replyOf(detail([old]), true)).toEqual({ at: 'waiting' });
+	const edit = said('2026-11-26T10:00:05Z', 'Added GET /user under api.github.com.\n```yaml\nrules:\n  - GET /user\n```');
+	expect(replyOf(detail([old, edit]), true)).toEqual({ at: 'proposed', note: 'Added GET /user under api.github.com.', text: 'rules:\n  - GET /user\n' });
+	const words = said('2026-11-26T10:00:05Z', 'Which repo do you mean?');
+	expect(replyOf(detail([words]), true)).toEqual({ at: 'waiting' });
+	expect(replyOf(detail([words], 'done'), false)).toEqual({ at: 'answered', note: 'Which repo do you mean?' });
+});
+
+test('the diff numbers the lines the change leaves and tags what it added and took out', () => {
+	const view = RulesDiff({
+		lines: [
+			{ text: 'allow:', kind: 'same' },
+			{ text: '  - GET /user', kind: 'del' },
+			{ text: '  - POST /x', kind: 'add' },
+		],
+	});
+	expect(all(view, 'div').slice(1).map((d) => textOf(d))).toEqual(['1allow:', '  - GET /userremoved', '2  - POST /xnew']);
 });

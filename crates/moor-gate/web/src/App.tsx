@@ -8,6 +8,7 @@ import { pathOf } from './hashQuery';
 import { Home, useBoxes, usePoll } from './Portal';
 import { BoxPage, tabOf } from './TaskPage';
 import { sectionAt, Settings } from './Settings';
+import { RulesPage, rulesAt } from './Rules';
 import { Peek } from './Peek';
 import { TopBar } from './TopBar';
 import { Workflows, workflowsAt } from './Workflows';
@@ -73,7 +74,8 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 	const open = boxOf(hash);
 	const composing = hash.replace(/^#\/?/, '') === 'new';
 	const settings = sectionAt(hash) !== null;
-	const home = !flows && !settings;
+	const rules = rulesAt(hash);
+	const home = !flows && !settings && !rules;
 	const fresh = boxes.value?.length === 0;
 	const unlinked = account.secrets.filter((s) => !s.linked).map((s) => s.name);
 	const leave = () => signOut(account.csrf).then(dropDrafts).then(onSignedOut);
@@ -82,9 +84,11 @@ function Ready({ account, hash: address, onSignedOut, onChanged }: { account: Ac
 		<>
 			<SignedOutDialog />
 			<TopBar email={account.email} csrf={account.csrf} rows={boxes.value ?? []} inbox={inbox} onSignOut={() => void leave()} />
-			<main class={flows || settings ? 'wide' : open ? 'app-box' : home ? 'app-home' : undefined}>
+			<main class={flows || settings || rules ? 'wide' : open ? 'app-box' : home ? 'app-home' : undefined}>
 			{flows ? (
 				<Workflows csrf={account.csrf} at={flows} />
+			) : rules ? (
+				<RulesPage key={rules} csrf={account.csrf} repo={rules} />
 			) : home ? (
 				<>
 					{unlinked.length > 0 && !(fresh && !composing && !open) && (
