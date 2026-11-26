@@ -8,7 +8,7 @@
     reason = "a test indexes what it just read and walks one scenario step by step"
 )]
 
-use moor_core::request::{ReadingHandInReq, ReadingHandInValue};
+use moor_core::request::{ReadingHandInReq, ReadingHandInValue, UserCmd, WorkflowCmd};
 use moor_core::workflow::{
     PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName,
 };
@@ -21,7 +21,8 @@ use super::{rig, Rig};
 use crate::error::CommandError;
 use crate::ops::workflow::now::run_with;
 use crate::ops::workflow::run_start;
-use crate::testing::cx::REQUESTER_USER;
+use crate::testing::cx::{requester, REQUESTER_USER};
+use crate::vault::Vault;
 
 const PROMPT: &str = include_str!("fixtures/pr-evidence.prompt.md");
 const CONFIG: &str = include_str!("fixtures/pr-evidence.config.yaml");
@@ -251,4 +252,25 @@ fn a_reading_with_no_gate_leaves_the_gates_the_workflow_had() {
     assert_eq!(gate_names(&r.workflow(id)), ["done"]);
     let now = store.workflow_reading(REQUESTER_USER, id).unwrap();
     assert!(now.is_some() && now != first, "the new reading is held");
+}
+
+/// The reading the person sees on `id`, as the workflow list sends it.
+fn listed_reading(r: &Rig, id: WorkflowId) -> Value {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let list = UserCmd::Workflow(WorkflowCmd::List);
+    let v = crate::ops::users::run(&r.cx, &vault, &requester(), &list).unwrap();
+    let name = r.workflow(id).name.to_string();
+    let w = v["workflows"].as_array().unwrap().iter().find(|w| w["name"] == name.as_str());
+    w.expect("the workflow is listed")["reading"].clone()
+}
+
+#[test]
+fn an_accepted_reading_is_listed_as_current() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let shown = listed_reading(&r, id);
+    assert_eq!(shown["state"], "read");
+    assert_eq!(shown["stale"], json!([]), "{shown}");
 }

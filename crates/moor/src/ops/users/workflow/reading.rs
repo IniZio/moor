@@ -5,13 +5,10 @@ use moor_core::reading::{ProxyAllow, RulesPin};
 use moor_core::request::RepoFile;
 use moor_core::user::UserId;
 use moor_core::view::reading::{Current, ReadingView};
-use moor_core::workflow::Workflow;
+use moor_core::workflow::{Workflow, READER_INSTRUCTIONS};
 
 use crate::error::CommandError;
 use crate::store::Store;
-
-/// The version of moor's reader instructions a reading is judged against.
-const READER_INSTRUCTIONS: u32 = 1;
 
 /// The revision the default rules carry: they are no stored row, so no save changes it.
 const DEFAULT_RULES_REVISION: u64 = 0;
