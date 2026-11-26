@@ -22,6 +22,12 @@ The owner approved these on 2026-11-26, after the prototype below.
 
 10. **Step plans.** "Keep step plans for now and revisit after slice 3 (questions) is live?" Yes. A reader may still leave a step plan. Slice 1 only adds.
 11. **Slice 1.** Yes, as the Delivery section plans it.
+12. **Hand-written `may`.** "Keep hand-written `may` until derived list reproduces every stored line?" Yes, or built-in skill runbooks that derive the list the same way every time. It stays until the comparison pass misses no line. A built-in reader runbook is being tested as the way to get there. The PR evidence automation has 5 hand-written lines. Readers reproduced 2, under `github-api` where the stored lines say `github-app`. They missed 3 and added none.
+    - `POST /repos/{repo}/issues/*/comments` is already allowed with the person's token. The stored line exists so the comment posts as the App, and no word asks for the App.
+    - `GET /repos/{repo}/commits/*/statuses` serves a gate check. The default rules lack it, and the reader's own check read `/status` instead.
+    - `GET /repos/{repo}/pulls/*` is already allowed by the default rules.
+
+    Slice 5 retires the config's `proxy.allow` only when the comparison pass finds no missed line.
 
 ## What exists today
 
@@ -41,7 +47,7 @@ Real readers read ten prompts. Each reader got only the reader instructions, the
 - **GraphQL.** Three readers wrote that `POST /graphql` lets a merge through. It does not. The default GraphQL scope lists no `mergePullRequest`, so the Proxy refuses it.
 - **A question that did not come.** Under the first instructions, two readers made "send it for review" solid. One added instruction line made both ask.
 - **Readers disagree.** On one prompt, two readers made 20 and 31 phrases. They agreed on 4 of 14 effects. Gate names changed case between readings.
-- **Hand-written `may`.** The PR evidence automation has 5 hand-written lines. Readers reproduced 2, missed 3 and added none. Open question 1 has the detail.
+- **Hand-written `may`.** The PR evidence automation has 5 hand-written lines. Readers reproduced 2, missed 3 and added none. Decision 12 has the detail.
 - **Step plans.** Prompts already read as gates got every stored gate name back. A prompt written as steps lost its per-step retries. A stored step plan held a step no word of its prompt asks for.
 - **Answers.** One answer's text began with the word before its phrase. The child reading would say "Then Then open".
 - **Gate checks.** Readers' gate checks call `gh api`. Nothing checked those calls against the rules.
@@ -238,7 +244,7 @@ The answer lives in the prompt's words from then on. "Keep it, asked only" keeps
 | Gates and `may` a Box runs with | `box_gates` and the Box's proxy plan, copied at start | Box start |
 | The rules text | `repo_rules` | A rules save |
 
-`workflows.gates` stays the gate engine's source. An accepted hand-in writes the reading, `workflows.reading` and `workflows.gates` in one transaction, so the two never differ. The config's `proxy.allow` stays the Proxy's source until open question 1 is settled.
+`workflows.gates` stays the gate engine's source. An accepted hand-in writes the reading, `workflows.reading` and `workflows.gates` in one transaction, so the two never differ. The config's `proxy.allow` stays the Proxy's source until the comparison pass of decision 12 misses no line.
 
 A step plan stays in `workflows.plan`, with `plan_draft`, `made_from` and `GatesBy` as today. A step-plan automation holds no reading. Its page shows no marks and its plan as today.
 
@@ -416,7 +422,7 @@ Each slice ends in something a person sees on the fixture repo first, then on th
 | 2 | Read before Save. Read it starts a reading of the draft. Save adopts it by id. A failed reading shows Read again. | c1b and c1c without a question. New file lines tagged new. | Adding a sentence that asks for a status shows its new `may` line before Save. Save stores that reading. |
 | 3 | Questions. Unclear phrases, answers, child readings, settled answers, Save waits. MCP `answer_reading`. | c1c. A dotted phrase with its question. Save is off until it is answered. | The chat sentence asks. "Remove the sentence" removes it and Save turns on. Read again does not ask it twice. |
 | 4 | Runs pin readings. `workflow_runs.reading`, the run page's "show" opens the pinned reading with gate states. | b2 and c2. The run's prompt with its marks, each gate's state beside its phrase. | Edit the automation after a run. The old run still shows the old reading. |
-| 5 | The reading writes `may`. The reader writes `Allow` and `Withheld` effects, checked against the pinned rules. The Proxy gets `may()` beside the config's `proxy.allow`. A rules save makes readings stale. The config's `proxy.allow` retires only when open question 1 allows it. | b1 and c1 `may` lines that a phrase produced. A stale note after a rules save. | The comparison pass runs on every stored automation. A rules edit marks the fixture automation stale. |
+| 5 | The reading writes `may`. The reader writes `Allow` and `Withheld` effects, checked against the pinned rules. The Proxy gets `may()` beside the config's `proxy.allow`. A rules save makes readings stale. The config's `proxy.allow` retires only when decision 12 allows it. | b1 and c1 `may` lines that a phrase produced. A stale note after a rules save. | The comparison pass runs on every stored automation. A rules edit marks the fixture automation stale. |
 | 6 | One-off Read it. `ReadingOf::Task`, Start from a reading, `boxes.reading`, the task page's prompt with marks. | a2. Marks, the question, the `may` line, Start off until answered. | A design task's "send it for review" asks. "Yes" holds it with a pull request gate. "No, just show me" marks it dashed, with a note that `github-api` lets a pull request through. |
 
 Slice 1 lands as five pull requests.
@@ -435,14 +441,8 @@ The old `moor_core::workflow::Reading`, a step plan or gates, takes another name
 
 Each takes one word. Each has our recommendation.
 
-1. **Keep hand-written `may` until the derived list reproduces every stored line?** The PR evidence automation has 5 hand-written lines. Readers reproduced 2, under `github-api` where the stored lines say `github-app`. They missed 3 and added none.
-   - `POST /repos/{repo}/issues/*/comments` is already allowed with the person's token. The stored line exists so the comment posts as the App, and no word asks for the App.
-   - `GET /repos/{repo}/commits/*/statuses` serves a gate check. The default rules lack it, and the reader's own check read `/status` instead.
-   - `GET /repos/{repo}/pulls/*` is already allowed by the default rules.
-
-   Recommend yes. Slice 5 retires the config's `proxy.allow` only when the comparison pass finds no missed line.
-2. **Save when the reader failed?** The prompt saves and the older reading holds, marked stale. Recommend yes.
-3. **Start a one-off as written when the reader failed?** The Box holds only the repo's rules. Recommend yes.
-4. **Mark readings stale when moor's reader instructions change?** Shown with Read again, never read again on its own. Recommend yes.
-5. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes.
-6. **Inbox item for a question left open by an MCP save?** Recommend yes.
+1. **Save when the reader failed?** The prompt saves and the older reading holds, marked stale. Recommend yes.
+2. **Start a one-off as written when the reader failed?** The Box holds only the repo's rules. Recommend yes.
+3. **Mark readings stale when moor's reader instructions change?** Shown with Read again, never read again on its own. Recommend yes.
+4. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes.
+5. **Inbox item for a question left open by an MCP save?** Recommend yes.
