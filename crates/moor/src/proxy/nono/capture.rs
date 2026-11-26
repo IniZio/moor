@@ -10,6 +10,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::SecretName;
 use moor_core::Secret;
 use nono_proxy::capture::{
@@ -21,9 +22,10 @@ use zeroize::Zeroizing;
 /// Fetches one credential; error text names the secret only.
 pub(crate) type FetchFn = Arc<dyn Fn() -> Result<Secret, String> + Send + Sync>;
 
-/// Reads one user's secret `name`; `Ok(None)` when they have none.
+/// Reads one user's secret `name`; `Ok(None)` when they have none. For the App's token the
+/// repo it is for comes with it.
 pub(crate) type UserSecretsFn =
-    Arc<dyn Fn(&SecretName) -> Result<Option<Secret>, String> + Send + Sync>;
+    Arc<dyn Fn(&SecretName, Option<&ForgeRepo>) -> Result<Option<Secret>, String> + Send + Sync>;
 
 /// How one rule's credential is obtained.
 pub(crate) struct RuleSource {
@@ -46,11 +48,12 @@ pub(crate) fn sources_for(
         .map(|rule| {
             let config_key = format!("secret {}", rule.credential);
             let name = SecretName::parse(&rule.credential);
+            let repo = rule.app_repo.clone();
             let (secrets, key) = (Arc::clone(secrets), config_key.clone());
             let fetch: FetchFn = Arc::new(move || {
                 let name = name.as_ref().map_err(Clone::clone)?;
                 // nono asks on its tokio runtime threads, and a store read must not run there.
-                std::thread::scope(|s| s.spawn(|| secrets(name)).join())
+                std::thread::scope(|s| s.spawn(|| secrets(name, repo.as_ref())).join())
                     .map_err(|_| format!("{key} could not be read"))??
                     .ok_or_else(|| format!("{key} is not set"))
             });

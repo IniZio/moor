@@ -29,6 +29,7 @@ fn spec_with_rule_round_trips_through_json() {
     use crate::config::proxy::{EndpointRule, ResolvedInject};
     let mut s = spec(true);
     s.rules = vec![ResolvedRule {
+        app_repo: None,
         name: "gh".into(),
         hosts: vec!["api.github.com".into()],
         credential: "forge".into(),

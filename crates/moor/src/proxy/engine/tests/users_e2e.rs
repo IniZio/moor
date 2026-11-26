@@ -26,6 +26,7 @@ const BOB: &str = "bob-token-9a71";
 /// The `claude` rule pointed at the fake upstream on `port`, allowing `GET /ok`.
 fn claude_rule(port: u16) -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "claude".to_owned(),
         hosts: vec![format!("localhost:{port}")],
@@ -57,7 +58,7 @@ fn start_for(host: &Host, up: &Upstream, vault: &Arc<Vault>, name: &str, user: U
     let ledger: OnLedger = box_ledger_with(&host.store, id, Arc::clone(vault));
     let shared = Arc::clone(&ledger);
     let secrets: UserSecretsFn =
-        Arc::new(move |name| shared.secret(name).map_err(|e| e.to_string()));
+        Arc::new(move |name, _| shared.secret(name, None).map_err(|e| e.to_string()));
     let spec = ProxySpec {
         box_id: id,
         box_handle: None,

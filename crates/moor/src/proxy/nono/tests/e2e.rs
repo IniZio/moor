@@ -106,6 +106,7 @@ impl Rig {
 /// Header rule on `localhost:<port>` and basic-auth rule on `localhost:<port2>`.
 fn rules(port: u16, port2: u16) -> Vec<ResolvedRule> {
     let rule = |name: &str, host: String, inject| ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: name.to_owned(),
         hosts: vec![host],

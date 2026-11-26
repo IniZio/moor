@@ -3,6 +3,7 @@
 use moor_core::config::proxy::APP_CREDENTIAL;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::hands::HandsState;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::SecretName;
 use moor_core::BoxId;
 use serde::Serialize;
@@ -36,10 +37,10 @@ pub(super) fn for_egress(
         Call::View => reply(view(s, box_id)),
         Call::Spec => reply(s.proxy_spec(box_id)),
         Call::Ca => encode(&start::ca((s, vault), box_id)),
-        Call::Secret { name } if name.as_str() == APP_CREDENTIAL => {
-            encode(&app_token(s, app, box_id))
+        Call::Secret { name, repo } if name.as_str() == APP_CREDENTIAL => {
+            encode(&app_token(s, app, box_id, repo))
         }
-        Call::Secret { name } => encode(&secret((s, vault), box_id, &name)),
+        Call::Secret { name, .. } => encode(&secret((s, vault), box_id, &name)),
         Call::OpenLimit { rule } => reply(s.open_limits(box_id).map(|limits| {
             limits
                 .into_iter()
@@ -62,7 +63,7 @@ fn egress_may(store: &Store, box_id: BoxId, call: &Call) -> Result<(), Fault> {
     if !view(store, box_id)?.is_some_and(|v| v.open) {
         return Err(Fault::Refused(format!("Box {} is closed", box_id.get())));
     }
-    if let Call::Secret { name } = call {
+    if let Call::Secret { name, .. } = call {
         let spec = store.proxy_spec(box_id)?;
         let named = spec.is_some_and(|s| s.rules.iter().any(|r| r.credential == name.as_str()));
         if !named {
@@ -120,13 +121,31 @@ fn view(store: &Store, box_id: BoxId) -> Result<Option<BoxView>, StoreError> {
     }))
 }
 
-/// The App's token for the Box's first repo, as bytes: never a secret a user holds.
-fn app_token(store: &Store, app: Option<&dyn AppTokens>, box_id: BoxId) -> Result<Vec<u8>, Fault> {
+/// The App's token for `asked`, as bytes, never a secret a user holds: a repo of the Box, its first
+/// when none is asked. The App's installation on that repo's owner mints it.
+fn app_token(
+    store: &Store,
+    app: Option<&dyn AppTokens>,
+    box_id: BoxId,
+    asked: Option<ForgeRepo>,
+) -> Result<Vec<u8>, Fault> {
     let app = app.ok_or_else(|| Fault::Refused("this controller has no GitHub App".to_owned()))?;
-    let repo = store
-        .proxy_spec(box_id)?
-        .and_then(|spec| spec.box_repo)
+    let spec = store.proxy_spec(box_id)?;
+    let first = spec
+        .as_ref()
+        .and_then(|spec| spec.box_repo.clone())
         .ok_or_else(|| Fault::Refused(format!("Box {} has no repo", box_id.get())))?;
+    let repo = asked.unwrap_or_else(|| first.clone());
+    let is_box_repo = repo == first
+        || spec
+            .as_ref()
+            .is_some_and(|spec| spec.other_repos.contains(&repo));
+    if !is_box_repo {
+        return Err(Fault::Refused(format!(
+            "{repo} is not a repo of Box {}",
+            box_id.get()
+        )));
+    }
     app.repo_token(&repo, store.now())
         .map(|token| token.expose().to_vec())
         .map_err(Fault::Refused)

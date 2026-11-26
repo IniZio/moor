@@ -210,6 +210,7 @@ pub(super) fn github_rule() -> ResolvedRule {
         path: path.to_owned(),
     };
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "github-api".to_owned(),
         hosts: vec!["api.github.com".to_owned()],
@@ -290,7 +291,7 @@ pub(super) fn rig_spec(
     rules: Vec<ResolvedRule>,
     host_upstream: Option<&Upstream>,
 ) -> Rig {
-    let secrets: UserSecretsFn = Arc::new(|_| Ok(Some(Secret::new(SECRET.as_bytes().to_vec()))));
+    let secrets: UserSecretsFn = Arc::new(|_, _| Ok(Some(Secret::new(SECRET.as_bytes().to_vec()))));
     rig_spec_with(repo, other, rules, host_upstream, secrets)
 }
 

@@ -131,6 +131,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         .box_id;
     drop(w.store.reserve(a, &FakeRng::default()));
     let rule = ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "claude".to_owned(),
         hosts: vec!["api.anthropic.com".to_owned()],
@@ -154,10 +155,10 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
     w.store.set_proxy_spec(a, &spec).unwrap();
     let ledger = BoxLedger::egress(Endpoint::Unix(w.socket.clone()), a, EGRESS_KEY.to_owned());
     let named = ledger
-        .secret(&SecretName::parse("claude").unwrap())
+        .secret(&SecretName::parse("claude").unwrap(), None)
         .unwrap();
     assert_eq!(named.unwrap().expose(), b"ann-token");
-    let other = ledger.secret(&SecretName::parse("github").unwrap());
+    let other = ledger.secret(&SecretName::parse("github").unwrap(), None);
     assert!(
         matches!(other, Err(LedgerError::Refused(_))),
         "a secret no rule names"
@@ -177,6 +178,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
 /// A spec for `id` whose one rule sends its secret in `header`.
 fn spec_for(w: &World, id: BoxId, header: &str) -> ProxySpec {
     let rule = ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: "tool".to_owned(),
         hosts: vec!["api.example.com".to_owned()],

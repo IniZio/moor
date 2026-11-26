@@ -19,6 +19,7 @@ const TOKEN: &str = "token-text-ABC_123-xyz";
 
 fn rule(name: &str, hosts: &[&str], inject: ResolvedInject) -> ResolvedRule {
     ResolvedRule {
+        app_repo: None,
         graphql: None,
         name: name.to_owned(),
         hosts: hosts.iter().map(|h| (*h).to_owned()).collect(),
@@ -376,6 +377,7 @@ fn github_uploads_route_admits_only_the_asset_post() {
 #[test]
 fn only_the_first_chained_rule_gets_repo_id_forms() {
     let pulls = |name: &str, host: &str| ResolvedRule {
+        app_repo: None,
         graphql: None,
         endpoint_rules: vec![EndpointRule {
             method: "GET".to_owned(),

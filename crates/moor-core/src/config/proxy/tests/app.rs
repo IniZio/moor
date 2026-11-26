@@ -16,7 +16,7 @@ fn with_app(lines: &[&str]) -> ProxyConfig {
 }
 
 #[test]
-fn app_lines_become_a_rule_after_theirs_that_injects_the_app_token_for_the_first_repo() {
+fn app_lines_become_a_rule_per_repo_after_theirs_that_injects_the_app_token_for_that_repo() {
     let other = ForgeRepo::new("acme", "gadgets");
     let rules = resolve_rules(
         &with_app(&[
@@ -34,6 +34,7 @@ fn app_lines_become_a_rule_after_theirs_that_injects_the_app_token_for_the_first
             "claude",
             "github-api",
             "github-api-app",
+            "github-api-app-2",
             "github-git",
             "github-uploads"
         ]
@@ -47,6 +48,7 @@ fn app_lines_become_a_rule_after_theirs_that_injects_the_app_token_for_the_first
         .find(|r| r.name == "github-api")
         .expect("api rule");
     assert_eq!(app.credential, APP_CREDENTIAL);
+    assert_eq!(app.app_repo, Some(repo()));
     assert_eq!(app.hosts, api.hosts);
     assert_eq!(app.inject, api.inject);
     assert!(app.box_env.is_empty() && app.graphql.is_none());
@@ -68,6 +70,38 @@ fn app_lines_become_a_rule_after_theirs_that_injects_the_app_token_for_the_first
             .iter()
             .any(|e| e.path.ends_with("/statuses/*")),
         "the user's token does not serve them"
+    );
+}
+
+#[test]
+fn a_later_repo_gets_its_own_app_rule_with_its_own_lines() {
+    let other = ForgeRepo::new("acme", "gadgets");
+    let rules = resolve_rules(
+        &with_app(&[
+            "POST /repos/{repo}/statuses/*",
+            "POST|PATCH /repos/{repo}/issues/*/comments",
+        ]),
+        &[repo(), other],
+        false,
+    )
+    .expect("resolves");
+    let second = rules
+        .iter()
+        .find(|r| r.name == "github-api-app-2")
+        .expect("second repo's app rule");
+    assert_eq!(second.app_repo, Some(ForgeRepo::new("acme", "gadgets")));
+    let lines: Vec<&str> = second
+        .endpoint_rules
+        .iter()
+        .map(|e| e.path.as_str())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "/repos/acme/gadgets/statuses/*",
+            "/repos/acme/gadgets/issues/*/comments",
+            "/repos/acme/gadgets/issues/*/comments",
+        ]
     );
 }
 
