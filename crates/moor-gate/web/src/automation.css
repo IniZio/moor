@@ -35,14 +35,14 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .file.dim { opacity: 0.45; }
 .auto .fname { padding: 4px 10px 4px 38px; margin-bottom: 3px; border-bottom: 1px solid var(--moor-color-border); font-weight: 500; }
 .auto .fbody { max-height: 640px; overflow: auto; }
-.auto .fl { counter-increment: fl; padding: 0 10px 0 38px; text-indent: -38px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.auto .fl { counter-increment: fl; color: var(--moor-color-text-muted); padding: 0 10px 0 38px; text-indent: -38px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .auto .fl::before { content: counter(fl); display: inline-block; width: 28px; margin-right: 10px; text-indent: 0; text-align: right; color: var(--moor-color-text-muted); opacity: 0.7; }
 .auto .fl.comment, .auto .fl.sep, .auto .fc { color: var(--moor-color-text-muted); }
 .auto .fl.fadd { background: color-mix(in srgb, var(--moor-color-text) 8%, transparent); box-shadow: inset 2px 0 0 var(--moor-color-text-muted); }
 .auto .fl .pnew { float: right; margin: 0 0 0 8px; text-indent: 0; font-family: var(--moor-font-body); font-size: 12px; color: var(--moor-color-text-muted); }
 .auto .pfoot { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-height: 26px; }
 .auto .pfoot .grow { flex: 1; }
-.auto .ftog { padding: 0 6px; border: 0; background: none; font: inherit; font-size: 12px; color: var(--moor-color-text-muted); cursor: pointer; }
+.auto .ftog { padding: 0 6px; border: 0; border-radius: 0; background: none; font: inherit; font-size: 12px; color: var(--moor-color-text-muted); cursor: pointer; }
 .auto .ftog:hover { color: var(--moor-color-text); }
 .auto .plan-view { margin-top: var(--moor-space-4); }
 .auto .dayhead { margin: 10px 0 2px; padding: 0 6px; font-size: 12px; color: var(--moor-color-text-muted); }
