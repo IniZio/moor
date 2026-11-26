@@ -109,7 +109,8 @@ impl Store {
     }
 
     /// Stores `plan` as workflow `id`'s and clears its draft, only while the workflow's prompt is
-    /// the one it was made from. A plan clears the gates, as gates clear the plan. Its revision
+    /// the one it was made from. A plan clears the gates and the reading held, as a reading clears
+    /// the plan. Its revision
     /// stays: the plan is moor's, not an edit. True when it was stored.
     pub(crate) fn store_made_plan(&self, id: WorkflowId, plan: &Plan) -> Result<bool, StoreError> {
         let mut writer = self.writer();
@@ -133,6 +134,7 @@ impl Store {
                 .table(Workflows::Table)
                 .value(Workflows::Plan, Some(plan.to_json()?))
                 .value(Workflows::Gates, Option::<String>::None)
+                .value(Workflows::Reading, Option::<String>::None)
                 .value(Workflows::PlanDraft, Option::<String>::None)
                 .and_where(Expr::col(Workflows::Id).eq(id.get())),
         )?;

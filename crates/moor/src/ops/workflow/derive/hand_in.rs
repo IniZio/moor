@@ -7,11 +7,10 @@ use std::fmt::Write as _;
 
 use moor_core::config::parse_repo;
 use moor_core::gate::Gates;
-use moor_core::name::ForgeRepo;
 use moor_core::reading::{
-    Context, ProxyAllow, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState, RulesPin,
+    Context, ProxyAllow, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState,
 };
-use moor_core::request::{ReadingHandInReq, ReadingHandInValue, RepoFile};
+use moor_core::request::{ReadingHandInReq, ReadingHandInValue};
 use moor_core::seam::clock::Ts;
 use moor_core::workflow::{PlanDraft, PromptHash, Workflow, READER_INSTRUCTIONS};
 use moor_core::ErrorKind;
@@ -149,7 +148,7 @@ fn reading_for(
         context: Context {
             source_hash: PromptHash::of(&w.prompt),
             repos: w.repos.clone(),
-            rules: vec![rules_pin(store, w.repos.first())?],
+            rules: store.rules_pins(&w.repos)?,
             instructions: READER_INSTRUCTIONS,
         },
         made_by: w.owner,
@@ -162,26 +161,6 @@ fn reading_for(
             since,
         },
     })
-}
-
-/// The rules text a Box of `repo` follows: its stored rules, or the default rules at 0.
-fn rules_pin(store: &Store, repo: Option<&ForgeRepo>) -> Result<RulesPin, CommandError> {
-    let stored = match repo {
-        Some(repo) => store
-            .repo_text(repo, RepoFile::Rules)?
-            .map(|row| (repo.clone(), row.revision)),
-        None => None,
-    };
-    Ok(stored.map_or(
-        RulesPin {
-            repo: None,
-            revision: 0,
-        },
-        |(repo, revision)| RulesPin {
-            repo: Some(repo),
-            revision,
-        },
-    ))
 }
 
 /// The `proxy.allow` of `w`'s config; empty when it has none. A stored config parsed when saved.

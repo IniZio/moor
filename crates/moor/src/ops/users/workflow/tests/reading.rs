@@ -13,6 +13,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
 use moor_core::workflow::{
     Plan, PromptHash, TimeoutMinutes, WorkflowDef, WorkflowId, WorkflowName, WorkflowSchedule,
+    READER_INSTRUCTIONS,
 };
 use serde_json::{json, Value};
 
@@ -62,7 +63,7 @@ fn read_reading(of: WorkflowId, who: &Identity, f: &Fixture, rules: u64) -> Read
                 repo: Some(ForgeRepo::new("o", "n")),
                 revision: rules,
             }],
-            instructions: 1,
+            instructions: READER_INSTRUCTIONS,
         },
         made_by: user,
         state: ReadingState::Reading {

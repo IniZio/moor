@@ -8,7 +8,7 @@
     reason = "a test indexes what it just read and walks one scenario step by step"
 )]
 
-use moor_core::request::{ReadingHandInReq, ReadingHandInValue};
+use moor_core::request::{ReadingHandInReq, ReadingHandInValue, UserCmd, WorkflowCmd};
 use moor_core::workflow::{
     PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName,
 };
@@ -21,7 +21,8 @@ use super::{rig, Rig};
 use crate::error::CommandError;
 use crate::ops::workflow::now::run_with;
 use crate::ops::workflow::run_start;
-use crate::testing::cx::REQUESTER_USER;
+use crate::testing::cx::{requester, REQUESTER_USER};
+use crate::vault::Vault;
 
 const PROMPT: &str = include_str!("fixtures/pr-evidence.prompt.md");
 const CONFIG: &str = include_str!("fixtures/pr-evidence.config.yaml");
@@ -251,4 +252,85 @@ fn a_reading_with_no_gate_leaves_the_gates_the_workflow_had() {
     assert_eq!(gate_names(&r.workflow(id)), ["done"]);
     let now = store.workflow_reading(REQUESTER_USER, id).unwrap();
     assert!(now.is_some() && now != first, "the new reading is held");
+}
+
+/// The reading the person sees on `id`, as the workflow list sends it.
+fn listed_reading(r: &Rig, id: WorkflowId) -> Value {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let list = UserCmd::Workflow(WorkflowCmd::List);
+    let v = crate::ops::users::run(&r.cx, &vault, &requester(), &list).unwrap();
+    let name = r.workflow(id).name.to_string();
+    let w = v["workflows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["name"] == name.as_str());
+    w.expect("the workflow is listed")["reading"].clone()
+}
+
+#[test]
+fn an_accepted_reading_is_listed_as_current() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let shown = listed_reading(&r, id);
+    assert_eq!(shown["state"], "read");
+    assert_eq!(shown["stale"], json!([]), "{shown}");
+}
+
+/// A step plan a reader may leave in place of a reading.
+const STEPS: &str = r#"{"steps": [{"id": "ship", "title": "Ship", "kind": "deliver",
+    "instructions": "post the comment", "done_when": "it is posted"}]}"#;
+
+impl Rig {
+    /// Asks for `id`'s prompt to be read again; the new reader's job and Box.
+    fn read_again(&self, id: WorkflowId) -> (DraftJob, BoxId) {
+        let store = self.cx.store().unwrap();
+        store
+            .set_plan_draft(id, Some(&PlanDraft::wanted(PROMPT.trim_end())))
+            .unwrap();
+        self.advance_to(60_000);
+        let job = self.plan_pass().expect("a Box is asked for");
+        start_draft(&self.cx, &job);
+        let box_id = self.open(&job).expect("the reader's Box is open");
+        (job, box_id)
+    }
+}
+
+#[test]
+fn a_reading_after_a_step_plan_leaves_no_step_plan_to_walk() {
+    let r = rig();
+    let (id, job, _) = r.reader();
+    r.leave_plan(&job, STEPS);
+    assert!(r.plan_pass().is_none());
+    assert!(!r.workflow(id).plan.is_single_of(PROMPT.trim_end()));
+    let (_, box_id) = r.read_again(id);
+    let no_gate = json!({
+        "phrases": [{"quote": {"exact": "ONE comment on that pull request"},
+                     "mark": {"kind": "held", "effects": ["comment"]}}],
+        "effects": [{"kind": "allow", "label": "comment", "rule": "github-api", "entry": COMMENT}]
+    });
+    r.hand_in(box_id, &no_gate).unwrap();
+    let w = r.workflow(id);
+    assert!(
+        w.plan.is_single_of(&w.prompt),
+        "the reading replaced the step plan"
+    );
+}
+
+#[test]
+fn a_step_plan_after_a_reading_leaves_no_reading_held() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &whole()).unwrap();
+    let (job, _) = r.read_again(id);
+    r.leave_plan(&job, STEPS);
+    assert!(r.plan_pass().is_none());
+    assert!(!r.workflow(id).plan.is_single_of(PROMPT.trim_end()));
+    let shown = listed_reading(&r, id);
+    assert!(
+        shown.is_null(),
+        "a step-plan automation holds no reading: {shown}"
+    );
 }

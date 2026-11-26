@@ -6,7 +6,9 @@
 //! lookup here carries that person, so a reading is never found through another's workflow.
 
 use moor_core::gate::Gates;
-use moor_core::reading::{Context, Read, Reading, ReadingId, ReadingOf, ReadingState};
+use moor_core::name::ForgeRepo;
+use moor_core::reading::{Context, Read, Reading, ReadingId, ReadingOf, ReadingState, RulesPin};
+use moor_core::request::RepoFile;
 use moor_core::user::UserId;
 use moor_core::workflow::WorkflowId;
 use moor_schema::tables::{Readings, Workflows};
@@ -136,9 +138,9 @@ fn gates_json(reading: &Reading) -> Result<Option<String>, StoreError> {
     )?))
 }
 
-/// Keeps `reading` in `tx` and makes its workflow hold it. A read with gates sets the
-/// workflow's gates and clears its plan, as gates moor made always have. A read with no gate
-/// leaves the workflow's gates and plan as they were. A refusal changes nothing.
+/// Keeps `reading` in `tx` and makes its workflow hold it in place of a step plan. A read with
+/// gates sets the workflow's gates; one with no gate leaves its gates as they were. A refusal
+/// changes nothing.
 pub(super) fn hold_in(tx: &dyn Db, reading: &Reading, since: i64) -> Result<Stored, StoreError> {
     let gates = gates_json(reading)?;
     let stored = insert_in(tx, reading, since)?;
@@ -147,11 +149,11 @@ pub(super) fn hold_in(tx: &dyn Db, reading: &Reading, since: i64) -> Result<Stor
         let mut held = Query::update();
         held.table(Workflows::Table)
             .value(Workflows::Reading, reading.id.as_str())
+            .value(Workflows::Plan, Option::<String>::None)
             .and_where(Expr::col(Workflows::Id).eq(of.get()))
             .and_where(Expr::col(Workflows::User).eq(reading.made_by.get()));
         if let Some(gates) = gates {
-            held.value(Workflows::Gates, gates)
-                .value(Workflows::Plan, Option::<String>::None);
+            held.value(Workflows::Gates, gates);
         }
         tx.run(&mut held)?;
     }
@@ -205,6 +207,19 @@ impl Kept {
 }
 
 impl Store {
+    /// The rules texts a Box of `repos` follows now: the first repo's stored rules, or the
+    /// default rules. A reading pins these, and is stale when they differ later.
+    pub(crate) fn rules_pins(&self, repos: &[ForgeRepo]) -> Result<Vec<RulesPin>, StoreError> {
+        let stored = match repos.first() {
+            Some(repo) => self.repo_text(repo, RepoFile::Rules)?.map(|row| RulesPin {
+                repo: Some(repo.clone()),
+                revision: row.revision,
+            }),
+            None => None,
+        };
+        Ok(vec![stored.unwrap_or(RulesPin::DEFAULT)])
+    }
+
     /// Keeps `reading`, which must be in state read, for the person who made it. The read is
     /// written once: the same read again changes nothing, another read under a kept id is refused.
     #[cfg_attr(not(test), expect(dead_code, reason = "the hand-in and Save call it"))]
