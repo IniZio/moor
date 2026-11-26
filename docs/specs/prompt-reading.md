@@ -227,7 +227,7 @@ Read again after an edit makes a new reading. moor compares it with the held rea
 - **Added lines wait for a tick.** Each new `Allow` effect shows a tick box beside its phrase. Save stays off until each is ticked. A person who does not want a line changes the words that produce it.
 - **Nothing else needs a tick.** Lines that stay need none. New gates and `Withheld` effects only narrow what the agent may do.
 - **The first reading.** With no held reading, every line is new. The page lists each beside its phrase, and Save allows them in one act.
-- **Between an edit and the ticks, a run uses the held reading, unchanged.** A save over MCP that adds a line waits as `reading_next`, with "N lines wait for you". Its removals wait with it. The person ticks the lines in the portal, or their own agent ticks them with `accept_lines` over the person's MCP connection. moor adopts the reading then. Until then the held reading runs and shows stale for `prompt`. A Box-facing connection has no such tool, so a run cannot widen its own lines.
+- **Between an edit and the ticks, a run uses the held reading, unchanged.** A save over MCP that adds a line waits as `reading_next`, with "N lines wait for you". Its removals wait with it. The person ticks the lines in the portal, or their own agent ticks them with `accept_lines` over the person's MCP connection. The reading is adopted then. Until then the held reading runs and shows stale for `prompt`. A Box-facing connection has no such tool, so a run cannot widen its own lines.
 
 **The other shape.** Save could hold the ticked lines and leave each unticked one out. We refuse it. A run would start with a phrase only partly held, and meet a refusal the page already knew. In every adopted reading the words and the held lines agree.
 
@@ -465,7 +465,7 @@ impl Read {
 
 ### How a phrase survives an edit
 
-It does not need to. Marks are off while the draft differs from the reading's source, as the mock's c1b shows. Read again makes a new reading. What must survive is an answer, and a line a person accepted. moor keeps each answer as `Settled` with the words it left in the prompt. The next reader gets the settled answers whose `words` still occur verbatim in the new source, and must not ask them again. An edited sentence no longer holds those words, so its answer lapses and the reader may ask again.
+It does not need to. Marks are off while the draft differs from the reading's source, as the mock's c1b shows. Read again makes a new reading. What must survive is an answer, and a line a person accepted. Each answer is kept as `Settled` with the words it left in the prompt. The next reader gets the settled answers whose `words` still occur verbatim in the new source, and must not ask them again. An edited sentence no longer holds those words, so its answer lapses and the reader may ask again.
 
 A paragraph id needs paragraph identity across free edits, which a plain text field lacks. A sentence hash is a quote match with less information. A quote is the one handle that works for any language and any edit.
 
