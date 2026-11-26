@@ -308,7 +308,7 @@ export function GateCard(p: CardProps) {
 	return p.wait.kind === 'approve' ? <ApproveCard {...p} /> : <StuckCard {...p} />;
 }
 
-export type RulesProps = { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; asJson: boolean; onToggle: () => void };
+export type RulesProps = { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; asJson: boolean; onToggle: () => void; /** The names of the gates to draw lit, while the pointer is on a phrase that produced them. */ lit?: readonly string[] };
 
 /** How a run may end: each outcome with what it says, marked when it can end the run at any point or holds when no other does. */
 function OutcomeRules({ outcomes }: { outcomes: readonly OutcomeDoc[] }) {
@@ -339,7 +339,7 @@ function OutcomeRules({ outcomes }: { outcomes: readonly OutcomeDoc[] }) {
 }
 
 /** What moor holds a gated run to: each gate in order, in sentences, with the commands behind a click. Read-only. */
-export function RulesView({ gates, outcomes, asJson, onToggle }: RulesProps) {
+export function RulesView({ gates, outcomes, asJson, onToggle, lit }: RulesProps) {
 	return (
 		<div class="t-rules" role="region" aria-label="What moor holds this run to">
 			<div class="plan-bar">
@@ -357,7 +357,7 @@ export function RulesView({ gates, outcomes, asJson, onToggle }: RulesProps) {
 				<>
 					<ol class="t-rules-list">
 						{gates.map((gate, i) => (
-							<li key={gate.name}>
+							<li key={gate.name} class={lit?.includes(gate.name) ? 'lit' : undefined}>
 								<span class="t-rule-name">
 									{i + 1}. {gate.name}
 								</span>
@@ -380,7 +380,7 @@ export function RulesView({ gates, outcomes, asJson, onToggle }: RulesProps) {
 }
 
 /** The read-only panel of a gated workflow's gates, with its JSON behind a toggle. */
-export function GatesPanel({ gates, outcomes }: { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null }) {
+export function GatesPanel({ gates, outcomes, lit }: { gates: readonly GateDoc[]; outcomes?: readonly OutcomeDoc[] | null; lit?: readonly string[] }) {
 	const [asJson, setAsJson] = useState(false);
-	return <RulesView gates={gates} outcomes={outcomes} asJson={asJson} onToggle={() => setAsJson(!asJson)} />;
+	return <RulesView gates={gates} outcomes={outcomes} asJson={asJson} onToggle={() => setAsJson(!asJson)} lit={lit} />;
 }

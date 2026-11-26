@@ -226,6 +226,53 @@ const RunRowSchema = v.object({
 	detail: v.nullish(v.string()),
 });
 
+/** The items of an array that `item` parses; the rest are kinds a later controller sends, which this page draws nothing for. */
+const known = <T extends v.GenericSchema>(item: T) =>
+	v.pipe(
+		v.array(v.unknown()),
+		v.transform((xs) => xs.flatMap((x) => {
+			const r = v.safeParse(item, x);
+			return r.success ? [r.output] : [];
+		})),
+	);
+
+/** One reading of an automation's prompt as the controller's ReadingView sends it (docs/specs/prompt-reading.md, The API). The front draws marks from `runs` and `phrases` alone and never from offsets. A phrase, effect or stale reason of a kind not listed here is dropped, never a failed parse. */
+export const ReadingViewSchema = v.object({
+	id: v.nullish(v.string()),
+	state: v.picklist(['reading', 'read', 'failed']),
+	failed: v.nullish(v.string()),
+	/** What differs now from what the reader saw; empty when current. */
+	stale: v.optional(known(v.picklist(['prompt', 'repos', 'rules', 'reader'])), []),
+	source: v.string(),
+	reader: v.nullish(v.object({ harness: v.string(), model: v.nullish(v.string()), instructions: v.number() })),
+	/** The source cut at phrase edges: the texts joined are the source, and `phrase` names the phrase a cut belongs to. */
+	runs: v.array(v.object({ text: v.string(), phrase: v.nullish(v.string()) })),
+	phrases: known(
+		v.object({
+			id: v.string(),
+			/** Solid or dashed. */
+			mark: v.picklist(['held', 'asked']),
+			effects: v.array(v.string()),
+			why: v.nullish(v.string()),
+		}),
+	),
+	effects: known(
+		v.object({
+			id: v.string(),
+			/** `withheld` is a request the pinned rules refuse; the controller sends none before slice 5. */
+			kind: v.picklist(['gate', 'outcome', 'allow', 'withheld']),
+			/** What the file or the gate list shows: an allow's entry as written under its rule, a gate's or outcome's name. */
+			line: v.string(),
+			key: v.string(),
+			phrases: v.array(v.string()),
+		}),
+	),
+	/** The gates the gate engine gets, as the workflow's own `gates` show them. */
+	gates: v.nullish(v.unknown()),
+	/** The extra Proxy entries, rule to entries, as the workflow's `may` shows them. */
+	may: v.optional(v.record(v.string(), v.array(v.string())), {}),
+});
+
 const WorkflowSchema = v.object({
 	...WorkflowRowSchema.entries,
 	timeout_minutes: v.number(),
@@ -245,6 +292,8 @@ const WorkflowSchema = v.object({
 	run_as: v.optional(v.string(), ''),
 	/** The extra Proxy entries the workflow's config asks for, rule to entries as written, or why the config does not parse. */
 	may: v.optional(v.object({ allow: v.optional(v.record(v.string(), v.array(v.string()))), error: v.optional(v.string()) }), {}),
+	/** What moor made of the prompt, when it has read it; an older controller sends none. */
+	reading: v.nullish(ReadingViewSchema),
 });
 
 const LineSchema = v.object({
@@ -310,6 +359,7 @@ const RunSchema = v.object({
 export type RunStatus = v.InferOutput<typeof StatusSchema>;
 export type WorkflowRow = v.InferOutput<typeof WorkflowRowSchema>;
 export type Workflow = v.InferOutput<typeof WorkflowSchema>;
+export type ReadingView = v.InferOutput<typeof ReadingViewSchema>;
 export type RunRow = v.InferOutput<typeof RunRowSchema>;
 export type Run = v.InferOutput<typeof RunSchema>;
 export type Step = v.InferOutput<typeof StepSchema>;

@@ -13,6 +13,7 @@ const home = { area: 'task', product: '#/new', ready: '.t-wform', now: D24, asks
 const box = (id, extra) => ({ key: id, area: 'task', mock: '#' + id, product: '#/box/' + id, ready: '.t-th', now: D24, ...extra });
 
 const toggle = (page) => page.click('.ftog');
+const rest = (id) => (page) => page.hover('.pmarks [data-id="' + id + '"]');
 const typeEnd = async (page) => { await page.fill('textarea.promptbox', C1_PROMPT + ' ' + CHAT_SENTENCE); await page.evaluate(() => document.activeElement.blur()); };
 const auto = (key, mock, product, extra) => ({ key, area: 'automation', mock, product, ready: '.auto .pbox', now: D24A, pairs: AUTO_PAIRS, ...extra });
 
@@ -34,9 +35,9 @@ const AUTO_PAIRS = [
   ['revision line', '.pbox .rev', '.auto .rev'],
   ['revision Edit link', '.pbox .rev .lnk', '.auto .rev a'],
   ['grid', '.pgrid', '.auto .pgrid'],
-  ['words box', '.pleft .promptbox', '.auto .promptbox'],
-  ['words solid mark', '.pleft .psp.k-enf', null],
-  ['words dashed mark', '.pleft .psp.k-ask', null],
+  ['words box', '.pleft .promptbox', '.auto .pmarks, .auto .promptbox'],
+  ['words solid mark', '.pleft .psp.k-enf', '.auto .pleft .psp.k-enf'],
+  ['words dashed mark', '.pleft .psp.k-ask', '.auto .pleft .psp.k-ask'],
   ['words dotted mark', '.pleft .psp.k-dot', null],
   ['legend', '.pleft .legend', '.auto .legend'],
   ['question box', '.pleft .ask', null],
@@ -128,10 +129,10 @@ const STATES = [
   { key: 'a1-box', mock: '#a1', ...home, asks: false, note: 'same mock screen, product account without asks (Box tasks)' },
   box('a3', { asks: true, inbox: true }),
   box('a4', { asks: true }),
-  auto('b1', '#b1', '#/workflows/deps-check'),
-  auto('b1-plain', '#b1', '#/workflows/deps-check', { mockDo: toggle, productDo: toggle }),
-  auto('c1', '#c1', '#/workflows/pr-evidence'),
-  auto('c1-plain', '#c1', '#/workflows/pr-evidence', { mockDo: toggle, productDo: toggle }),
+  auto('b1', '#b1', '#/workflows/deps-check', { productDo: rest('pr') }),
+  auto('b1-plain', '#b1', '#/workflows/deps-check', { mockDo: toggle, productDo: async (p) => { await toggle(p); await rest('pr')(p); } }),
+  auto('c1', '#c1', '#/workflows/pr-evidence', { productDo: rest('may') }),
+  auto('c1-plain', '#c1', '#/workflows/pr-evidence', { mockDo: toggle, productDo: async (p) => { await toggle(p); await rest('may')(p); } }),
   auto('c1b', '#c1b', '#/workflows/pr-evidence', { productDo: typeEnd }),
   auto('c1c', '#c1c', '#/workflows/pr-evidence', { productDo: async (p) => { await typeEnd(p); await p.click('.pfoot .btn.primary'); } }),
   box('b2', { inbox: true }),

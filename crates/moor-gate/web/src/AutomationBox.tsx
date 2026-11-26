@@ -1,6 +1,7 @@
 import type { Workflow } from './api';
 import { AutomationFile } from './AutomationFile';
-import { fileLines } from './promptFile';
+import { fileLines, type Hover, litOf, marksOf } from './promptFile';
+import { PromptMarks } from './PromptMarks';
 import { RepoName } from './HomeList';
 import { firesOn } from './schedule';
 
@@ -35,8 +36,8 @@ function Trigger({ flow, marked }: { flow: Workflow; marked: boolean }) {
 }
 
 /** Puts the caret at the end of the prompt, ready to write. */
-function editPrompt(e: { currentTarget: HTMLButtonElement }) {
-	const box = e.currentTarget.form?.querySelector<HTMLTextAreaElement>('textarea.promptbox');
+function editPrompt(e: { currentTarget: HTMLElement }) {
+	const box = e.currentTarget.closest('form')?.querySelector<HTMLTextAreaElement>('textarea.promptbox');
 	box?.focus();
 	box?.setSelectionRange(box.value.length, box.value.length);
 }
@@ -48,6 +49,9 @@ export function phaseOf(saved: string, prompt: string, read: string | null): Pha
 	if (prompt === saved) return 'saved';
 	return read === prompt ? 'read' : 'writing';
 }
+
+const MARKED = 'Solid: moor holds the agent to it. Dashed: only asked of the agent.';
+const MARKS_OFF = 'Marks are off while you write.';
 
 const LEGEND: Record<Phase, string> = {
 	saved: 'The file is what each run gets.',
@@ -69,12 +73,20 @@ export type BoxProps = {
 	onDiscard: () => void;
 	onReload: () => void;
 	onToggle: () => void;
+	/** What the pointer is on while marks are drawn, and how it moves; the page keeps it to light the gate rows too. */
+	hover?: Hover;
+	onHover?: (on: Hover) => void;
 };
 
 /** The prompt edited in place beside its file: write, Read it to light the changed lines, then Save. */
 export function AutomationBox(p: BoxProps) {
 	const phase = phaseOf(p.flow.prompt, p.prompt, p.read);
 	const lines = fileLines(p.flow, phase === 'read' ? p.prompt : p.flow.prompt);
+	const held = marksOf(p.flow.reading, p.flow.prompt);
+	const marks = phase === 'saved' ? held : null;
+	const lit = litOf(lines, marks ? (p.hover ?? null) : null);
+	const onHover = marks ? (p.onHover ?? (() => {})) : undefined;
+	const legend = marks ? MARKED : held && phase === 'writing' ? MARKS_OFF : LEGEND[phase];
 	return (
 		<form
 			class="pbox"
@@ -95,7 +107,18 @@ export function AutomationBox(p: BoxProps) {
 				)}
 			</p>
 			<div class={p.showFile ? 'pgrid' : 'pgrid one'}>
-				<div class="pleft">
+				<div class={marks ? 'pleft marked' : 'pleft'}>
+					{marks && onHover && (
+						<PromptMarks
+							reading={marks}
+							lit={lit.phrases}
+							onHover={onHover}
+							onEdit={(e) => {
+								onHover(null);
+								editPrompt(e);
+							}}
+						/>
+					)}
 					<textarea
 						class="promptbox"
 						aria-label="Prompt"
@@ -103,7 +126,7 @@ export function AutomationBox(p: BoxProps) {
 						value={p.prompt}
 						onInput={(e) => p.onInput(e.currentTarget.value)}
 					/>
-					<p class="legend">{LEGEND[phase]}</p>
+					<p class="legend">{legend}</p>
 					{p.problem?.text && <pre class="notice danger" role="alert">{p.problem.text}</pre>}
 					{p.saved && phase === 'saved' && <p class="notice ok" role="status">Saved. The workflow is at revision {p.flow.revision}.</p>}
 					<h2 class="sub">Repos</h2>
@@ -115,7 +138,7 @@ export function AutomationBox(p: BoxProps) {
 						))}
 					</div>
 				</div>
-				{p.showFile && <AutomationFile name={`${p.flow.name}.md`} lines={lines} dim={phase === 'writing'} />}
+				{p.showFile && <AutomationFile name={`${p.flow.name}.md`} lines={lines} dim={phase === 'writing'} lit={lit.lines} onHover={onHover} />}
 			</div>
 			<div class="pfoot">
 				<span class="grow" />
