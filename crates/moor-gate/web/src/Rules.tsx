@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { type BoxDetail, Conflict, type RepoConfig, type RulesSeen, boxGet, repoGet, repoSet, failure, rulesAsk, toError } from './api';
+import { type BoxDetail, Conflict, type RepoConfig, type RulesSeen, boxGet, repoGet, repoList, repoSet, failure, rulesAsk, toError } from './api';
 import { phaseOf } from './AutomationBox';
+import { useMenuDismiss } from './HomeList';
 import { type DiffLine, diffLines, litRequests, proposalOf, scrubbed, textLines, unredact } from './rulesDiff';
 import './rules.css';
 
@@ -116,6 +117,30 @@ type Ask = { at: 'idle' } | { at: 'sending' } | { at: 'waiting'; box: string; ba
 const ASK_POLL_MS = 1500;
 
 /** A repo's Proxy rules on their own page: the stored text, edited by hand or by the agent, read as a diff, then saved. */
+/** The repo's name as the heading; with other repos to go to, it opens a menu of their rules pages. */
+function RepoSwitch({ repo }: { repo: string }) {
+	const [repos, setRepos] = useState<string[]>([]);
+	useEffect(() => void repoList().then(setRepos, () => setRepos([])), []);
+	useMenuDismiss();
+	if (!repos.some((r) => r !== repo)) return <h1>{repo}</h1>;
+	return (
+		<h1>
+			<details class="t-rmenu rules-switch" key={repo}>
+				<summary>
+					{repo} <span class="rules-caret">▾</span>
+				</summary>
+				<div class="t-rmenu-pop">
+					{[repo, ...repos.filter((r) => r !== repo)].map((r) => (
+						<a href={rulesHref(r)} aria-current={r === repo ? 'true' : undefined} key={r}>
+							{r}
+						</a>
+					))}
+				</div>
+			</details>
+		</h1>
+	);
+}
+
 export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 	const [rules, setRules] = useState<RepoConfig | null>(null);
 	const [draft, setDraft] = useState('');
@@ -234,7 +259,7 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 	};
 	return (
 		<section class="rules-page">
-			<h1>{rules.repo}</h1>
+			<RepoSwitch repo={rules.repo} />
 			<p class="rules-rev">{rulesLine(rules)}</p>
 			{!editable && (
 				<p class="notice warn" role="status">
