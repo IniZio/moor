@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { type BoxRow, type Inbox, inboxClear, inboxRead, type Progress } from './api';
+import { type BoxRow, type Inbox, inboxClear, inboxRead, type Progress, repoList } from './api';
 import { Glyph, STATES } from './Glyph';
 import { pathOf } from './hashQuery';
 import { InboxView } from './Inbox';
 import { sectionAt } from './Settings';
-import { rulesAt } from './Rules';
+import { rulesAt, rulesHref } from './Rules';
 import { currentTheme, setTheme, type Theme } from './theme';
 import { workflowsAt } from './Workflows';
 
@@ -142,7 +142,10 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 		return () => removeEventListener('hashchange', on);
 	}, []);
 	const path = pathOf(hash);
-	const here = workflowsAt(path) ? 'automations' : sectionAt(path) || rulesAt(path) ? 'team' : 'tasks';
+	const [repos, setRepos] = useState<string[]>([]);
+	useEffect(() => void repoList().then(setRepos, () => setRepos([])), []);
+	const team = rows.find((t) => t.repo && repos.includes(t.repo))?.repo ?? repos[0];
+	const here = workflowsAt(path) ? 'automations' : rulesAt(path) ? 'team' : sectionAt(path) ? 'you' : 'tasks';
 	const current = (key: string) => (key === here ? 'page' : undefined);
 	useEffect(() => {
 		const on = (e: KeyboardEvent) => {
@@ -182,7 +185,7 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 			<header class="top">
 				<nav class="bar" aria-label="moor">
 					<a class="brand" href="#/">
-						<span class="mark">◆</span> moor
+						◆ moor
 					</a>
 					<a class="nav" href="#/" aria-current={current('tasks')}>
 						Tasks
@@ -190,7 +193,7 @@ export function TopBar({ email, csrf, rows, inbox, onSignOut }: { email: string;
 					<a class="nav" href="#/workflows" aria-current={current('automations')}>
 						Automations
 					</a>
-					<a class="nav" href="#/settings" aria-current={current('team')}>
+					<a class="nav" href={team ? rulesHref(team) : '#/repos'} aria-current={current('team')}>
 						Team
 					</a>
 					<span class="grow" />
