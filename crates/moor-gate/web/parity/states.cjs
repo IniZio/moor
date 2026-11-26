@@ -10,8 +10,7 @@ const { C1_PROMPT, CHAT_SENTENCE } = require('./fixtures/automation.cjs');
 const BRIEF = 'A date picker for the booking screen, in Storybook. Three states: default, selected, unavailable. Then send it for review.';
 const H1DRAFT = 'Make it 3% above 500 and show me the booking screen with a 600 booking.';
 const home = { area: 'task', product: '#/new', ready: '.t-wform', now: D24, asks: true, inbox: true, store: { session: { 'moor.draft.new-task': BRIEF }, local: { 'moor.lastRepos': '["acme/clinic-prototype"]' } } };
-// toEnd: the product thread follows its end only when the page changes, so pictures decoding late leave it short; the mock always ends at the end.
-const box = (id, extra) => ({ key: id, area: 'task', mock: '#' + id, product: '#/box/' + id, ready: '.t-th', now: D24, toEnd: true, ...extra });
+const box = (id, extra) => ({ key: id, area: 'task', mock: '#' + id, product: '#/box/' + id, ready: '.t-th', now: D24, ...extra });
 
 const toggle = (page) => page.click('.ftog');
 const typeEnd = async (page) => { await page.fill('textarea.promptbox', C1_PROMPT + ' ' + CHAT_SENTENCE); await page.evaluate(() => document.activeElement.blur()); };

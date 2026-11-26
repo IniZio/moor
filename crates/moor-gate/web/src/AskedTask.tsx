@@ -79,12 +79,21 @@ function PlaceAsk({ box, needs, csrf, onSent }: { box: string; needs: Needs; csr
 /** A plain question the agent asks, which the conversation shows as its own; a permission, a gate or a plan keeps the page's card. */
 const plainQuestion = (d: BoxDetail): Needs | null => (d.state === 'needs_you' && d.needs?.kind === 'question' && !d.needs.gate && !d.needs.plan && !d.needs.approve ? d.needs : null);
 
-/** Keeps the conversation at its end as it grows while the person is there, as after they send; it stays put once they scroll up to read. */
-function follow(el: HTMLElement | null) {
+/** Keeps the conversation at its end as it grows while the person is there, as after they send or when a picture loads; it stays put once they scroll up to read. */
+export function follow(el: HTMLElement | null) {
 	if (!el) return;
 	let atEnd = el.scrollHeight <= el.clientHeight + 8;
+	const toEnd = () => atEnd && el.scrollTo({ top: el.scrollHeight });
+	const grown = new ResizeObserver(toEnd);
+	const watch = () => {
+		for (const child of el.children) grown.observe(child);
+	};
 	el.addEventListener('scroll', () => (atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 8));
-	new MutationObserver(() => atEnd && el.scrollTo({ top: el.scrollHeight })).observe(el, { childList: true, subtree: true });
+	new MutationObserver(() => {
+		watch();
+		toEnd();
+	}).observe(el, { childList: true, subtree: true });
+	watch();
 }
 
 /** A question's task, or a workflow run, as a conversation: the agent's open question at its end, and a box to write more in, with `you` as the name over the person's messages. Stop shows only while the agent works. A question's task has no Box of its own, so nothing more; a run's own Box keeps its terminal, changes and Close under the head's menu, its gates above the conversation, and Steer and Interrupt while the agent works. `tab` opens the terminal or the changes in place of the conversation. */

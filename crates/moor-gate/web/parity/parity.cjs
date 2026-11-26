@@ -183,7 +183,6 @@ async function measure(page, s, data, missing, images) {
     throw new Error('product never showed ' + (s.ready || 'main') + ' (' + e.message.split('\n')[0] + ')');
   });
   if (s.productDo) await s.productDo(page);
-  if (s.toEnd) await page.evaluate(() => document.querySelectorAll('main *').forEach((e) => { if (e.scrollHeight > e.clientHeight + 8 && /auto|scroll/.test(getComputedStyle(e).overflowY)) e.scrollTop = e.scrollHeight; }));
   await settle(page);
   const alert = await page.$('[role=alert]');
   if (alert) throw new Error('the portal shows an alert: ' + (await alert.innerText()));
