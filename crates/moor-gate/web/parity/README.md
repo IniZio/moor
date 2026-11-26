@@ -7,7 +7,7 @@ portal-up NAME --worktree WT
 NODE_PATH=~/node_modules node parity.cjs --mock ~/magic/moor/.local/hopper-variant --portal NAME [--only a1,h3] [--out DIR]
 ```
 
-Each screen prints one line. It gives the share of pixels that differ, the text runs (ok, differ, mock only, product only) and the element pairs that differ. A final table sets the numbers against the ceilings. The exit code is 1 when a screen is over its ceiling or fails to load. `--out` keeps the paired PNGs, the red diff and the text and pair lists of each screen.
+Each screen prints one line. It gives the share of pixels that differ, the text runs (ok, differ, mock only, product only) and the element pairs that differ. A final table sets the numbers against the ceilings. The exit code is 1 when a screen is over its ceiling or fails to load. `--out` keeps the paired PNG files, the red diff and the text and pair lists of each screen.
 
 - `states.cjs` holds the screens, the selector pairs and the clicks on each side.
 - `fixtures/` holds the API answers per area (task, automation, rules), with the mock's own data.
