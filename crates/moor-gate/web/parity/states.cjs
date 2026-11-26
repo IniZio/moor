@@ -13,7 +13,6 @@ const home = { area: 'task', product: '#/new', ready: '.t-wform', now: D24, asks
 const box = (id, extra) => ({ key: id, area: 'task', mock: '#' + id, product: '#/box/' + id, ready: '.t-th', now: D24, ...extra });
 
 const toggle = (page) => page.click('.ftog');
-// The mock rests with the pointer on one phrase (its STATIC_HOV), which lights that phrase and its file lines; the product does the same only under a pointer.
 const rest = (id) => (page) => page.hover('.pmarks [data-id="' + id + '"]');
 const typeEnd = async (page) => { await page.fill('textarea.promptbox', C1_PROMPT + ' ' + CHAT_SENTENCE); await page.evaluate(() => document.activeElement.blur()); };
 const auto = (key, mock, product, extra) => ({ key, area: 'automation', mock, product, ready: '.auto .pbox', now: D24A, pairs: AUTO_PAIRS, ...extra });
