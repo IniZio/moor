@@ -195,6 +195,7 @@ adds to it.
 | `inject.form` | The header value. `{secret}` stands for the secret. |
 | `inject.basic_user` | Send the secret as the HTTP Basic password for this user. |
 | `allow` | `*`, or `METHODS /path` entries. `{repo}` is a repo of the Box, and `{any_repo}` is any `owner/name`. |
+| `app` | `METHODS /path` entries sent with the GitHub App's token, not `credential`. Only on the `api.github.com` rule. See [GitHub writes as the App](specs/work-outputs.md#github-writes-as-the-app). |
 | `box_env` | Variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | Drop the rule for a Box with no repo. |
 
@@ -277,6 +278,9 @@ They are narrow, and moor refuses the config with the reason otherwise:
 
 - The name must be a default rule. These are `claude`, `github-api`,
   `github-git`, and `github-uploads`. A repo config cannot add a host or a credential.
+- The name `github-app` takes entries that go out as the GitHub App, not with
+  the person's token. They join the `app` lines of the `api.github.com` rule,
+  and cover the Box's first repo only.
 - Each entry is `METHOD /path`, with an upper-case method. `*` is not a method
   and not an entry.
 - The path names `{repo}`, the Box's own repos. `{repo}` expands to every repo

@@ -1,11 +1,12 @@
 //! The operator's GitHub App: its JWT, installation tokens, and the reads moor makes with them.
 //!
-//! moor only reads as the App. Minting an installation token is the one `POST`, and it asks for
-//! read permissions only. No comment, status or other write goes out with an App token.
+//! moor's own reads ask for read permissions only. The one write token is [`AppClient::repo_token`],
+//! which the Proxy injects into a Box's `app` lines, so a comment or status shows as the App.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
@@ -37,6 +38,11 @@ const PAGE: u32 = 100;
 
 /// The permissions an installation token asks for: reads only.
 const TOKEN_PERMISSIONS: &str = r#"{"permissions":{"metadata":"read","pull_requests":"read"}}"#;
+/// How long a minted repo token is handed out; GitHub's last an hour.
+const REPO_TOKEN_TTL: Duration = Duration::from_mins(50);
+
+/// Each repo's write token and when it stops being handed out.
+type Minted = HashMap<ForgeRepo, (Zeroizing<Vec<u8>>, Ts)>;
 
 /// The operator's GitHub App, from the controller config's `github_app` entry.
 pub(crate) struct AppClient {
@@ -48,6 +54,8 @@ pub(crate) struct AppClient {
     api: String,
     /// The App's public install page, read once from `GET /app`.
     install_url: OnceLock<String>,
+    /// Each repo's write token and when it stops being handed out.
+    minted: Mutex<Minted>,
 }
 
 /// An installation of the App on an account.
@@ -102,6 +110,7 @@ impl AppClient {
             key: EncodingKey::from_rsa_der(&der),
             api: api.trim_end_matches('/').to_owned(),
             install_url: OnceLock::new(),
+            minted: Mutex::default(),
         };
         // The key is only parsed when it signs, so sign once now to refuse a broken one here.
         app.jwt(Ts::from_millis(0)).map_err(|_| refused())?;
@@ -224,6 +233,41 @@ impl AppClient {
     /// # Errors
     /// GitHub cannot be reached or refuses the mint.
     pub(crate) fn token(&self, installation: Installation, now: Ts) -> Result<Secret, String> {
+        self.mint(installation, TOKEN_PERMISSIONS, now)
+    }
+
+    /// A token for `repo` alone that writes pull request comments and commit statuses, minted
+    /// once and handed out again for [`REPO_TOKEN_TTL`].
+    ///
+    /// # Errors
+    /// The App is not installed on `repo`, or GitHub cannot be reached or refuses the mint.
+    pub(crate) fn repo_token(&self, repo: &ForgeRepo, now: Ts) -> Result<Secret, String> {
+        let mut minted = self.minted.lock().unwrap_or_else(PoisonError::into_inner);
+        minted.retain(|_, (_, until)| *until > now);
+        if let Some((token, _)) = minted.get(repo) {
+            return Ok(Secret::new(token.to_vec()));
+        }
+        let installation = self
+            .installation_of(repo, now)?
+            .ok_or_else(|| format!("the GitHub App is not installed on {repo}"))?;
+        let body = serde_json::json!({
+            "repositories": [repo.name],
+            "permissions": {
+                "pull_requests": "write",
+                "statuses": "write",
+                "metadata": "read",
+            },
+        })
+        .to_string();
+        let token = self.mint(installation, &body, now)?;
+        let kept = Zeroizing::new(token.expose().to_vec());
+        minted.insert(repo.clone(), (kept, now.saturating_add(REPO_TOKEN_TTL)));
+        drop(minted);
+        Ok(token)
+    }
+
+    /// A token for `installation` as `body` asks.
+    fn mint(&self, installation: Installation, body: &str, now: Ts) -> Result<Secret, String> {
         /// The mint's reply.
         #[derive(Deserialize)]
         struct Minted {
@@ -231,7 +275,7 @@ impl AppClient {
             token: String,
         }
         let path = format!("/app/installations/{}/access_tokens", installation.id);
-        match self.call("POST", &path, &self.jwt(now)?, Some(TOKEN_PERMISSIONS))? {
+        match self.call("POST", &path, &self.jwt(now)?, Some(body))? {
             (201, value) => serde_json::from_value::<Minted>(value)
                 .map(|m| Secret::new(m.token.into_bytes()))
                 .map_err(|_| format!("GitHub answered {path} in an unknown shape")),

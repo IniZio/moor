@@ -29,6 +29,10 @@ pub use text::parse_rules_text;
 /// The user secret the GitHub rules inject.
 pub const GITHUB_SECRET: &str = "github";
 
+/// The credential of a rule's `app` lines: an installation token of the controller's GitHub
+/// App for the Box's repo, minted by the controller, never a secret a user holds.
+pub const APP_CREDENTIAL: &str = "github-app";
+
 /// Header carrying the credential when `inject.header` is unset.
 const DEFAULT_HEADER: &str = "Authorization";
 
@@ -115,13 +119,20 @@ pub struct ToolRule {
     pub requires_repo: bool,
     /// The GraphQL roots and mutations its `POST /graphql` entry lists.
     pub graphql: Option<Scope>,
+    /// `METHODS /path` lines sent with the GitHub App's token ([`APP_CREDENTIAL`]) in place of
+    /// `credential`, so the write shows as the App. Only on the rule for [`GRAPHQL_HOST`].
+    pub app: Vec<String>,
 }
 
 impl ToolRule {
     /// Whether the rule needs the Box repo: `requires_repo`, or any allow entry or Box variable uses it.
     pub(super) fn needs_repo(&self) -> bool {
         self.requires_repo
-            || self.allow.iter().any(|a| template::uses_repo(a))
+            || self
+                .allow
+                .iter()
+                .chain(&self.app)
+                .any(|a| template::uses_repo(a))
             || self.box_env.values().any(|v| template::uses_repo(v))
     }
 
@@ -130,15 +141,19 @@ impl ToolRule {
     /// `hosts` and `credential` always stay the default's (validation rejects
     /// a user value). `inject` is the user's when it sets any part, else the
     /// default's. `allow` is the default's entries then the
-    /// user's, without duplicates. `box_env` is the union, the user's value
+    /// user's, without duplicates, and `app` likewise. `box_env` is the union, the user's value
     /// winning per variable. `graphql` is the user's when set, else the default's.
     fn over(&self, default: &Self) -> Self {
-        let mut allow = default.allow.clone();
-        for entry in &self.allow {
-            if !allow.contains(entry) {
-                allow.push(entry.clone());
+        let joined = |base: &[String], more: &[String]| {
+            let mut out = base.to_vec();
+            for entry in more {
+                if !out.contains(entry) {
+                    out.push(entry.clone());
+                }
             }
-        }
+            out
+        };
+        let allow = joined(&default.allow, &self.allow);
         let mut box_env = default.box_env.clone();
         box_env.extend(self.box_env.clone());
         Self {
@@ -153,7 +168,40 @@ impl ToolRule {
             box_env,
             requires_repo: default.requires_repo,
             graphql: self.graphql.clone().or_else(|| default.graphql.clone()),
+            app: joined(&default.app, &self.app),
         }
+    }
+
+    /// `app` lines only on the rule for [`GRAPHQL_HOST`], each a `METHODS /path` that `allow`
+    /// does not also list: the Proxy refuses a request two credentials would serve.
+    fn validate_app(&self, at: &str) -> Result<(), ConfigError> {
+        if self.app.is_empty() {
+            return Ok(());
+        }
+        let here = format!("{at}.app");
+        let github = self.hosts.len() == 1
+            && self
+                .hosts
+                .iter()
+                .all(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST));
+        if !github {
+            return Err(ConfigError::new(
+                here,
+                format!("app lines apply to a rule for {GRAPHQL_HOST} alone"),
+            ));
+        }
+        resolve::validate_allow(&self.app, at)?;
+        for (i, line) in self.app.iter().enumerate() {
+            let why = if line == "*" || line == GRAPHQL_ENTRY {
+                format!("{line:?} cannot go out as the App; name a REST path")
+            } else if self.allow.contains(line) {
+                format!("{line:?} is also in allow; a line goes out with one credential")
+            } else {
+                continue;
+            };
+            return Err(ConfigError::new(format!("{here}[{i}]"), why));
+        }
+        Ok(())
     }
 
     /// A user rule named like `default` may only add to it: no `hosts` or
@@ -232,10 +280,20 @@ impl ToolRule {
                 .map_err(|w| ConfigError::new(format!("{at}.hosts[{i}]"), w))?;
         }
         SecretName::parse(&self.credential)
+            .and_then(|_| {
+                if self.credential == APP_CREDENTIAL {
+                    Err(format!(
+                        "{APP_CREDENTIAL} is the App's token, for app lines only; list the lines under app"
+                    ))
+                } else {
+                    Ok(())
+                }
+            })
             .map_err(|w| ConfigError::new(format!("{at}.credential"), w))?;
         self.inject.validate(&format!("{at}.inject"))?;
         resolve::validate_allow(&self.allow, at)?;
         self.validate_graphql(at)?;
+        self.validate_app(at)?;
         for (name, value) in &self.box_env {
             let here = format!("{at}.box_env.{name}");
             check::env_name(name)

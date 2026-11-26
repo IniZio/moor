@@ -4,9 +4,26 @@ use serde::Serialize;
 use std::io::{BufRead, BufReader, Read, Write};
 use zeroize::Zeroizing;
 
+use moor_core::seam::clock::Ts;
+use moor_core::seam::forge::ForgeRepo;
+use moor_core::Secret;
+
 use super::{Call, Fault, Hello, LEDGER};
 use crate::store::Store;
 use crate::vault::Vault;
+
+/// The controller's GitHub App, as the ledger asks it for a Box's write token.
+pub(crate) trait AppTokens: Send + Sync {
+    /// A token for `repo` alone, good at `now`.
+    ///
+    /// # Errors
+    /// Why there is none, such as the App not being installed on `repo`.
+    fn repo_token(&self, repo: &ForgeRepo, now: Ts) -> Result<Secret, String>;
+}
+
+/// What the controller answers the ledger from: its store, its vault, and its GitHub App when
+/// the config names one.
+pub(crate) type Sources<'a> = (&'a Store, &'a Vault, Option<&'a dyn AppTokens>);
 
 mod boxes;
 mod start;
@@ -29,7 +46,7 @@ enum Bound {
 }
 
 /// Serves one connection until EOF or a failed write.
-pub(crate) fn serve((store, vault): (&Store, &Vault), keys: &Keys<'_>, stream: impl Read + Write) {
+pub(crate) fn serve(sources: Sources<'_>, keys: &Keys<'_>, stream: impl Read + Write) {
     let mut read = BufReader::new(stream);
     let Some(line) = next(&mut (&mut read).take(HELLO_MAX)) else {
         return;
@@ -45,7 +62,7 @@ pub(crate) fn serve((store, vault): (&Store, &Vault), keys: &Keys<'_>, stream: i
         return;
     }
     while let Some(line) = next(&mut read) {
-        if !send(read.get_mut(), &answer((store, vault), &bound, &line)) {
+        if !send(read.get_mut(), &answer(sources, &bound, &line)) {
             return;
         }
     }
@@ -111,7 +128,8 @@ fn same(want: &str, got: &str) -> bool {
 }
 
 /// The reply to `line`, a call by `bound`.
-fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroizing<String> {
+fn answer(sources: Sources<'_>, bound: &Bound, line: &str) -> Zeroizing<String> {
+    let store = sources.0;
     let call: Call = match serde_json::from_str(line) {
         Ok(call) => call,
         Err(e) => return encode(&Err::<(), _>(Fault::Refused(format!("bad call: {e}")))),
@@ -126,7 +144,7 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         (Bound::Egress(None), Call::AwakeTokens) => {
             encode(&boxes::awake_tokens(store).map_err(Fault::from))
         }
-        (Bound::Egress(Some(box_id)), call) => boxes::for_egress((store, vault), *box_id, call),
+        (Bound::Egress(Some(box_id)), call) => boxes::for_egress(sources, *box_id, call),
         (Bound::Egress(None), _) => encode(&Err::<(), _>(Fault::Refused(
             "a token lookup connection makes no Box call".to_owned(),
         ))),

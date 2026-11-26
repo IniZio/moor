@@ -6,12 +6,15 @@
 use std::collections::BTreeMap;
 
 use super::resolve::default_rules;
+use super::APP_CREDENTIAL;
 use crate::config::ConfigError;
 
 /// The only slot an extra entry may use.
 const REPO: &str = "{repo}";
 
-/// Checks the `proxy.allow` map of a repo config: rule name to extra entries.
+/// Checks the `proxy.allow` map of a repo config: rule name to extra entries. The name
+/// [`APP_CREDENTIAL`] takes entries that go out as the GitHub App, as `app` lines of the rule
+/// for the GitHub API.
 ///
 /// # Errors
 /// [`ConfigError`] naming the entry that is not a plain `METHODS /path` on `{repo}` of an
@@ -22,8 +25,9 @@ pub(in crate::config) fn check_extra_allow(
     let defaults = default_rules();
     for (name, entries) in extra {
         let at = format!("proxy.allow.{name}");
-        if !defaults.contains_key(name) {
-            let known: Vec<&str> = defaults.keys().map(String::as_str).collect();
+        if !defaults.contains_key(name) && name != APP_CREDENTIAL {
+            let mut known: Vec<&str> = defaults.keys().map(String::as_str).collect();
+            known.push(APP_CREDENTIAL);
             return Err(ConfigError::new(
                 at,
                 format!(

@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use moor_core::config::proxy::APP_CREDENTIAL;
 use moor_core::request::StartNeedsReq;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::{SecretName, UserId};
@@ -72,7 +73,8 @@ pub(crate) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, Comma
 }
 
 /// Every secret the Proxy rules inject for `user`'s Box of `repo`, sorted. An MCP server whose
-/// key the user lacks gets no rule: the Box starts without it.
+/// key the user lacks gets no rule: the Box starts without it. The App's token is the
+/// controller's to mint, so no user needs it.
 fn needs(
     cx: &Cx,
     repo: Option<&ForgeRepo>,
@@ -90,6 +92,7 @@ fn needs(
     .rules;
     let names: BTreeSet<SecretName> = rules
         .iter()
+        .filter(|r| r.credential != APP_CREDENTIAL)
         .map(|r| SecretName::parse(&r.credential))
         .collect::<Result<_, _>>()
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;

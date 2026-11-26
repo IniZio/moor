@@ -20,6 +20,7 @@ use crate::testing::cx::{put_secret, test_vault_key};
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
+mod app;
 mod egress;
 mod endpoint;
 mod hold;
@@ -65,7 +66,7 @@ pub(crate) fn serve_on(socket: &Path, store: Store, vault: Arc<Vault>) -> Served
                 let keys = Keys {
                     egress: Some(EGRESS_KEY),
                 };
-                serve((&store, &vault), &keys, stream);
+                serve((&store, &vault, None), &keys, stream);
             });
         }
     });

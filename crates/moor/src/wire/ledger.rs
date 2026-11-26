@@ -2,8 +2,13 @@
 
 use std::io::{Read, Write};
 
+use moor_core::seam::clock::Ts;
+use moor_core::seam::forge::ForgeRepo;
+use moor_core::Secret;
+
+use crate::adapters::github::app::AppClient;
 use crate::env::{Env, EGRESS_KEY};
-use crate::proxy::ledger::{serve, Keys};
+use crate::proxy::ledger::{serve, AppTokens, Keys};
 use crate::store::Store;
 use crate::vault::Vault;
 
@@ -16,7 +21,14 @@ pub(crate) fn serve_ledger((env, vault): (&Env, &Vault), stream: impl Read + Wri
         let keys = Keys {
             egress: egress_key(env),
         };
-        serve((store, vault), &keys, stream);
+        let app = env.shared::<AppClient>().map(|a| a as &dyn AppTokens);
+        serve((store, vault, app), &keys, stream);
+    }
+}
+
+impl AppTokens for AppClient {
+    fn repo_token(&self, repo: &ForgeRepo, now: Ts) -> Result<Secret, String> {
+        Self::repo_token(self, repo, now)
     }
 }
 

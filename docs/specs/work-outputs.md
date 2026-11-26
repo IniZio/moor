@@ -3,8 +3,8 @@
 A run or task makes things outside moor. Today that is a pull request comment
 and a commit status. Later it can be a Figma comment or an uploaded artifact.
 Each becomes an output, shown on the run and task pages. The
-agent gets a link to the run page to put in what it writes. GitHub writes go out as the person
-"with moor-bot", through the GitHub App, in a later slice.
+agent gets a link to the run page to put in what it writes. GitHub writes go out as the
+GitHub App, moor-bot, not as a person.
 
 ## What exists today
 
@@ -17,8 +17,8 @@ agent gets a link to the run page to put in what it writes. GitHub writes go out
   origin and builds a Box link by hand.
 - The run page is `#/workflows/<name>/runs/<id>`. Workflow names are per
   person, so a teammate who opens the link gets "no workflow named ...".
-- The GitHub App (`github_app` in the controller config) only reads. It takes
-  webhooks and looks up pull requests.
+- The GitHub App (`github_app` in the controller config) takes webhooks and
+  looks up pull requests.
 
 ## Data shape
 
@@ -41,8 +41,8 @@ pub struct Output {
   most. Examples are `github.comment`, `github.status`, `figma.comment` and
   `artifact.upload`. moor stores and shows it. No code branches on it.
 - At most 100 outputs per Box. A report past that is refused with the reason.
-- `via` stays empty in the first slices. The GitHub App slice fills it with
-  the Proxy credential name (`github` or `github-app`).
+- `via` stays empty in the first slices. A later slice fills it with the
+  Proxy credential name (`github` or `github-app`).
 - Table `box_outputs`, unique on `(box_id, url)`. Reporting the same URL
   again is idempotent, which fits a comment edited in place.
 
@@ -98,78 +98,70 @@ signed-in person may read any run. Only the workflow's owner can answer an
 approve step, as today. The owner's old `#/workflows/<name>/runs/<id>` links
 keep working, and the workflow page links to the new form.
 
-## GitHub writes on behalf of the person (later slice)
+## GitHub writes as the App
 
-A GitHub App user access token acts as the person who authorized the App. A
-comment shows the person's avatar with the App's badge, and the audit log
-names the person with "GitHub App user-to-server token". The token reaches only
-what both the person and the App may, on accounts where the App is installed.
-It lasts 8 hours. Its refresh token lasts 6 months and works once. A refresh
-returns a new pair and voids the old one.
+PR comments and commit statuses go out as the GitHub App, the way handbook-review
+posts. They show the App's name and badge, and no person's token is used.
 
 ```mermaid
 sequenceDiagram
-  participant U as Person
-  participant W as Portal
-  participant C as Controller vault
+  participant A as Agent in Box
   participant P as Proxy
-  U->>W: Settings, Connect moor-bot
-  W->>U: github.com/login/oauth/authorize?client_id&state
-  U->>W: /auth/github-app/callback?code&state
-  W->>C: store secret github-app (refresh token, access token, expiry)
-  P->>C: token for github-app (Box request)
-  C->>C: refresh if under 5 min left, one refresh at a time
-  C-->>P: ghu_ access token
+  participant C as Controller
+  participant G as GitHub
+  A->>P: POST /repos/acme/widgets/statuses/abc
+  P->>C: secret github-app (ledger call)
+  C->>G: GET /repos/acme/widgets/installation (App JWT)
+  C->>G: POST /app/installations/{id}/access_tokens
+  G-->>C: token for widgets alone, 1 hour
+  C-->>P: the token, kept 50 minutes
+  P->>G: the request + the App's token
 ```
 
-- **Stored per person.** A secret named `github-app` in the vault holds the
-  refresh token, the current access token and its expiry. A refresh swaps the row
-  under a lock, since a refresh token works once.
-- **Credential per rule.** A new default rule, `github-app-api`, serves
-  `api.github.com` with `credential: github-app` and an empty allow list. When
-  two rules serve one host, the Proxy takes the first whose allow list matches
-  the request, `github-app-api` first. A workflow moves its writes there:
+- **App lines.** A rule can list `app:` lines beside `allow:`. Only the rule
+  for `api.github.com` can, and never `*` or `POST /graphql`. A line in
+  `app` goes out with the App's token. Every other request keeps the person's
+  `github` token. A line cannot be in both lists, since the Proxy refuses a
+  request that two credentials would serve.
+- **Minted by the controller.** It holds the App key. The token covers the
+  Box's first repo alone, with Pull requests and Commit statuses write and
+  Metadata read. It is kept in memory for 50 minutes and is never stored or put
+  in the Box. The secret name `github-app` is the controller's, so a start does
+  not ask the person for it. No rule can name it as its `credential`.
+- **Not installed.** The App may not be installed on the Box's repo. Then the
+  ledger refuses with "the GitHub App is not installed on acme/widgets". The
+  Proxy refuses the request and records `proxy_credential_failed`. A
+  controller with no `github_app` refuses the same way.
+- **Asking for lines.** A workflow's or repo's `proxy.allow` takes them under
+  `github-app`, which joins the `app` lines of the rule for `api.github.com`:
 
 ```yaml
 proxy:
   allow:
-    github-app-api:
+    github-app:
       - "POST /repos/{repo}/issues/*/comments"
       - "PATCH /repos/{repo}/issues/comments/*"
       - "POST /repos/{repo}/statuses/*"
 ```
 
-  Reads and git stay on the person's `github` token, which reaches repos the
-  App is not installed on.
-- **Missing or expired.** A start whose rules need `github-app` and a person
-  without it is refused, naming the secret, as for any missing secret. A
-  refresh GitHub refuses unlinks the secret, and the Proxy records
-  `credential_withheld`.
+  Move these lines out of `github-api`. Left in both, they are refused. A
+  repo with its own rules text can list them under `app:` on its
+  `api.github.com` rule instead.
 
-### Owner actions on GitHub, before that slice
+### Owner actions on GitHub
 
-On the moor-bot App's settings page:
-
-1. Under Repository permissions, set Issues, Pull requests and Commit
-   statuses to **Read and write**.
-2. Add the callback URL `https://<portal host>/auth/github-app/callback`.
-3. Under Optional features, keep "User-to-server token expiration" opted in.
-4. Generate a client secret.
-
-Then:
-
-5. An owner of each org the App is installed on accepts the new permissions.
-   They take effect only after that.
-6. In gitops, set `githubApp.clientId` in the plain values and
-   `githubApp.clientSecret` in the SOPS values.
-7. Each person connects moor-bot once from Settings.
+moor-bot already has Pull requests, Commit statuses and Contents write. A
+comment on a pull request needs Pull requests write, so no permission change is
+needed. The one action is to install moor-bot on each repo whose writes should
+show as the App, which an owner of that org accepts. A comment on a plain issue
+would need Issues write, which moor does not ask for.
 
 ## Slices
 
 1. Portal URL, link variables, `#/runs/<id>` readable by any signed-in person.
 2. `box_outputs`, `report_output`, the Outputs lists.
-3. GitHub App on behalf. The owner actions above, the `github-app` secret,
-   the `github-app-api` rule and `via`.
+3. GitHub writes as the App. This covers `app` lines, `proxy.allow.github-app`
+   and the controller-minted token, then `via`.
 
 The evidence prompt changes after slice 1 (use `$MOOR_RUN_URL`) and after
 slice 2 (report the comment and the status).

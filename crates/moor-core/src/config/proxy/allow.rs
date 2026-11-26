@@ -32,6 +32,8 @@ pub(super) struct RawRule {
     box_env: BTreeMap<String, String>,
     /// As [`ToolRule::requires_repo`].
     requires_repo: bool,
+    /// As [`ToolRule::app`].
+    app: Vec<String>,
 }
 
 impl TryFrom<RawRule> for ToolRule {
@@ -64,6 +66,7 @@ impl TryFrom<RawRule> for ToolRule {
             box_env: raw.box_env,
             requires_repo: raw.requires_repo,
             graphql,
+            app: raw.app,
         })
     }
 }

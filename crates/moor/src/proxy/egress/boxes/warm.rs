@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::config::proxy::APP_CREDENTIAL;
 use moor_core::seam::clock::Clock;
 use moor_core::user::SecretName;
 use moor_core::BoxId;
@@ -82,10 +83,16 @@ impl Boxes {
         })
     }
 
-    /// Starts the proxy of `box_id` and reads each secret its rules name and what it holds.
+    /// Starts the proxy of `box_id` and reads each secret its rules name and what it holds. The
+    /// App's token is minted on the first request that needs it, not here.
     fn warm_box(&self, box_id: BoxId) -> Result<(), String> {
         let served = self.served(box_id, None)?;
-        for rule in &served.spec.rules {
+        for rule in served
+            .spec
+            .rules
+            .iter()
+            .filter(|r| r.credential != APP_CREDENTIAL)
+        {
             let name = SecretName::parse(&rule.credential)?;
             served.ledger.secret(&name).map_err(|e| e.to_string())?;
         }
