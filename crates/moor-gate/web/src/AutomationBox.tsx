@@ -48,7 +48,7 @@ export function phaseOf(saved: string, prompt: string, read: string | null): Pha
 }
 
 const LEGEND: Record<Phase, string> = {
-	saved: 'The file is what each run gets. moor reads the prompt and makes the plan below.',
+	saved: 'The file is what each run gets.',
 	writing: 'The file is dimmed while you write. Read it to see the lines you changed.',
 	read: 'Lit lines are what you changed. Save keeps them.',
 };
