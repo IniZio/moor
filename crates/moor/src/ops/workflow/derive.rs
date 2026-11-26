@@ -1,8 +1,8 @@
 //! moor reads a workflow's prompt into a plan or a reading. A write that changes the prompt asks
 //! for one; this pass starts a short Box that reads the repos and either hands in a reading
-//! ([`hand_in`]) or leaves `plan.json`, which the pass stores when the prompt is still the one it
-//! was made from, closing the Box. Nothing else stores one. A plan clears the gates and a reading
-//! with gates clears the plan. Gates a person
+//! ([`hand_in()`]) or leaves `plan.json`, which the pass stores when the prompt is still the one it
+//! was made from, closing the Box. Nothing else stores one. A plan clears the gates and the
+//! reading held, and a reading clears the plan. Gates a person
 //! wrote stay until the owner asks moor to make the reading again. A Box that ends without a
 //! reading leaves the reason, and moor tries again only when the prompt changes or the owner asks:
 //! no try repeats on its own.
