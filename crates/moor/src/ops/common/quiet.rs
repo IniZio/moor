@@ -65,6 +65,17 @@ pub(crate) fn may_tell(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, Sto
     settled(cx, store, row)
 }
 
+/// Whether moor may tell the agent of Box `row` news it waits for, such as a gate that passed:
+/// nothing waits in its inbox, and the Box is awake or [`may_tell`] allows it. News needs no quiet
+/// agent. The inbox holds it until the agent can take it, and an agent that ended its turn beside
+/// background work it left running reads as working, though it may be waiting for that news.
+pub(crate) fn may_tell_news(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, StoreError> {
+    if row.lifecycle == BoxLifecycle::Asleep {
+        return may_tell(cx, store, row);
+    }
+    Ok(store.unsent(row.id)?.is_empty())
+}
+
 /// Whether the agent of a Box with `facts` is quiet enough for a check to run: idle since the
 /// last steer, or ended, in a Box that is up or asleep.
 pub(crate) fn quiet_for_check(facts: &RunBoxFacts, steered: Option<Ts>, now: Ts) -> bool {
