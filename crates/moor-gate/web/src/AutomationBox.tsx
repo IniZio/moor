@@ -112,6 +112,7 @@ export function AutomationBox(p: BoxProps) {
 						<PromptMarks
 							reading={marks}
 							lit={lit.phrases}
+							rules={p.flow.repos[0] ? `#/repos/${p.flow.repos[0]}/rules` : undefined}
 							onHover={onHover}
 							onEdit={(e) => {
 								onHover(null);

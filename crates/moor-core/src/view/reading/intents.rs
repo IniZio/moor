@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 mod tests;
 
 use crate::config::proxy::{ToolRule, APP_CREDENTIAL};
+
+/// Where a row's line or request names the Box's repo.
+const REPO_SLOT: &str = "{repo}";
 use crate::reading::{
     lets_through, Effect, Found, IntentTable, IntentUse, Line, Mark, Polarity, ProxyAllow, Read,
     SendAs, TableVersion, Unholdable,
@@ -130,16 +133,17 @@ pub(super) fn handwritten(
 }
 
 /// Whether `table`, newer than `read_with`, changes `read`: a clause no row covered, or a
-/// phrase whose rows now give other entries than it holds.
+/// phrase whose rows now give other entries or forbid other requests than it holds.
 pub(super) fn table_changes(read: &Read, read_with: TableVersion, table: &IntentTable) -> bool {
     if read_with == table.version {
         return false;
     }
-    let entries: BTreeMap<String, &str> = read
+    let held: BTreeMap<String, String> = read
         .effects()
         .iter()
         .filter_map(|e| match e {
-            Effect::Allow { id, entry, .. } => Some((id.to_string(), entry.as_str())),
+            Effect::Allow { id, entry, .. } => Some((id.to_string(), entry.clone())),
+            Effect::Withheld { id, request, .. } => Some((id.to_string(), request.to_string())),
             _ => None,
         })
         .collect();
@@ -147,30 +151,40 @@ pub(super) fn table_changes(read: &Read, read_with: TableVersion, table: &Intent
         if p.intents.iter().any(|u| u.found == Found::NoRow) {
             return true;
         }
-        let held: BTreeSet<&str> = match &p.mark {
+        let mut had: BTreeSet<String> = match &p.mark {
             Mark::Held { effects } => effects
                 .iter()
-                .filter_map(|e| entries.get(&e.to_string()).copied())
+                .filter_map(|e| held.get(&e.to_string()).cloned())
                 .collect(),
             Mark::Asked { .. } | Mark::Unmapped {} => BTreeSet::new(),
         };
-        let mut had = held;
         let mut now = BTreeSet::new();
-        for u in p.intents.iter().filter(|u| u.polarity == Polarity::Do) {
-            if let Found::Lines { already } = &u.found {
-                had.extend(already.iter().map(|l| l.entry.as_str()));
-            }
+        for u in &p.intents {
             let named = u.repo.as_ref().map(ToString::to_string);
+            let slot = |s: &str| {
+                named
+                    .as_ref()
+                    .map_or_else(|| s.to_owned(), |r| s.replace(REPO_SLOT, r))
+            };
             let Some(row) = table.row(&u.intent) else {
                 return true;
             };
-            now.extend(row.lines.iter().map(|l| {
-                named
-                    .as_ref()
-                    .map_or_else(|| l.entry.clone(), |r| l.entry.replace("{repo}", r))
-            }));
+            match &u.found {
+                Found::Lines { already } => {
+                    had.extend(already.iter().map(|l| l.entry.clone()));
+                    now.extend(row.lines.iter().map(|l| slot(&l.entry)));
+                }
+                Found::CannotHold { .. } => now.extend(row.lines.iter().map(|l| slot(&l.entry))),
+                Found::Refused => now.extend(row.never.iter().map(|r| slot(&r.to_string()))),
+                Found::LetThrough(a) => {
+                    let request = a.request.to_string();
+                    if !row.never.iter().any(|r| slot(&r.to_string()) == request) {
+                        return true;
+                    }
+                }
+                Found::NoRow => return true,
+            }
         }
-        let now: BTreeSet<&str> = now.iter().map(String::as_str).collect();
-        p.intents.iter().any(|u| u.polarity == Polarity::Do) && had != now
+        !p.intents.is_empty() && had != now
     })
 }

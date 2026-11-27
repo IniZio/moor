@@ -142,3 +142,107 @@ fn a_newer_table_makes_a_reading_stale_only_when_it_changes_it() {
         "the status clause had no row"
     );
 }
+
+const FORBIDS: &str = "Never merge the pull request. Never push a branch.";
+
+/// A reading of `FORBIDS` at `table`: never merge, which the rules refuse, and never push, which
+/// they let through.
+fn forbidding(table: u32) -> Reading {
+    let mut reading = read(table);
+    reading.source = FORBIDS.into();
+    reading.context.source_hash = PromptHash::of(FORBIDS);
+    reading.state = ReadingState::Reading {
+        by: ReaderRun {
+            box_name: BoxName::parse("acme/reader-1").unwrap(),
+            harness: "claude".into(),
+            model: None,
+        },
+        since: Ts::from_millis(1),
+    };
+    let doc: HandIn = serde_json::from_value(json!({
+        "phrases": [
+            {"quote": {"exact": "Never merge the pull request"}, "intents": [{"intent": "merge", "polarity": "never"}]},
+            {"quote": {"exact": "Never push a branch"}, "intents": [{"intent": "push", "polarity": "never"}]}
+        ],
+        "effects": []
+    }))
+    .unwrap();
+    let rules = default_rules();
+    let pinned = Pinned {
+        rules: &rules,
+        app: true,
+    };
+    let read = reading
+        .hand_in(&doc, IntentTable::shipped().unwrap(), &pinned)
+        .unwrap();
+    Reading {
+        state: ReadingState::Read(read),
+        ..reading
+    }
+}
+
+fn forbidding_view(reading: &Reading, table: Option<&IntentTable>) -> Value {
+    let allowed = ProxyAllow::new();
+    let at = Current {
+        table,
+        ..now(FORBIDS, &allowed)
+    };
+    serde_json::to_value(ReadingView::of(reading, &at)).unwrap()
+}
+
+#[test]
+fn never_merge_shows_solid_with_its_two_withheld_requests() {
+    let current = IntentTable::shipped().unwrap();
+    let v = forbidding_view(&forbidding(current.version.0), Some(current));
+    assert_eq!(v["phrases"][0]["mark"], "held");
+    assert_eq!(v["phrases"][0]["effects"], json!(["e1", "e2"]));
+    assert_eq!(v["phrases"][0]["intents"][0]["found"], "refused");
+    assert_eq!(
+        v["effects"],
+        json!([
+            {"id": "e1", "kind": "withheld", "line": "PUT /repos/{repo}/pulls/*/merge",
+             "key": "withheld:api.github.com:PUT /repos/{repo}/pulls/*/merge", "phrases": ["p1"], "from": "table"},
+            {"id": "e2", "kind": "withheld", "line": "POST /graphql mutation mergePullRequest",
+             "key": "withheld:api.github.com:POST /graphql mutation mergePullRequest", "phrases": ["p1"], "from": "table"}
+        ])
+    );
+    assert_eq!(v["may"], json!({}), "a withheld request is no may line");
+}
+
+#[test]
+fn never_push_shows_dashed_naming_the_rule_that_lets_it_through() {
+    let current = IntentTable::shipped().unwrap();
+    let v = forbidding_view(&forbidding(current.version.0), Some(current));
+    assert_eq!(v["phrases"][1]["mark"], "asked");
+    assert_eq!(v["phrases"][1]["effects"], json!([]));
+    assert_eq!(
+        v["phrases"][1]["allowed"],
+        json!({"rule": "github-git", "request": "POST /{repo}.git/git-receive-pack"})
+    );
+    assert_eq!(v["phrases"][1]["intents"][0]["found"], "let_through");
+    assert!(v["phrases"][0].get("allowed").is_none());
+}
+
+#[test]
+fn a_newer_table_that_forbids_other_requests_makes_a_forbidding_reading_stale() {
+    let current = IntentTable::shipped().unwrap();
+    let was = current.version.0;
+    let same = IntentTable {
+        version: TableVersion(was + 1),
+        ..current.clone()
+    };
+    assert_eq!(
+        forbidding_view(&forbidding(was), Some(&same))["stale"],
+        json!([])
+    );
+    let mut fewer = same;
+    for row in &mut fewer.intents {
+        if row.name.as_str() == "merge" {
+            row.never.truncate(1);
+        }
+    }
+    assert_eq!(
+        forbidding_view(&forbidding(was), Some(&fewer))["stale"],
+        json!(["table"])
+    );
+}
