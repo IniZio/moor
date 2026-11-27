@@ -9,6 +9,9 @@ ARG CLAUDE_CODE_VERSION=2.1.312
 ARG HERDR_CORE_VERSION=0.1.16
 ARG HERDR_CORE_SHA256_X86_64=58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45
 ARG HERDR_CORE_SHA256_AARCH64=b6573137d70baff24fb346c957a9879af6bdc4c641188cdf9e47a7b2a677bc92
+ARG GH_VERSION=2.105.0
+ARG GH_SHA256_AMD64=79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f
+ARG GH_SHA256_ARM64=b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02
 
 
 FROM ${RUST_IMAGE} AS forward
@@ -56,6 +59,19 @@ RUN case "$(uname -m)" in \
  && ln -s herdr-core /usr/local/bin/hc \
  && rm /tmp/hc.tar.gz \
  && herdr-core --version
+
+ARG GH_VERSION GH_SHA256_AMD64 GH_SHA256_ARM64
+RUN case "$(uname -m)" in \
+      x86_64) arch=amd64; sha=${GH_SHA256_AMD64} ;; \
+      aarch64) arch=arm64; sha=${GH_SHA256_ARM64} ;; \
+      *) echo "gh ${GH_VERSION} has no build for $(uname -m)" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" -o /tmp/gh.tar.gz \
+ && echo "${sha}  /tmp/gh.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/gh.tar.gz --no-same-owner -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${arch}/bin/gh" \
+ && rm /tmp/gh.tar.gz \
+ && gh --version
 
 COPY --from=forward /out/moor-egress-forward /usr/local/bin/
 COPY images/agent/box-shell /usr/local/bin/box-shell
