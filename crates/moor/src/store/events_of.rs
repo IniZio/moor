@@ -31,6 +31,23 @@ impl Store {
         Ok(newest)
     }
 
+    /// The oldest event of `kind` for a box; none when it has had none.
+    pub(crate) fn first_event_of(
+        &self,
+        id: BoxId,
+        kind: &str,
+    ) -> Result<Option<EventRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut rows = conn.rows(
+            events_of(id)
+                .and_where(Expr::col(Events::Kind).eq(kind))
+                .order_by(Events::Id, Order::Asc)
+                .limit(1),
+            event_from_row,
+        )?;
+        rows.next().transpose()
+    }
+
     /// When the newest event of Box `id` whose kind is one of `kinds` was recorded; none when it
     /// has had none.
     pub(crate) fn last_event_at(

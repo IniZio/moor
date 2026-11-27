@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import { failure, type Line, type Run, runAnswer, runRead, type Step, toError } from './api';
+import { ContractVersion } from './Contract';
 import { closingWaitWords, outcomeLine } from './gate';
 import { OutputList } from './PlaceCards';
 import { RunNowButton } from './RunNow';
@@ -186,6 +187,11 @@ export function RunPage({ csrf, id }: { csrf: string; id: number }) {
 						Due {when(run.due_at)}
 						{run.duration_ms != null && `, took ${duration(run.duration_ms)}`}
 						{run.box && `, Box ${run.box}`}
+						{run.contract != null && (
+							<>
+								, <ContractVersion version={run.contract} />
+							</>
+						)}
 					</p>
 					<RunResult run={run} />
 					{runWriteUps(run).map((w) => (

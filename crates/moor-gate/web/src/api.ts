@@ -378,6 +378,8 @@ const RunSchema = v.object({
 	yours: v.optional(v.boolean(), true),
 	/** What the run's Box made outside moor, oldest first. */
 	outputs: v.optional(v.array(OutputSchema), []),
+	/** The contract version the first session of the run's Box read; none before it launched. */
+	contract: v.nullish(v.number()),
 });
 
 export type RunStatus = v.InferOutput<typeof StatusSchema>;
@@ -470,6 +472,15 @@ export async function schedulePreview(cron: string, timezone: string) {
 }
 
 /** Run `id` of anyone's workflow, which any signed-in person may read. */
+const ContractSchema = v.object({ version: v.number(), sha256: v.string(), text: v.string() });
+
+export type AgentContract = v.InferOutput<typeof ContractSchema>;
+
+/** The agent contract this moor runs, raw and whole. */
+export async function contractRead(): Promise<AgentContract> {
+	return answer(await fetch('/account/api/contract'), ContractSchema);
+}
+
 export async function runRead(id: number): Promise<Run> {
 	return answer(await fetch(`/account/api/runs/${id}`), RunSchema);
 }

@@ -111,12 +111,11 @@ struct BoxTools {
 impl BoxTools {
     /// Reports a step of the run, or a gate, in the caller's Box.
     #[tool(
-        description = "Report the step of your workflow run, or the gate of your work, that you \
-                       were asked to do. Call it when it is done, with result ok and the \
-                       evidence files it names left in .moor/artifacts/. Call it with result \
-                       fail and a note saying why when it cannot be done. The last workflow \
-                       step takes a note that becomes the run's result. The reply says what \
-                       to do next."
+        description = "Reports the step of your workflow run, or the gate of your work: its \
+                       name, result ok or fail, the evidence files it names in \
+                       .moor/artifacts/ and a one-line note. The last workflow step's note \
+                       becomes the run's result. moor refuses a step or gate that is not in \
+                       hand. The reply says what comes next."
     )]
     async fn report_step(
         &self,
@@ -161,10 +160,10 @@ impl BoxTools {
 
     /// Records something the caller's Box made outside moor.
     #[tool(
-        description = "Report something you made outside moor, such as a pull request comment, \
-                       a commit status or a Figma comment, so your run and task pages list it. \
-                       Call it once after each such write, with its kind, its https URL and a \
-                       one-line title. Reporting the same URL again updates it."
+        description = "Records something you made outside moor, such as a pull request \
+                       comment, a commit status or a Figma comment, so the run and task pages \
+                       list it: its kind, its https URL and a one-line title. Reporting the \
+                       same URL again updates it."
     )]
     async fn report_output(
         &self,
@@ -378,3 +377,6 @@ impl Boxes {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

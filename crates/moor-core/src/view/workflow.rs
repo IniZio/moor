@@ -285,6 +285,9 @@ pub struct WorkflowRunReadValue {
     /// What the run's Box made outside moor, oldest first.
     #[serde(default)]
     pub outputs: Vec<super::output::OutputView>,
+    /// The contract version the first session of the run's Box read; none before it launched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<u32>,
 }
 
 /// Value of `workflow-run-list`.

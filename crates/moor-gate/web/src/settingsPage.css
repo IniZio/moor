@@ -23,6 +23,7 @@ dialog.add-machine { width: min(40rem, 94vw); padding: var(--moor-space-6); bord
 dialog.add-machine::backdrop, dialog.wf-confirm::backdrop { background: rgb(0 0 0 / 0.35); }
 dialog.add-machine h2 { margin-top: 0; }
 dialog.add-machine pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.settings-body pre.contract-raw { white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog.add-machine details { margin-top: var(--moor-space-3); }
 dialog.add-machine summary { cursor: pointer; color: var(--moor-color-accent); }
 .wait { display: flex; align-items: center; gap: var(--moor-space-2); }
