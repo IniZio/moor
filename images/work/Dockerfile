@@ -23,5 +23,21 @@ RUN apt-get update \
  && mkdir -p /run/sshd /home/agent/moor \
  && chown agent:agent /home/agent/moor
 
+ARG GH_VERSION=2.105.0
+ARG GH_SHA256_AMD64=79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f
+ARG GH_SHA256_ARM64=b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02
+
+RUN case "$(uname -m)" in \
+      x86_64) arch=amd64; sha=${GH_SHA256_AMD64} ;; \
+      aarch64) arch=arm64; sha=${GH_SHA256_ARM64} ;; \
+      *) echo "gh ${GH_VERSION} has no build for $(uname -m)" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 \
+      "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" -o /tmp/gh.tar.gz \
+ && echo "${sha}  /tmp/gh.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/gh.tar.gz --no-same-owner -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${arch}/bin/gh" \
+ && rm /tmp/gh.tar.gz \
+ && gh --version
+
 # Present only when the volume that holds it is mounted: the provider mounts /run/moor.
 ENTRYPOINT ["/run/moor/bin/moor-work-init"]
