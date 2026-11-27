@@ -11,7 +11,15 @@ fn tools(p: &CachePlan) -> &PlannedVolume {
 fn what_the_profile_installs_is_a_preset() {
     let p = plan(&layers("", ""));
     let paths: Vec<&str> = tools(&p).paths.iter().map(CachePath::as_str).collect();
-    assert_eq!(paths, ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"]);
+    assert_eq!(
+        paths,
+        [
+            "~/.bun/bin",
+            "~/.local/bin",
+            "~/.claude/plugins",
+            "~/.local/share/gh/extensions"
+        ]
+    );
 }
 
 #[test]

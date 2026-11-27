@@ -167,7 +167,12 @@ fn presets_expand_to_the_table() {
         ("android-sdk", vec!["/opt/android-sdk"]),
         (
             "tools",
-            vec!["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
+            vec![
+                "~/.bun/bin",
+                "~/.local/bin",
+                "~/.claude/plugins",
+                "~/.local/share/gh/extensions",
+            ],
         ),
         ("git", vec!["~/.local/share/git-mirror"]),
     ];

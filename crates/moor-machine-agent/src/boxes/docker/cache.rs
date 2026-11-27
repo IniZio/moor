@@ -34,7 +34,12 @@ const MOST_MOUNTS: usize = 64;
 
 /// Paths the agent place uses too: the agent profile's `setup.sh` runs in both places, and the
 /// plugins install where Claude runs.
-const AGENT_PLACE: [&str; 3] = ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"];
+const AGENT_PLACE: [&str; 4] = [
+    "~/.bun/bin",
+    "~/.local/bin",
+    "~/.claude/plugins",
+    "~/.local/share/gh/extensions",
+];
 
 /// Paths of tools whose caches take concurrent writers; every other path is copied per Box. The
 /// git mirrors take them because the clone script holds a `flock` while it writes one.

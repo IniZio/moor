@@ -338,7 +338,7 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `bundler` | `~/.bundle/cache`, `~/.local/share/gem` |
 | `android` | `~/.android/cache`, `~/.android/build-cache` |
 | `android-sdk` | `/opt/android-sdk` |
-| `tools` | `~/.bun/bin`, `~/.local/bin`, `~/.claude/plugins`: what the agent profile installs |
+| `tools` | `~/.bun/bin`, `~/.local/bin`, `~/.claude/plugins`, `~/.local/share/gh/extensions`: what the agent profile installs |
 | `git` | `~/.local/share/git-mirror`: a bare mirror of the repo, which the clone fetches into and clones from |
 
 A preset and a repo config volume are kept per user and repo.

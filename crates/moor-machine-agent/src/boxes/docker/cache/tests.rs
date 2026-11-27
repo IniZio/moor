@@ -134,6 +134,23 @@ fn what_the_profile_installs_reaches_both_places_as_a_private_copy() {
 }
 
 #[test]
+fn the_gh_extensions_a_profile_installs_reach_both_places_too() {
+    let c = cache(vec![vol(
+        G,
+        "tools",
+        &["~/.local/bin", "~/.local/share/gh/extensions"],
+    )]);
+    let m = mounts(&slug(), Some(&c)).unwrap();
+    let agent = args(&m, false);
+    assert!(
+        agent
+            .iter()
+            .any(|a| a.ends_with(":/home/agent/.local/share/gh/extensions")),
+        "{agent:?}"
+    );
+}
+
+#[test]
 fn a_path_or_name_docker_could_misread_is_refused() {
     for bad in ["~/a:b", "~/a,b", "/opt/../etc", "~/a b", "relative"] {
         let c = cache(vec![vol(G, "x", &[bad])]);
