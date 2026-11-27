@@ -8,8 +8,9 @@
     reason = "a test indexes what it just read and walks one scenario step by step"
 )]
 
+use moor_core::config::proxy::DEFAULT_RULES_TEXT;
 use moor_core::reading::{Effect, Origin};
-use moor_core::request::{ReadingHandInReq, ReadingHandInValue, UserCmd, WorkflowCmd};
+use moor_core::request::{ReadingHandInReq, ReadingHandInValue, RepoFile, UserCmd, WorkflowCmd};
 use moor_core::workflow::{
     PlanDraft, TimeoutMinutes, Workflow, WorkflowDef, WorkflowId, WorkflowName,
 };
@@ -406,4 +407,52 @@ fn a_step_plan_after_a_reading_leaves_no_reading_held() {
         shown.is_null(),
         "a step-plan automation holds no reading: {shown}"
     );
+}
+
+/// A hand-in whose only phrase forbids the merge.
+fn never_merge() -> Value {
+    json!({
+        "phrases": [{"quote": {"exact": "Never approve, request changes on, merge, close, label, or edit a pull request"},
+                     "intents": [{"intent": "merge", "polarity": "never"}]}],
+        "effects": []
+    })
+}
+
+/// Saves the repo's rules as the default rules plus the REST merge.
+fn allow_the_merge(r: &Rig) {
+    let merge = "      - \"PUT /repos/{repo}/pulls/*/merge\"\n";
+    let anchor = "      - \"PUT /repos/{repo}/pulls/*/update-branch\"\n";
+    let text = DEFAULT_RULES_TEXT.replacen(anchor, &format!("{anchor}{merge}"), 1);
+    assert_ne!(
+        text, DEFAULT_RULES_TEXT,
+        "the anchor line is in the default rules"
+    );
+    r.cx.store()
+        .unwrap()
+        .set_repo_text(&super::repo(), RepoFile::Rules, &text, "operator", None)
+        .unwrap();
+}
+
+#[test]
+fn a_rules_save_that_allows_the_merge_marks_the_reading_stale_for_rules() {
+    let r = rig();
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &never_merge()).unwrap();
+    let before = listed_reading(&r, id);
+    assert_eq!(before["phrases"][0]["mark"], "held", "{before}");
+    assert_eq!(before["stale"], json!([]));
+    allow_the_merge(&r);
+    assert_eq!(listed_reading(&r, id)["stale"], json!(["rules"]));
+}
+
+#[test]
+fn the_next_reading_under_rules_that_allow_the_merge_marks_never_merge_dashed() {
+    let r = rig();
+    allow_the_merge(&r);
+    let (id, _, box_id) = r.reader();
+    r.hand_in(box_id, &never_merge()).unwrap();
+    let shown = listed_reading(&r, id);
+    assert_eq!(shown["stale"], json!([]), "{shown}");
+    assert_eq!(shown["phrases"][0]["mark"], "asked", "{shown}");
+    assert_eq!(shown["phrases"][0]["intents"][0]["found"], "let_through");
 }
