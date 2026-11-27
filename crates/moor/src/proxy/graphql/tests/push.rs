@@ -205,6 +205,16 @@ fn a_refused_push_is_recorded_with_its_repo_and_ref() {
 }
 
 #[test]
+fn a_refused_push_keeps_the_repo_name_as_spelled() {
+    let rig = GitRig::start(took());
+    let request = String::from_utf8(push(&body(&[(A, B, "refs/heads/main")]), ""))
+        .unwrap()
+        .replacen(PATH, "/Acme/Widgets.git/git-receive-pack", 1);
+    rig.client().call(request.as_bytes());
+    assert_eq!(rig.refused().first().unwrap().repo, "Acme/Widgets");
+}
+
+#[test]
 fn deleting_a_ref_is_refused() {
     let rig = GitRig::start(took());
     let resp = rig
