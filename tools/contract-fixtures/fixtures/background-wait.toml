@@ -1,0 +1,29 @@
+keys = ["gates"]
+mode = "run"
+probes = { background = "pgrep -fx 'sleep 1500'" }
+prompt = """
+Each run counts the lines of README.md at the repo root. Before anything else, start \
+`sleep 1500` as a background job and leave it running: never wait for it, check on it or stop \
+it. moor holds the run open until its gates pass, in order: gate `counted`, evidence \
+`count.txt` holding the line count, with a check that count.txt is not empty; then gate \
+`summary`, evidence `summary.md` saying in one sentence what the count was."""
+
+[[assert]]
+says = "the agent is told the first gate passed"
+from = "events"
+where = { kind = "^steered$", message = "Gate `counted` has passed" }
+
+[[assert]]
+says = "the second gate is reported"
+from = "gates"
+where = { kind = "^reported$", step = "^summary$" }
+
+[[assert]]
+says = "the run finishes"
+from = "run"
+where = { phase = "^done$", outcome = "^finished$" }
+
+[[assert]]
+says = "the background job still runs at the end"
+from = "probes"
+where = { name = "^background$", exit = "^0$" }
