@@ -185,6 +185,7 @@ pub(crate) fn box_view_with_run(
         ties: moor_core::view::BoxTies::default(),
         owner: None,
         task_at: claim.map(|c: &Claim| rfc3339(Ts::from_millis(c.at))),
+        by_hand: false,
     }
 }
 

@@ -7,6 +7,7 @@ export const STATES: Record<Progress, { word: string; glyph: string; tone: strin
 	setting_up: { word: 'setting up', glyph: '◌', tone: 'working' },
 	queued: { word: 'queued', glyph: '○', tone: 'quiet' },
 	done: { word: 'done', glyph: '✓', tone: 'done' },
+	ready: { word: 'ready', glyph: '○', tone: 'quiet' },
 	asleep: { word: 'asleep', glyph: '◒', tone: 'quiet' },
 	failed: { word: 'failed', glyph: '✗', tone: 'failed' },
 	closed: { word: 'closed', glyph: '–', tone: 'quiet' },

@@ -1,5 +1,5 @@
 //! The brief the agent keeps as standing instructions: moor's contract for its situation, then
-//! the facts of its Box. An agent place still reads its own text until its slice moves it.
+//! the facts of its Box or agent place.
 
 use std::fmt::Write;
 
@@ -28,9 +28,9 @@ pub(super) struct BriefInput<'a> {
     /// Whether the Box is an agent place, which holds no checkout and takes its repos from each
     /// task's first message.
     pub(super) place: bool,
-    /// The contract a work Box reads.
+    /// The contract the launch reads.
     pub(super) contract: &'a Contract,
-    /// The run this launch serves; none for a task's Box.
+    /// The run this launch serves; none for an agent place.
     pub(super) run: Option<&'a RunLaunch>,
     /// Whether the agent has the moor MCP server, so its tools are listed.
     pub(super) moor_tools: bool,
@@ -38,28 +38,29 @@ pub(super) struct BriefInput<'a> {
     pub(super) skills: &'a [SkillEntry],
 }
 
-/// The situations of a work Box's launch.
-pub(super) const fn situations(run: bool) -> &'static [Situation] {
-    if run {
-        &[Situation::Every, Situation::Box, Situation::Run]
-    } else {
-        &[Situation::Every, Situation::Box]
+/// The situations of a launch: an agent place's, or a work Box's (a run's when `run`).
+pub(super) const fn situations(place: bool, run: bool) -> &'static [Situation] {
+    match (place, run) {
+        (true, _) => &[Situation::Every, Situation::Place],
+        (false, true) => &[Situation::Every, Situation::Box, Situation::Run],
+        (false, false) => &[Situation::Every, Situation::Box],
     }
 }
 
-/// The brief text for a Box.
+/// The brief text for a Box or an agent place.
 pub(super) fn render(b: &BriefInput) -> String {
-    if b.place {
-        return place(b);
-    }
     let mut out = Brief {
         contract: b.contract,
-        situations: situations(b.run.is_some()),
+        situations: situations(b.place, b.run.is_some()),
         moor_tools: b.moor_tools,
         skills: b.skills,
     }
     .render();
-    facts(b, &mut out);
+    if b.place {
+        place_facts(b, &mut out);
+    } else {
+        facts(b, &mut out);
+    }
     out
 }
 
@@ -91,52 +92,21 @@ fn facts(b: &BriefInput, out: &mut String) {
     }
 }
 
-/// An agent place's brief.
-fn place(b: &BriefInput) -> String {
-    let name = b.name;
-    let mut out = format!("# Box {name}\n\n");
-    if let Some(i) = b.issue {
-        _ = write!(out, "Issue: {i}\n\n");
-    }
-    project_facts(b, &mut out);
-    out.push_str(PLACE);
-    out.push_str(
-        "Reports are how you show work to a human: a spec, a checkpoint, a result. \
-         Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
-         a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
-         commit it. Writing again with the same kind adds a new version. Name that path in \
-         your final message. A Report never means the Box is finished; keep working \
-         until the work is done, and do not stop after reporting.\n\n",
+/// The facts of an agent place, after the contract.
+fn place_facts(b: &BriefInput, out: &mut String) {
+    _ = write!(out, "# Box {}\n\n", b.name);
+    project_facts(b, out);
+    _ = write!(
+        out,
+        "## This place\n\n\
+         - It holds no checkout. Read a repo with `gh api`, or \
+         `git clone --filter=blob:none https://github.com/OWNER/NAME.git /tmp/NAME`.\n\
+         - Write only in /tmp, your own tool state and the tools you install. When HTTPS_PROXY \
+         is set, do not unset or bypass it.\n\
+         - A work Box's checkout is on the task's branch. Its artifacts folder is \
+         `{ARTIFACTS_DIR}/` in its working directory.\n\n"
     );
-    out.push_str(GH_PLACE);
-    out
 }
-
-/// How an agent place works: no checkout, and the repos of each task named in its first message.
-const PLACE: &str = "You are running inside the machine, in an agent place: it holds no \
-    checkout and no branch, and waits for a task. Each task's first message starts with a \
-    `Repos:` line naming the GitHub repos it is about, then a blank line, then the person's \
-    message. Read those repos through GitHub: `gh api`, or \
-    `git clone --filter=blob:none https://github.com/OWNER/NAME.git /tmp/NAME`. Requests for \
-    the repos the task names carry the owner's credential through moor's Proxy. When \
-    HTTPS_PROXY is set, do not unset or bypass it. Write only \
-    in /tmp, your own tool state and the tools you install. Answer in your final message.\n\n\
-    When the task needs code run, start a work Box with `start_box` and run commands in it \
-    with `exec_in_box`; they run in the Box's checkout. When the work does not need the repo's \
-    setup (reading code, a small edit), pass `no_setup` to `start_box` so the Box is ready \
-    sooner. Save a file the person should see (a \
-    screenshot, test output) in the work Box's `.moor/artifacts/`, not in your own folder; \
-    moor collects it within about 30 seconds and when the Box closes, and it stays on the task \
-    after the Box is gone. Do not commit it. Name the files you saved in your final message. \
-    Commit your work in the Box and push it with `git push origin HEAD`. Then open the pull \
-    request from this place with gh, and end your final message with its URL. Then close the Box \
-    with `close_box`, which refuses unpushed work. A later work Box of this task starts on \
-    the task's branch with the commits pushed before, so its push adds to the same pull \
-    request: open a new one only when none is open. One work Box of a task is open at a \
-    time.\n\n\
-    You may receive follow-up messages (steers) typed into this session.\n\n\
-    Decide on your own when you reasonably can, and ask a question only when the choice is \
-    the owner's.\n\n";
 
 /// What the agent does about a failed setup.
 fn setup_failed(exit: i32, out: &mut String) {
@@ -167,9 +137,6 @@ fn project_facts(b: &BriefInput, out: &mut String) {
         );
     }
 }
-
-/// How gh reaches GitHub from an agent place, and what the Proxy withholds there.
-const GH_PLACE: &str = "gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. Reads of any repo carry the credential; writes are limited to the repos this Box or task names. A 401 or 404 on a write (a push, a pull request, a comment) to any other repo means the Proxy withheld the credential. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.\n";
 
 #[cfg(test)]
 mod tests;

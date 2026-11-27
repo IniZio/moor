@@ -33,7 +33,8 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME`, or attaches to the open Box of that name. |
+| `moor start NAME` | Creates a Box to work in by hand on the branch `moor/ID-NAME`, or attaches to the open Box of that name. It runs the repo's setup and no agent. |
+| `moor ask --repo OWNER/NAME TEXT` | Starts a task, or a question, in an agent place. Its agent starts work Boxes when the task needs code run. Repeat `--repo` for more repos, the task's own first. |
 | `moor show [NAME]` | Shows all open Boxes, or one in detail. `list` is an alias. |
 | `moor inspect NAME` | Shows the agent's state, why it looks stuck, its latest messages, and the end of its terminal. |
 | `moor run NAME CMD...` | Runs a command in the Box's work tree and records the run. |
@@ -53,16 +54,11 @@ The state directory is the first of `--state-dir`, `MOOR_STATE_DIR`,
 
 | Flag | Effect |
 | --- | --- |
-| `--repo OWNER/NAME` | A repo to clone, as `OWNER/NAME` or a github.com URL. Repeat for more, first one first. The agent works in the first, and the rest are cloned beside it. Two or more replace `box.also`. The default is the current checkout's `origin`. |
-| `--prompt TEXT` | The agent's first prompt. Without it, the agent waits. |
-| `--issue REF` | An issue reference for the Box. |
+| `--repo OWNER/NAME` | A repo to clone, as `OWNER/NAME` or a github.com URL. Repeat for more, first one first. The Box's branch is on the first, and the rest are cloned beside it. Two or more replace `box.also`. The default is the current checkout's `origin`. |
 | `--base REF` | The ref to branch from. The default is the repo's default branch. |
 | `--node NAME` | A node of yours, or a shared one, in place of your default. |
-| `--model MODEL` | The agent model. |
 | `--config FILE` | A partial repo config for this Box only, laid over the repo's. `-` reads stdin. See [Override for one Box](repo.md#override-for-one-box). |
-| `--no-agent` | Start no agent. |
-| `--no-setup` | Skip the repo's setup lines, also on a later machine and in `moor retry`. The Box is ready once the repos are cloned and the agent installed. |
-| `--resume` | Resume the agent's stored session. |
+| `--no-setup` | Skip the repo's setup lines, also on a later machine and in `moor retry`. The Box is ready once the repos are cloned. |
 | `--parent ID` | The parent Session. The default is `MOOR_SESSION`. |
 
 A start reads the repo from GitHub with the requester's `github` secret. Changes

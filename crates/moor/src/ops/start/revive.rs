@@ -247,7 +247,7 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     Err(CommandError::new(
         ErrorKind::Refused,
         format!(
-            "moor relaunched the agent of Box {name} {recent} times in the last {} minutes, so it will not relaunch it again on its own; once you know why it keeps ending, start it again with `moor start {name} --resume`",
+            "moor relaunched the agent of Box {name} {recent} times in the last {} minutes, so it will not relaunch it again; once you know why it keeps ending, start a new task with `moor ask --repo OWNER/NAME TEXT`",
             RELAUNCH_WINDOW.as_secs() / 60
         ),
     )

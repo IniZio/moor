@@ -7,8 +7,8 @@ use moor_core::seam::forge::ForgeRepo;
 /// Arguments of `ask`.
 #[derive(Debug, Args)]
 pub(super) struct AskArgs {
-    /// A repo the question is about, as OWNER/NAME or a github.com URL; repeat for more, the
-    /// task's own first.
+    /// A repo the task is about, as OWNER/NAME or a github.com URL; repeat for more, the task's
+    /// own first.
     #[arg(
         long,
         required = true,
@@ -16,7 +16,7 @@ pub(super) struct AskArgs {
         value_parser = super::super::caller::repo_arg
     )]
     repo: Vec<ForgeRepo>,
-    /// The question.
+    /// What the agent should do or answer.
     prompt: String,
 }
 

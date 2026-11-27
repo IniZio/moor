@@ -41,6 +41,7 @@ const LISTEN_PORT: u16 = 18080;
 type Rig = Arc<Boxes<Docker>>;
 
 mod cache;
+mod ends;
 
 /// Removes the test Boxes' containers and volumes, and the network when nothing is on it, each by
 /// exact name.
@@ -279,6 +280,8 @@ async fn a_docker_box_lives_from_open_to_close() {
         .unwrap();
     until(&mut term, &mut seen, "winch 50 132").await;
     write_frame(&mut term, &Frame::In(b"q\n")).await.unwrap();
+
+    ends::a_dropped_stream_ends_its_command_inside_the_box(&rig, &names).await;
 
     step("forward");
     // Forward: a listener in the Box's network, probed and then carried.

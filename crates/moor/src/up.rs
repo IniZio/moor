@@ -41,7 +41,7 @@ const DOWN_HELLO_WAIT: Duration = Duration::from_secs(2);
 const SOCKET_WAIT: Duration = Duration::from_secs(30);
 
 /// The command `up` suggests once the host is ready.
-const NEXT: &str = "moor start hello --repo OWNER/NAME --prompt \"Say hello and stop\"";
+const NEXT: &str = "moor ask --repo OWNER/NAME \"Say hello and stop\"";
 
 /// Converges this host and prints one line per step; the doctor's report ends it. Returns the
 /// exit code: 1 when a step or a doctor check failed.

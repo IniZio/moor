@@ -6,6 +6,7 @@
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::{BoxId, BoxName, StartReq};
 
+use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
@@ -40,6 +41,7 @@ pub(crate) fn start_claimed(
     let id = BoxId::new(v.boxed.id);
     if v.agent.launched {
         // The launch planned the claim's rules before the agent ran, and carried the first message.
+        let _turn = cx.turn(id, Cmd::Start)?;
         let now = cx.clock().now().as_millis();
         store.claim_served(id, now)?;
         store.claim_steered(id, now)?;

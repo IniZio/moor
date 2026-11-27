@@ -499,7 +499,7 @@ export async function runAnswer(csrf: string, name: string, id: number, yes: boo
 	return answer(res, RunSchema);
 }
 
-const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
+const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'ready', 'asleep', 'closed', 'failed']);
 
 const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
 
@@ -649,6 +649,8 @@ const TaskBoxSchema = v.object({
 	state: v.string(),
 	closed_at: v.nullish(v.string()),
 	artifacts: v.optional(v.array(EvidenceSchema), []),
+	/** The setup line the Box failed on and its exit and last output, unless a later setup passed. */
+	setup_failed: v.nullish(v.object({ line: v.string(), why: v.nullish(v.string()) })),
 });
 
 const BoxDetailFields = v.object({
@@ -688,11 +690,8 @@ export async function boxList(everyone = false): Promise<BoxRow[]> {
 	return (await answer(await fetch(path), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
 }
 
-/** Starts a Box as the signed-in person; answers the Box's name once it exists. */
-export async function boxStart(
-	csrf: string,
-	body: { repos: string[]; prompt: string; base: string; node: string; plan_first?: boolean },
-): Promise<string> {
+/** Starts a task as the signed-in person in an agent place; answers the place's name. */
+export async function boxStart(csrf: string, body: { repos: string[]; prompt: string }): Promise<string> {
 	const res = await fetch('/account/api/boxes', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },

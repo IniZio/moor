@@ -20,6 +20,7 @@ function groupOf(t: BoxRow, now: number): Group {
 		case 'working':
 		case 'setting_up':
 		case 'queued':
+		case 'ready':
 			return 'working';
 		case 'closed':
 			return 'settled';

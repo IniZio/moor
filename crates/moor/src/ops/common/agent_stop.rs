@@ -7,7 +7,8 @@ use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::store::{BoxRow, LaunchEnd, Store, StoreError};
 
-/// Ends the live agent's terminal and its session, with the digest of its saved transcript.
+/// Ends the live agent's terminal and its session, with the digest of its saved transcript, and
+/// the commands a place's agent runs in its work Boxes.
 ///
 /// Returns whether a session was ended.
 pub(crate) fn stop_agent(
@@ -16,6 +17,7 @@ pub(crate) fn stop_agent(
     row: &BoxRow,
     digest: Option<&str>,
 ) -> Result<bool, CommandError> {
+    crate::ops::box_tool::runs::end_place(cx, row.id);
     let Some(session) = store.live_launch(row.id)? else {
         return Ok(false);
     };

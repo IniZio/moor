@@ -125,10 +125,7 @@ fn steer_awake(
 fn no_agent(name: &str) -> CommandError {
     CommandError::new(
         ErrorKind::Refused,
-        format!(
-            "no live agent session for Box {name}; start it with {}",
-            relaunch_hint(name)
-        ),
+        format!("no live agent session for Box {name}; {NEW_TASK}"),
     )
 }
 
@@ -166,8 +163,8 @@ impl Gone {
     fn new(name: &str, launch: Option<Launch>, code: Option<i32>) -> Self {
         let error = match (&launch, code) {
             (None, _) => no_agent(name),
-            (Some(_), None) => gone_refusal(name, "the agent's pane is gone"),
-            (Some(_), Some(c)) => gone_refusal(name, &format!("agent exited {c}")),
+            (Some(_), None) => gone_refusal("the agent's pane is gone"),
+            (Some(_), Some(c)) => gone_refusal(&format!("agent exited {c}")),
         };
         Self {
             launch,
@@ -197,12 +194,9 @@ impl Gone {
 }
 
 /// The refusal for an agent that `ended`.
-fn gone_refusal(name: &str, ended: &str) -> CommandError {
-    CommandError::new(
-        ErrorKind::Refused,
-        format!("{ended}; relaunch with {}", relaunch_hint(name)),
-    )
-    .with_detail(ErrorDetail::AgentGone)
+fn gone_refusal(ended: &str) -> CommandError {
+    CommandError::new(ErrorKind::Refused, format!("{ended}; {NEW_TASK}"))
+        .with_detail(ErrorDetail::AgentGone)
 }
 
 /// Sends `req` to the live agent of `target`, or says the agent is gone.
@@ -290,10 +284,8 @@ fn exited(
     Ok(delivered(name, sent, false, (steer, inbox)))
 }
 
-/// The command that starts the agent again.
-fn relaunch_hint(name: &str) -> String {
-    format!("`moor start {name} --prompt \"...\"`")
-}
+/// What starts an agent once a Box's own will not run again: only a task starts one.
+const NEW_TASK: &str = "start a new task with `moor ask --repo OWNER/NAME TEXT`";
 
 /// The agent's state now; none when the Box has no agent to read.
 fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, CommandError> {

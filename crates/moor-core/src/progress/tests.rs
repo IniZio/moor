@@ -6,6 +6,7 @@ use crate::domain::event::EVENT_KINDS;
 mod failed;
 mod gate;
 mod held;
+mod ready;
 use crate::domain::hands::HandsState;
 use crate::view::attention::AttentionView;
 use crate::view::{AgentView, BoxSleepView, DriverView, LaunchFailure};
@@ -51,6 +52,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         ties: crate::view::BoxTies::default(),
         owner: None,
         task_at: None,
+        by_hand: false,
     }
 }
 

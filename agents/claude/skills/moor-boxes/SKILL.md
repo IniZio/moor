@@ -5,7 +5,7 @@ description: Use when starting, steering or checking moor Boxes or workflow runs
 
 # Watching moor Boxes
 
-Nothing listens until you ask it to. After `start_box` succeeds, or when the
+Nothing listens until you ask it to. After `ask` or `start_box` succeeds, or when the
 user asks you to watch an existing Box, start a background Monitor running:
 
 ```sh

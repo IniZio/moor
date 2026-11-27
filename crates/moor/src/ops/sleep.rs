@@ -1,6 +1,8 @@
 //! `sleep`: park a Box's machine.
 //!
 //! Holds the Box's turn for the call. Works from Idle, or from Working when no run is in flight.
+//! Sleeping a place, which is how a person stops its agent, ends the commands that agent runs in
+//! its work Boxes.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, Wanted};
@@ -44,6 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
             return Err(refuse("a close of the Box waits to finish".into()));
         }
     }
+    crate::ops::box_tool::runs::end_place(cx, id);
     let boxed = box_view(&reload()?, cx.config()).driver;
     Ok(SleepValue {
         box_name: req.box_name.as_str().to_owned(),

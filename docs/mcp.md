@@ -25,7 +25,7 @@ token's audience.
 | --- | --- |
 | `list_boxes` | none |
 | `list_nodes` | none |
-| `start_box` | `repos`; optional `name`, `prompt`, `base`, `node`, `config`, `no_setup`, `gates`, `wait` |
+| `start_box` | `repos`; optional `name`, `base`, `node`, `config`, `no_setup`, `wait` |
 | `ask` | `repos`, `prompt` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
@@ -57,15 +57,17 @@ token's audience.
 - `list_nodes` gives each node's name, scope, runtime, online state, Boxes,
   `max_boxes` when it caps them, and free memory. Its `start` field
   names the node a start with no `node` would use.
-- `start_box` takes `repos` as a list of `owner/name`, first one first. The
-  agent works in the first, and the rest are cloned beside it. A list of one
+- `start_box` starts a Box to work in by hand. It runs the repo's setup and no
+  agent. It takes `repos` as a list of `owner/name`, first one first. The
+  Box's branch is on the first, and the rest are cloned beside it. A list of one
   adds your `box.also` beside it. It refuses before it creates
   anything when you lack a secret, and links the portal. It
   returns once the Box exists, with the fields `box_status` gives. With
-  `wait: true`, it returns once setup and the agent launch finish. A start on
+  `wait: true`, it returns once setup finishes. A start on
   a name that is open attaches to that Box. With `no_setup: true`, the Box
-  skips the repo's setup lines and is ready once it is cloned and its agent installed.
-- `ask` starts an agent place for a question. `repos` is a list of `owner/name`, the task's own first. It answers the place it started (`box`), then follow it with `box_status`. Anyone signed in may ask.
+  skips the repo's setup lines and is ready once it is cloned. It refuses a
+  `prompt` or `gates`. A task with words starts with `ask`.
+- `ask` starts a task, or a question, in an agent place. `repos` is a list of `owner/name`, the task's own first. It answers the place it started (`box`), then follow it with `box_status`. The place's agent reads the repos through GitHub and starts work Boxes when the task needs code run. Say in the words anything else the task needs, such as the branch to start from. Anyone signed in may ask.
 - `send_to_box` answers a pending question with an option's name or its
   1-based number.
 - `close_box` refuses a Box with commits that are not pushed or files that are

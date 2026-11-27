@@ -1,13 +1,12 @@
-# A tool the image lacks: the agent installs it, gives the setup line, and leaves the repo alone.
+# A tool the image lacks: the agent installs and runs it in a work Box, gives the setup line, and leaves the repo alone.
 keys = ["setup"]
 mode = "task"
 prompt = "Lint the shell scripts under scripts/ with shellcheck and tell me what it finds. Report only; leave the scripts as they are."
-probes = { shellcheck = "command -v shellcheck" }
 
 [[assert]]
-says = "shellcheck installed"
-from = "probes"
-where = { name = "^shellcheck$", exit = "^0$" }
+says = "shellcheck installed and run on scripts/ in a work Box"
+from = "events"
+where = { kind = "^exec_ran$", command = 'shellcheck\b[^|;]*scripts/[^|;]*$', exit = "^[01]$" }
 
 [[assert]]
 says = "a setup line in the final message"
@@ -18,5 +17,12 @@ where = { text = "(?i)(apt-get|apt|apk|dnf|yum|pip3?|pipx|brew|cargo|curl|wget|t
 says = "no repo file changed for it"
 from = "changes"
 where = { path = "(^|/)(\\.moor\\.yaml|moor-repo-config\\.yaml|moor-setup\\.sh|Dockerfile|\\.devcontainer|\\.github/)" }
+min = 0
+max = 0
+
+[[assert]]
+says = "no repo file changed for it in a closed work Box's kept diff"
+from = "events"
+where = { kind = "^diff_kept$", repos = '"path": "([^"]*/)?(\.moor\.yaml|moor-repo-config\.yaml|moor-setup\.sh|Dockerfile|\.devcontainer|\.github/)' }
 min = 0
 max = 0

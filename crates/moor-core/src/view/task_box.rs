@@ -60,4 +60,17 @@ pub struct TaskBoxView {
     /// The latest version of each artifact the Box saved.
     #[serde(default)]
     pub artifacts: Vec<ArtifactView>,
+    /// The setup line the Box failed on, unless a later setup passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_failed: Option<SetupFailedView>,
+}
+
+/// The setup line a Box failed on and what it said.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetupFailedView {
+    /// The failing setup line.
+    pub line: String,
+    /// Its exit and the end of its output; none when moor kept none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
 }

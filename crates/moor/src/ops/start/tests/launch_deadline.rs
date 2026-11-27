@@ -86,10 +86,9 @@ fn a_failed_launch_reads_quiet_after_the_default_three_minutes_and_says_so_once(
     let warned = warnings.iter().find(|x| x.code == "launch_timed_out");
     let message = warned.map(|x| x.message.as_str()).unwrap_or_default();
     assert!(
-        message.ends_with("start it again with `moor start demo`"),
+        message.ends_with("start a new task with `moor ask --repo OWNER/NAME TEXT`"),
         "{warnings:?}"
     );
-    assert!(!message.contains("--resume"), "{warnings:?}");
     settle_now(&w, id);
     assert_eq!(timed_out(&w, id).len(), 1, "a second read adds no event");
 }
@@ -110,7 +109,7 @@ fn a_failed_launch_whose_agent_registered_a_session_says_to_resume_it() {
     let warnings = w.cx.take_warnings();
     let resumes = warnings.iter().any(|x| {
         x.message
-            .ends_with("start it again with `moor start demo --resume`")
+            .ends_with("write to it with `moor steer demo TEXT` to start it again")
     });
     assert!(resumes, "{warnings:?}");
 }

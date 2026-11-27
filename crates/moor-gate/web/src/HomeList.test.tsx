@@ -49,6 +49,18 @@ test('a row shows its exact time and a pull request only when it has one', () =>
 	expect(textOf(view)).not.toMatch(/\d+[mhd]\b/);
 });
 
+test('a Box a person works in by hand reads ready, not done, and sits with the working ones', () => {
+	const bare = row('bare', 'acme/web', { state: 'ready', line: 'ready', last_event_at: at(2026, 11, 22, 14, 0) });
+	const finished = row('fin', 'acme/web', { state: 'done', line: 'fixed', last_event_at: at(2026, 11, 22, 14, 50) });
+	const view = HomeListView({ rows: [finished, bare], now: NOW, hash: '#/' });
+	const text = rowsOf(view).map(textOf);
+	expect(text[0]).toContain('Task bare');
+	expect(text[1]).toContain('Task fin');
+	const glyphs = all(rowsOf(view)[0], 'span').map((s) => (s.props as { title?: string }).title);
+	expect(glyphs).toContain('ready');
+	expect(glyphs).not.toContain('done');
+});
+
 test('a row whose line already names its pull request does not name it again beside the title', () => {
 	const done = row('e', 'acme/web', { state: 'done', line: 'fixed · PR #13', pr: { repo: 'acme/web', number: 13, url: 'https://example.test/pr/13' } });
 	const text = textOf(rowsOf(HomeListView({ rows: [done], now: NOW, hash: '#/' }))[0]);

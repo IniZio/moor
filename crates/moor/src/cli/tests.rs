@@ -42,6 +42,25 @@ fn text_usage_error_goes_to_stderr() {
 }
 
 #[test]
+fn start_with_a_prompt_points_at_ask() {
+    let o = done(&[
+        "start",
+        "try",
+        "--repo",
+        "acme/web",
+        "--prompt",
+        "fix the typo",
+    ]);
+    assert_eq!(o.code, 2);
+    assert_eq!(
+        o.stderr,
+        "moor: moor start makes a Box with no agent, so it takes no --prompt\n\
+         hint: to start a task with words, type `moor ask --repo OWNER/NAME TEXT` or use the ask \
+         tool; its agent starts work Boxes as it needs them\n"
+    );
+}
+
+#[test]
 fn help_exits_zero() {
     let o = done(&["--help"]);
     assert_eq!(o.code, 0);

@@ -63,6 +63,7 @@ pub(crate) use gate::checks::{pass as gate_pass, run as run_gate_check, Job as G
 #[cfg(test)]
 pub(crate) use run::tests as run_fixture;
 use run::Sink;
+pub(crate) use start::front::ASK_INSTEAD;
 pub(crate) use start::settle_all;
 pub(crate) use steer::{pass as inbox_pass, Backoff as InboxBackoff};
 
@@ -77,7 +78,7 @@ const RAW_BYTES: &str = "artifact-read sends raw bytes, so only the controller s
 pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, CommandError> {
     match req {
         Request::Version {} => version_value(),
-        Request::Start(r) => to_value(&start::run(cx, &r)?),
+        Request::Start(r) => to_value(&start::front::from_front(cx, r)?),
         Request::Ask(r) => to_value(&ask::run(cx, &r)?),
         Request::StartNeeds(r) => to_value(&start::needs(cx, &r)?),
         Request::Show(r) => to_value(&show::run(cx, &r)?),

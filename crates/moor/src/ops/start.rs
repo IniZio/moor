@@ -33,6 +33,7 @@ use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
 mod asleep;
+pub(crate) mod front;
 mod gates;
 mod launch;
 mod needs;

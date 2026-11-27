@@ -3,6 +3,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
+use std::hash::{BuildHasher, Hasher, RandomState};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use moor_client::link::lease::Cache;
 use moor_core::seam::driver::Place;
@@ -103,6 +106,25 @@ pub(crate) struct Observed {
     pub(crate) mem_mib: Option<u64>,
 }
 
+/// What tells one command's processes inside a Box from every other's: unique on this machine.
+pub(crate) struct Mark(String);
+
+impl Mark {
+    /// A mark no other command of this agent, or of an agent before it, has had.
+    pub(crate) fn new() -> Self {
+        static RUN: OnceLock<u64> = OnceLock::new();
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let run = RUN.get_or_init(|| RandomState::new().build_hasher().finish());
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        Self(format!("{run:016x}-{n}"))
+    }
+
+    /// The mark as text.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// What a provider promises about a Box: two places, a workdir that is the same path with the
 /// same files in both, and an environment both places see. Nothing here names how it is made.
 pub(crate) trait BoxProvider: Send + Sync + 'static {
@@ -158,8 +180,14 @@ pub(crate) trait BoxProvider: Send + Sync + 'static {
     }
 
     /// A command that runs one shell script, its last argument, in `place`; on a terminal when
-    /// `tty`. It starts in the workdir.
-    fn carrier(&self, slug: &Slug, place: Place, tty: bool) -> Command;
+    /// `tty`. It starts in the workdir, and what it starts inside the Box carries `mark`.
+    fn carrier(&self, slug: &Slug, place: Place, tty: bool, mark: &Mark) -> Command;
+
+    /// A command that ends every process inside the Box that carries `mark`, for a carrier
+    /// whose end does not end them. None when ending the carrier's process group ends them.
+    fn ender(&self, _slug: &Slug, _mark: &Mark) -> Option<Command> {
+        None
+    }
 
     /// A script for the agent place that carries its stdin and stdout to `port` on the Box's
     /// loopback.

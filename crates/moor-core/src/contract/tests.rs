@@ -35,11 +35,19 @@ fn render(situations: &[Situation], moor_tools: bool) -> String {
 }
 
 #[test]
-fn the_built_in_file_has_a_version_and_the_every_box_and_run_sections() {
+fn the_built_in_file_has_a_version_and_the_every_box_run_and_place_sections() {
     let c = built_in();
     assert!(c.version >= 1);
     let order: Vec<Situation> = c.sections.iter().map(|(s, _)| *s).collect();
-    assert_eq!(order, [Situation::Every, Situation::Box, Situation::Run]);
+    assert_eq!(
+        order,
+        [
+            Situation::Every,
+            Situation::Box,
+            Situation::Run,
+            Situation::Place
+        ]
+    );
 }
 
 #[test]
@@ -89,9 +97,10 @@ fn each_section_and_statement_keeps_to_the_budget() {
 
 #[test]
 fn every_launch_with_its_generated_blocks_fits_4096_characters() {
-    let launches: [&[Situation]; 2] = [
+    let launches: [&[Situation]; 3] = [
         &[Situation::Every, Situation::Box],
         &[Situation::Every, Situation::Box, Situation::Run],
+        &[Situation::Every, Situation::Place],
     ];
     for situations in launches {
         let text = render(situations, true);
@@ -132,6 +141,47 @@ fn a_task_box_reads_no_run_lines_and_no_run_tool() {
 }
 
 #[test]
+fn a_place_reads_its_own_lines_and_tools_and_no_box_or_run_lines() {
+    let text = render(&[Situation::Every, Situation::Place], true);
+    assert!(text.contains("## place\n\n- [repos]"), "{text}");
+    assert!(
+        !text.contains("## box") && !text.contains("## run") && !text.contains("[branch]"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "On the MCP server named moor: report_output, start_box, exec_in_box, exec_wait, \
+             close_box."
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_place_starts_a_box_without_setup_only_to_find_why_setup_failed() {
+    let text = render(&[Situation::Every, Situation::Place], true);
+    assert!(
+        text.contains(
+            "- [no-setup] Start a work Box with no_setup only to find out why a setup line failed."
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_place_sends_repo_work_to_a_work_box() {
+    let text = render(&[Situation::Every, Situation::Place], true);
+    assert!(
+        text.contains(
+            "- [answer] This place is for reading and answering. Anything that changes a repo, \
+             runs its code or its tools, or installs a tool for that work happens in a work Box \
+             you start with start_box. moor refuses repo writes from here."
+        ),
+        "{text}"
+    );
+}
+
+#[test]
 fn without_the_moor_server_no_tool_block() {
     let text = render(&[Situation::Every, Situation::Box], false);
     assert!(!text.contains("## moor tools"), "{text}");
@@ -156,7 +206,7 @@ fn a_malformed_file_is_refused_with_its_reason() {
     let cases = [
         ("# t\n\nPreamble.\n\n## every\n\n- [a] x\n", "Version"),
         (
-            "# t\n\nVersion 1\n\nP.\n\n## place\n\n- [a] x\n",
+            "# t\n\nVersion 1\n\nP.\n\n## reader\n\n- [a] x\n",
             "unknown section",
         ),
         (

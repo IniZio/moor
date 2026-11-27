@@ -223,7 +223,7 @@ cache:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `agent.model` | none | The default agent model. `moor start --model` wins. |
+| `agent.model` | none | The default agent model. |
 | `agent.install` | `true` | Install the agent in a Box that lacks it. |
 | `dotfiles.path`, `dotfiles.install` | none | A dotfiles directory and its install script, run on each new Box. |
 | `tools.claude`, `tools.ssh`, `tools.git` | the name on `PATH` | The program moor runs for each tool. |

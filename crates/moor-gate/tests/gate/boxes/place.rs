@@ -88,6 +88,16 @@ fn start_box_sends_the_stamped_box_and_its_repos() {
         json!({"cmd": "box-tool", "from": 41, "call": {
             "tool": "start", "name": "n", "repo": "o/a", "also": ["o/b"]}})
     );
+    l.call(
+        Some("41"),
+        "start_box",
+        json!({"name": "n", "repos": ["o/a"], "base": "release-2"}),
+    );
+    assert_eq!(
+        l.seen.recv().unwrap(),
+        json!({"cmd": "box-tool", "from": 41, "call": {
+            "tool": "start", "name": "n", "repo": "o/a", "base": "release-2"}})
+    );
 }
 
 #[test]
@@ -161,5 +171,66 @@ fn a_work_box_agent_sees_the_place_tools_and_is_refused_by_the_controller() {
         let result = l.call(Some("9"), tool, args);
         assert_eq!(result["isError"], true, "{result}");
         assert!(text(&result).contains("this is a work Box"), "{result}");
+    }
+}
+
+#[test]
+fn start_box_refuses_a_prompt_saying_a_work_box_runs_no_agent() {
+    let l = listener(true);
+    let result = l.call(
+        Some("7"),
+        "start_box",
+        json!({"name": "n", "repos": ["o/a"], "prompt": "fix the typo"}),
+    );
+    assert_eq!(result["isError"], true, "{result}");
+    assert_eq!(
+        text(&result),
+        "start_box takes no prompt: a work Box runs no agent. Do the work yourself: run its \
+         commands in the Box with exec_in_box."
+    );
+    assert!(l.seen.try_recv().is_err());
+}
+
+#[test]
+fn a_place_tool_refuses_a_field_it_does_not_take_and_names_it() {
+    let l = listener(true);
+    for (tool, mut args) in [
+        ("exec_in_box", json!({"box": "w", "command": "ls"})),
+        ("exec_wait", json!({"run": 7})),
+        ("start_box", json!({"name": "n", "repos": ["o/a"]})),
+        ("close_box", json!({"box": "w"})),
+    ] {
+        args["gates"] = json!([]);
+        let result = l.call(Some("41"), tool, args);
+        assert_eq!(result["isError"], true, "{tool}: {result}");
+        assert!(
+            text(&result).contains("unknown field `gates`"),
+            "{tool}: {result}"
+        );
+    }
+    assert!(l.seen.try_recv().is_err());
+}
+
+#[test]
+fn the_place_tools_advertise_no_field_they_refuse() {
+    let l = listener(true);
+    let reply = l.rpc(Some("7"), "tools/list", json!({}));
+    let tools = reply["result"]["tools"].as_array().unwrap();
+    for (tool, fields) in [
+        ("exec_in_box", &["box", "command", "timeout_seconds"][..]),
+        ("exec_wait", &["run"][..]),
+        ("start_box", &["base", "name", "no_setup", "repos"][..]),
+        ("close_box", &["box"][..]),
+    ] {
+        let schema = &tools.iter().find(|t| t["name"] == tool).unwrap()["inputSchema"];
+        let mut keys: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, fields, "{tool}: {schema}");
+        assert_eq!(schema["additionalProperties"], false, "{tool}: {schema}");
     }
 }

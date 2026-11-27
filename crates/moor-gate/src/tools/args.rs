@@ -3,17 +3,17 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-/// Arguments of `start_box`.
+/// Arguments of `start_box`. A field it does not know, such as a `prompt`, is refused, since a
+/// task with words starts through `ask`.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct StartArgs {
-    /// The repos to clone, each as `owner/name`, first one first. The agent works in the first,
-    /// where its branch and pull request go; the rest are cloned beside it, and each must be one
-    /// you can push to. Naming only one adds your configured `box.also` beside it.
+    /// The repos to clone, each as `owner/name`, first one first. The Box's branch and pull
+    /// request go to the first; the rest are cloned beside it, and each must be one you can push
+    /// to. Naming only one adds your configured `box.also` beside it.
     pub(super) repos: Vec<String>,
     /// A name for the Box; one is made up when left out.
     pub(super) name: Option<String>,
-    /// What the Box's agent should do first.
-    pub(super) prompt: Option<String>,
     /// The revision to branch from; the repo's default branch when left out.
     pub(super) base: Option<String>,
     /// A node `list_nodes` shows you; omit to start on the node `list_nodes` says a start picks.
@@ -24,28 +24,19 @@ pub(super) struct StartArgs {
     /// rule for this Box only.
     pub(super) config: Option<String>,
     /// Skip the repo's setup lines, on this machine and any later one: the Box is ready once the
-    /// repo is cloned and the agent installed, and the agent installs what it needs. False by
-    /// default.
+    /// repo is cloned. False by default.
     pub(super) no_setup: Option<bool>,
-    /// Gates the Box must pass before it counts as done, in the order they pass: each is
-    /// evidence files the agent leaves, checks moor runs in the Box (a command, or `{run, says}` with
-    /// a plain sentence of what must be true), and an owner approval. A Box
-    /// with an open gate shows as working, never as done. Written once, at start.
-    pub(super) gates: Option<Vec<moor_core::gate::GateDoc>>,
-    /// The outcomes the Box's run may end in, sent with `gates`; see `add_workflow`. Left out,
-    /// the run ends in `done` once every gate passes.
-    pub(super) outcomes: Option<Vec<moor_core::gate::OutcomeDoc>>,
-    /// Wait for setup and the agent launch to finish before returning; false by default, so
-    /// the call returns once the Box exists and `box_status` shows its progress.
+    /// Wait for setup to finish before returning; false by default, so the call returns once the
+    /// Box exists and `box_status` shows its progress.
     pub(super) wait: Option<bool>,
 }
 
 /// Arguments of `ask`.
 #[derive(Deserialize, JsonSchema)]
 pub(super) struct AskArgs {
-    /// The repos the question is about, each as `owner/name`, first one first: the task's own.
+    /// The repos the task is about, each as `owner/name`, first one first: the task's own.
     pub(super) repos: Vec<String>,
-    /// The question, as you would put it to the person's agent.
+    /// What the agent should do or answer, as you would put it to the person's agent.
     pub(super) prompt: String,
 }
 

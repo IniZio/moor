@@ -47,8 +47,10 @@ server.
   the last answer and the exit once the command ends. It reaches only that user's
   runs. A run is kept 10 minutes after it ends, and a controller restart forgets it.
   Each stream keeps its first 64 KiB, as the person-facing tool does.
-  `start_box` takes `name` and `repos`, and may name only the claim's repos. The
-  Box it starts runs no agent. `close_box` takes `box` and closes one of that
+  `start_box` takes `name` and `repos`, and may name only the claim's repos. It
+  also takes `base`, the revision to branch from, and `no_setup`, which the
+  contract keeps for finding out why a setup line failed. The Box it starts runs
+  the repo's setup and no agent. `close_box` takes `box` and closes one of that
   user's open work Boxes. It has no `force`. A Box that holds work not pushed
   stays open, and the refusal says to push it with `exec_in_box` or tell the user.
   Every Box lists all four tools. A work

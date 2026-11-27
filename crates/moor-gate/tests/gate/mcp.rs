@@ -21,6 +21,7 @@ mod list;
 mod node_settings;
 mod nodes;
 mod repo_config;
+mod start;
 mod tool_list;
 mod webhook;
 mod workflow;
@@ -355,11 +356,7 @@ fn a_resource_token_without_email_acts_with_the_userinfo_email() {
 fn a_read_token_cannot_start_a_box() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read");
-    let result = m.call(
-        &token,
-        "start_box",
-        json!({"repos": ["acme/web"], "prompt": "hi"}),
-    );
+    let result = m.call(&token, "start_box", json!({"repos": ["acme/web"]}));
     assert_eq!(result["isError"], true, "{result}");
     assert!(
         result["content"][0]["text"]
@@ -395,7 +392,7 @@ fn start_box_sends_a_start_as_the_person() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repos": ["acme/web"], "name": "web/fix", "prompt": "fix it", "base": "main"}),
+        json!({"repos": ["acme/web"], "name": "web/fix", "base": "main"}),
     );
     assert_ne!(result["isError"], true, "{result}");
     let sent = m.requests();
@@ -403,8 +400,8 @@ fn start_box_sends_a_start_as_the_person() {
     assert_eq!(
         sent[0]["request"],
         json!({"cmd": "as", "identity": "authgear:alice-sub", "request": {
-            "cmd": "start", "name": "web/fix", "prompt": "fix it", "base": "main",
-            "repo": "acme/web", "no_agent": false, "resume": false}})
+            "cmd": "start", "name": "web/fix", "base": "main",
+            "repo": "acme/web", "no_agent": true, "resume": false}})
     );
 }
 
@@ -543,7 +540,7 @@ fn start_box_passes_the_node_to_the_start() {
     let result = m.call(
         &token,
         "start_box",
-        json!({"repos": ["acme/web"], "name": "web/fix", "prompt": "fix it", "node": "hv"}),
+        json!({"repos": ["acme/web"], "name": "web/fix", "node": "hv"}),
     );
     assert_ne!(result["isError"], true, "{result}");
     let sent = m.requests();

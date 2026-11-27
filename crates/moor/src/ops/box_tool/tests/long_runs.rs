@@ -106,6 +106,23 @@ fn a_long_command_answers_with_its_run_then_its_exit_on_wait() {
 }
 
 #[test]
+fn stopping_the_place_s_agent_stops_its_running_command() {
+    let mut w = world();
+    let admitted = w
+        .admit(&exec_of(
+            w.place,
+            "for i in $(seq 200); do sleep 0.05; done",
+        ))
+        .unwrap();
+    let run = w.start(w.place, admitted);
+    let store = w.f.cx.store().unwrap();
+    let place = store.box_row(w.place).unwrap().unwrap();
+    crate::ops::common::agent_stop::stop_agent(&w.f.cx, store, &place, None).unwrap();
+    let end = w.answer(w.place, run, runs::WINDOW).unwrap();
+    assert_eq!(end.state, BoxRunState::Stopped, "{end:?}");
+}
+
+#[test]
 fn a_wait_on_another_user_s_run_is_refused() {
     let mut w = world();
     let admitted = w.admit(&exec(w.place, "t")).unwrap();

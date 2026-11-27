@@ -14,7 +14,7 @@ case $1 in
     ctl=$(mktemp)
     usr=$(mktemp)
     trap 'rm -f "$ctl" "$usr"' EXIT
-    printf 'fronts:\n  authgear:\n    step_reports: true\n' >"$ctl"
+    printf 'fronts:\n  authgear:\n    step_reports: true\n    box_tools: true\n' >"$ctl"
     printf 'moor_service:\n  upstream: 127.0.0.1:%s\n' "$BOX_PORT" >"$usr"
     MVL_CTL_EXTRA=$ctl MVL_USER_EXTRA=$usr MVL_PREBUILT=1 "$V/up" "$wt" "$name"
     mkdir -p "$PD"

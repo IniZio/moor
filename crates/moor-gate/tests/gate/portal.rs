@@ -77,6 +77,7 @@ fn place(name: &str) -> Response {
     let work = json!({"id": 5, "name": "web/mcp-1a2b3c4d", "repo": "acme/web",
         "started_at": "2026-11-24T11:05:10Z", "ready_ms": 38000, "state": "closed",
         "closed_at": "2026-11-24T11:11:12Z",
+        "setup_failed": {"line": "make deps", "why": "exit 2\noutput ended:\nno rule"},
         "artifacts": [{"name": "fee line.png", "version": 1, "kind": "screenshot",
             "content_type": "image/png", "size": 10, "sha256": "0",
             "created_at": "2026-11-24T11:10:00Z"}]});
@@ -239,6 +240,18 @@ fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
 }
 
 #[test]
+fn a_question_s_page_carries_the_setup_a_work_box_failed() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-setup");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fplace", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    assert_eq!(
+        json_of(&reply)["task_boxes"][0]["setup_failed"],
+        json!({"line": "make deps", "why": "exit 2\noutput ended:\nno rule"})
+    );
+}
+
+#[test]
 fn two_work_boxes_of_one_name_each_link_and_open_their_own_file() {
     let w = world(true, &[]);
     let cookie = user(&w, "portal-alice-11");
@@ -394,7 +407,7 @@ fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a
         assert_eq!(reply.status, 400, "{bad}: {}", reply.body);
     }
     assert!(
-        w.cmds().iter().all(|c| c != "start"),
+        w.cmds().iter().all(|c| c != "start" && c != "ask"),
         "nothing reached the controller"
     );
     let out = send(
@@ -405,31 +418,6 @@ fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a
         &ok,
     );
     assert_eq!(out.status, 401);
-}
-
-#[test]
-fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_readable() {
-    let w = world(true, &[]);
-    let cookie = user(&w, "portal-alice-7");
-    let csrf = csrf_of(&w, &cookie);
-    let body = json!({"repos": ["acme/web", "acme/lib"], "prompt": "Fix the typo", "base": "main", "node": "engine-03"});
-    let reply = post(&w, &cookie, Some(&csrf), &body.to_string());
-    assert_eq!(reply.status, 400, "{}", reply.body);
-    let why = json_of(&reply)["error"].as_str().unwrap().to_owned();
-    assert!(why.contains("missing secrets claude, github"), "{why}");
-    let start = w
-        .seen
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|r| r["request"]["cmd"] == "start")
-        .cloned()
-        .expect("a start");
-    assert_eq!(start["request"]["repo"], "acme/web");
-    assert_eq!(start["request"]["also"], json!(["acme/lib"]));
-    assert_eq!(start["request"]["prompt"], "Fix the typo");
-    assert_eq!(start["request"]["base"], "main");
-    assert_eq!(start["request"]["node"], "engine-03");
 }
 
 #[test]

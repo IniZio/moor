@@ -16,6 +16,7 @@ const ORDER = {
 	working: { rank: 1, label: 'Working' },
 	setting_up: { rank: 1, label: 'Working' },
 	queued: { rank: 1, label: 'Working' },
+	ready: { rank: 1, label: 'Working' },
 	done: { rank: 2, label: 'Done' },
 	failed: { rank: 2, label: 'Done' },
 	asleep: { rank: 3, label: 'Asleep' },

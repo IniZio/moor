@@ -123,6 +123,7 @@ pub(crate) fn admit(
             repo,
             also,
             no_setup,
+            base,
         } => {
             if let Some(other) = std::iter::once(repo)
                 .chain(also)
@@ -138,6 +139,7 @@ pub(crate) fn admit(
                 repo: Some(repo.clone()),
                 no_agent: true,
                 no_setup: *no_setup,
+                base: base.clone(),
                 task: Some(req.from),
                 // Named even when empty, so the user config's `box.also` adds no repo.
                 also: Some(also.clone()),

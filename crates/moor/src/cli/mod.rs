@@ -320,8 +320,29 @@ fn unquoted_value_error(err: &clap::Error) -> Option<String> {
     ))
 }
 
+/// The refusal of a flag only an agent reads on `moor start`, which makes a Box with no agent,
+/// pointing at `moor ask`; none for any other error.
+fn agent_flag_on_start(err: &clap::Error, cmd: &str) -> Option<ErrorView> {
+    let clap::error::ContextValue::String(arg) = err.get(clap::error::ContextKind::InvalidArg)?
+    else {
+        return None;
+    };
+    let flag = arg.split('=').next().unwrap_or_default();
+    let agent_only = ["--prompt", "--issue", "--model", "--resume"].contains(&flag);
+    (err.kind() == ClapKind::UnknownArgument && cmd == "start" && agent_only).then(|| ErrorView {
+        kind: ErrorKind::Usage,
+        message: format!("moor start makes a Box with no agent, so it takes no {flag}"),
+        hints: vec![crate::ops::ASK_INSTEAD.to_owned()],
+        context: Vec::new(),
+        detail: None,
+    })
+}
+
 /// Maps a clap error to help output or a usage envelope.
 fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
+    if let Some(view) = agent_flag_on_start(err, &cmd) {
+        return render(&Response::err(cmd, view), opts);
+    }
     let text = err.render().to_string();
     match err.kind() {
         ClapKind::DisplayHelp | ClapKind::DisplayVersion if opts.json => render(

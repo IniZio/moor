@@ -125,6 +125,55 @@ fn a_closed_task_box_reads_closed_with_its_time() {
     assert_eq!(closed.started_at, rfc3339_of(at));
 }
 
+#[test]
+fn a_task_box_whose_setup_failed_keeps_the_line_and_its_output_until_a_setup_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
+    let place = claimed(&cx, "taken");
+    let id = started_by(&cx, "w", place);
+    let at = started_at(&cx, id);
+    let why = "exit 127\noutput ended:\n./scripts/bootstrap.sh: not found";
+    event(
+        &cx,
+        id,
+        (
+            "setup_failed",
+            serde_json::json!({"line": "./scripts/bootstrap.sh", "why": why}),
+        ),
+        at + 1_000,
+    );
+    event(
+        &cx,
+        id,
+        ("setup_finished", serde_json::json!({"ok": false, "ms": 5})),
+        at + 1_001,
+    );
+    close_after(&cx, id, 9_000);
+    let failed = moor_core::view::SetupFailedView {
+        line: "./scripts/bootstrap.sh".into(),
+        why: Some(why.into()),
+    };
+    assert_eq!(
+        task_boxes(&cx, "taken").first().unwrap().setup_failed,
+        Some(failed)
+    );
+
+    let retried = started_by(&cx, "w2", place);
+    event(
+        &cx,
+        retried,
+        ("setup_failed", serde_json::json!({"line": "make"})),
+        at + 2_000,
+    );
+    event(
+        &cx,
+        retried,
+        ("setup_finished", serde_json::json!({"ok": true, "ms": 5})),
+        at + 3_000,
+    );
+    assert_eq!(task_boxes(&cx, "taken").get(1).unwrap().setup_failed, None);
+}
+
 /// RFC 3339 UTC time of `ms`, as a view writes it.
 fn rfc3339_of(ms: i64) -> String {
     crate::ops::common::view::rfc3339(moor_core::seam::clock::Ts::from_millis(ms))

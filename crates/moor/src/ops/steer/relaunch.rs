@@ -129,7 +129,7 @@ pub(super) fn ended_again(
     Ok(CommandError::new(
         ErrorKind::Failed,
         format!(
-            "the agent of Box {name} {how} again within {}s of its relaunch, so moor did not relaunch it and its session ended; start it again with `moor start {name} --resume`",
+            "the agent of Box {name} {how} again within {}s of its relaunch, so moor did not relaunch it and its session ended; once you know why, write to it again with `moor steer {name} TEXT`",
             RELAUNCH_GUARD.as_secs()
         ),
     )
