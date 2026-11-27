@@ -1,7 +1,8 @@
-//! `reading-hand-in`: the Box reading an automation's prompt hands in phrases, intents and gates.
-//! moor places them in the saved prompt, expands the intents by the shipped table under the first
-//! repo's rules, keeps the reading with its gates in one transaction, and closes the Box. Each refusal says what to fix and is counted
-//! on the draft; the third fails the draft, naming the last.
+//! `reading-hand-in`: the agent place reading an automation's prompt hands in phrases, intents and
+//! gates, keyed by the place's name, which the draft holds. moor places them in the saved prompt,
+//! expands the intents by the shipped table under the first repo's rules, keeps the reading with
+//! its gates in one transaction, and closes the place. Each refusal says what to fix and is
+//! counted on the draft; the third fails the draft, naming the last.
 
 use std::fmt::Write as _;
 

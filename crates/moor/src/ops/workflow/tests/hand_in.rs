@@ -75,7 +75,12 @@ impl Rig {
             .unwrap();
         let job = self.plan_pass().expect("a Box is asked for");
         start_draft(&self.cx, &job);
-        let box_id = self.open(&job).expect("the reader's Box is open");
+        let box_id = self.open(&job).expect("the reader's place is open");
+        let kind = store.box_kind(box_id).unwrap().unwrap();
+        assert!(
+            matches!(kind, moor_core::domain::place::BoxKind::Place(_)),
+            "the reader hands in from an agent place: {kind:?}"
+        );
         (id, job, box_id)
     }
 
@@ -199,7 +204,7 @@ fn an_accepted_hand_in_stores_the_reading_with_its_gates_clears_the_draft_and_cl
     assert_eq!(read.effects().len(), 3);
     assert_eq!(
         read.reader().map(|by| by.box_name.as_str()),
-        Some(job.req.name.as_str())
+        Some(job.name.as_str())
     );
 }
 

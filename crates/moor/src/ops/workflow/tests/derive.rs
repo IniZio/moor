@@ -1,12 +1,15 @@
-//! moor makes a workflow's plan from its prompt in a short Box, and stores only that Box's plan.
+//! moor reads a workflow's prompt in an agent place, and stores only that place's plan.
 #![allow(
     clippy::indexing_slicing,
+    clippy::panic,
     clippy::cognitive_complexity,
     reason = "a test indexes what it just read and walks one scenario step by step"
 )]
 
 use std::cell::RefCell;
 
+use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::gate::{GateDoc, Gates};
 use moor_core::workflow::{is_draft_prompt, PlanDraft, WorkflowDef, WorkflowId};
 use serde_json::json;
@@ -53,7 +56,7 @@ impl Rig {
 
     pub(super) fn open(&self, job: &DraftJob) -> Option<moor_core::BoxId> {
         let store = self.cx.store().unwrap();
-        store.open_box_by_name(&job.req.name).unwrap().map(|r| r.id)
+        store.open_box_by_name(&job.name).unwrap().map(|r| r.id)
     }
 
     pub(super) fn leave_plan(&self, job: &DraftJob, text: &str) {
@@ -70,16 +73,16 @@ fn a_wanted_plan_starts_one_box_whose_plan_moor_stores_then_closes_it() {
     let r = rig();
     let id = r.wanting();
     let job = r.plan_pass().expect("a Box is asked for");
-    assert!(is_draft_prompt(job.req.prompt.as_deref().unwrap()));
-    assert!(job.req.prompt.as_deref().unwrap().contains(PROMPT));
+    assert!(is_draft_prompt(&job.claim.prompt));
+    assert!(job.claim.prompt.contains(PROMPT));
     assert!(
-        job.req.name.as_str().contains("-plan-"),
+        job.name.as_str().contains("-plan-"),
         "{}",
-        job.req.name.as_str()
+        job.name.as_str()
     );
     assert_eq!(
         r.draft(id).unwrap().box_name.as_deref(),
-        Some(job.req.name.as_str())
+        Some(job.name.as_str())
     );
     start_draft(&r.cx, &job);
     assert!(r.open(&job).is_some());
@@ -203,4 +206,71 @@ fn a_workflow_moor_reads_as_gates_gets_no_plan_box() {
         .unwrap();
     assert!(r.plan_pass().is_none());
     assert!(r.draft(id).is_none());
+}
+
+#[test]
+fn the_reader_starts_in_a_place_holding_the_repos_with_no_checkout_for_an_owner_off_the_list() {
+    let r = rig();
+    assert!(r.cx.env().agent_place_users().next().is_none());
+    let id = r.wanting();
+    let job = r.plan_pass().unwrap();
+    start_draft(&r.cx, &job);
+    assert!(r.draft(id).unwrap().failed.is_none(), "{:?}", r.draft(id));
+    let row =
+        r.cx.store()
+            .unwrap()
+            .open_box_by_name(&job.name)
+            .unwrap()
+            .expect("the reader's place is open");
+    assert!(
+        row.repo.is_none(),
+        "a place clones no repo, so runs no setup"
+    );
+    let BoxKind::Place(PlaceState::Claimed(claim)) = &row.kind else {
+        panic!("the reader runs in a claimed place: {:?}", row.kind)
+    };
+    assert_eq!(claim.repos().cloned().collect::<Vec<_>>(), [super::repo()]);
+    assert!(is_draft_prompt(&claim.prompt) && claim.prompt.contains(PROMPT));
+}
+
+#[test]
+fn a_reader_place_that_cannot_start_leaves_the_start_failure() {
+    let r = rig();
+    let id = r.put(180);
+    r.cx.store()
+        .unwrap()
+        .set_plan_draft(id, Some(&PlanDraft::wanted(PROMPT)))
+        .unwrap();
+    let job = r.plan_pass().unwrap();
+    start_draft(&r.cx, &job);
+    let failed = r.draft(id).unwrap().failed.unwrap();
+    assert!(
+        failed.starts_with("the agent place that reads the prompt did not start: ")
+            && failed.len() > "the agent place that reads the prompt did not start: ".len(),
+        "{failed}"
+    );
+    assert!(r.open(&job).is_none());
+}
+
+#[test]
+fn a_reader_that_ends_without_a_reading_leaves_its_last_line() {
+    let r = rig();
+    let id = r.wanting();
+    let job = r.plan_pass().unwrap();
+    start_draft(&r.cx, &job);
+    let place = r.open(&job).unwrap();
+    let text = "Reading o/n.\n\nI could not read o/n: gh api said 404.\n".to_owned();
+    r.cx.store()
+        .unwrap()
+        .apply(Decision::new(place).event(ExtraEvent::AgentSaid { text }))
+        .unwrap();
+    let now = r.cx.clock().now().as_millis();
+    r.advance_to(now + 31 * 60_000);
+    assert!(r.plan_pass().is_none());
+    let failed = r.draft(id).unwrap().failed.unwrap();
+    assert!(
+        failed.ends_with("its last line: I could not read o/n: gh api said 404."),
+        "{failed}"
+    );
+    assert!(r.open(&job).is_none());
 }

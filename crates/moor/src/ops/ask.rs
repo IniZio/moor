@@ -11,7 +11,7 @@ use moor_core::domain::hands::HandsState;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::request::AskReq;
 use moor_core::view::ask::AskValue;
-use moor_core::{BoxId, BoxName, ErrorKind, StartReq};
+use moor_core::{BoxId, BoxName, ErrorKind};
 
 use super::common::box_exec;
 use super::common::facts::settings_of;
@@ -62,7 +62,7 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         return value(store, row.id, true);
     }
     let why = super::place::why_none(store, user)?;
-    let mut v = cold(cx, store, claim, &text)?;
+    let mut v = cold(cx, store, claim)?;
     v.no_idle_place = Some(why);
     Ok(v)
 }
@@ -79,40 +79,11 @@ fn ready(row: &BoxRow) -> bool {
             .is_some_and(|h| h.state == HandsState::Ready)
 }
 
-/// Starts a place that holds `claim` from its insert, with `text` as its agent's first prompt.
-fn cold(cx: &Cx, store: &Store, claim: Claim, text: &str) -> Result<AskValue, CommandError> {
+/// Starts a place that holds `claim` from its insert.
+fn cold(cx: &Cx, store: &Store, claim: Claim) -> Result<AskValue, CommandError> {
     let name = BoxName::parse_allow_bare(&format!("place-{:08x}", cx.rng().u32()))
         .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
-    let req = StartReq {
-        name,
-        prompt: Some(text.to_owned()),
-        issue: None,
-        base: None,
-        model: None,
-        node: None,
-        placement: moor_core::request::Placement::default(),
-        place: false,
-        no_agent: false,
-        no_setup: false,
-        cold: false,
-        resume: false,
-        repo: None,
-        also: None,
-        config: None,
-        parent: None,
-        gates: None,
-        identity: None,
-        task: None,
-        run: false,
-    };
-    let v = start::run_as(cx, &req, BoxKind::Place(PlaceState::Claimed(claim)))?;
-    let id = BoxId::new(v.boxed.id);
-    if v.agent.launched {
-        // The launch planned the claim's rules before the agent ran, and carried the question.
-        let now = cx.clock().now().as_millis();
-        store.claim_served(id, now)?;
-        store.claim_steered(id, now)?;
-    }
+    let id = super::place::start_claimed(cx, store, name, claim)?;
     value(store, id, false)
 }
 
