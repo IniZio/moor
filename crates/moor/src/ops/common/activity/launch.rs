@@ -19,19 +19,23 @@ pub(super) fn launch_overdue(cx: &Cx, failure: &LaunchFailure, now: Ts) -> Optio
     (age >= limit.as_millis()).then_some(limit.as_secs())
 }
 
-/// Warns that the agent of `row` did not start in time and how to start it again: with `--resume`
-/// only when it holds a session to resume, which the start refuses otherwise.
+/// Warns that the agent of `row` did not start in time and how to start it again: a steer
+/// resumes it only when it holds a session to resume, and a new task starts one otherwise.
 pub(super) fn warn_launch_timed_out(cx: &Cx, row: &BoxRow, after_secs: u64) {
+    let name = row.name.as_str();
     let resumable = row
         .agent_session_id
         .as_deref()
         .is_some_and(|s| !s.is_empty());
-    let resume = if resumable { " --resume" } else { "" };
+    let again = if resumable {
+        format!("write to it with `moor steer {name} TEXT` to start it again")
+    } else {
+        "start a new task with `moor ask --repo OWNER/NAME TEXT`".to_owned()
+    };
     cx.warn(Warning {
         code: "launch_timed_out".to_owned(),
         message: format!(
-            "the agent of {name} did not start within {after_secs}s, so the Box now counts as quiet and may sleep; start it again with `moor start {name}{resume}`",
-            name = row.name.as_str(),
+            "the agent of {name} did not start within {after_secs}s, so the Box now counts as quiet and may sleep; {again}"
         ),
     });
 }

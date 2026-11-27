@@ -399,7 +399,10 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     let t = text(&e);
     assert!(t.contains("the Box holds work"), "{t}");
     assert!(t.contains("the agent was stopped"), "{t}");
-    assert!(t.contains("moor start t --resume"), "{t}");
+    assert!(
+        t.contains("`moor steer t TEXT` starts it again where it left off"),
+        "{t}"
+    );
     // The recheck shares a batch with the report index script, so that script runs too.
     assert_eq!(count(&f, "exec"), 3);
     assert_eq!(count(&f, "release"), 0);

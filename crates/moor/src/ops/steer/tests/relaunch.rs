@@ -121,6 +121,12 @@ fn an_agent_gone_again_soon_after_its_relaunch_is_not_relaunched_and_its_steer_w
             .any(|w| w.message.contains("again within 60s")),
         "{warned:?}"
     );
+    assert!(
+        warned.iter().any(|w| w
+            .message
+            .ends_with("once you know why, write to it again with `moor steer t TEXT`")),
+        "{warned:?}"
+    );
     assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
     assert_eq!(session_state(&f), SessionState::Ended);
     assert!(steered(&f).is_empty());

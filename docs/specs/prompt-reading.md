@@ -15,7 +15,7 @@ The owner approved these answers on 2026-11-23. Notes after a dash say where thi
 5. **YAML input on `set_repo_config`.** Both are taken until every stored repo has a note, then words only. — Superseded. Repo rules are raw text written through an agent since 2026-11-24. The reader never reads them into prose.
 6. **Answers moor cannot hold yet.** The reader offers only answers moor can enforce, and its instructions list them. "Wait for my yes before you open it" waits for a pull request capability.
 7. **A warm reading Box.** None at first. Add one per person if pull request 4 measures over 45 seconds at the median. — Superseded. The reader runs in an agent place that moor starts for each reading.
-8. **Readings for tasks started over MCP or Slack.** No reading. `start_box` keeps taking gates directly.
+8. **Readings for tasks started over MCP or Slack.** No reading. `start_box` keeps taking gates directly. — Superseded. A task with words starts in an agent place through `ask`, which takes its repos and words and no reading. `start_box` starts a Box with no agent and takes no gates.
 9. **Where a reading of an automation sits.** On the workflow revision for now. — Superseded. A reading is its own immutable row. The workflow, a run and a Box point at one.
 
 The owner approved these on 2026-11-26, after the prototype below.
@@ -614,7 +614,7 @@ sequenceDiagram
 - **How it hands in.** One MCP tool, `hand_in_reading`, on the Box-facing listener. Its JSON Schema comes from the Rust type `HandIn`, given in [the hand-in](#the-hand-in-from-slice-1-to-intents). The reader labels gates its own way, and moor issues the ids. Any harness that speaks MCP can be the reader. The reader is an agent in an agent place.
 - **Step plans.** The reader may still leave a step plan in the plan file, as today. Then no reading is made. A plan file with gates is taken as a reading with effects and no phrases.
 - **Adoption.** A reading becomes the automation's when its source is the saved prompt, no question is open and each new line is ticked. The portal sends the id with Save. A save over MCP sends none, so moor reads the saved prompt and adopts that reading when it lands whole and adds no line. One with a question or a new line waits, and the older reading holds until then. The person answers and ticks in the portal or over their own MCP connection.
-- **One-off tasks.** Start sends the reading id. moor refuses an open question or a stale context. It starts the Box with the reading's source as the prompt, its gates and its `may`, and keeps the id on the Box. Decision 8 stands, so `start_box` over MCP takes gates directly.
+- **One-off tasks.** Superseded. A task with words starts in an agent place through `ask`, with its repos and words and no reading. A start, from the portal or `start_box`, makes a Box with no agent and takes no gates.
 - **Failure.** A failed reading shows its reason and a Read again button. moor never tries again by itself.
 
 ## The API

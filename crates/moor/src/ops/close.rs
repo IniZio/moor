@@ -317,7 +317,7 @@ fn recheck_verdict(row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
     match close_gate(&facts(row, check), false) {
         Ok(_) => Ok(()),
         Err(refusal) => Err(refused(row, refusal).with_hint(format!(
-            "the agent was stopped; `moor start {} --resume` continues it",
+            "the agent was stopped; `moor steer {} TEXT` starts it again where it left off",
             row.name.as_str()
         ))),
     }

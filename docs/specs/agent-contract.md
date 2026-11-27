@@ -338,7 +338,7 @@ Each item makes a statement or its gap impossible, with where it lives.
 7. **A repo skill named `moor-*`.** The profile writer refuses to link it and records an event.
 8. **Nested artifact files.** Collection records each file it skipped below the top level, so the person and the agent see why it is missing.
 
-Some gaps close by providing, not explaining. Every Box and agent place image ships gh. The install recipe in today's brief then goes.
+Some gaps close by providing, not explaining. Every Box and agent place image ships gh, so the brief carries no install recipe.
 
 ## Skills
 
@@ -421,7 +421,7 @@ What gets deleted:
 - The conduct lines of the gate preamble, the reminder and the outcome text. Gate facts stay.
 - The report-output line in a run's first message.
 - The pull request attach paragraph, now `moor-attach-files`.
-- The gh install recipe, once images ship gh.
+- The gh install recipe. Images ship gh.
 - The reader's how-to-plan and how-to-gate prose, now the runbook and the intent list.
 - The rules page's pasted skill. The place's skill list carries it.
 - Conduct in tool descriptions, such as when to call a tool. Descriptions keep what a tool does, its inputs, its refusals and its limits.
@@ -432,7 +432,7 @@ What gets deleted:
 | Outputs go unreported once the first message stops saying so | `evidence-run`, and the unreported-writes count |
 | A run stalls on a question | `failing-test`, and questions in run Boxes |
 | A Docker Box agent misreads exit 75 | A driver test that the facts carry the notes |
-| A place cannot open a pull request without gh | `place-change`. Images ship gh before the recipe goes. |
+| A place cannot open a pull request without gh | `place-change`. Images ship gh, and the recipe is gone. |
 | A reader drifts without the plan prose | The comparison pass over stored automations |
 | A stored prompt relied on a deleted line | Its fixture with the slimmed prompt, and the run page's version link |
 

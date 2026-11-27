@@ -193,14 +193,14 @@ fn an_unknown_box_is_refused() {
 }
 
 #[test]
-fn a_box_without_a_live_session_is_refused_naming_start_prompt() {
+fn a_box_without_a_live_session_is_refused_naming_ask() {
     let f = fx_with(FakeEngine::new(), false);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(err
-        .error
-        .to_string()
-        .contains("`moor start t --prompt \"...\"`"));
+    assert_eq!(
+        err.error.to_string(),
+        "no live agent session for Box t; start a new task with `moor ask --repo OWNER/NAME TEXT`"
+    );
     assert!(f.engine.steers().is_empty());
 }
 
@@ -282,7 +282,7 @@ fn a_gone_pane_stops_the_session_and_refuses() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(
         err.error.to_string(),
-        "the agent's pane is gone; relaunch with `moor start t --prompt \"...\"`"
+        "the agent's pane is gone; start a new task with `moor ask --repo OWNER/NAME TEXT`"
     );
     assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::AgentGone));
     assert!(!live(&f));
@@ -313,7 +313,7 @@ fn an_exited_agent_names_its_code() {
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(
         err.error.to_string(),
-        "agent exited 3; relaunch with `moor start t --prompt \"...\"`"
+        "agent exited 3; start a new task with `moor ask --repo OWNER/NAME TEXT`"
     );
     assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::AgentGone));
     let q = column_where(Launches::Table, Launches::Exit, Launches::Box, f.id.get());
