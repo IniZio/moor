@@ -346,9 +346,6 @@ impl BoxProvider for Docker {
         if tty {
             args.push("-t");
         }
-        // docker exec leaves what it started running when its client dies, so every process of
-        // the command carries the mark the ender finds. A work place command is ended through its
-        // ssh client here, whose end box-shell's watcher turns into the end of its process group.
         args.extend(["-e", &marked, "-w", WORKDIR, &names.agent]);
         // Both places run a login shell, which is what reads the Box's environment. The work
         // place is reached through box-shell, which says "down" with exit 75.
