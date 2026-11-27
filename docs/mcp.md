@@ -65,7 +65,7 @@ token's audience.
   `wait: true`, it returns once setup and the agent launch finish. A start on
   a name that is open attaches to that Box. With `no_setup: true`, the Box
   skips the repo's setup lines and is ready once it is cloned and its agent installed.
-- `ask` sends a question to your agent place, the request the portal's Tasks home sends. `repos` is a list of `owner/name`, the task's own first. It answers the place that took it (`box`, `claimed`), then follow it with `box_status`. A caller not on the controller's `agent_places` list is refused, and the refusal names the email moor holds for them.
+- `ask` starts an agent place for a question. `repos` is a list of `owner/name`, the task's own first. It answers the place it started (`box`), then follow it with `box_status`. Anyone signed in may ask.
 - `send_to_box` answers a pending question with an option's name or its
   1-based number.
 - `close_box` refuses a Box with commits that are not pushed or files that are

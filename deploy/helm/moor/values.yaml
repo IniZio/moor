@@ -38,8 +38,6 @@ controller:
   uid: 10001
   # agent.model in the controller config: the model a Box's agent starts with. Empty leaves the agent's own default.
   agentModel: ""
-  agentPlaces:
-    users: []
   # Shared nodes as {name: {runtime, labels, max_boxes}}; empty runs Boxes only on enrolled machines.
   nodes: {}
   # box.node: the shared node a start naming none tries first, after the user's own.

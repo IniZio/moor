@@ -9,7 +9,7 @@ const D22 = '2026-11-22T14:50:00+08:00', D24 = '2026-11-24T11:12:00+08:00', D24C
 const { C1_PROMPT, CHAT_SENTENCE } = require('./fixtures/automation.cjs');
 const BRIEF = 'A date picker for the booking screen, in Storybook. Three states: default, selected, unavailable. Then send it for review.';
 const H1DRAFT = 'Make it 3% above 500 and show me the booking screen with a 600 booking.';
-const home = { area: 'task', product: '#/new', ready: '.t-wform', now: D24, asks: true, inbox: true, store: { session: { 'moor.draft.new-task': BRIEF }, local: { 'moor.lastRepos': '["acme/clinic-prototype"]' } } };
+const home = { area: 'task', product: '#/new', ready: '.t-wform', now: D24, inbox: true, store: { session: { 'moor.draft.new-task': BRIEF }, local: { 'moor.lastRepos': '["acme/clinic-prototype"]' } } };
 const box = (id, extra) => ({ key: id, area: 'task', mock: '#' + id, product: '#/box/' + id, ready: '.t-th', now: D24, ...extra });
 
 const toggle = (page) => page.click('.ftog');
@@ -126,9 +126,8 @@ const RULES_PAIRS = [
 
 const STATES = [
   { key: 'a1', mock: '#a1', ...home },
-  { key: 'a1-box', mock: '#a1', ...home, asks: false, note: 'same mock screen, product account without asks (Box tasks)' },
-  box('a3', { asks: true, inbox: true }),
-  box('a4', { asks: true }),
+  box('a3', { inbox: true }),
+  box('a4'),
   auto('b1', '#b1', '#/workflows/deps-check', { productDo: rest('pr') }),
   auto('b1-plain', '#b1', '#/workflows/deps-check', { mockDo: toggle, productDo: async (p) => { await toggle(p); await rest('pr')(p); } }),
   auto('c1', '#c1', '#/workflows/pr-evidence', { productDo: rest('may') }),
@@ -142,9 +141,9 @@ const STATES = [
   rules('d1'),
   rules('d2', { productDo: typeRules }),
   rules('d3', { productDo: async (page) => { await typeRules(page); await page.click('.rules-ask button'); await page.waitForSelector('.rules-diff'); await page.waitForSelector('.rules-agent[aria-busy=false]'); } }),
-  box('h1', { asks: true, store: { session: { 'moor.draft.steer:h1': H1DRAFT } } }),
-  box('h2', { asks: true }),
-  box('h3', { asks: true }),
-  box('h4', { asks: true, now: D25 }),
+  box('h1', { store: { session: { 'moor.draft.steer:h1': H1DRAFT } } }),
+  box('h2'),
+  box('h3'),
+  box('h4', { now: D25 }),
 ];
 module.exports = { STATES };

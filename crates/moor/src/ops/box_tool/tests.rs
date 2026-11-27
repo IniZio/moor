@@ -352,7 +352,7 @@ fn start_from_a_place_may_name_only_its_claim_repos() {
     .unwrap();
     assert_eq!(req.repo, Some(ForgeRepo::new("o", "m")));
     assert_eq!(req.also, Some(vec![ForgeRepo::new("o", "n")]));
-    assert!(req.prompt.is_none() && !req.place && req.config.is_none() && req.identity.is_none());
+    assert!(req.prompt.is_none() && req.config.is_none() && req.identity.is_none());
     let only_repo = w.admit(&start(w.place, "o/n", &[])).unwrap();
     assert!(matches!(only_repo.plan, Plan::Start(ref r) if r.also == Some(vec![])));
     refused_with(

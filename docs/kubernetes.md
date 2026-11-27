@@ -173,8 +173,6 @@ keep the pod's other ports open.
 
 With `gate.login` on, the controller's `portal_url` is `https://<host>`, so a run's Box gets its run page in `MOOR_RUN_URL`.
 
-`controller.agentPlaces.users` lists the emails of the users who get an agent place. Empty starts none. See [`agent_places`](config.md#agent_places).
-
 ## Run the controller without a volume
 
 With `database.url` and `blobs.s3` both set, the controller keeps its store in

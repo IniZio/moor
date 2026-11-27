@@ -3,7 +3,7 @@
 // PICS are the mock's own card pictures, shot off the mock and served on the product's evidence route: [name, mock screen, selector].
 const TZ = '+08:00';
 const at = (d, hm) => '2026-11-' + d + 'T' + hm + ':00' + TZ;
-const acct = (email, asks) => ({ email, csrf: 'audit', secrets: [{ name: 'claude', linked: true }, { name: 'github', linked: true }], machines: { nodes: [], at: 0 }, connect: { mcp_url: null, server_url: 'https://moor.acme.example' }, profile: null, asks });
+const acct = (email) => ({ email, csrf: 'audit', secrets: [{ name: 'claude', linked: true }, { name: 'github', linked: true }], machines: { nodes: [], at: 0 }, connect: { mcp_url: null, server_url: 'https://moor.acme.example' }, profile: null });
 const row = (o) => ({ box: o.box, repo: o.repo, other_repos: [], branch: o.branch ?? null, base: 'main', prompt: o.prompt ?? o.title, issue: null, machine: null, workflow: o.workflow ?? null, title: o.title, state: o.state, stale: false, line: o.line ?? '', last_event_at: o.at, updated_at: o.at, pr: o.pr ?? null, needs: o.needs ?? null, gate: null, failed: o.state === 'failed', retryable: false, owner: null, task_at: o.task_at ?? null });
 const HOME = [
   row({ box: 'b-api', repo: 'acme/api', title: 'Daily dependency check', state: 'needs_you', line: 'needs you: one upgrade breaks 2 tests', at: at(24, '09:00'), workflow: { name: 'Daily dependency check', pull: null } }),
@@ -80,9 +80,8 @@ const DETAILS = { a3: design(3), a4: design(4), b2: deps(false), b3: deps(true),
 function api(state) {
   const { flow, DEPS, EVID } = require('./automation.cjs');
   const email = /^[bc]/.test(state.key) ? 'ana@acme.example' : 'maya@acme.example';
-  const asks = !!state.asks;
   const inbox = state.inbox ? [{ id: 1, box: 'b-api', repo: 'acme/api', kind: 'needs_input', state: 'unread', title: 'Daily dependency check', text: 'needs you: one upgrade breaks 2 tests', at: at(24, '09:00') }] : [];
-  const a = { '/account/api': acct(email, asks), '/account/api/boxes': { boxes: HOME }, '/account/api/boxes?who=everyone': { boxes: HOME }, '/account/api/inbox': { items: inbox, unread: inbox.length }, '/account/api/repos': { repos: ['acme/api', 'acme/clinic-prototype', 'acme/ios', 'acme/portal', 'acme/web'] }, '/account/api/session': {} };
+  const a = { '/account/api': acct(email), '/account/api/boxes': { boxes: HOME }, '/account/api/boxes?who=everyone': { boxes: HOME }, '/account/api/inbox': { items: inbox, unread: inbox.length }, '/account/api/repos': { repos: ['acme/api', 'acme/clinic-prototype', 'acme/ios', 'acme/portal', 'acme/web'] }, '/account/api/session': {} };
   a['/account/api/workflows/Daily%20dependency%20check'] = flow(DEPS);
   a['/account/api/workflows/Evidence%20on%20every%20pull%20request'] = flow(EVID);
   for (const [k, d] of Object.entries(DETAILS)) {

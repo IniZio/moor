@@ -377,7 +377,6 @@ same directory.
 | `fronts` | empty | Fronts, each with its own socket. See [`fronts`](#fronts). |
 | `ledger_tls` | none | Serve the ledger over TLS for pods that run apart from the controller: `listen`, `cert`, `key`, and `client_ca`. |
 | `github_app` | none | The GitHub App the operator created for this install. See [`github_app`](#github_app). |
-| `agent_places` | none | The users who may have an agent place. See [`agent_places`](#agent_places). |
 | `portal_url` | none | The portal's origin, such as `https://moor.example.com`. A run's Box gets its run page in `MOOR_RUN_URL`. The chart sets it from `host` when `gate.login` is on. |
 
 ### `fronts`
@@ -410,41 +409,6 @@ gets its own user, mount, PID, and network namespaces and a root built from an
 allow-list. It reaches the network only through an egress proxy that refuses
 private addresses. A host that forbids unprivileged user namespaces or lacks
 Landlock starts no front, and the controller logs `fronts not started`.
-
-### `agent_places`
-
-A place is a Box with no repo that the agent waits in, started before any task. It never shows in
-`moor ls`, the portal, `list_boxes` or the event stream, and it never sleeps or closes, until a
-task claims it. `agent_places` lists the users who may start one. It is also the switch. With no
-one listed, no place starts for anyone.
-
-```yaml
-agent_places:
-  users: [alice@example.com]
-```
-
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `users` | none | The emails of the users who may start a place, as `moor start --place`. |
-
-The controller keeps one place waiting for each listed user. Every 10 seconds it starts a place for
-a listed user who has none. So a place appears soon after the controller starts, and a new one
-follows each claim. It closes a place whose machine is gone or stopped, and starts another. It never starts a
-place for a user who is not listed. A restarted controller finds the place that stands.
-
-A start that fails is not retried. If a place fails in setup or when its agent launches, it stays
-open and no other place starts for its user. The controller log names it once. A person closes
-it, then the next place starts. A start that is rejected, or that makes no Box, is left alone in
-the same way. It stays so until the user has a new place or the controller restarts. A person can
-start the next place with `moor start --place`.
-
-These places are hidden, so an ask says what stands in their way. An `ask` that finds no idle place
-to claim starts one for the question, and its answer's `no_idle_place` says why it found none. It
-names a failed place and why it failed, a place still coming up and since when, a rejected start,
-or that none was waiting. A failed or stuck place closes by that name, with `close_box` or
-`moor close`, and the keeper starts the next one.
-
-Each place holds one machine slot while it waits.
 
 ### `github_app`
 

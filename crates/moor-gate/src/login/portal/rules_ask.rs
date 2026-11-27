@@ -92,10 +92,6 @@ pub(super) fn ask(
         let error = json!({"error": "name a repo as owner/name"});
         return json(stream, "400 Bad Request", &error);
     };
-    if !tools::asks(&gate.controller, &session.person) {
-        let error = json!({"error": "Writing to the agent needs an agent place, and moor keeps none for you. Ask the operator to add your email to agent_places."});
-        return json(stream, "403 Forbidden", &error);
-    }
     let origin: std::sync::Arc<str> = login.public().into();
     let words = prompt(&repo, &asked);
     match tools::ask_from_portal(
@@ -106,11 +102,7 @@ pub(super) fn ask(
     ) {
         Ok(sent) => {
             let name = sent.get("box").and_then(Value::as_str);
-            let reply = sent.get("no_idle_place").map_or_else(
-                || json!({"box": name}),
-                |why| json!({"box": name, "no_idle_place": why}),
-            );
-            json(stream, "200 OK", &reply);
+            json(stream, "200 OK", &json!({"box": name}));
         }
         Err(why) => json(stream, "400 Bad Request", &json!({"error": why})),
     }

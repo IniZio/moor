@@ -810,6 +810,6 @@ Each takes one word. Each has our recommendation.
 
 1. **Save when the reader failed?** The prompt saves and the older reading holds, marked stale. Recommend yes.
 2. **Start a one-off as written when the reader failed?** The Box holds only the repo's rules. Recommend yes.
-3. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes. — Answered yes. The reader runs in an agent place. moor starts a new place for each reading and takes no person's idle place. Who keeps a pre-started place stays open until the `agent_places` list goes.
+3. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes. — Answered yes. The reader runs in an agent place. moor starts a new place for each reading and takes no person's idle place. No place is pre-started.
 4. **Inbox item for a reading that waits?** A question or lines to tick, left by an MCP save. Recommend yes.
 5. **A pull request slot in the Proxy?** `{pull}` would let "this pull request" hold one pull request, not any. Recommend yes, after slice 10.

@@ -21,7 +21,6 @@ fn with_args() -> Vec<Request> {
     vec![
         Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
-            place: false,
             gates: None,
             placement: crate::decide::schedule::Placement::FirstOnly,
             cold: false,

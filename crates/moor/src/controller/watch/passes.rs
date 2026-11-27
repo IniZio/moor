@@ -1,9 +1,8 @@
 //! Which stored events a watch stream sends.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use moor_core::controller::ServerFrame;
-use moor_core::domain::place::BoxKind;
 use moor_core::{BoxId, SessionId};
 
 use super::Ask;
@@ -20,8 +19,6 @@ pub(super) struct Passes<'a> {
     pub(super) seen: HashMap<BoxId, bool>,
     /// The parent of each Session met so far; a Session's parent never changes.
     pub(super) parents: HashMap<SessionId, Option<SessionId>>,
-    /// The Boxes met so far that were born work Boxes.
-    pub(super) works: HashSet<BoxId>,
 }
 
 impl<'a> Passes<'a> {
@@ -32,7 +29,6 @@ impl<'a> Passes<'a> {
             ask,
             seen: HashMap::new(),
             parents: HashMap::new(),
-            works: HashSet::new(),
         }
     }
 
@@ -59,31 +55,12 @@ impl<'a> Passes<'a> {
         let Some(id) = *box_id else {
             return Ok(self.ask.viewer.may_act_on(None));
         };
-        if self.hidden(id)? {
-            return Ok(false);
-        }
         if let Some(&visible) = self.seen.get(&id) {
             return Ok(visible);
         }
         let visible = self.moor.may_see(id)?;
         self.seen.insert(id, visible);
         Ok(visible)
-    }
-
-    /// Whether Box `id` is an idle place, whose events no stream sends. A Box born a work Box stays
-    /// one, so that answer is kept; a place may be claimed at any time, so it is asked again.
-    fn hidden(&mut self, id: BoxId) -> Result<bool, String> {
-        if self.works.contains(&id) {
-            return Ok(false);
-        }
-        match self.moor.box_kind(id)? {
-            Some(BoxKind::Work) => {
-                self.works.insert(id);
-                Ok(false)
-            }
-            Some(kind) => Ok(kind.is_idle_place()),
-            None => Ok(false),
-        }
     }
 
     /// The parent of `session`; none for an event with no Session.

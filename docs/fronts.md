@@ -52,7 +52,7 @@ server.
   user's open work Boxes. It has no `force`. A Box that holds work not pushed
   stays open, and the refusal says to push it with `exec_in_box` or tell the user.
   Every Box lists all four tools. A work
-  Box or an idle place that calls one is refused.
+  Box that calls one is refused.
 
 Over `--controller`, a request waits up to 30 s for the controller, then gets
 `503` with `Retry-After: 5`. At most 512 requests wait on one gate.

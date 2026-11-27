@@ -71,7 +71,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
                         "show" => list::boxes(who),
                         "start" => json!({"started": inner["name"]}),
-                        "ask" => json!({"box": "place-1", "claimed": true, "claimed_at": 1,
+                        "ask" => json!({"box": "place-1", "claimed_at": 1,
                             "served_at": null, "steered_at": null}),
                         _ => workflow_list::answer(cmd, inner).unwrap_or(Value::Null),
                     };

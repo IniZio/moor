@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { isValidElement, type VNode } from 'preact';
 
-import { boxGet, boxStart, load } from './api';
+import { boxGet, boxStart } from './api';
 import { AskedTask, askedPollMs } from './AskedTask';
 import { POLL_MS, Timeline } from './Portal';
 import { FailedCard } from './Retry';
@@ -53,7 +53,7 @@ const task = (over: { [key: string]: Json } = {}) => ({
 	...over,
 });
 
-test('a person who is on the roster sends, the task opens, and it shows their message and the answer with no work Box', async () => {
+test('a person sends, the task opens, and it shows their message and the answer with no work Box', async () => {
 	replies = [{ box: 'place-1a2b3c4d' }, task()];
 	const name = await boxStart('csrf', { repos: ['acme/web'], prompt: QUESTION, base: '', node: '' });
 	expect(name).toBe('place-1a2b3c4d');
@@ -93,19 +93,4 @@ test('a task page younger than a minute polls fast, and every other page at the 
 	expect(askedPollMs(young, NOW + 60_000)).toBe(POLL_MS);
 	expect(askedPollMs(work, NOW)).toBe(POLL_MS);
 	expect(askedPollMs(null, NOW)).toBe(POLL_MS);
-});
-
-const account = (over: { [key: string]: Json } = {}) => ({
-	email: 'ann@example.com',
-	csrf: 'c',
-	secrets: [],
-	machines: { nodes: [], at: 0 },
-	connect: { mcp_url: null, server_url: 'https://moor.test' },
-	...over,
-});
-
-test('the account says whether the person asks, and a gate that does not say means they do not', async () => {
-	replies = [account({ asks: true }), account()];
-	expect((await load()).asks).toBe(true);
-	expect((await load()).asks).toBe(false);
 });

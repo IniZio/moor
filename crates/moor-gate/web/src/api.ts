@@ -33,8 +33,6 @@ const AccountSchema = v.object({
 	connect: v.object({ mcp_url: v.nullable(v.string()), server_url: v.string() }),
 	/** The agent profile repo, `https://github.com/OWNER/NAME[#REF]`, when one is set. */
 	profile: v.nullish(v.string()),
-	/** Whether the person's sends are questions an agent place answers, with no work Box. */
-	asks: v.optional(v.boolean(), false),
 });
 
 const RulesSeenSchema = v.object({
@@ -153,13 +151,13 @@ export async function repoSet(csrf: string, repo: string, text: string, revision
 }
 
 /** Sends the person's words about a repo's rules to their agent place, with the rules the page shows; answers the place that took it. */
-export async function rulesAsk(csrf: string, repo: string, body: { words: string; text: string; withheld: string[] }): Promise<{ box: string; no_idle_place?: string | null }> {
+export async function rulesAsk(csrf: string, repo: string, body: { words: string; text: string; withheld: string[] }): Promise<{ box: string }> {
 	const res = await fetch('/account/api/rules/ask', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },
 		body: JSON.stringify({ repo, ...body }),
 	});
-	return answer(res, v.object({ box: v.string(), no_idle_place: v.nullish(v.string()) }));
+	return answer(res, v.object({ box: v.string() }));
 }
 
 /** Replaces a node's cap (none for no cap) and labels, against the revision the page read. */

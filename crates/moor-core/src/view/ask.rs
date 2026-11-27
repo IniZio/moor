@@ -6,15 +6,10 @@ pub struct AskValue {
     /// The place that took the question.
     #[serde(rename = "box")]
     pub box_name: String,
-    /// Whether an idle place was claimed; false when a place was started for the question.
-    pub claimed: bool,
     /// When the question took the place, in milliseconds since the epoch.
     pub claimed_at: i64,
     /// When the place was given the repos' rules; none while that waits.
     pub served_at: Option<i64>,
     /// When the question reached the agent; none while it waits in the inbox.
     pub steered_at: Option<i64>,
-    /// Why no idle place took the question, for an ask that started one; none when one did.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub no_idle_place: Option<String>,
 }

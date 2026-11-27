@@ -19,7 +19,6 @@ const node = (name: string, scope: Node['scope'], over: Partial<Node> = {}): Nod
 });
 
 const state = (over: Partial<FieldState> = {}): FieldState => ({
-	asks: false,
 	open: true,
 	prompt: '',
 	repos: ['acme/web'],
@@ -123,19 +122,7 @@ test('the machine menu lists shared machines and yours, and an offline one is di
 	expect(['Shared', 'Yours'].every((h) => textOf(view).includes(h))).toBe(true);
 });
 
-test('for a person whose sends are questions the form asks: no base, machine or plan, and the button says Ask', () => {
-	const { a } = acts();
-	const view = WriteFieldView({ s: state({ asks: true, prompt: 'Where is GET /items handled?' }), act: a });
-	const text = textOf(view);
-	expect(text).toContain('in acme/web');
-	expect(text).not.toMatch(/from|machine|Plan first/);
-	expect(all(view, 'input').some((i) => i.props.placeholder === 'default branch')).toBe(false);
-	const submit = all(view, 'button').find((b) => b.props.type === 'submit');
-	expect(textOf(submit)).toBe('Ask');
-	expect(textOf(all(WriteFieldView({ s: state({ asks: true, busy: true }), act: a }), 'button').find((b) => b.props.type === 'submit'))).toBe('Asking…');
-});
-
-test('for everyone else the form is the task form it always was', () => {
+test('the form is the task form, with a plan choice and Start', () => {
 	const { a } = acts();
 	const view = WriteFieldView({ s: state(), act: a });
 	expect(textOf(view)).toContain('Plan first');

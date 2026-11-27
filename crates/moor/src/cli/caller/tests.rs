@@ -64,13 +64,6 @@ fn a_start_in_a_github_checkout_sends_its_owner_and_name() {
 }
 
 #[test]
-fn a_place_start_sends_no_repo_even_in_a_github_checkout() {
-    let got = sent(&["start", "p1", "--place"], Some("git@github.com:o/n.git"));
-    assert_eq!(got["place"], true, "{got}");
-    assert!(got.get("repo").is_none(), "{got}");
-}
-
-#[test]
 fn a_start_outside_a_checkout_sends_no_repo() {
     assert_eq!(
         sent(&["start", "demo"], None),

@@ -138,7 +138,7 @@ struct Cli {
 enum Cmd {
     /// Create or attach a Box.
     Start(StartArgs),
-    /// Ask your idle agent place a question about some repos; it starts one when none is idle.
+    /// Ask a question about some repos; an agent place starts for it.
     Ask(AskArgs),
     /// Run a command in the Box.
     Run(RunArgs),

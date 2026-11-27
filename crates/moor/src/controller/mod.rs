@@ -151,7 +151,6 @@ fn configured(env: Env, cfg: &ControllerConfig) -> Result<Env, String> {
         .with_workflow_min_interval(cfg.workflow_min_interval())
         .with_front_step_reports(cfg.step_report_fronts())
         .with_front_box_tools(cfg.box_tool_fronts())
-        .with_agent_place_users(cfg.agent_place_users())
         .with_portal_origin(cfg.portal_origin());
     let env = Moor::queue_steers(env);
     let env = match &cfg.github_app {

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::ForgeRepo;
 
-/// Arguments of `ask`: a question about some repos, answered by the caller's idle place.
+/// Arguments of `ask`: a question about some repos, answered by an agent place started for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AskReq {

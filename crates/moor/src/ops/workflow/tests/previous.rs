@@ -183,7 +183,6 @@ fn start_owner_box(r: &Rig) -> BoxId {
     crate::ops::start::run(
         &r.cx,
         &moor_core::StartReq {
-            place: false,
             gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
@@ -423,7 +422,6 @@ fn the_keep_count_starts_again_after_a_run_that_did_not_keep_the_box() {
     });
     let job = job.into_inner().unwrap();
     let req = moor_core::StartReq {
-        place: false,
         gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

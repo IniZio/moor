@@ -46,26 +46,6 @@ pub(super) fn start(
         return json(stream, "400 Bad Request", &error);
     };
     let origin: std::sync::Arc<str> = login.public().into();
-    if tools::asks(&gate.controller, &session.person) {
-        let repos = new.repos.iter().map(|r| r.trim().to_owned()).collect();
-        let sent = tools::ask_from_portal(
-            &gate.controller,
-            &session.person,
-            (repos, new.prompt),
-            origin,
-        );
-        return match sent {
-            Ok(asked) => {
-                let name = asked.get("box").and_then(Value::as_str);
-                let reply = asked.get("no_idle_place").map_or_else(
-                    || json!({"box": name}),
-                    |why| json!({"box": name, "no_idle_place": why}),
-                );
-                json(stream, "200 OK", &reply);
-            }
-            Err(why) => json(stream, "400 Bad Request", &json!({"error": why})),
-        };
-    }
     let keep = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
     let asked = tools::NewBox {
         repos: new.repos.iter().map(|r| r.trim().to_owned()).collect(),

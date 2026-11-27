@@ -69,11 +69,10 @@ on it holds for every new connection of that Box, the agent's included.
 
 The portal shows the rules at `#/repos/OWNER/NAME/rules`, beside the requests
 the repo's Boxes sent without a secret. Write to the agent there, such as "let
-Boxes read issues". Your agent place gets the words, the text and the
+Boxes read issues". An agent place started for it gets the words, the text and the
 `proxy-rules` skill, like an ask from the Tasks home. It answers with the
 edited text. The page lights the lines it changed. Nothing is stored until you
-press Save. Writing to the agent needs an agent place, set by
-[`agent_places`](config.md#agent_places). "Edited by" names the editor's email.
+press Save. "Edited by" names the editor's email.
 
 ## Override for one Box
 

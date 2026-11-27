@@ -25,9 +25,6 @@ data:
       {{- end }}
     {{- end }}
     {{- end }}
-    {{- with .Values.controller.agentPlaces.users }}
-    agent_places: {{- dict "users" . | toYaml | nindent 6 }}
-    {{- end }}
     {{- if .Values.gate.login }}
     portal_url: https://{{ required "host is required for gate.login" .Values.host }}
     {{- end }}

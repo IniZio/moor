@@ -1,13 +1,10 @@
-//! `ask`: a question about some repos, answered by the caller's idle place.
+//! `ask`: a question about some repos, answered by an agent place started for it.
 //!
-//! The ask claims the caller's oldest ready idle place and queues the question for its agent in
-//! one write, then delivers it. The delivery gives the place the repos' rules first and sends the
-//! question only once they are served, so a delivery cut off part way finishes on the inbox pass.
-//! With no idle place it starts a place that holds the claim and the question from its insert.
+//! The ask starts a place that holds the claim and the question from its insert. Anyone signed in
+//! may ask. A place whose rules were not served at launch gets them from the inbox pass, before
+//! the question is sent.
 
 use moor_core::config::Flags;
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::hands::HandsState;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::request::AskReq;
 use moor_core::view::ask::AskValue;
@@ -16,17 +13,15 @@ use moor_core::{BoxId, BoxName, ErrorKind};
 use super::common::box_exec;
 use super::common::facts::settings_of;
 use super::start;
-use crate::cx::owners::Cmd;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// Claims the caller's idle place for `req` and sends it the question, or starts a place for it.
+/// Starts a place for `req` that holds the question.
 ///
 /// # Errors
-/// Usage for an ask with no repo or no question; Refused for a caller off the `agent_places`
-/// list, missing a secret the repos' rules need, or unable to read a repo; otherwise a failed
-/// start, store write or delivery.
+/// Usage for an ask with no repo or no question; Refused for a caller missing a secret the repos'
+/// rules need, or unable to read a repo; otherwise a failed start or store write.
 pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
     let Some((repo, also)) = req.repos.split_first() else {
         return Err(CommandError::new(ErrorKind::Usage, "ask names no repo")
@@ -37,7 +32,6 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
     }
     let store = cx.store()?;
     let user = start::require(cx, Some(repo))?;
-    super::place::on_roster(cx, store, user)?;
     for r in &req.repos {
         start::repo::fetch(cx, user, r, None)?;
     }
@@ -49,46 +43,14 @@ pub(crate) fn run(cx: &Cx, req: &AskReq) -> Result<AskValue, CommandError> {
         served: None,
         steered: None,
     };
-    let text = claim.first_message();
-    for row in store.idle_places_of(user)?.iter().filter(|r| ready(r)) {
-        let Some(turn) = cx.try_turn(row.id, Cmd::Steer) else {
-            continue;
-        };
-        if !store.claim_place(row.id, user, &claim, &text)? {
-            continue;
-        }
-        super::steer::deliver(cx, store, row.id)?;
-        drop(turn);
-        return value(store, row.id, true);
-    }
-    let why = super::place::why_none(store, user)?;
-    let mut v = cold(cx, store, claim)?;
-    v.no_idle_place = Some(why);
-    Ok(v)
-}
-
-/// Whether idle place `row` can take a question now, by what the store holds: awake on a ready
-/// machine with an agent that launched.
-fn ready(row: &BoxRow) -> bool {
-    row.lifecycle == BoxLifecycle::Ready
-        && !row.asleep()
-        && row.launch_failure.is_none()
-        && row
-            .hands
-            .as_ref()
-            .is_some_and(|h| h.state == HandsState::Ready)
-}
-
-/// Starts a place that holds `claim` from its insert.
-fn cold(cx: &Cx, store: &Store, claim: Claim) -> Result<AskValue, CommandError> {
     let name = BoxName::parse_allow_bare(&format!("place-{:08x}", cx.rng().u32()))
         .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
     let id = super::place::start_claimed(cx, store, name, claim)?;
-    value(store, id, false)
+    value(store, id)
 }
 
 /// The view of place `id` after an ask.
-fn value(store: &Store, id: BoxId, claimed: bool) -> Result<AskValue, CommandError> {
+fn value(store: &Store, id: BoxId) -> Result<AskValue, CommandError> {
     let row = store
         .box_row(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "the asked place is gone"))?;
@@ -100,11 +62,9 @@ fn value(store: &Store, id: BoxId, claimed: bool) -> Result<AskValue, CommandErr
     };
     Ok(AskValue {
         box_name: row.name.as_str().to_owned(),
-        claimed,
         claimed_at: claim.at,
         served_at: claim.served,
         steered_at: claim.steered,
-        no_idle_place: None,
     })
 }
 

@@ -111,7 +111,7 @@ export function RulesDiff({ lines }: { lines: DiffLine[] }) {
 	);
 }
 
-type Ask = { at: 'idle' } | { at: 'sending' } | { at: 'waiting'; box: string; base: string; wait: string | null } | { at: 'answered'; box: string; note: string } | { at: 'failed'; why: string };
+type Ask = { at: 'idle' } | { at: 'sending' } | { at: 'waiting'; box: string; base: string } | { at: 'answered'; box: string; note: string } | { at: 'failed'; why: string };
 
 /** How often the page looks at the agent's place while it works. */
 const ASK_POLL_MS = 1500;
@@ -243,7 +243,7 @@ export function RulesPage({ csrf, repo }: { csrf: string; repo: string }) {
 		try {
 			const sent = await rulesAsk(csrf, repo, { words: said, text: draft, withheld });
 			setWords('');
-			setAsk({ at: 'waiting', box: sent.box, base: draft, wait: sent.no_idle_place ?? null });
+			setAsk({ at: 'waiting', box: sent.box, base: draft });
 		} catch (err) {
 			setAsk({ at: 'failed', why: failure(toError(err)) });
 		}
@@ -357,11 +357,7 @@ function AgentLine({ ask }: { ask: Ask }) {
 	if (ask.at === 'failed') return <p class="notice danger" role="alert">{ask.why}</p>;
 	const task = ask.at === 'sending' ? null : <a href={`#/box/${encodeURIComponent(ask.box)}`}>Open the task</a>;
 	const said =
-		ask.at === 'answered'
-			? ask.note
-			: ask.at === 'waiting' && ask.wait
-				? `The agent is starting: ${ask.wait}`
-				: 'The agent is reading the rules…';
+		ask.at === 'answered' ? ask.note : 'The agent is reading the rules…';
 	return (
 		<p class="rules-agent" role="status" aria-busy={ask.at !== 'answered'}>
 			<span class="rules-mark" aria-hidden="true">◆</span>
