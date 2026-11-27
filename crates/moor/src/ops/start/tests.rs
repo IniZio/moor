@@ -31,6 +31,7 @@ mod clone_link;
 mod clone_proxy;
 mod clone_retry;
 mod clone_timing;
+mod contract;
 mod dead_agent;
 mod dotfiles;
 mod events;
@@ -184,6 +185,7 @@ fn req(name: &str) -> StartReq {
         also: None,
         identity: None,
         task: None,
+        run: false,
     }
 }
 

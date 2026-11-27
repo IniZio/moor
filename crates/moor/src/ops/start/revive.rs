@@ -154,6 +154,7 @@ fn revive(
         also: None,
         identity: None,
         task: None,
+        run: false,
     };
     let settings = || settings_of(cx, row, &Flags::default());
     let view = match ended {
@@ -227,6 +228,7 @@ fn relaunch_after_retry(
         also: None,
         identity: None,
         task: None,
+        run: false,
     };
     let settings = || settings_of(cx, &row, &Flags::default());
     let view = launch::run(cx, store, &req, id, None, &settings)?;

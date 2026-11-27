@@ -1,8 +1,10 @@
-//! The brief the agent keeps as standing instructions: how the Box works.
+//! The brief the agent keeps as standing instructions: moor's contract for its situation, then
+//! the facts of its Box. An agent place still reads its own text until its slice moves it.
 
 use std::fmt::Write;
 
-use moor_core::seam::engine::HeldRepo;
+use moor_core::contract::{Brief, Contract, Situation, SkillEntry, ARTIFACTS_DIR, REPORTS_DIR};
+use moor_core::seam::engine::{HeldRepo, RunLaunch};
 use moor_core::shape::Shape;
 
 mod repos;
@@ -26,21 +28,79 @@ pub(super) struct BriefInput<'a> {
     /// Whether the Box is an agent place, which holds no checkout and takes its repos from each
     /// task's first message.
     pub(super) place: bool,
+    /// The contract a work Box reads.
+    pub(super) contract: &'a Contract,
+    /// The run this launch serves; none for a task's Box.
+    pub(super) run: Option<&'a RunLaunch>,
+    /// Whether the agent has the moor MCP server, so its tools are listed.
+    pub(super) moor_tools: bool,
+    /// The built-in skills written into the Box for this launch.
+    pub(super) skills: &'a [SkillEntry],
+}
+
+/// The situations of a work Box's launch.
+pub(super) const fn situations(run: bool) -> &'static [Situation] {
+    if run {
+        &[Situation::Every, Situation::Box, Situation::Run]
+    } else {
+        &[Situation::Every, Situation::Box]
+    }
 }
 
 /// The brief text for a Box.
 pub(super) fn render(b: &BriefInput) -> String {
+    if b.place {
+        return place(b);
+    }
+    let mut out = Brief {
+        contract: b.contract,
+        situations: situations(b.run.is_some()),
+        moor_tools: b.moor_tools,
+        skills: b.skills,
+    }
+    .render();
+    facts(b, &mut out);
+    out
+}
+
+/// The facts of a work Box, after the contract.
+fn facts(b: &BriefInput, out: &mut String) {
+    let (name, branch) = (b.name, b.branch);
+    _ = write!(out, "# Box {name}\n\n");
+    if let Some(i) = b.issue {
+        _ = write!(out, "Issue: {i}\n\n");
+    }
+    project_facts(b, out);
+    _ = write!(
+        out,
+        "## This Box\n\n\
+         - The checkout is on branch `{branch}`. Its push line: \
+         `git push origin HEAD:refs/heads/{branch}`.\n\
+         - The checkout is a partial clone with full history. git fetches file contents through \
+         moor's Proxy when a command first needs them.\n\
+         - The artifacts folder is `{ARTIFACTS_DIR}/` and the reports folder is \
+         `{REPORTS_DIR}/`, both in your working directory.\n"
+    );
+    if let Some(link) = b.run.and_then(|r| r.link.as_deref()) {
+        _ = writeln!(out, "- This run's link: {link}");
+    }
+    out.push('\n');
+    repos::section(b.repos, branch, out);
+    if let Some(n) = b.setup_exit {
+        setup_failed(n, out);
+    }
+    out.push_str(GH_RECIPE);
+}
+
+/// An agent place's brief.
+fn place(b: &BriefInput) -> String {
     let name = b.name;
     let mut out = format!("# Box {name}\n\n");
     if let Some(i) = b.issue {
         _ = write!(out, "Issue: {i}\n\n");
     }
     project_facts(b, &mut out);
-    if b.place {
-        out.push_str(PLACE);
-    } else {
-        work(b, &mut out);
-    }
+    out.push_str(PLACE);
     out.push_str(
         "Reports are how you show work to a human: a spec, a checkpoint, a result. \
          Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
@@ -49,11 +109,8 @@ pub(super) fn render(b: &BriefInput) -> String {
          your final message. A Report never means the Box is finished; keep working \
          until the work is done, and do not stop after reporting.\n\n",
     );
-    if !b.place {
-        out.push_str(PUBLISH);
-        out.push_str(ATTACH);
-    }
-    out.push_str(GH_INSTALL);
+    out.push_str(GH_RECIPE);
+    out.push_str(GH_PLACE);
     out
 }
 
@@ -83,52 +140,6 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     You may receive follow-up messages (steers) typed into this session.\n\n\
     Decide on your own when you reasonably can, and ask a question only when the choice is \
     the owner's.\n\n";
-
-/// How a work Box works: its checkout, its branch and its repos.
-fn work(b: &BriefInput, out: &mut String) {
-    let branch = b.branch;
-    _ = write!(
-        out,
-        "You are running inside the machine, in the project working directory. Run builds, \
-         tests and project tooling directly here.\n\n\
-         Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
-         `sudo -n` may work here: test it before you say you lack access, and use it when the \
-         project's tools need it. Anything later Boxes also need belongs in the repo's setup \
-         commands. The network is open. When HTTPS_PROXY is set, it is a local proxy \
-         that sends only the hosts that need moor's credentials through the moor Proxy and \
-         every other host direct; do not unset or bypass it. GitHub access works for this Box's \
-         repos through git, and through gh when gh is on the PATH. Requests outside what the proxy rules allow go \
-         out without credentials, so expect 401 or 404; the owner can add a rule. \
-         Write only in the working directory, your own tool state and the tools you install. \
-         If a tool the work needs is missing, install it, then say which tool it was. \
-         Do not guess paths. Before you tell the person a tool or program is missing, check for \
-         it (for example `command -v <name>`, or the desktop's applications) and say what \
-         you checked.\n\n\
-         The checkout is on branch `{branch}`. Commit your work with git, following the repo's \
-         commit-msg hook and conventions. Push with \
-         `git push origin HEAD:refs/heads/{branch}` when the repo's push guard \
-         allows it, not after each commit. If `git remote get-url origin` fails, commit \
-         only, do not push, and say so. The checkout is a partial clone with full history: \
-         git fetches file contents through the proxy when a command first needs them. \
-         Push to the branch the first prompt names, if it names one, \
-         else to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
-         commits. When you opened a pull request, end your final message with its URL.\n\n\
-         You may receive follow-up messages (steers) typed into this session.\n\n\
-         Decide on your own when you reasonably can, and ask a question only when the \
-         choice is the owner's.\n\n"
-    );
-    repos::section(b.repos, branch, out);
-    if let Some(n) = b.setup_exit {
-        setup_failed(n, out);
-    }
-}
-
-/// How to show a human a file.
-const PUBLISH: &str = "To show a human a file (a screenshot, a recording, a log), copy it into \
-    `.moor/artifacts/` in your working directory, using a plain file name with its extension. \
-    Do not commit it. Writing a file again with the same name adds a new version. It is \
-    collected while you work, within about 30 seconds of the file being complete, and again \
-    when you finish your turn. Name the files you published in your final message.\n\n";
 
 /// What the agent does about a failed setup.
 fn setup_failed(exit: i32, out: &mut String) {
@@ -160,17 +171,8 @@ fn project_facts(b: &BriefInput, out: &mut String) {
     }
 }
 
-/// How to open a pull request and show artifacts on it; the limits are gh's own.
-const ATTACH: &str = "When gh is on the PATH, attach a published file to a pull request with \
-    `gh pr create --attach .moor/artifacts/<name>` or \
-    `gh pr edit <number> --attach .moor/artifacts/<name>`. Write \
-    `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces \
-    it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and \
-    webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 \
-    files. An upload cannot be deleted.\n\n";
-
 /// How to get gh when the Box image lacks it: a pinned release, checked against its sha256.
-const GH_INSTALL: &str = r#"When `command -v gh` finds nothing, install gh into `~/.local/bin` with this, then run gh as usual:
+const GH_RECIPE: &str = r#"When `command -v gh` finds nothing, install gh into `~/.local/bin` with this, then run gh as usual:
 
 ```sh
 v=2.105.0; f=gh_${v}_linux_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz
@@ -182,8 +184,10 @@ printf '%s\n' \
   && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
 ```
 
-gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. Reads of any repo carry the credential; writes are limited to the repos this Box or task names. A 401 or 404 on a write (a push, a pull request, a comment) to any other repo means the Proxy withheld the credential. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.
 "#;
+
+/// How gh reaches GitHub from an agent place, and what the Proxy withholds there.
+const GH_PLACE: &str = "gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. Reads of any repo carry the credential; writes are limited to the repos this Box or task names. A 401 or 404 on a write (a push, a pull request, a comment) to any other repo means the Proxy withheld the credential. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.\n";
 
 #[cfg(test)]
 mod tests;

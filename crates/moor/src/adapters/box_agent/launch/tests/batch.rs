@@ -40,6 +40,7 @@ fn req(proxy: bool) -> LaunchReq {
     let name = BoxName::parse_allow_bare("t1").unwrap();
     LaunchReq {
         place: false,
+        run: None,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),

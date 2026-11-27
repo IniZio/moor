@@ -1,6 +1,8 @@
 //! Tests for the brief.
 
 use super::*;
+use moor_core::contract::SkillEntry;
+use moor_core::seam::engine::RunLaunch;
 
 fn input(issue: Option<&str>) -> BriefInput<'_> {
     BriefInput {
@@ -12,6 +14,10 @@ fn input(issue: Option<&str>) -> BriefInput<'_> {
         shape: None,
         repos: &[],
         place: false,
+        contract: moor_core::contract::contract().unwrap(),
+        run: None,
+        moor_tools: true,
+        skills: &[],
     }
 }
 
@@ -146,47 +152,9 @@ fn a_place_brief_claims_no_401_on_reads_of_other_repos() {
 }
 
 #[test]
-fn names_no_prompt_or_goal_line() {
-    let out = render(&input(None));
-    assert!(
-        out.starts_with("# Box t1\n\nYou are running inside the machine"),
-        "{out}"
-    );
-    assert!(!out.contains("Goal:") && !out.contains("Prompt:"), "{out}");
-}
-
-#[test]
 fn names_the_issue() {
     let out = render(&input(Some("x is broken")));
     assert!(out.contains("# Box t1\n\nIssue: x is broken\n\n"));
-}
-
-#[test]
-fn states_the_box_contract() {
-    let out = render(&input(None));
-    assert!(out.contains("git push origin HEAD:refs/heads/moor/t1"));
-    assert!(out.contains("on branch `moor/t1`"));
-    assert!(out.contains("partial clone"));
-    assert!(!out.contains("moor HEAD"), "{out}");
-    assert!(out.contains("Do not add Co-Authored-By trailers"));
-    assert!(out.contains("follow-up messages (steers)"));
-}
-
-#[test]
-fn asks_for_the_pull_request_url_at_the_end_of_the_final_message() {
-    let out = render(&input(None));
-    assert!(
-        out.contains("When you opened a pull request, end your final message with its URL."),
-        "{out}"
-    );
-}
-
-#[test]
-fn asks_only_when_the_choice_is_the_owners() {
-    let out = render(&input(None));
-    assert!(out.contains(
-        "Decide on your own when you reasonably can, and ask a question only when the choice is the owner's.\n\n"
-    ));
 }
 
 #[test]
@@ -194,73 +162,6 @@ fn names_no_moor_remote_and_no_shallow_history() {
     let out = render(&input(None));
     assert!(!out.contains("shallow"), "{out}");
     assert!(!out.contains(" moor`"), "{out}");
-}
-
-#[test]
-fn says_how_to_attach_artifacts_to_a_pull_request_right_after_publishing() {
-    let attach = "When gh is on the PATH, attach a published file to a pull request with `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted.\n\n";
-    let out = render(&input(None));
-    assert!(
-        out.contains(&format!("in your final message.\n\n{attach}")),
-        "{out}"
-    );
-}
-
-#[test]
-fn says_how_to_install_a_pinned_gh_that_signs_in_through_the_proxy() {
-    let out = render(&input(None));
-    let recipe = out
-        .split("```sh\n")
-        .nth(1)
-        .and_then(|s| s.split("```").next())
-        .expect("an sh block");
-    let check = std::process::Command::new("bash")
-        .args(["-n", "-c", recipe])
-        .status()
-        .expect("bash");
-    assert!(check.success(), "{recipe}");
-    for arch in ["amd64", "arm64"] {
-        assert!(
-            recipe.contains(&format!("  gh_2.105.0_linux_{arch}.tar.gz'")),
-            "{recipe}"
-        );
-    }
-    assert!(recipe.contains("sha256sum -c"), "{recipe}");
-    assert!(out.contains("Do not run `gh auth login`"), "{out}");
-}
-
-#[test]
-fn says_how_to_publish_artifacts() {
-    let out = render(&input(None));
-    assert!(out.contains(".moor/artifacts/"));
-    assert!(out.contains("Do not commit it"));
-    assert!(out.contains("adds a new version"));
-    assert!(out.contains("when you finish your turn"));
-    assert!(out.contains("Name the files you published in your final message"));
-}
-
-#[test]
-fn states_limits_and_points_missing_tools_at_setup() {
-    let out = render(&input(None));
-    assert!(out.contains(
-        "`sudo -n` may work here: test it before you say you lack access, and use it when \
-         the project's tools need it. Anything later Boxes also need belongs in the repo's \
-         setup commands."
-    ));
-    assert!(!out.contains("Do not use sudo"));
-    assert!(!out.contains("sandbox"));
-    assert!(out.contains("The network is open."));
-    assert!(out.contains("When HTTPS_PROXY is set"));
-    assert!(out.contains("Write only in the working directory"));
-    assert!(out.contains("expect 401 or 404"));
-    assert!(out.contains("Do not guess paths."));
-}
-
-#[test]
-fn tells_the_agent_to_install_a_missing_tool() {
-    let out = render(&input(None));
-    assert!(out.contains("If a tool the work needs is missing, install it"));
-    assert!(!out.contains("do not try to install"));
 }
 
 #[test]
@@ -272,20 +173,6 @@ fn setup_failure_is_named_only_when_it_failed() {
     assert!(out.contains("Setup failed (exit 3)"));
     assert!(out.contains(".moor/setup.log"));
     assert!(out.contains(".moor/reports/<kind>.md"));
-}
-
-#[test]
-fn repo_notes_follow_the_issue_under_their_own_heading_verbatim() {
-    let mut b = input(Some("x is broken"));
-    b.repo_notes = Some("Start the emulator:\n  make emu\n");
-    let out = render(&b);
-    let issue = out.find("Issue: x is broken").unwrap();
-    let heading =
-        "## This project's Box\n\nFrom the repo's config:\n\nStart the emulator:\n  make emu\n\n";
-    assert!(out.contains(heading), "{out}");
-    let head = out.find(heading).unwrap();
-    assert!(issue < head, "{out}");
-    assert!(head < out.find("You are running inside the machine").unwrap());
 }
 
 #[test]
@@ -315,19 +202,6 @@ fn states_cpus_and_memory_when_known() {
 }
 
 #[test]
-fn says_to_check_before_calling_a_tool_missing() {
-    let out = render(&input(None));
-    assert!(
-        out.contains(
-            "Before you tell the person a tool or program is missing, check for it \
-             (for example `command -v <name>`, or the desktop's applications) and say what \
-             you checked."
-        ),
-        "{out}"
-    );
-}
-
-#[test]
 fn names_no_host_paths_moor_commands_or_secrets() {
     let mut b = input(Some("i"));
     b.setup_exit = Some(1);
@@ -346,4 +220,170 @@ fn a_place_brief_offers_a_work_box_without_setup_and_a_work_brief_does_not() {
     });
     assert!(place.contains("pass `no_setup` to `start_box`"), "{place}");
     assert!(!render(&input(None)).contains("no_setup"));
+}
+
+/// Sentences of the task and run Box texts the contract replaced, one from each deleted part.
+const OLD_TEXT: &[&str] = &[
+    "You are running inside the machine",
+    "Report the command's real exit code",
+    "`sudo -n` may work here",
+    "If a tool the work needs is missing, install it",
+    "Before you tell the person a tool or program is missing",
+    "Do not add Co-Authored-By trailers",
+    "When you opened a pull request, end your final message with its URL.",
+    "You may receive follow-up messages (steers)",
+    "Decide on your own when you reasonably can",
+    "Reports are how you show work to a human",
+    "To show a human a file",
+    "attach a published file to a pull request",
+    "Do not run `gh auth login`",
+    "do not retry or look for a way around it",
+    "After each write outside moor, such as a pull request comment",
+    "Report only the gate that is in hand",
+    "load it first if your tools",
+    "moor tells you when each gate is in hand",
+    "How the run ends is not yours to say",
+    "Never fake evidence or a result",
+    "If you find there is nothing to do",
+    "Or call it with result fail",
+];
+
+fn run_gates() -> moor_core::gate::Gates {
+    let doc: moor_core::gate::GatesDoc = serde_json::from_value(serde_json::json!({
+        "gates": [{"name": "proof", "evidence": ["proof.md"], "checks": ["true"]}],
+        "outcomes": [
+            {"name": "nothing to do", "checks": ["true"], "anytime": true},
+            {"name": "done", "checks": ["true"]}
+        ]
+    }))
+    .unwrap();
+    moor_core::gate::Gates::parse(&doc.gates, &doc.outcomes).unwrap()
+}
+
+#[test]
+fn no_old_task_or_run_box_text_is_reachable() {
+    let run = RunLaunch {
+        link: Some("https://moor.example/#/runs/7".to_owned()),
+    };
+    let gates = run_gates();
+    let proof = gates.get(0).unwrap();
+    let texts = [
+        render(&input(Some("i"))),
+        render(&BriefInput {
+            run: Some(&run),
+            setup_exit: Some(1),
+            ..input(None)
+        }),
+        gates.first_message("Collect evidence."),
+        proof.remind_steer(),
+        gates.none_held_steer(&[]),
+    ];
+    for text in &texts {
+        for old in OLD_TEXT {
+            assert!(!text.contains(old), "{old:?} is still said:\n{text}");
+        }
+    }
+}
+
+#[test]
+fn a_task_box_reads_the_every_and_box_sections_then_its_facts() {
+    let out = render(&input(Some("x is broken")));
+    assert!(
+        out.starts_with("# moor agent contract\n\nVersion 1\n\n"),
+        "{out}"
+    );
+    assert!(out.contains("## every\n\n- [secrets]") && out.contains("## box\n\n- [branch]"));
+    assert!(
+        !out.contains("## run") && !out.contains("report_step"),
+        "{out}"
+    );
+    let facts = out.find("# Box t1\n\nIssue: x is broken\n\n").unwrap();
+    assert!(out.find("## box").unwrap() < facts, "{out}");
+}
+
+#[test]
+fn a_run_box_adds_the_run_section_and_its_link_to_the_facts() {
+    let run = RunLaunch {
+        link: Some("https://moor.example/#/runs/7".to_owned()),
+    };
+    let out = render(&BriefInput {
+        run: Some(&run),
+        ..input(None)
+    });
+    assert!(out.contains("## run\n\n- [unattended]"), "{out}");
+    assert!(out.contains("report_output, report_step"), "{out}");
+    assert!(
+        out.contains("- This run's link: https://moor.example/#/runs/7\n"),
+        "{out}"
+    );
+    let unlinked = RunLaunch { link: None };
+    let out = render(&BriefInput {
+        run: Some(&unlinked),
+        ..input(None)
+    });
+    assert!(!out.contains("run's link:"), "{out}");
+}
+
+#[test]
+fn the_facts_name_the_branch_its_push_line_and_the_folders() {
+    let out = render(&input(None));
+    let facts = out.split("# Box t1").nth(1).unwrap();
+    for fact in [
+        "on branch `moor/t1`",
+        "`git push origin HEAD:refs/heads/moor/t1`",
+        "partial clone",
+        "artifacts folder is `.moor/artifacts/`",
+        "reports folder is `.moor/reports/`",
+    ] {
+        assert!(facts.contains(fact), "{fact} in {facts}");
+    }
+}
+
+#[test]
+fn repo_notes_are_facts_after_the_contract_and_the_issue() {
+    let mut b = input(Some("x is broken"));
+    b.repo_notes = Some("Start the emulator:\n  make emu\n");
+    let out = render(&b);
+    let notes =
+        "## This project's Box\n\nFrom the repo's config:\n\nStart the emulator:\n  make emu\n\n";
+    let at = out.find(notes).unwrap();
+    assert!(out.find("Issue: x is broken").unwrap() < at, "{out}");
+}
+
+#[test]
+fn the_skills_and_tools_are_listed_only_when_the_launch_has_them() {
+    let skills = [SkillEntry {
+        name: "moor-attach-files",
+        description: "Show a file on a pull request.",
+        path: "/box/cred/skills/moor-attach-files/SKILL.md".to_owned(),
+    }];
+    let out = render(&BriefInput {
+        skills: &skills,
+        ..input(None)
+    });
+    assert!(out.contains("- moor-attach-files: Show a file on a pull request. Its file: `/box/cred/skills/moor-attach-files/SKILL.md`"), "{out}");
+    let bare = render(&BriefInput {
+        moor_tools: false,
+        ..input(None)
+    });
+    assert!(
+        !bare.contains("## moor tools") && !bare.contains("## moor skills"),
+        "{bare}"
+    );
+}
+
+#[test]
+fn a_box_without_gh_gets_the_pinned_recipe_as_a_fact() {
+    let out = render(&input(None));
+    let recipe = out
+        .split("```sh\n")
+        .nth(1)
+        .and_then(|s| s.split("```").next())
+        .unwrap();
+    let check = std::process::Command::new("bash")
+        .args(["-n", "-c", recipe])
+        .status()
+        .unwrap();
+    assert!(check.success(), "{recipe}");
+    assert!(recipe.contains("sha256sum -c"), "{recipe}");
 }

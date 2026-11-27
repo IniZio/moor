@@ -64,6 +64,7 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         also,
         identity: None,
         task: None,
+        run: false,
     }))
 }
 

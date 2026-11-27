@@ -89,6 +89,7 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
         also: None,
         identity: None,
         task: None,
+        run: false,
     });
     let grant = authorize(&setup, &caller, None, &start).unwrap();
     assert_eq!(grant.pins.get(&name("a")), Some(&mine));

@@ -88,6 +88,7 @@ fn start_with_all_flags() {
             also: None,
             identity: None,
             task: None,
+            run: false,
         })
     );
 }

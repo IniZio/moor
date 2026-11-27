@@ -367,6 +367,10 @@ pub struct StartReq {
     /// a place.
     #[serde(skip)]
     pub task: Option<BoxId>,
+    /// Whether a workflow run starts this Box. Only the run's own start sets it, in process, so
+    /// the first launch reads the run's part of the contract before the run names its Box.
+    #[serde(skip)]
+    pub run: bool,
 }
 
 #[cfg(test)]

@@ -202,6 +202,7 @@ fn start_owner_box(r: &Rig) -> BoxId {
             parent: None,
             identity: None,
             task: None,
+            run: false,
         },
     )
     .map(|v| BoxId::new(v.boxed.id))
@@ -441,6 +442,7 @@ fn the_keep_count_starts_again_after_a_run_that_did_not_keep_the_box() {
         parent: None,
         identity: None,
         task: None,
+        run: false,
     };
     crate::ops::start::run(&r.cx, &req).unwrap();
     crate::ops::workflow::resolve_interrupted(&r.cx);

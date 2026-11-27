@@ -69,6 +69,13 @@ pub struct HeldRepo {
     pub dir: String,
 }
 
+/// What a run's launch knows of its run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunLaunch {
+    /// The run page's address, when the controller knows the portal's origin.
+    pub link: Option<String>,
+}
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -111,6 +118,8 @@ pub struct LaunchReq {
     /// Whether the Box is an agent place, which holds no checkout and takes each task's repos
     /// from its first message.
     pub place: bool,
+    /// The run this launch serves; none for a task's Box.
+    pub run: Option<RunLaunch>,
 }
 
 impl LaunchReq {

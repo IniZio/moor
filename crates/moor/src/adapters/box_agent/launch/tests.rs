@@ -42,6 +42,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 fn req() -> LaunchReq {
     LaunchReq {
         place: false,
+        run: None,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
@@ -95,7 +96,8 @@ fn delivers_the_brief_under_the_box_home() {
     let (handle, path, bytes, mode) = d.puts().into_iter().next().unwrap();
     assert_eq!(handle, BoxHandle::new("box-1"));
     assert_eq!(path.as_str(), format!("{CRED}/brief.md"));
-    assert!(String::from_utf8_lossy(&bytes).starts_with("# Box t1\n"));
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(text.starts_with("# moor agent contract\n") && text.contains("\n# Box t1\n"));
     assert_eq!(mode, 0o600);
 }
 
@@ -132,6 +134,7 @@ fn delivers_the_hook_writer_files() {
         paths,
         [
             format!("{CRED}/brief.md"),
+            format!("{CRED}/skills/moor-attach-files/SKILL.md"),
             "/work/box-1/.moor/hook.sh".to_owned(),
             "/work/box-1/.moor/hooks.json".to_owned(),
             format!("{CRED}/agent.sh"),
@@ -355,6 +358,7 @@ fn proxy_addr() -> ProxyAddr {
 fn req_with_proxy() -> LaunchReq {
     LaunchReq {
         place: false,
+        run: None,
         profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(proxy_addr())),
@@ -381,6 +385,7 @@ fn a_proxy_launch_stages_only_the_brief_and_the_agent_script() {
         staged,
         [
             (format!("{CRED}/brief.md"), 0o600),
+            (format!("{CRED}/skills/moor-attach-files/SKILL.md"), 0o600),
             (format!("{CRED}/agent.sh"), 0o600)
         ]
     );

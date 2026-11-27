@@ -322,6 +322,7 @@ fn start_box(cx: &Cx, store: &Store, claimed: &StartJob) -> RunState {
         prompt: Some(job.prompt.clone()),
         repo: Some(job.repo.clone()),
         also: Some(job.also.clone()),
+        run: true,
         ..StartReq::named(job.name.clone())
     };
     match start::run(cx, &req) {

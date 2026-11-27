@@ -92,6 +92,7 @@ impl From<StartArgs> for StartReq {
             also: (!also.is_empty()).then_some(also),
             identity: None,
             task: None,
+            run: false,
         }
     }
 }

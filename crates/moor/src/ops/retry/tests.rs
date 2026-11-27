@@ -91,6 +91,7 @@ fn start_req() -> StartReq {
         also: None,
         identity: None,
         task: None,
+        run: false,
     }
 }
 
@@ -116,6 +117,7 @@ fn started_with(w: &World, prompt: Option<&str>) -> BoxId {
         also: None,
         identity: None,
         task: None,
+        run: false,
     };
     let _ = crate::ops::start::run(&w.cx, &req);
     w.cx.store()
