@@ -34,7 +34,7 @@ pub(super) fn situate(
     Ok(())
 }
 
-/// Records the contract a fresh work Box session read.
+/// Records the contract a fresh session of a work Box or an agent place read.
 ///
 /// # Errors
 /// A store failure.

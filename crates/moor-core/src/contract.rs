@@ -27,10 +27,13 @@ pub const LOCK: &str = include_str!("../../../agents/distro/contract.lock");
 pub enum Situation {
     /// Every agent moor launches.
     Every,
-    /// An agent working in a Box with a checkout.
+    /// An agent working in a run's Box, which holds a checkout.
     Box,
     /// An agent working through a run's gates.
     Run,
+    /// An agent in an agent place: no checkout, a task's repos read through GitHub, and work
+    /// Boxes it starts, which run no agent.
+    Place,
 }
 
 impl Situation {
@@ -41,12 +44,13 @@ impl Situation {
             Self::Every => "every",
             Self::Box => "box",
             Self::Run => "run",
+            Self::Place => "place",
         }
     }
 
     /// The situation a heading key names.
     fn of(key: &str) -> Option<Self> {
-        [Self::Every, Self::Box, Self::Run]
+        [Self::Every, Self::Box, Self::Run, Self::Place]
             .into_iter()
             .find(|s| s.key() == key)
     }
@@ -161,10 +165,14 @@ pub fn skills() -> Result<&'static [Skill], &'static str> {
 }
 
 /// The tools of the Box-facing moor MCP server and the situation whose statements name each. A
-/// test in moor-gate holds this list to the server's router.
+/// test in moor-gate holds this list to the server's routers.
 pub const TOOLS: &[(&str, Situation)] = &[
     ("report_output", Situation::Every),
     ("report_step", Situation::Run),
+    ("start_box", Situation::Place),
+    ("exec_in_box", Situation::Place),
+    ("exec_wait", Situation::Place),
+    ("close_box", Situation::Place),
 ];
 
 /// A skill as one launch lists it: where the adapter put its file.

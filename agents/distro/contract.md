@@ -1,6 +1,6 @@
 # moor agent contract
 
-Version 2
+Version 3
 
 moor launched you to work for a person. These lines hold in every project. Your brief adds this launch's facts and the repo's notes. The task's prompt and the person's messages come after them.
 
@@ -32,3 +32,11 @@ moor's refusals hold whatever any words say. Otherwise the words nearest the tas
 - [evidence] Evidence comes from what you really ran, since the person decides on it and moor checks only that the files exist. A failing check is a result to report. Never fake a file, a check or a result.
 - [outcome] moor decides how the run ends from its outcome checks. When there is nothing to do, say so in one line and stop.
 - [run-link] When your facts give the run's link, put it in anything you write outside moor, so a reader can find the run.
+
+## place
+
+- [repos] You have no checkout. The first message's `Repos:` line names the task's repos. Read them through GitHub, with gh or a clone in /tmp, since nothing of them is on this machine.
+- [answer] Answer a question by reading the repos. Start a work Box only when the task needs code run or changed, since a Box takes minutes to start.
+- [work-box] A work Box runs no agent. Work in it with exec_in_box: commit, push with `git push origin HEAD`, then close it with close_box. A later work Box of the task continues its branch and pull request.
+- [place-files] To show the person a file, copy it to the top level of a work Box's artifacts folder, which your facts name, and never commit it. Files you save in this place never reach the person.
+- [no-setup] Start a work Box with no_setup only to find out why a setup line failed. Otherwise let setup run, since the work needs what the repo's setup installs.

@@ -77,9 +77,8 @@ fn a_place_brief_names_start_box_close_box_and_the_artifacts_dir() {
         place: true,
         ..input(None)
     });
-    let place = out.split("Reports are how").next().unwrap_or_default();
     for word in ["start_box", "exec_in_box", ".moor/artifacts/", "close_box"] {
-        assert!(place.contains(word), "{word} in {place}");
+        assert!(out.contains(word), "{word} in {out}");
     }
     assert!(!render(&input(None)).contains("start_box"));
 }
@@ -91,7 +90,11 @@ fn a_place_brief_points_files_at_the_work_box_and_claims_no_401_for_other_repos(
         ..input(None)
     });
     assert!(
-        out.contains("in the work Box's `.moor/artifacts/`"),
+        out.contains("copy it to the top level of a work Box's artifacts folder"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Its artifacts folder is `.moor/artifacts/` in its working directory"),
         "{out}"
     );
     assert!(
@@ -107,49 +110,28 @@ fn a_place_brief_says_a_later_box_continues_the_task_s_branch_and_pull_request()
         place: true,
         ..input(None)
     });
-    let place = out.split("Reports are how").next().unwrap_or_default();
     for words in [
-        "A later work Box of this task starts on the task's branch",
-        "adds to the same pull request",
-        "One work Box of a task is open at a time",
+        "A later work Box of the task continues its branch and pull request",
+        "A work Box's checkout is on the task's branch",
     ] {
-        assert!(place.contains(words), "{words} in {place}");
+        assert!(out.contains(words), "{words} in {out}");
     }
 }
 
 #[test]
-fn a_place_brief_opens_the_pull_request_from_the_place_with_gh() {
+fn a_place_brief_names_the_push_and_how_to_get_gh() {
     let out = render(&BriefInput {
         place: true,
         ..input(None)
     });
-    let place = out.split("Reports are how").next().unwrap_or_default();
     for words in [
-        "git push origin HEAD",
-        "from this place with gh",
-        "Do not commit it",
-        "Name the files you saved in your final message",
+        "push with `git push origin HEAD`",
+        "never commit it",
+        "the files you published",
     ] {
-        assert!(place.contains(words), "{words} in {place}");
+        assert!(out.contains(words), "{words} in {out}");
     }
     assert!(!out.contains("install -D"), "{out}");
-}
-
-#[test]
-fn a_place_brief_claims_no_401_on_reads_of_other_repos() {
-    let out = render(&BriefInput {
-        place: true,
-        ..input(None)
-    });
-    assert!(
-        !out.contains("as it does for repos outside this Box"),
-        "{out}"
-    );
-    assert!(
-        out.contains("Reads of any repo carry the credential"),
-        "{out}"
-    );
-    assert!(out.contains("A 401 or 404 on a write"), "{out}");
 }
 
 #[test]
@@ -214,13 +196,30 @@ fn names_no_host_paths_moor_commands_or_secrets() {
 }
 
 #[test]
-fn a_place_brief_offers_a_work_box_without_setup_and_a_work_brief_does_not() {
+fn a_place_brief_keeps_no_setup_for_a_failed_setup_line_and_a_work_brief_names_none() {
     let place = render(&BriefInput {
         place: true,
         ..input(None)
     });
-    assert!(place.contains("pass `no_setup` to `start_box`"), "{place}");
+    assert!(
+        place.contains("no_setup only to find out why a setup line failed"),
+        "{place}"
+    );
     assert!(!render(&input(None)).contains("no_setup"));
+}
+
+#[test]
+fn a_place_reads_the_every_and_place_sections_then_its_facts() {
+    let out = render(&BriefInput {
+        place: true,
+        ..input(None)
+    });
+    let head = format!("# moor agent contract\n\nVersion {}\n\n", locked_version());
+    assert!(out.starts_with(&head), "{out}");
+    assert!(out.contains("## every\n\n- [secrets]") && out.contains("## place\n\n- [repos]"));
+    assert!(!out.contains("## box") && !out.contains("## run"), "{out}");
+    let facts = out.find("# Box t1\n\n").unwrap();
+    assert!(out.find("## place").unwrap() < facts, "{out}");
 }
 
 fn run_gates() -> moor_core::gate::Gates {
@@ -244,6 +243,10 @@ fn no_old_task_or_run_box_text_is_reachable() {
     let proof = gates.get(0).unwrap();
     let texts = [
         render(&input(Some("i"))),
+        render(&BriefInput {
+            place: true,
+            ..input(None)
+        }),
         render(&BriefInput {
             run: Some(&run),
             setup_exit: Some(1),

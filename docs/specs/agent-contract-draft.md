@@ -39,6 +39,7 @@ moor's refusals hold whatever any words say. Otherwise the words nearest the tas
 - [answer] Answer a question in your final message. Start a work Box only when code must run or change, since a Box takes minutes to start.
 - [work-box] A work Box runs no agent. Run commands in it with exec_in_box, commit and push there, then close it. A later work Box of the task continues the same branch.
 - [place-files] Put files for the person in the work Box's artifacts folder, since moor keeps them on the task from there.
+- [no-setup] Start a work Box with no_setup only to find out why a setup line failed. Otherwise let setup run, since the work needs what the repo's setup installs.
 
 ## reader
 

@@ -10,8 +10,8 @@ use super::BoxTools;
 const NOT_YET_IN_THE_CONTRACT: &[&str] = &["hand_in_reading"];
 
 #[test]
-fn the_contract_lists_every_work_box_tool_the_router_serves() {
-    let served: BTreeSet<String> = BoxTools::tool_router()
+fn the_contract_lists_every_tool_the_routers_serve() {
+    let served: BTreeSet<String> = (BoxTools::tool_router() + BoxTools::place_router())
         .list_all()
         .into_iter()
         .map(|t| t.name.to_string())

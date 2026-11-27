@@ -294,7 +294,7 @@ fn record_session(
         session.id
     };
     store.begin_launch_with(id, &sref, launch.prompt.text(), restored)?;
-    if launch.resume.is_none() && !launch.place {
+    if launch.resume.is_none() {
         contract::given(store, id)?;
     }
     if row.launch_failure.is_some() {

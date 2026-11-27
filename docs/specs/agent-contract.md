@@ -45,7 +45,7 @@ Impossible:
 
 ### Working in a Box
 
-The agent runs inside a Box with a checkout. A one-off task starts it, and a run uses the same Box.
+The agent runs inside a run's Box, which holds a checkout. A one-off task no longer starts one. Its agent works in an agent place and uses work Boxes, as [Working from an agent place](#working-from-an-agent-place) says. A work Box started from a place runs no agent.
 
 Cannot know:
 
@@ -82,9 +82,9 @@ Impossible:
 
 Facts, not rules. The run's link when the controller knows its portal address. The pull request that fired the run, with its repo, number, head and URL. Each gate's name, evidence and checks.
 
-### Answering outside a Box
+### Working from an agent place
 
-The agent runs in an agent place. The place holds no checkout and takes one task at a time from the Tasks home or the rules page.
+Every task a person starts runs here. moor starts an agent place for each one, from the portal's Tasks home, `ask` over MCP, `moor ask` or the rules page. The place holds no checkout. When the task needs code run, the agent starts work Boxes, and the repo's setup runs as each one starts.
 
 Cannot know:
 
@@ -92,11 +92,13 @@ Cannot know:
 - **P2.** A work Box takes minutes to start, and a question needs none. Guessing, it starts Boxes to answer questions.
 - **P3.** A work Box runs no agent. Work happens in it through `exec_in_box`, and a later work Box continues the task's branch. Guessing, it edits in the place, where nothing is pushed.
 - **P4.** The task keeps files from the work Box's artifacts folder. Guessing, files saved in the place never reach the person.
+- **P5.** A Box without setup lacks what the repo's setup installs. `no_setup` is there to find out why a setup line failed (owner, 2026-11-27). Guessing, it skips setup to start sooner, and the build or tests fail on a missing tool.
 
 Impossible:
 
 - Closing a work Box with unpushed work. `close_box` refuses it.
 - Reaching a Box this task did not start. The place tools refuse it.
+- Two open work Boxes on the task's branch. `start_box` refuses the second.
 
 ### Reading a prompt for moor
 
@@ -170,13 +172,14 @@ Each statement closes one or more gaps above. Enforcement column. **Planned** me
 | `answer` | P2 | None. |
 | `work-box` | P3 | `close_box` refuses unpushed work. |
 | `place-files` | P4 | None. |
+| `no-setup` | P5 | None. |
 | `read-only` | D1 | Planned, a read-only rules set. |
 | `runbook` | D2 | Planned, the runbook version at hand-in. |
 | `intents` | D2 | The hand-in check. |
 | `listen` | O1 | None. |
 | `hands-off` | O2 | None. |
 
-B5 and A1 to A2 are skills, not statements. 27 statements close 31 gaps.
+B5 and A1 to A2 are skills, not statements. 28 statements close 32 gaps.
 
 ### Dropped, with the reason
 
@@ -186,7 +189,6 @@ Each was in an older text. None closes a gap.
 - Report a command's real exit code, and check before saying a tool is missing. Neither is moor's to teach. Every agent needs both anywhere.
 - No co-author trailers. Each harness adapter turns its own attribution off.
 - `sudo -n` may work, and exit 75 means the work place restarts. These are facts of the Box kind, which its driver states.
-- Pass `no_setup` when no build is needed. That is what the input does, so the tool description says it.
 - A run fired by a pull request acts on it. The fact names the pull request, and that suffices.
 
 ### The object
@@ -224,9 +226,8 @@ pub struct Brief<'a> {
 
 | Launch | Situations |
 | --- | --- |
-| A task's Box | Every, Box |
 | A run's Box | Every, Box, Run |
-| An agent place | Every, Place |
+| A task, in its agent place | Every, Place |
 | The reader | Every, Reader |
 | The person's own agent | Operator, as server instructions |
 

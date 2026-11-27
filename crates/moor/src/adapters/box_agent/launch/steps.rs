@@ -62,9 +62,11 @@ impl Plan {
 /// `dir`, with the step that writes it there.
 fn skill_files(dir: &BoxPath, run: bool) -> Result<Vec<(SkillEntry, BoxStep)>, Failure> {
     let all = skills().map_err(|e| fail("brief", &e))?;
-    let listed = all
-        .iter()
-        .filter(|s| s.situations.iter().any(|x| situations(run).contains(x)));
+    let listed = all.iter().filter(|s| {
+        s.situations
+            .iter()
+            .any(|x| situations(false, run).contains(x))
+    });
     let mut out = Vec::new();
     for s in listed {
         let path = BoxPath::under(dir.as_str(), &format!("{}/SKILL.md", s.name))
