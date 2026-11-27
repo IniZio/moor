@@ -4,8 +4,7 @@ use moor_client::Client;
 use moor_core::config::override_text;
 use moor_core::gate::GatesDoc;
 use moor_core::name::{BoxName, ForgeRepo};
-use moor_core::request::{AsReq, AskReq, Request as ControllerRequest, ShowReq, StartReq};
-use moor_core::view::user::WhoamiValue;
+use moor_core::request::{AskReq, Request as ControllerRequest, ShowReq, StartReq};
 use serde_json::Value;
 
 use super::reply::Reply;
@@ -45,7 +44,6 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
         })),
     };
     Ok(ControllerRequest::Start(StartReq {
-        place: false,
         gates,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
@@ -137,19 +135,6 @@ pub(super) fn send_early(
 /// Whether `shown` is a Box whose setup no longer stands failed: a retry took it up.
 fn setup_restarted(shown: &Value) -> bool {
     shown.pointer("/box/lifecycle") != Some(&Value::from("setup_failed"))
-}
-
-/// Whether the controller lists `person` for agent places, so a send of theirs is a question.
-/// A controller that does not say, or cannot be asked, means it is not.
-pub(crate) fn asks(controller: &Client, person: &Person) -> bool {
-    super::act_as(
-        controller,
-        person,
-        ControllerRequest::Whoami(AsReq { identity: None }),
-    )
-    .ok()
-    .and_then(|v| serde_json::from_value::<WhoamiValue>(v).ok())
-    .is_some_and(|who| who.asks)
 }
 
 /// Asks `prompt` about `repos`, the first one the task's own, as `person`: the same request

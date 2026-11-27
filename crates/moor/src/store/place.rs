@@ -1,19 +1,16 @@
 //! What a Box was started as, and the claim of a place, read with the Box.
 
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::inbox::InboxKind;
 use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use moor_schema::tables::{BoxState, Boxes, PlaceClaims};
-use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query, SelectStatement};
+use moor_schema::tables::{Boxes, PlaceClaims};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query, SelectStatement};
 
 use super::db::{Db, DbExt as _, Row};
 use super::init::parsed;
-use super::reads::{query_boxes, SHUT};
 use super::select::{box_at, place_at};
-use super::{load_box, BoxRow, Store, StoreError};
+use super::{Store, StoreError};
 
 /// `q`, a select from `boxes`, with each Box's claim joined; a Box no task has claimed gets nulls.
 pub(super) fn join_claim(q: &mut SelectStatement) -> &mut SelectStatement {
@@ -92,51 +89,6 @@ pub(super) fn kind_from_row(row: &Row<'_>) -> Result<BoxKind, StoreError> {
 }
 
 impl Store {
-    /// What Box `id` was started as; none when no such Box exists. It reads only the kind and the
-    /// claim, for a reader that asks of every event.
-    pub(crate) fn box_kind(&self, id: BoxId) -> Result<Option<BoxKind>, StoreError> {
-        kind_of(&self.reader()?, id)
-    }
-
-    /// `user`'s open places that no task has claimed, oldest first.
-    pub(crate) fn idle_places_of(&self, user: UserId) -> Result<Vec<BoxRow>, StoreError> {
-        let b = |c| (Boxes::Table, c);
-        let filter = Expr::col(b(Boxes::Kind))
-            .eq("place")
-            .and(Expr::col(b(Boxes::User)).eq(user.get()))
-            .and(Expr::col((PlaceClaims::Table, PlaceClaims::Box)).is_null())
-            .and(Expr::col((BoxState::Table, BoxState::State)).is_not_in(SHUT));
-        query_boxes(&self.reader()?, filter, Order::Asc, None)
-    }
-
-    /// Claims place `id` for `user` with `claim` and queues `prompt` for its agent, in one write.
-    /// False, writing nothing, unless the Box is still `user`'s open place that no task has
-    /// claimed: a send that lost the race for it takes another.
-    pub(crate) fn claim_place(
-        &self,
-        id: BoxId,
-        user: UserId,
-        claim: &Claim,
-        prompt: &str,
-    ) -> Result<bool, StoreError> {
-        self.check_write(id);
-        let mut conn = self.writer();
-        let tx = conn.immediate()?;
-        let idle = load_box(&tx, id)?.is_some_and(|row| {
-            row.kind.is_idle_place()
-                && row.user == Some(user)
-                && !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
-        });
-        if !idle || !insert_claim(&tx, id, Some(user), claim)? {
-            return Ok(false);
-        }
-        let sender = InboxKind::Prompt.as_str();
-        super::inbox::insert(&tx, id, (InboxKind::Prompt, prompt, sender), self.now())?;
-        tx.commit()?;
-        drop(conn);
-        Ok(true)
-    }
-
     /// Records that place `id`'s claim was served at `at`; a claim served before keeps its time.
     pub(crate) fn claim_served(&self, id: BoxId, at: i64) -> Result<(), StoreError> {
         self.stamp_claim(id, PlaceClaims::ServedAt, at)
@@ -160,39 +112,6 @@ impl Store {
         )?;
         Ok(())
     }
-}
-
-/// [`Store::box_kind`] on any connection, which a write's own transaction may be.
-pub(super) fn kind_of(conn: &dyn Db, id: BoxId) -> Result<Option<BoxKind>, StoreError> {
-    let c = |c| (PlaceClaims::Table, c);
-    let mut q = Query::select();
-    q.column((Boxes::Table, Boxes::Kind))
-        .columns(
-            [
-                PlaceClaims::Repos,
-                PlaceClaims::Prompt,
-                PlaceClaims::ClaimedAt,
-                PlaceClaims::ServedAt,
-                PlaceClaims::SteeredAt,
-            ]
-            .map(c),
-        )
-        .from(Boxes::Table)
-        .and_where(Expr::col((Boxes::Table, Boxes::Id)).eq(id.get()));
-    join_claim(&mut q);
-    conn.rows(q, |r| {
-        Stored {
-            kind: r.get(0)?,
-            repos: r.get(1)?,
-            prompt: r.get(2)?,
-            claimed_at: r.get(3)?,
-            served_at: r.get(4)?,
-            steered_at: r.get(5)?,
-        }
-        .kind()
-    })?
-    .next()
-    .transpose()
 }
 
 #[cfg(test)]

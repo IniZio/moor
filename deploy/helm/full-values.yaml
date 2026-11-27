@@ -6,8 +6,6 @@ database:
   readers: 8
 controller:
   agentModel: opus
-  agentPlaces:
-    users: [alice@example.com, bob@example.com]
   nodes:
     cloud: {runtime: external, max_boxes: 1}
     spare: {runtime: external, max_boxes: 2}

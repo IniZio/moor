@@ -91,9 +91,6 @@ fn report(cx: &Cx, slept: Result<(), CommandError>) {
 /// What auto-sleep does with `row`: sleep it when it has been Idle, or awake, long enough, hold it
 /// when it is past `box.max_awake` but busy, or leave it be.
 fn due(cx: &Cx, store: &Store, row: &BoxRow, agent: AgentRead) -> Result<Verdict, CommandError> {
-    if row.kind.is_idle_place() {
-        return Ok(Verdict::NotYet);
-    }
     let config = &cx.config().box_;
     if cx.traffic().recent(row.id, cx.clock().now()) {
         return Ok(Verdict::NotYet);

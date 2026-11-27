@@ -48,7 +48,7 @@ function api(_state, mockDir) {
     '/account/api/inbox': { items: [], unread: 0 },
     '/account/api/repos': { repos: ['acme/api', 'acme/ios', 'acme/portal', 'acme/web'] },
     '/account/api/repos/acme/web/rules': rules,
-    '/account/api/rules/ask': { box: 'rules-ask-1', no_idle_place: null },
+    '/account/api/rules/ask': { box: 'rules-ask-1' },
     '/account/api/box?box=rules-ask-1': ask,
     '/account/api/session': {},
   };

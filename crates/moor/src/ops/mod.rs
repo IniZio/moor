@@ -60,11 +60,10 @@ pub(crate) use auto_close::{pass as auto_close_pass, Looked as AutoCloseLooked};
 pub(crate) use close::wanted::pass as wanted_pass;
 pub(crate) use common::promote::pass as promote_pass;
 pub(crate) use gate::checks::{pass as gate_pass, run as run_gate_check, Job as GateJob};
-pub(crate) use place::{keep as keep_places, Keeper as PlaceKeeper};
 #[cfg(test)]
 pub(crate) use run::tests as run_fixture;
 use run::Sink;
-pub(crate) use start::{run as start_box, settle_all};
+pub(crate) use start::settle_all;
 pub(crate) use steer::{pass as inbox_pass, Backoff as InboxBackoff};
 
 #[cfg(test)]

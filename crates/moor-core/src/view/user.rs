@@ -208,10 +208,6 @@ pub struct WhoamiValue {
     pub user: Option<UserId>,
     /// Every identity linked to that user, in order.
     pub identities: Vec<Identity>,
-    /// Whether the user is on the controller's `agent_places` list, so a front sends their
-    /// question as an `ask`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub asks: bool,
 }
 
 /// Value of `enroll`.

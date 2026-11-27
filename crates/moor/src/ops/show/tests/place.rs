@@ -1,4 +1,4 @@
-//! `show` lists the Boxes of tasks: an idle place is none, and a claimed place is one.
+//! `show` lists the Boxes of tasks: a claimed place is one.
 
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use sea_query::Query;
 
 use super::super::run;
 use super::{add, cx, req};
-use crate::testing::cx::{new_idle_place, REQUESTER_USER};
+use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 
 /// The names `show` lists, in order.
@@ -25,18 +25,6 @@ fn listed(cx: &crate::cx::Cx) -> Vec<String> {
         .flatten()
         .map(|b| b.name.clone())
         .collect()
-}
-
-#[test]
-fn an_idle_place_is_not_listed_and_a_work_box_is() {
-    let dir = tempfile::tempdir().unwrap();
-    let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
-    add(&cx, "work");
-    let store = cx.store().unwrap();
-    store
-        .apply(new_idle_place(crate::testing::box_name("place")))
-        .unwrap();
-    assert_eq!(listed(&cx), ["work"]);
 }
 
 #[test]

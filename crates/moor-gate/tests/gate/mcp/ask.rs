@@ -15,7 +15,6 @@ fn ask_sends_the_question_as_the_person_and_names_the_place_that_took_it() {
     );
     assert_ne!(result["isError"], true, "{result}");
     assert_eq!(result["structuredContent"]["box"], "place-1");
-    assert_eq!(result["structuredContent"]["claimed"], true);
     let next = result["structuredContent"]["next"].as_str().unwrap();
     assert!(next.contains("box_status"), "{result}");
     let sent = m.requests();

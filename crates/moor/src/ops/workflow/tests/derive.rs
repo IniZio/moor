@@ -209,9 +209,8 @@ fn a_workflow_moor_reads_as_gates_gets_no_plan_box() {
 }
 
 #[test]
-fn the_reader_starts_in_a_place_holding_the_repos_with_no_checkout_for_an_owner_off_the_list() {
+fn the_reader_starts_in_a_place_holding_the_repos_with_no_checkout() {
     let r = rig();
-    assert!(r.cx.env().agent_place_users().next().is_none());
     let id = r.wanting();
     let job = r.plan_pass().unwrap();
     start_draft(&r.cx, &job);

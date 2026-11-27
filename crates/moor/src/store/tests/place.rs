@@ -97,7 +97,6 @@ fn a_claim_on_a_place_reads_back_with_the_box() {
     store.put_claim(id, REQUESTER_USER, &claim()).unwrap();
     let kind = store.box_row(id).unwrap().unwrap().kind;
     assert_eq!(kind, BoxKind::Place(PlaceState::Claimed(claim())));
-    assert!(!kind.is_idle_place());
 }
 
 #[test]
@@ -144,19 +143,4 @@ fn a_place_with_a_repo_is_refused() {
     };
     let err = store.apply(Decision::insert(new)).unwrap_err();
     assert!(matches!(err, StoreError::Invalid(_)), "{err}");
-}
-
-#[test]
-fn the_kind_alone_reads_the_same_as_the_kind_of_the_row() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = store_of(dir.path());
-    let work = store.apply(new_box(box_name("w"))).unwrap().box_id;
-    let idle = store.apply(new_idle_place(box_name("i"))).unwrap().box_id;
-    let taken = store.apply(new_idle_place(box_name("t"))).unwrap().box_id;
-    store.put_claim(taken, REQUESTER_USER, &claim()).unwrap();
-    for id in [work, idle, taken] {
-        let row = store.box_row(id).unwrap().unwrap().kind;
-        assert_eq!(store.box_kind(id).unwrap(), Some(row));
-    }
-    assert_eq!(store.box_kind(moor_core::BoxId::new(99)).unwrap(), None);
 }

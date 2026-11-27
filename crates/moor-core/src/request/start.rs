@@ -15,7 +15,6 @@ impl StartReq {
             model: None,
             node: None,
             placement: Placement::FirstOnly,
-            place: false,
             no_agent: false,
             no_setup: false,
             cold: false,

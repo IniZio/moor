@@ -77,14 +77,13 @@ struct Facts {
 /// # Errors
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
-    run_as(cx, req, super::place::kind_of(req))
+    run_as(cx, req, BoxKind::Work)
 }
 
 /// [`run`], making a new Box of `kind`, which an ask's claim may hold; it fails as `run` does.
 pub(super) fn run_as(cx: &Cx, req: &StartReq, kind: BoxKind) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
-    super::place::check_start(cx, store, req, user)?;
     super::box_config::check(req.config.as_deref())?;
     gates::check(req)?;
     if let Some(parent) = req.parent {
@@ -175,7 +174,7 @@ fn reject(
 ) -> Result<StartView, CommandError> {
     let id = store
         .apply(
-            Decision::insert(new_box(req, facts, Vec::new(), super::place::kind_of(req)))
+            Decision::insert(new_box(req, facts, Vec::new(), BoxKind::Work))
                 .parent_session(req.parent.map(SessionId::get))
                 .requester(user),
         )?

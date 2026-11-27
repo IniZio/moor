@@ -8,7 +8,6 @@ use moor_core::config::AutoClose;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CloseReason;
-use moor_core::domain::place::BoxKind;
 use moor_core::{BoxId, SessionId};
 
 use super::Moor;
@@ -33,15 +32,6 @@ impl Moor {
             .events_after(after, limit)
             .map_err(|e| e.to_string())?;
         Ok(events.into_iter().map(NamedEvent::into_frame).collect())
-    }
-
-    /// What Box `id` was started as; none when it does not exist.
-    ///
-    /// # Errors
-    /// The store failure, as text.
-    pub(crate) fn box_kind(&self, id: BoxId) -> Result<Option<BoxKind>, String> {
-        let store = self.cx.store().map_err(|e| e.error.to_string())?;
-        store.box_kind(id).map_err(|e| e.to_string())
     }
 
     /// The parent of Session `id`; none when it has no parent or does not exist.
@@ -267,9 +257,7 @@ impl Moor {
         })
     }
 
-    /// Closes each open Box whose setup failed at least `after` ago, once per call. A failed
-    /// agent place no task has claimed stays until a person closes it, as the place keeper starts
-    /// no other for its user while it stands.
+    /// Closes each open Box whose setup failed at least `after` ago, once per call.
     ///
     /// Setup never handed such a Box to anyone, so the close is forced. A Box with no failure
     /// time is left alone, and one that will not close is reported, not retried until the next
@@ -289,7 +277,6 @@ impl Moor {
         let mut out = Vec::new();
         for row in rows {
             let expired = row.lifecycle == BoxLifecycle::SetupFailed
-                && !row.kind.is_idle_place()
                 && row
                     .setup_failed_at
                     .is_some_and(|at| at.as_millis().saturating_add(after_ms) <= now);
@@ -395,6 +382,5 @@ fn spawn_gate_check(env: &Env, job: ops::GateJob) {
 /// A controller pass over the store that stops once its `draining` says so.
 type StorePass = fn(&Cx, &Store, &dyn Fn() -> bool) -> Result<(), CommandError>;
 
-mod place;
 #[cfg(test)]
 mod tests;

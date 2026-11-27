@@ -37,7 +37,7 @@ mod workflow;
 use args::{AskArgs, BoxArgs, CloseArgs, SendArgs, StartArgs};
 pub(crate) use failed::retry_from_portal;
 use reply::Reply;
-pub(crate) use start::{ask_from_portal, asks, start_from_portal, NewBox};
+pub(crate) use start::{ask_from_portal, start_from_portal, NewBox};
 use start::{send_early, start_request};
 
 /// The tools; one copy per MCP session.
@@ -115,12 +115,8 @@ impl Tools {
         description = "Ask a question about one or more GitHub repos given as owner/name in `repos`, \
                        first one first: the task's own. It goes to your own agent place, as the \
                        portal's Tasks home sends it, and the answer names the place that took it \
-                       (box), with no work Box behind it. claimed is false when no idle place was \
-                       waiting; no_idle_place then says why and names a failed or stuck place \
-                       to close with close_box. Follow it with box_status, \
-                       inspect_box or list_boxes. Refused when you are not on the controller's \
-                       agent_places list; the refusal names the email moor has for you. A refusal \
-                       for missing secrets names them; the person stores them in a browser on \
+                       (box), with no work Box behind it. Follow it with box_status, \
+                       inspect_box or list_boxes. A refusal for missing secrets names them; the person stores them in a browser on \
                        the account page at the gate's root, never through an agent. Needs the \
                        moor:write scope."
     )]

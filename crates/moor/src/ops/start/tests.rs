@@ -43,7 +43,6 @@ mod identity;
 mod install_link;
 mod interrupted;
 mod interrupted_steps;
-mod keeper;
 mod launch_deadline;
 mod launch_skipped;
 mod lease;
@@ -56,7 +55,6 @@ mod new_hands;
 mod no_setup;
 mod others;
 mod parent;
-mod place;
 mod placement;
 mod profile;
 mod profile_env;
@@ -166,7 +164,6 @@ fn on_github(w: World) -> World {
 /// A start request for `name`, with no repo.
 fn req(name: &str) -> StartReq {
     StartReq {
-        place: false,
         gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

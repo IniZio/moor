@@ -36,6 +36,8 @@ names=(
   moor-herdr moor_herdr MOOR_HERDR_BIN MOOR_HERDR_TAG MOOR_HERDR_RELEASES HERDR_PLUGIN_STATE_DIR
   'Tool::Herdr' moor-hc moor_hc
   REPORT_OUTPUT_BRIEF
+  agent_places AgentPlaces agent_place_users agent_place_user on_roster no_idle_place
+  idle_places_of claim_place newest_place_of PlaceKeeper keep_places is_idle_place
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.

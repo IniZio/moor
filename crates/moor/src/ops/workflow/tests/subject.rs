@@ -192,7 +192,6 @@ fn a_newer_head_closes_an_older_box_whose_agent_never_launched() {
     r.answer_repo();
     let id = r.put(180);
     let req = moor_core::StartReq {
-        place: false,
         gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,

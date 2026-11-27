@@ -7,7 +7,6 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::decision::{Decision, Field, HandsFields, NewBox, SpecFields};
 use moor_core::domain::hands::{HandsInc, HandsInput, HandsState};
-use moor_core::domain::place::{BoxKind, PlaceState};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -33,11 +32,6 @@ struct Fx {
 
 /// Box `t` Working with a live machine.
 fn working_with(driver: FakeDriver) -> Fx {
-    started_as(driver, BoxKind::Work)
-}
-
-/// Box `t` of `kind` Working with a live machine.
-fn started_as(driver: FakeDriver, kind: BoxKind) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
     let cx = Cx::fake(dir.path(), driver.clone(), Arc::new(ScriptedProc::new()));
@@ -47,10 +41,7 @@ fn started_as(driver: FakeDriver, kind: BoxKind) -> Fx {
         .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: None,
-            spec: SpecFields {
-                kind,
-                ..SpecFields::default()
-            },
+            spec: SpecFields::default(),
         }))
         .unwrap()
         .box_id;
@@ -137,28 +128,6 @@ fn sleep_calls(f: &Fx) -> usize {
         .iter()
         .filter(|c| c.starts_with("sleep "))
         .count()
-}
-
-#[test]
-fn an_idle_place_is_never_due() {
-    let place = quiet(started_as(
-        FakeDriver::new(),
-        BoxKind::Place(PlaceState::Idle),
-    ));
-    let work = idle();
-    for f in [&place, &work] {
-        pass(f, Duration::from_hours(72));
-        auto_sleep(f);
-    }
-    assert_eq!(
-        states(&work),
-        (BoxLifecycle::Asleep, SessionState::Idle, HandsState::Asleep)
-    );
-    assert_eq!(
-        states(&place),
-        (BoxLifecycle::Ready, SessionState::Idle, HandsState::Ready)
-    );
-    assert_eq!(sleep_calls(&place), 0);
 }
 
 #[test]

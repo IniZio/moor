@@ -92,8 +92,8 @@ pub use webhook_outbox::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 pub enum Request {
     /// Create a box.
     Start(StartReq),
-    /// Ask a question about some repos: claim the caller's idle place, give it the repos'
-    /// rules, then send the question; a place is started for it when none is idle.
+    /// Ask a question about some repos: start an agent place that holds the question and the
+    /// repos' rules.
     Ask(AskReq),
     /// The secrets a start would need from the caller's user, and which it lacks.
     StartNeeds(StartNeedsReq),
@@ -323,10 +323,6 @@ pub struct StartReq {
     /// strict, so an older controller that refuses unknown fields still takes a manual start.
     #[serde(default, skip_serializing_if = "Placement::is_first_only")]
     pub placement: Placement,
-    /// Start a place: a repo-less Box the agent waits in until a task claims it. Left out of the
-    /// JSON when false, so an older controller that refuses unknown fields still takes a start.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub place: bool,
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,

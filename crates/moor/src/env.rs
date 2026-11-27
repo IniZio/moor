@@ -76,8 +76,6 @@ pub struct Env {
     front_step_reports: Arc<BTreeSet<String>>,
     /// The fronts that run the Box tools for the agents in claimed places, by namespace.
     front_box_tools: Arc<BTreeSet<String>>,
-    /// The emails of the users who may have an agent place, lowercased.
-    agent_place_users: Arc<BTreeSet<String>>,
     /// The portal's origin, without a trailing `/`, when the controller config names it.
     portal_origin: Option<Arc<str>>,
     /// The shortest gap a workflow's cron may have between firings.
@@ -209,18 +207,6 @@ impl Env {
         self
     }
 
-    /// Set the users who may have an agent place, by lowercased email.
-    #[must_use]
-    pub fn with_agent_place_users(mut self, users: BTreeSet<String>) -> Self {
-        self.agent_place_users = Arc::new(users);
-        self
-    }
-
-    /// The emails of the users who may have an agent place, lowercased.
-    pub(crate) fn agent_place_users(&self) -> impl Iterator<Item = &str> {
-        self.agent_place_users.iter().map(String::as_str)
-    }
-
     /// Set the portal's origin, without a trailing `/`.
     #[must_use]
     pub fn with_portal_origin(mut self, origin: Option<String>) -> Self {
@@ -233,12 +219,6 @@ impl Env {
         self.portal_origin
             .as_deref()
             .map(|origin| format!("{origin}/#/runs/{run}"))
-    }
-
-    /// Whether `email` is on the list of users who may have an agent place.
-    pub(crate) fn agent_place_user(&self, email: &str) -> bool {
-        self.agent_place_users
-            .contains(&email.trim().to_lowercase())
     }
 
     /// Set the shortest gap a workflow's cron may have between firings.

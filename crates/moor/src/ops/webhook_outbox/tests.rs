@@ -119,31 +119,6 @@ fn a_claim_carries_the_url_the_plain_key_and_a_moor_notify_body() {
 }
 
 #[test]
-fn an_idle_place_queues_no_delivery() {
-    let w = world();
-    w.store
-        .apply(
-            crate::testing::cx::new_idle_place(BoxName::parse_allow_bare("p").unwrap())
-                .requester(w.alice),
-        )
-        .unwrap();
-    let mut boxes = Vec::new();
-    loop {
-        let got = claimed(&w);
-        let Some(one) = got.deliveries.first() else {
-            break;
-        };
-        boxes.push(one.body["box"].clone());
-        let done = WebhookReportReq {
-            delivery: one.delivery,
-            outcome: WebhookOutcome::Delivered,
-        };
-        report(&w.store, &done).unwrap();
-    }
-    assert_eq!(boxes, [json!("a")]);
-}
-
-#[test]
 fn a_claim_carries_the_receivers_header_with_its_value_redacted_from_debug() {
     let w = world_with(Some(("Authorization", "Bearer grok-123")));
     let got = claimed(&w);

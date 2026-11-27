@@ -59,7 +59,6 @@ pub(super) fn serve_started(
         sink,
     );
     settle::spawn_workflows(&running.env, &drain, sink);
-    settle::spawn_places(&running.env, &drain, sink);
     settle::spawn_inbox(&running.env, running.settle_every, &drain, sink);
     settle::spawn_watch_count(&running.env, &drain, sink);
     settle::spawn_follow(&running.env, &drain, sink);

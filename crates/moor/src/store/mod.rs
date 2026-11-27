@@ -66,7 +66,6 @@ mod open;
 pub(crate) mod outputs;
 pub(crate) use open::Database;
 mod place;
-mod places;
 mod pressure;
 pub(crate) use pressure::SuspendCheck;
 mod box_config;

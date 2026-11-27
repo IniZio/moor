@@ -17,7 +17,6 @@ mod box_term;
 mod down;
 mod events;
 mod node;
-mod place;
 mod repo;
 
 /// Parse `moor <args>` into opts and action.
@@ -69,7 +68,6 @@ fn start_with_all_flags() {
     assert_eq!(
         r,
         Request::Start(StartReq {
-            place: false,
             gates: None,
             placement: moor_core::decide::schedule::Placement::FirstOnly,
             cold: false,
@@ -91,6 +89,14 @@ fn start_with_all_flags() {
             run: false,
         })
     );
+}
+
+#[test]
+fn no_setup_starts_a_box_without_setup() {
+    assert!(matches!(
+        req(&["start", "t", "--no-setup"]),
+        Request::Start(s) if s.no_setup
+    ));
 }
 
 #[test]

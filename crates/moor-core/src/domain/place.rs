@@ -1,4 +1,4 @@
-//! What a Box is born as: a work Box, or a place the agent waits in until a task claims it.
+//! What a Box is born as: a work Box, or a place an agent works from for one task.
 
 use crate::name::ForgeRepo;
 
@@ -8,16 +8,17 @@ pub enum BoxKind {
     /// A Box a person's task works in.
     #[default]
     Work,
-    /// A repo-less Box the agent waits in, started before any task and claimed by one.
+    /// A repo-less Box an agent works from, started for a task.
     Place(PlaceState),
 }
 
 /// Where a place stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlaceState {
-    /// Waiting for a task; no list, stream, sleep or close sees it.
+    /// Held by no task: a place started before every place came with its task, as the store
+    /// still holds it. A list, sleep and close treat it as any other Box.
     Idle,
-    /// Taken by a task, which makes it an ordinary task from then on.
+    /// Held by its task from its start.
     Claimed(Claim),
 }
 
@@ -40,13 +41,6 @@ pub struct Claim {
 }
 
 impl BoxKind {
-    /// Whether this is a place no task has claimed. The one check every reader that hides idle
-    /// places asks.
-    #[must_use]
-    pub const fn is_idle_place(&self) -> bool {
-        matches!(self, Self::Place(PlaceState::Idle))
-    }
-
     /// The word the store keeps: `work` or `place`.
     #[must_use]
     pub const fn as_str(&self) -> &'static str {
@@ -85,13 +79,6 @@ mod tests {
             served: None,
             steered: None,
         }
-    }
-
-    #[test]
-    fn only_an_unclaimed_place_is_idle() {
-        assert!(BoxKind::Place(PlaceState::Idle).is_idle_place());
-        assert!(!BoxKind::Work.is_idle_place());
-        assert!(!BoxKind::Place(PlaceState::Claimed(claim())).is_idle_place());
     }
 
     #[test]

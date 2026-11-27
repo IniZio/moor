@@ -76,7 +76,7 @@ impl Rig {
         let job = self.plan_pass().expect("a Box is asked for");
         start_draft(&self.cx, &job);
         let box_id = self.open(&job).expect("the reader's place is open");
-        let kind = store.box_kind(box_id).unwrap().unwrap();
+        let kind = store.box_row(box_id).unwrap().unwrap().kind;
         assert!(
             matches!(kind, moor_core::domain::place::BoxKind::Place(_)),
             "the reader hands in from an agent place: {kind:?}"

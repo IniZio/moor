@@ -15,7 +15,6 @@ use serde_json::{json, Value};
 use super::login::get;
 use super::nodes::{self, Settings};
 use super::portal;
-use super::portal_ask;
 use super::repos::{self, Configs};
 use super::workflows;
 use super::CLIENT_ID;
@@ -85,8 +84,6 @@ fn answer(
         }
         "node-list" => Response::ok("x", Some(nodes::list(node))),
         "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
-        "whoami" => Response::ok("x", Some(portal_ask::whoami(who))),
-        "ask" => portal_ask::ask(who, inner),
         "start-needs" | "start" => needs(vault, who, inner),
         cmd @ ("show" | "artifacts" | "retry" | "workflow-list" | "steer" | "sleep" | "close")
             if who.contains(portal::PREFIX) =>

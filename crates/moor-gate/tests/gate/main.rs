@@ -491,7 +491,7 @@ mod mcp;
 mod nodes;
 mod pair;
 mod portal;
-mod portal_ask;
+mod portal_start;
 mod repos;
 mod secrets;
 mod setup;

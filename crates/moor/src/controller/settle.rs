@@ -177,15 +177,6 @@ pub(super) fn spawn_workflows(env: &Env, drain: &Arc<Drain>, sink: &Sink) {
     passes(WORKFLOW_EVERY, drain, sink, Moor::workflow_pass(env));
 }
 
-/// How often the controller looks for a user on the `agent_places` list with no place waiting.
-const PLACE_EVERY: Duration = Duration::from_secs(10);
-
-/// Runs the place keeper pass each [`PLACE_EVERY`], on its own thread, since a place start takes
-/// many seconds and must not hold up another pass.
-pub(super) fn spawn_places(env: &Env, drain: &Arc<Drain>, sink: &Sink) {
-    passes(PLACE_EVERY, drain, sink, Moor::place_pass(env));
-}
-
 /// Runs `pass` each `every` on a detached thread, logging each message it returns.
 ///
 /// The drain waits for a pass already running. `pass` checks `draining` before each Box and
