@@ -369,6 +369,9 @@ pub enum Event {
     /// What new hands got back of the agent's conversation.
     #[serde(untagged)]
     Restore(RestoreEvent),
+    /// The contract a fresh session read.
+    #[serde(untagged)]
+    Contract(ContractEvent),
     /// What a close left undone.
     #[serde(untagged)]
     Close(CloseEvent),

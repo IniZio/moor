@@ -35,6 +35,7 @@ names=(
   SleepKind hide_unsupported_sleep lookup_timeout_secs
   moor-herdr moor_herdr MOOR_HERDR_BIN MOOR_HERDR_TAG MOOR_HERDR_RELEASES HERDR_PLUGIN_STATE_DIR
   'Tool::Herdr' moor-hc moor_hc
+  REPORT_OUTPUT_BRIEF
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.

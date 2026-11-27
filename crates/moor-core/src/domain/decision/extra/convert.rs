@@ -174,6 +174,7 @@ impl From<ExtraEvent> for Event {
                 Self::TranscriptSkipped { trigger, reason }
             }
             ExtraEvent::Restore(r) => Self::Restore(r),
+            ExtraEvent::Contract(c) => Self::Contract(c),
             ExtraEvent::Steered(s) => Self::Steered(s),
             ExtraEvent::ProxyStarted {
                 box_port,

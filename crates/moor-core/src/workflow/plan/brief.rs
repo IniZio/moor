@@ -123,10 +123,8 @@ impl Plan {
     pub fn start_prompt(&self, prompt: &str) -> String {
         format!(
             "{prompt}{PREAMBLE_HEAD}{} steps. Do only the current step, then call \
-             report_step, a tool of the `moor` MCP server; if it is a deferred tool, load it \
-             with ToolSearch first. Leave each evidence file in .moor/artifacts/. {}\n\n{}",
+             report_step.\n\n{}",
             self.step_count(),
-            crate::output::REPORT_OUTPUT_BRIEF,
             self.first().brief()
         )
     }

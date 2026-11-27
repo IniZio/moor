@@ -12,10 +12,6 @@ pub const URL_MAX: usize = 2048;
 /// The most outputs one Box may report.
 pub const PER_BOX_MAX: usize = 100;
 
-/// What every first message tells the agent about outputs.
-pub const REPORT_OUTPUT_BRIEF: &str = "After each write outside moor, such as a pull request \
-                                       comment, call report_output with its kind, URL and title.";
-
 /// The longest kind, in bytes.
 const KIND_MAX: usize = 64;
 

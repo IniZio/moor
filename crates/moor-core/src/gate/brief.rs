@@ -48,12 +48,8 @@ impl Gates {
         let lines: Vec<String> = self.iter().map(Gate::brief).collect();
         format!(
             "{}{GATE_HEAD} The gates open in this order, one at a time, and the Box is done \
-             only when all have passed. Report only the gate that is in hand: a report for any \
-             other is refused. The first gate is in hand now. moor tells you when each gate is in \
-             hand. report_step is a tool of the moor MCP server; load it first if your tools \
-             are loaded on demand. Leave each evidence file in .moor/artifacts/. {}\n\n{}{}",
+             only when all have passed. The first gate is in hand now.\n\n{}{}",
             prompt.trim_end(),
-            crate::output::REPORT_OUTPUT_BRIEF,
             lines.join("\n"),
             self.outcomes_brief()
         )
@@ -66,12 +62,10 @@ impl Gates {
         }
         let lines: Vec<String> = self.outcomes().iter().map(Outcome::brief).collect();
         format!(
-            "\n\nHow the run ends is not yours to say: moor decides it by running the checks of \
-             these outcomes in the order listed, and the first whose checks all pass is the run's \
-             outcome. It tries them all once every gate has passed, and tries those marked \
-             \"anytime\" also whenever you stop before the gate in hand has passed. Never fake \
-             evidence or a result to reach one. If you find there is nothing to do, say so in one \
-             line and stop: moor checks the outcomes then.\n\n{}",
+            "\n\nThe run's outcomes, in the order moor tries them: the first whose checks all \
+             pass is how the run ends. moor tries them once every gate has passed, and tries \
+             those marked \"anytime\" also whenever you stop before the gate in hand has \
+             passed.\n\n{}",
             lines.join("\n")
         )
     }
@@ -199,13 +193,10 @@ impl Gate {
     /// The steer for a gate whose evidence the agent has not reported. One per try.
     #[must_use]
     pub fn remind_steer(&self) -> String {
-        let name = &self.name;
         format!(
-            "Gate `{name}` has no report yet. Leave {} in .moor/artifacts/, then call \
-             report_step with step \"{name}\", result ok, those names and a one-line note of what \
-             you did. Or call it with result fail and a note that says why the gate cannot be \
-             passed.",
-            names(self).join(", ")
+            "Gate `{}` has no report yet.\n\n{}",
+            self.name,
+            self.brief()
         )
     }
 

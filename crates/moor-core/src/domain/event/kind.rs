@@ -4,12 +4,14 @@ use super::Event;
 pub use crate::domain::turn::TurnOutcome;
 
 mod close;
+mod contract;
 mod inbox;
 mod node_disk;
 mod restore;
 mod stall;
 mod workflow;
 pub use close::CloseEvent;
+pub use contract::ContractEvent;
 pub use inbox::InboxEvent;
 pub use node_disk::NodeDiskEvent;
 pub use restore::RestoreEvent;
@@ -148,6 +150,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "acquire_reattached",
     "cache_cold",
     "cache_emptied",
+    "contract_given",
 ];
 
 impl Event {
@@ -221,6 +224,7 @@ impl Event {
             Self::NodeDisk(d) => d.kind(),
             Self::Workflow(w) => w.kind(),
             Self::Restore(r) => r.kind(),
+            Self::Contract(c) => c.kind(),
             Self::Close(c) => c.kind(),
             Self::Inbox(i) => i.kind(),
             Self::Timing(t) => t.kind(),

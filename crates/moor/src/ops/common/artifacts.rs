@@ -23,7 +23,7 @@ use crate::store::{BoxRow, Store};
 /// Wall-clock allowance for the index script.
 const INDEX_DEADLINE: Duration = Duration::from_secs(60);
 /// Artifacts directory, relative to the workdir.
-const ARTIFACTS_DIR: &str = ".moor/artifacts";
+use moor_core::contract::ARTIFACTS_DIR;
 
 /// Prints `name<TAB>size<TAB>sha256` for each top-level regular file; symlinks are never listed.
 const INDEX_SCRIPT: &str = r#"[ -L .moor ] && exit 0

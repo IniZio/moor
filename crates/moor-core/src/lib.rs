@@ -9,6 +9,7 @@ pub mod boxscript;
 pub mod cache;
 pub mod changes;
 pub mod config;
+pub mod contract;
 pub mod controller;
 pub mod decide;
 pub mod doing;
