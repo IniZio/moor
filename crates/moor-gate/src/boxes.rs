@@ -24,7 +24,7 @@ use hyper::service::{service_fn, Service as _};
 use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use moor_client::{Client, ClientError};
-use moor_core::reading::HandIn;
+use moor_core::reading::{HandIn, IntentTable};
 use moor_core::request::{
     OutputReportReq, ReadingHandInReq, ReadingHandInValue, Request as ControllerRequest,
     StepReportReq,
@@ -197,12 +197,7 @@ impl BoxTools {
     }
 
     /// Hands in what the caller's Box read in an automation's prompt.
-    #[tool(
-        description = "Hand in your reading of the automation prompt moor asked you to read: \
-                       phrases quoted from the prompt, each held by the effects moor checks or \
-                       only asked, and the effects. moor answers accepted, or says which quote \
-                       or effect to fix before you hand in again."
-    )]
+    #[tool(description = hand_in_description())]
     async fn hand_in_reading(
         &self,
         context: RequestContext<RoleServer>,
@@ -227,6 +222,19 @@ impl BoxTools {
             Err(e) => failed(format!("the call did not finish: {e}")),
         }
     }
+}
+
+/// What `hand_in_reading` says it takes, with the intent names of the shipped table.
+fn hand_in_description() -> String {
+    let list = IntentTable::shipped()
+        .map(IntentTable::list)
+        .unwrap_or_default();
+    format!(
+        "Hand in your reading of the automation prompt moor asked you to read: phrases quoted \
+         from the prompt, the gates and outcomes each holds, and the intents its words ask for \
+         or forbid, by name from this list:\n{list}\nmoor expands each intent into its lines and \
+         answers accepted, or says which quote, intent or effect to fix before you hand in again."
+    )
 }
 
 #[allow(

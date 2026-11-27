@@ -53,3 +53,20 @@ pub(super) fn lets(entry: &str, repo: &str, method: &str, path: &str) -> bool {
     let p: Vec<_> = path.split('/').collect();
     takes(&methods, method) && walk(&g, &p, &segment)
 }
+
+/// Whether `rule` lets through every request `line` lets through, both with `{repo}` as `repo`
+/// or, when none, as the same Box repo. A `*` of `line` falls only under a `*` or `**` of `rule`.
+pub(super) fn covers(rule: &str, line: &str, repo: Option<&str>) -> bool {
+    if rule == "*" {
+        return true;
+    }
+    let (Some((rule_methods, glob)), Some((methods, path))) =
+        (split(rule, repo), split(line, repo))
+    else {
+        return false;
+    };
+    let g: Vec<_> = glob.split('/').collect();
+    let p: Vec<_> = path.split('/').collect();
+    let one = |a: &str, b: &str| a == "*" || (!b.contains('*') && segment(a, b));
+    methods.iter().all(|m| takes(&rule_methods, m)) && walk(&g, &p, &one)
+}

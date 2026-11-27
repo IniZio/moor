@@ -35,7 +35,29 @@ pub enum Effect {
         rule: String,
         /// The entry, raw.
         entry: String,
+        /// Where it came from; not part of its key.
+        #[serde(default, skip_serializing_if = "Origin::is_listed")]
+        from: Origin,
     },
+}
+
+/// Where an allow effect came from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Origin {
+    /// Slice 1: equal to an entry of the config's `proxy.allow`. Older JSON reads as this.
+    #[default]
+    Listed,
+    /// A table row: the holding phrase's intent, at the reading's table version.
+    Table,
+}
+
+impl Origin {
+    /// Whether it is [`Self::Listed`], which stored JSON leaves out.
+    #[must_use]
+    pub const fn is_listed(&self) -> bool {
+        matches!(self, Self::Listed)
+    }
 }
 
 impl Effect {

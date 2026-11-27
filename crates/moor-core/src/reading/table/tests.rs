@@ -2,6 +2,8 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::reading::glob::covers;
+
 use super::{IntentName, IntentTable, Request, TableError, INTENTS_TEXT};
 
 /// Each shipped version's hash: a change to intents.yaml without a version bump fails here.
@@ -116,4 +118,25 @@ fn the_reader_list_has_one_line_a_row() {
     let t = IntentTable::shipped().unwrap();
     assert_eq!(t.list().lines().count(), t.intents.len());
     assert!(t.list().starts_with("- comment: comment on"));
+}
+
+#[test]
+fn a_rule_entry_covers_a_line_only_where_it_lets_every_request_through() {
+    let issues = "GET /repos/{repo}/issues/*/comments";
+    assert!(covers("GET /repos/{repo}/issues/**", issues, None));
+    assert!(covers("GET /repos/{any_repo}/issues/**", issues, None));
+    assert!(covers(
+        "GET|POST /repos/{repo}/issues/*/comments",
+        issues,
+        None
+    ));
+    assert!(covers("*", issues, None));
+    assert!(!covers("POST /repos/{repo}/issues/**", issues, None));
+    assert!(!covers("GET /repos/{repo}/issues/7/comments", issues, None));
+    assert!(!covers("GET /repos/{repo}/issues", issues, None));
+    assert!(covers(
+        "GET /repos/{repo}/issues/**",
+        "GET /repos/acme/web/issues/*/comments",
+        Some("acme/web")
+    ));
 }

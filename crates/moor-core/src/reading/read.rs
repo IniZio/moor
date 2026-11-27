@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Effect, EffectId, PhraseId, ReaderRun};
+use super::{Effect, EffectId, IntentUse, PhraseId, ReaderRun};
 use crate::gate::GatesDoc;
 
 #[cfg(test)]
@@ -139,6 +139,9 @@ pub struct Phrase {
     pub at: Span,
     /// What moor holds of it.
     pub mark: Mark,
+    /// The requests its words ask for or forbid, with what expansion found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intents: Vec<IntentUse>,
     /// The reader's own words, shown on hover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
@@ -197,6 +200,8 @@ pub enum Mark {
     },
     /// Dashed: only asked of the agent.
     Asked {},
+    /// "moor has no rule for this": a request no row covers. Holds nothing.
+    Unmapped {},
 }
 
 /// The effects a held phrase holds: at least one, none twice.
@@ -271,7 +276,7 @@ impl TryFrom<Stored> for Read {
             .iter()
             .filter_map(|p| match &p.mark {
                 Mark::Held { effects } => Some(effects.iter()),
-                Mark::Asked {} => None,
+                Mark::Asked {} | Mark::Unmapped {} => None,
             })
             .flatten()
             .copied()

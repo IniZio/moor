@@ -67,12 +67,6 @@ pub enum Refusal {
         /// The label.
         label: String,
     },
-    /// A held phrase with no effect.
-    #[error("phrase `{quote}` is held but names no effect; mark it asked or name its effects")]
-    HeldWithoutEffect {
-        /// The phrase's quote.
-        quote: String,
-    },
     /// An effect no phrase holds.
     #[error("effect `{label}` is held by no phrase")]
     Unheld {
@@ -88,14 +82,28 @@ pub enum Refusal {
     /// The gates and outcomes do not parse.
     #[error(transparent)]
     Gates(GateError),
-    /// An allow entry the workflow config's `proxy.allow` does not list under its rule.
-    #[error("effect `{label}`: `{entry}` is not in proxy.allow under `{rule}`")]
-    NotAllowed {
-        /// The label.
-        label: String,
-        /// The rule.
-        rule: String,
-        /// The entry.
-        entry: String,
+    /// An intent name that is not lower case words joined by `-`.
+    #[error("phrase `{quote}` names intent `{intent}`; write it as lower case words joined by -")]
+    IntentName {
+        /// The phrase's quote.
+        quote: String,
+        /// The name.
+        intent: String,
+    },
+    /// A repo the Box does not have.
+    #[error("phrase `{quote}` names repo `{repo}`, which is not one of this automation's repos")]
+    UnknownRepo {
+        /// The phrase's quote.
+        quote: String,
+        /// The repo.
+        repo: String,
+    },
+    /// `as: app` on a row whose lines may not go out as the App.
+    #[error("phrase `{quote}`: intent `{intent}` cannot go out as the App; drop `as`")]
+    NoAppRow {
+        /// The phrase's quote.
+        quote: String,
+        /// The intent.
+        intent: String,
     },
 }

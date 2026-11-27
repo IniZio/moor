@@ -1,13 +1,12 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
-use std::collections::BTreeMap;
-
 use serde_json::json;
 
 use super::{
-    Context, EffectKey, HandIn, Mark, Read, ReaderRun, Reading, ReadingId, ReadingOf, ReadingState,
-    Refusal, RulesPin,
+    Context, HandIn, IntentTable, Pinned, Read, ReaderRun, Reading, ReadingId, ReadingOf,
+    ReadingState, Refusal, RulesPin,
 };
+use crate::config::proxy::default_rules;
 use crate::name::BoxName;
 use crate::seam::clock::Ts;
 use crate::user::UserId;
@@ -35,6 +34,7 @@ pub(super) fn reading(source: &str) -> Reading {
                 revision: 3,
             }],
             instructions: 1,
+            table: None,
         },
         made_by: UserId::new(1),
         state: ReadingState::Reading {
@@ -44,23 +44,26 @@ pub(super) fn reading(source: &str) -> Reading {
     }
 }
 
-pub(super) fn allow() -> BTreeMap<String, Vec<String>> {
-    BTreeMap::from([(
-        "github-app".to_owned(),
-        vec!["POST /repos/{repo}/issues/*/comments".to_owned()],
-    )])
-}
-
 pub(super) fn doc(v: serde_json::Value) -> HandIn {
     serde_json::from_value(v).unwrap()
 }
 
-pub(super) fn read(source: &str, v: serde_json::Value) -> Result<Read, Refusal> {
-    reading(source).hand_in(&doc(v), &allow())
+/// `doc` handed in against the shipped table and the default rules, on a controller with an App.
+pub(super) fn hand_in(r: &Reading, doc: &HandIn) -> Result<Read, Refusal> {
+    let rules = default_rules();
+    let pinned = Pinned {
+        rules: &rules,
+        app: true,
+    };
+    r.hand_in(doc, IntentTable::shipped().unwrap(), &pinned)
 }
 
-fn asked(exact: &str) -> serde_json::Value {
-    json!({"quote": {"exact": exact}, "mark": {"kind": "asked"}})
+pub(super) fn read(source: &str, v: serde_json::Value) -> Result<Read, Refusal> {
+    hand_in(&reading(source), &doc(v))
+}
+
+pub(super) fn asked(exact: &str) -> serde_json::Value {
+    json!({"quote": {"exact": exact}})
 }
 
 fn placed(source: &str, phrases: &[serde_json::Value]) -> Vec<String> {
@@ -91,10 +94,8 @@ fn a_quote_found_twice_without_a_prefix_is_refused_by_name() {
 #[test]
 fn a_prefix_or_a_suffix_picks_one_of_two_places() {
     let source = "run the tests. Then run the tests again.";
-    let by_prefix =
-        json!({"quote": {"exact": "run the tests", "prefix": "Then "}, "mark": {"kind": "asked"}});
-    let by_suffix =
-        json!({"quote": {"exact": "the tests", "suffix": "."}, "mark": {"kind": "asked"}});
+    let by_prefix = json!({"quote": {"exact": "run the tests", "prefix": "Then "}});
+    let by_suffix = json!({"quote": {"exact": "the tests", "suffix": "."}});
     let read = read(source, json!({"phrases": [by_prefix], "effects": []})).unwrap();
     assert_eq!(
         (read.phrases()[0].at.start(), read.phrases()[0].at.end()),
@@ -231,12 +232,12 @@ fn shots_gate() -> serde_json::Value {
     json!({"kind": "gate", "label": "shots", "gate": {"name": "screenshots", "evidence": ["shot-*"]}})
 }
 
-fn comment_allow() -> serde_json::Value {
-    json!({"kind": "allow", "label": "comment", "rule": "github-app", "entry": "POST /repos/{repo}/issues/*/comments"})
+fn comment_gate() -> serde_json::Value {
+    json!({"kind": "gate", "label": "comment", "gate": {"name": "comment", "checks": ["test -f posted"]}})
 }
 
-fn held(exact: &str, labels: &[&str]) -> serde_json::Value {
-    json!({"quote": {"exact": exact}, "mark": {"kind": "held", "effects": labels}})
+pub(super) fn held(exact: &str, labels: &[&str]) -> serde_json::Value {
+    json!({"quote": {"exact": exact}, "holds": labels})
 }
 
 const PR_SOURCE: &str = "Take screenshots of each page. Post one comment on the pull request.";
@@ -245,26 +246,12 @@ const PR_SOURCE: &str = "Take screenshots of each page. Post one comment on the 
 fn an_effect_no_phrase_holds_is_refused_by_label() {
     let got = read(
         PR_SOURCE,
-        json!({"phrases": [held("Take screenshots", &["shots"])], "effects": [shots_gate(), comment_allow()]}),
+        json!({"phrases": [held("Take screenshots", &["shots"])], "effects": [shots_gate(), comment_gate()]}),
     );
     assert_eq!(
         got.unwrap_err(),
         Refusal::Unheld {
             label: "comment".into()
-        }
-    );
-}
-
-#[test]
-fn a_held_phrase_with_no_effect_is_refused_by_name() {
-    let got = read(
-        PR_SOURCE,
-        json!({"phrases": [held("Take screenshots", &[])], "effects": []}),
-    );
-    assert_eq!(
-        got.unwrap_err(),
-        Refusal::HeldWithoutEffect {
-            quote: "Take screenshots".into()
         }
     );
 }
@@ -286,7 +273,7 @@ fn a_phrase_naming_an_effect_not_handed_in_is_refused() {
 
 #[test]
 fn two_effects_with_one_label_are_refused() {
-    let mut again = comment_allow();
+    let mut again = comment_gate();
     again["label"] = json!("shots");
     let got = read(
         PR_SOURCE,
@@ -296,24 +283,6 @@ fn two_effects_with_one_label_are_refused() {
         got.unwrap_err(),
         Refusal::DuplicateLabel {
             label: "shots".into()
-        }
-    );
-}
-
-#[test]
-fn an_allow_entry_not_in_proxy_allow_is_refused_naming_it() {
-    let mut other = comment_allow();
-    other["entry"] = json!("PUT /repos/{repo}/pulls/*/merge");
-    let got = read(
-        PR_SOURCE,
-        json!({"phrases": [held("Post one comment", &["comment"])], "effects": [other]}),
-    );
-    assert_eq!(
-        got.unwrap_err(),
-        Refusal::NotAllowed {
-            label: "comment".into(),
-            rule: "github-app".into(),
-            entry: "PUT /repos/{repo}/pulls/*/merge".into()
         }
     );
 }
@@ -350,43 +319,8 @@ fn a_hand_in_to_a_reading_that_is_not_reading_is_refused() {
         why: "quiet".into(),
         at: Ts::from_millis(2),
     };
-    let got = done.hand_in(&doc(json!({"phrases": [], "effects": []})), &allow());
+    let got = hand_in(&done, &doc(json!({"phrases": [], "effects": []})));
     assert_eq!(got.unwrap_err(), Refusal::NotReading);
-}
-
-#[test]
-fn an_accepted_hand_in_links_phrases_and_effects_by_moor_ids() {
-    let read = read(
-        PR_SOURCE,
-        json!({
-            "phrases": [
-                held("Take screenshots", &["shots"]),
-                held("Post one comment", &["comment", "shots"]),
-                asked("on the pull request"),
-            ],
-            "effects": [shots_gate(), comment_allow()],
-        }),
-    )
-    .unwrap();
-    let ids: Vec<_> = read.effects().iter().map(|e| e.id().to_string()).collect();
-    assert_eq!(ids, ["e1", "e2"]);
-    let marks: Vec<Vec<String>> = read
-        .phrases()
-        .iter()
-        .map(|p| match &p.mark {
-            Mark::Held { effects } => effects.iter().map(ToString::to_string).collect(),
-            Mark::Asked {} => Vec::new(),
-        })
-        .collect();
-    assert_eq!(marks, [vec!["e1"], vec!["e2", "e1"], vec![]]);
-    assert_eq!(read.reader(), Some(&reader()));
-    assert_eq!(
-        read.effects()[1].key(),
-        EffectKey::Allow {
-            rule: "github-app".into(),
-            entry: "POST /repos/{repo}/issues/*/comments".into()
-        }
-    );
 }
 
 #[test]

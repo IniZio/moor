@@ -96,7 +96,10 @@ fn github_rule(base: &BTreeMap<String, ToolRule>) -> Option<String> {
 }
 
 /// The rules of `repo`'s stored rules text by id, or the default rules when it has none.
-fn repo_rules(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<BTreeMap<String, ToolRule>, String> {
+pub(crate) fn repo_rules(
+    cx: &Cx,
+    repo: Option<&ForgeRepo>,
+) -> Result<BTreeMap<String, ToolRule>, String> {
     let Some(repo) = repo else {
         return Ok(default_rules());
     };
