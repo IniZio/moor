@@ -1,4 +1,4 @@
-import type { Workflow } from './api';
+import type { ReadingView, Workflow } from './api';
 import { AutomationFile } from './AutomationFile';
 import { fileLines, type Hover, litOf, marksOf } from './promptFile';
 import { PromptMarks } from './PromptMarks';
@@ -50,6 +50,15 @@ export function phaseOf(saved: string, prompt: string, read: string | null): Pha
 	return read === prompt ? 'read' : 'writing';
 }
 
+/** Why a reading is stale, as the revision line says it. */
+const STALE: Record<ReadingView['stale'][number], string> = {
+	prompt: 'the prompt changed',
+	repos: 'the repos changed',
+	rules: "the repo's rules changed",
+	reader: "the reader's instructions changed",
+	table: 'the intent table changed',
+};
+
 const MARKED = 'Solid: moor holds the agent to it. Dashed: only asked of the agent.';
 const MARKS_OFF = 'Marks are off while you write.';
 
@@ -99,6 +108,7 @@ export function AutomationBox(p: BoxProps) {
 			<p class="rev">
 				revision {p.flow.revision}
 				{p.flow.plan_stale && <span class="pill warn">plan stale</span>}
+				{held && held.stale.length > 0 && <span class="pill warn">marks stale: {held.stale.map((s) => STALE[s]).join(', ')}</span>}
 				<span class="grow" />
 				{phase === 'saved' && (
 					<button type="button" class="lnk" onClick={editPrompt}>

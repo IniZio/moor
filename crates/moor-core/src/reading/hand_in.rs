@@ -204,15 +204,28 @@ pub(super) fn check(
     Ok(Read::new(phrases, effects, Some(reader)))
 }
 
-/// The phrase `p` with its mark: held when every intent found its lines or has its requests
-/// refused and it holds at least one effect, its lines and requests joining `all` once each;
-/// else unmapped, or asked naming what the rules let through, holding nothing.
+/// The phrase `p` with its mark, settled per intent. An intent no row covers holds nothing and
+/// stays on the phrase as "moor has no rule for this"; the phrase is then unmapped unless another
+/// intent gives a line or a withheld request. When every other intent found its lines or has its
+/// requests refused, the phrase is held by them and its gates, each joining `all` once, or asked
+/// with nothing to hold. An intent let through or unholdable leaves the phrase asked, naming what
+/// the rules let through, holding nothing.
 fn settle(id: PhraseId, p: Pending<'_>, all: &mut Effects) -> Phrase {
-    let whole = p
+    let holdable = p
         .intents
         .iter()
-        .all(|i| matches!(i.found, Found::Lines { .. } | Found::Refused));
-    let mark = if whole {
+        .all(|i| matches!(i.found, Found::Lines { .. } | Found::Refused | Found::NoRow));
+    let unmapped = p.intents.iter().any(|i| i.found == Found::NoRow);
+    let gives = !p.lines.is_empty() || p.forbids.iter().any(|r| !r.is_empty());
+    let mark = if !holdable {
+        let allowed = p.intents.iter().find_map(|i| match &i.found {
+            Found::LetThrough(a) => Some(a.clone()),
+            _ => None,
+        });
+        Mark::Asked { allowed }
+    } else if unmapped && !gives {
+        Mark::Unmapped {}
+    } else {
         let mut ids = p.holds;
         let mut added: Vec<EffectId> = p.lines.into_iter().map(|l| all.allow(l)).collect();
         added.extend(p.forbids.into_iter().flatten().map(|r| all.withhold(r)));
@@ -224,14 +237,6 @@ fn settle(id: PhraseId, p: Pending<'_>, all: &mut Effects) -> Phrase {
         EffectIds::try_from(ids).map_or(Mark::Asked { allowed: None }, |effects| Mark::Held {
             effects,
         })
-    } else if p.intents.iter().any(|i| i.found == Found::NoRow) {
-        Mark::Unmapped {}
-    } else {
-        let allowed = p.intents.iter().find_map(|i| match &i.found {
-            Found::LetThrough(a) => Some(a.clone()),
-            _ => None,
-        });
-        Mark::Asked { allowed }
     };
     Phrase {
         id,

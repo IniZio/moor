@@ -27,6 +27,7 @@ export function PhraseNote({ reading, phrase, rules }: { reading: ReadingView; p
 	const lines = mine.filter((e) => e.kind === 'allow');
 	const withheld = mine.filter((e) => e.kind === 'withheld');
 	const rows = phrase.intents.filter((i) => HOLDS.has(i.found));
+	const claims = mine.length > 0 || rows.some((i) => i.already.length > 0);
 	return (
 		<span class="pnote" role="tooltip">
 			{lines.map((e) => (
@@ -39,7 +40,7 @@ export function PhraseNote({ reading, phrase, rules }: { reading: ReadingView; p
 					<code>{e.line}</code> withheld
 				</span>
 			))}
-			{rows.length > 0 && (
+			{claims && rows.length > 0 && (
 				<span class="pfrom">
 					from{' '}
 					{rows.map((i, k) => (
@@ -74,7 +75,7 @@ export function PhraseNote({ reading, phrase, rules }: { reading: ReadingView; p
 	);
 }
 
-/** The saved prompt drawn from a reading's runs, so any script draws as written: solid under what moor holds the agent to, dashed under what is only asked, what the rules let through despite forbidding words, or what moor has no rule for. A phrase lights while the pointer or focus is on it, or on a line of the file that holds it; a lit phrase that names an intent shows what it holds, raw. */
+/** The saved prompt drawn from a reading's runs, so any script draws as written: solid under what moor holds the agent to, dashed under what is only asked, what the rules let through despite forbidding words, or what moor has no rule for. A phrase lights while the pointer or focus is on it or its note, or on a line of the file that holds it, until Escape; a lit phrase that names an intent shows what it holds, raw. */
 export function PromptMarks({ reading, lit, onHover, onEdit, rules }: { reading: ReadingView; lit: ReadonlySet<string>; onHover: (on: Hover) => void; onEdit?: (e: { currentTarget: HTMLElement }) => void; rules?: string }) {
 	const phrases = new Map(reading.phrases.map((p) => [p.id, p]));
 	return (
@@ -93,7 +94,14 @@ export function PromptMarks({ reading, lit, onHover, onEdit, rules }: { reading:
 						onMouseEnter={() => onHover(on)}
 						onMouseLeave={() => onHover(null)}
 						onFocus={() => onHover(on)}
-						onBlur={() => onHover(null)}
+						onFocusOut={(e) => {
+							if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onHover(null);
+						}}
+						onKeyDown={(e) => {
+							if (e.key !== 'Escape') return;
+							e.currentTarget.focus();
+							onHover(null);
+						}}
 					>
 						{run.text}
 						{shown && phrase.intents.length > 0 && <PhraseNote reading={reading} phrase={phrase} rules={rules} />}

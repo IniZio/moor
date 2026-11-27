@@ -87,8 +87,8 @@ const phraseSpans = (el: El) => all(el, 'span').filter((s) => (s.props as { 'dat
 const spanOf = (el: El, id: string) => phraseSpans(el).find((s) => (s.props as { 'data-id'?: string })['data-id'] === id) as El;
 const legendOf = (el: El) => textOf(all(el, 'p').find((p) => classOf(p).includes('legend')));
 const litLines = (el: El) => all(el, 'div').filter((d) => classOf(d).includes('flit')).map(textOf);
-type Events = El['props'] & Record<'onMouseEnter' | 'onMouseLeave' | 'onBlur', (() => void) | undefined>;
-const fire = (el: El, handler: 'onMouseEnter' | 'onMouseLeave' | 'onFocus' | 'onBlur') => (el.props as Events)[handler]?.();
+type Events = El['props'] & Record<'onMouseEnter' | 'onMouseLeave', (() => void) | undefined>;
+const fire = (el: El, handler: 'onMouseEnter' | 'onMouseLeave' | 'onFocus') => (el.props as Events)[handler]?.();
 /** The box of the saved prompt `prompt` with `read` as the controller's reading of it. */
 const marked = (read: ReadingView | null | undefined, part: Partial<BoxProps> = {}, prompt = read?.source ?? SRC) => box({ flow: { ...FLOW, prompt, reading: read } as Workflow, prompt, ...part });
 
@@ -114,7 +114,8 @@ test('keyboard focus on a phrase lights what hover does', () => {
 	const el = marked(reading(), { onHover: (h) => seen.push(h) });
 	expect((spanOf(el, 'p2').props as { tabIndex?: number }).tabIndex).toBe(0);
 	fire(spanOf(el, 'p2'), 'onFocus');
-	fire(spanOf(el, 'p2'), 'onBlur');
+	const away = { name: 'the next field' };
+	(spanOf(el, 'p2').props as { onFocusOut?: (e: { relatedTarget: typeof away; currentTarget: { contains: (n: typeof away) => boolean } }) => void }).onFocusOut?.({ relatedTarget: away, currentTarget: { contains: () => false } });
 	expect(seen).toEqual([{ phrase: 'p2' }, null]);
 });
 
@@ -180,4 +181,11 @@ test('the marked block says the words of the source in any script', () => {
 	const el = marked(reading({ source, runs: [{ text: '运行检查。', phrase: 'p1' }, { text: '发布一条评论', phrase: 'p2' }, { text: '，然后停止。' }] }));
 	expect(wordsOf(el)).toBe(source);
 	expect(phraseSpans(el).map(textOf)).toEqual(['运行检查。', '发布一条评论']);
+});
+
+test('a reading a later change made stale says why beside the revision', () => {
+	const pills = (el: El) => all(el, 'span').filter((s) => classOf(s).includes('pill')).map(textOf);
+	expect(pills(marked(reading()))).toEqual([]);
+	expect(pills(marked(reading({ stale: ['rules'] })))).toEqual(["marks stale: the repo's rules changed"]);
+	expect(pills(marked(reading({ stale: ['rules', 'table'] })))).toEqual(["marks stale: the repo's rules changed, the intent table changed"]);
 });

@@ -247,3 +247,145 @@ fn a_stored_forbidding_reading_reads_back_the_same() {
     let back: Read = serde_json::from_value(serde_json::to_value(&read).unwrap()).unwrap();
     assert_eq!(back, read);
 }
+
+/// The fixture's forbidding sentences and its comment and status clauses, as readers quote them.
+const FIXTURE: &str = "Never approve, request changes on, merge, close, label, or edit a pull request. Never push a branch, never open a pull request, never touch the default branch. Leave ONE comment on that pull request, created once and then edited in place, and one commit status (context moor/evidence) on MOOR_PULL_HEAD_SHA.";
+const FIRST: &str =
+    "Never approve, request changes on, merge, close, label, or edit a pull request.";
+const SECOND: &str =
+    "Never push a branch, never open a pull request, never touch the default branch.";
+
+/// A phrase quoting `exact` that names each of `intents` with `polarity`.
+fn naming(exact: &str, polarity: &str, intents: &[&str]) -> serde_json::Value {
+    let intents: Vec<_> = intents
+        .iter()
+        .map(|i| json!({"intent": i, "polarity": polarity}))
+        .collect();
+    json!({"quote": {"exact": exact}, "intents": intents})
+}
+
+/// The first sentence as a reader handed it in: six verbs, one with a row.
+fn first_sentence() -> serde_json::Value {
+    naming(
+        FIRST,
+        "never",
+        &[
+            "approve",
+            "request-changes",
+            "merge",
+            "close-pull-request",
+            "label",
+            "edit-pull-request",
+        ],
+    )
+}
+
+fn read_fixture(
+    phrases: &[serde_json::Value],
+    rules: &BTreeMap<String, ToolRule>,
+) -> Result<Read, Refusal> {
+    let pinned = Pinned { rules, app: true };
+    let v = json!({"phrases": phrases, "effects": []});
+    reading(FIXTURE).hand_in(&doc(v), IntentTable::shipped().unwrap(), &pinned)
+}
+
+#[test]
+fn a_phrase_naming_merge_beside_verbs_no_row_covers_holds_the_merge_requests() {
+    let read = read_fixture(&[first_sentence()], &default_rules()).unwrap();
+    assert_eq!(
+        withheld(&read),
+        [
+            (rest_merge(), Origin::Table),
+            (merge_mutation(), Origin::Table)
+        ]
+    );
+    assert!(
+        matches!(&read.phrases()[0].mark, Mark::Held { effects } if effects.iter().count() == 2),
+        "{:?}",
+        read.phrases()[0].mark
+    );
+    let found: Vec<_> = read.phrases()[0]
+        .intents
+        .iter()
+        .map(|u| (u.intent.to_string(), u.found.clone()))
+        .collect();
+    assert_eq!(found.len(), 6);
+    assert!(found
+        .iter()
+        .all(|(name, f)| (name == "merge") == (*f == Found::Refused)));
+    assert_eq!(found.iter().filter(|(_, f)| *f == Found::NoRow).count(), 5);
+}
+
+#[test]
+fn a_phrase_naming_push_beside_a_verb_no_row_covers_is_asked_naming_the_push_rule() {
+    let read = read_fixture(
+        &[naming(SECOND, "never", &["push", "open-pull-request"])],
+        &default_rules(),
+    )
+    .unwrap();
+    assert_eq!(
+        read.phrases()[0].mark,
+        Mark::Asked {
+            allowed: Some(Allowed {
+                request: Request::Http {
+                    host: "github.com".into(),
+                    method: "POST".into(),
+                    path: "/{repo}.git/git-receive-pack".into(),
+                },
+                rule: "github-git".into(),
+            })
+        }
+    );
+    assert_eq!(read.phrases()[0].intents[1].found, Found::NoRow);
+    assert!(read.effects().is_empty());
+}
+
+#[test]
+fn the_first_sentence_under_rules_that_allow_the_merge_is_asked_naming_their_rule() {
+    let rules = api_allows(&format!("PUT {MERGE}"));
+    let read = read_fixture(&[first_sentence()], &rules).unwrap();
+    assert_eq!(
+        read.phrases()[0].mark,
+        Mark::Asked {
+            allowed: Some(Allowed {
+                request: rest_merge(),
+                rule: "github-api".into()
+            })
+        }
+    );
+    assert!(read.effects().is_empty());
+}
+
+#[test]
+fn a_phrase_asking_for_a_comment_beside_a_verb_no_row_covers_holds_only_the_comment_lines() {
+    let read = read_fixture(
+        &[naming(
+            "ONE comment on that pull request, created once and then edited in place, and one commit status (context moor/evidence) on MOOR_PULL_HEAD_SHA",
+            "do",
+            &["comment", "commit-status"],
+        )],
+        &default_rules(),
+    )
+    .unwrap();
+    assert!(
+        matches!(&read.phrases()[0].mark, Mark::Held { effects } if effects.iter().count() == 2),
+        "{:?}",
+        read.phrases()[0].mark
+    );
+    assert_eq!(read.phrases()[0].intents[1].found, Found::NoRow);
+    let allows: Vec<_> = read
+        .effects()
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Allow { rule, entry, .. } => Some(format!("{rule} {entry}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        allows,
+        [
+            "github-api POST /repos/{repo}/issues/*/comments",
+            "github-api PATCH /repos/{repo}/issues/comments/*"
+        ]
+    );
+}
