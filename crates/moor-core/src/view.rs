@@ -37,7 +37,7 @@ pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
 pub use setup::{DotfilesView, SetupView};
 pub use sleep::unfinished_turn;
-pub use task_box::{TaskBoxState, TaskBoxView};
+pub use task_box::{SetupFailedView, TaskBoxState, TaskBoxView};
 pub use ties::BoxTies;
 
 /// Why the agent could not be launched.

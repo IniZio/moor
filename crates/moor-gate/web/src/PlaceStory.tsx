@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 
 import type { BoxDetail, Entry, Evidence } from './api';
 import { Markdown } from './Markdown';
-import { ArtifactCard, BoxLine, OutputCard, PrCard } from './PlaceCards';
+import { ArtifactCard, BoxLine, OutputCard, PrCard, SetupFailed } from './PlaceCards';
 import { exactTime } from './HomeList';
 import { clock, Line } from './Portal';
 import { foldWords, routine, ToolLine } from './Transcript';
@@ -126,6 +126,7 @@ function partsOf(detail: BoxDetail, turns: Turn[], prState: ComponentChildren): 
 	};
 	for (const box of detail.task_boxes) {
 		put(Date.parse(box.started_at), <BoxLine box={box} key={`b${box.id}`} />);
+		if (box.setup_failed) put(Date.parse(box.started_at), <SetupFailed failed={box.setup_failed} key={`f${box.id}`} />);
 		cards(String(box.id), box.artifacts);
 	}
 	if (!detail.task_at) cards('own', detail.artifacts);

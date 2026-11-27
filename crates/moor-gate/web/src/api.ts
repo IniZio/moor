@@ -649,6 +649,8 @@ const TaskBoxSchema = v.object({
 	state: v.string(),
 	closed_at: v.nullish(v.string()),
 	artifacts: v.optional(v.array(EvidenceSchema), []),
+	/** The setup line the Box failed on and its exit and last output, unless a later setup passed. */
+	setup_failed: v.nullish(v.object({ line: v.string(), why: v.nullish(v.string()) })),
 });
 
 const BoxDetailFields = v.object({

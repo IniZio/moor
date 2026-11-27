@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::clock::Ts;
+use moor_core::view::SetupFailedView;
 use moor_core::{BoxId, BoxName};
 use moor_schema::tables::{Boxes, Events};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
@@ -20,6 +21,8 @@ pub(crate) struct TaskBox {
     pub(crate) ready_at: Option<Ts>,
     /// When the Box recorded `closed`; none while it is open.
     pub(crate) closed_at: Option<Ts>,
+    /// The Box's latest `setup_failed` event, unless a setup passed after it.
+    pub(crate) setup_failed: Option<SetupFailedView>,
 }
 
 /// The branch a task's work Boxes share, and the one of them still open on it.
@@ -81,6 +84,30 @@ impl Store {
             let (id, kind, at) = time?;
             first.insert((id, kind), Ts::from_millis(at));
         }
+        let setups = reader.rows(
+            Query::select()
+                .columns([Events::Box, Events::Kind, Events::Payload])
+                .from(Events::Table)
+                .and_where(Expr::col(Events::Box).is_in(rows.iter().map(|r| r.id.get())))
+                .and_where(Expr::col(Events::Kind).is_in(["setup_failed", "setup_finished"]))
+                .order_by(Events::Id, Order::Asc),
+            |r| {
+                Ok::<_, super::db::Error>((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )?;
+        let mut failed: HashMap<i64, SetupFailedView> = HashMap::new();
+        for setup in setups {
+            let (id, kind, payload) = setup?;
+            if kind == "setup_failed" {
+                failed.insert(id, serde_json::from_str(&payload)?);
+            } else if serde_json::from_str::<serde_json::Value>(&payload)?["ok"] == true {
+                failed.remove(&id);
+            }
+        }
         Ok(rows
             .into_iter()
             .map(|row| {
@@ -88,6 +115,7 @@ impl Store {
                 TaskBox {
                     ready_at: at("working"),
                     closed_at: at("closed"),
+                    setup_failed: failed.remove(&row.id.get()),
                     row,
                 }
             })

@@ -552,6 +552,7 @@ fn a_task_box_is_one_line_of_the_wire_and_its_lifecycle_maps_to_five_states() {
         state: BoxLifecycle::SettingUp.into(),
         closed_at: None,
         artifacts: Vec::new(),
+        setup_failed: None,
     };
     assert_eq!(
         serde_json::to_value(&open).unwrap(),

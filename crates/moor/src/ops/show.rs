@@ -138,6 +138,7 @@ fn task_boxes_of(store: &Store, place: &BoxRow) -> Result<Vec<TaskBoxView>, Comm
                 state: t.row.lifecycle.into(),
                 closed_at: t.closed_at.map(rfc3339),
                 artifacts: artifacts_of(store, t.row.id)?,
+                setup_failed: t.setup_failed,
             })
         })
         .collect()

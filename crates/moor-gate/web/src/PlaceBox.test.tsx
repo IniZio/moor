@@ -21,7 +21,7 @@ const ARTIFACT = (name: string, image: boolean, m: number) => ({
 	href: `/account/api/box/artifact?box=clinic%2Fmcp-1a2b3c4d&name=${encodeURIComponent(name)}&version=1`,
 });
 /** What a test sets over the work Box the gate sends. */
-type Over = { state?: string; ready_ms?: number | null; closed_at?: string | null; started_at?: string; artifacts?: object[] };
+type Over = { state?: string; ready_ms?: number | null; closed_at?: string | null; started_at?: string; artifacts?: object[]; setup_failed?: { line: string; why?: string } };
 const WORK_BOX = (extra: Over = {}) => ({
 	id: 1,
 	name: WORK,
@@ -89,6 +89,23 @@ test('a Box with no ready time yet says it is starting', async () => {
 	const view = await story(TWO_TURNS, { task_boxes: [WORK_BOX({ state: 'starting', ready_ms: null })] });
 	const [line] = byClass(view, 't-pl-box') as [El];
 	expect(textOf(line)).toBe('▸ Box · acme/clinic-prototype · starting');
+});
+
+test('a Box whose setup failed shows the failing line and the end of its output under the Box line', async () => {
+	const output = Array.from({ length: 12 }, (_, i) => `out ${i + 1}`).join('\n');
+	const failed = WORK_BOX({ state: 'failed', ready_ms: null, setup_failed: { line: './scripts/bootstrap.sh', why: `exit 127\noutput ended:\n${output}\n` } });
+	const view = await story(TWO_TURNS, { task_boxes: [failed] });
+	expect(order(view)).toEqual(['t-pl-you', 't-pl-say', 't-pl-you', 't-pl-say', 't-pl-box', 't-pl-ended', 't-pl-say']);
+	expect(textOf(byClass(view, 't-pl-box')[0] as El)).toBe('▸ Box · acme/clinic-prototype · failed');
+	const [alert] = byClass(view, 't-pl-ended') as [El];
+	expect(alert.props.role).toBe('alert');
+	expect(textOf(byClass(alert, 't-pl-ended-h')[0] as El)).toBe('Setup failed: ./scripts/bootstrap.sh');
+	expect(textOf(all(alert, 'pre')[0] as El)).toBe('out 5\nout 6\nout 7\nout 8\nout 9\nout 10\nout 11\nout 12');
+});
+
+test('a Box whose setup passed shows no failure', async () => {
+	const view = await story(TWO_TURNS, { task_boxes: [WORK_BOX()] });
+	expect(byClass(view, 't-pl-ended')).toHaveLength(0);
 });
 
 test('a Box that started before the first message of the page still gets its line', async () => {

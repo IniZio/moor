@@ -138,6 +138,5 @@ fn project_facts(b: &BriefInput, out: &mut String) {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

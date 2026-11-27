@@ -8,7 +8,8 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 
 /// What to type instead of a start that carries what only an agent reads.
-pub(crate) const ASK_INSTEAD: &str = "to start a task with words, type `moor ask --repo OWNER/NAME \
+pub(crate) const ASK_INSTEAD: &str =
+    "to start a task with words, type `moor ask --repo OWNER/NAME \
      TEXT` or use the ask tool; its agent starts work Boxes as it needs them";
 
 /// Starts or attaches to the Box a front asks for: a plain Box that runs the repo's setup and no

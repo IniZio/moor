@@ -1,7 +1,7 @@
 //! The work Boxes a question's place started, as the task page reads them: each with its repo,
 //! when it was ready and whether it still runs, and the files it left, served by its own id.
 
-use moor_core::view::ArtifactView;
+use moor_core::view::{ArtifactView, SetupFailedView};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -29,6 +29,9 @@ pub(super) struct TaskBox {
     /// The latest version of each file it left.
     #[serde(default)]
     artifacts: Vec<ArtifactView>,
+    /// The setup line it failed on and what that said, unless a later setup passed.
+    #[serde(default)]
+    setup_failed: Option<SetupFailedView>,
 }
 
 /// The page's view of `boxes`, oldest first as `show` sent them; each file's link names the work
@@ -45,7 +48,7 @@ pub(super) fn shown(boxes: &[TaskBox]) -> Value {
                 .collect();
             json!({"id": b.id, "name": b.name, "repo": b.repo, "started_at": b.started_at,
                    "ready_ms": b.ready_ms, "state": b.state, "closed_at": b.closed_at,
-                   "artifacts": artifacts})
+                   "artifacts": artifacts, "setup_failed": b.setup_failed})
         })
         .collect();
     json!(boxes)

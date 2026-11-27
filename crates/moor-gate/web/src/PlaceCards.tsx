@@ -77,6 +77,20 @@ export function BoxLine({ box }: { box: TaskBox }) {
 	);
 }
 
+/** How many lines of a failed setup's output show under its Box line. */
+const SETUP_TAIL = 8;
+
+/** The setup line a work Box failed on and the end of what it said, as a failure under the Box line. */
+export function SetupFailed({ failed }: { failed: NonNullable<TaskBox['setup_failed']> }) {
+	const tail = (failed.why ?? '').trimEnd().split('\n').slice(-SETUP_TAIL).join('\n');
+	return (
+		<div class="t-pl-ended" role="alert">
+			<p class="t-pl-ended-h">Setup failed: {failed.line}</p>
+			{tail && <pre>{tail}</pre>}
+		</div>
+	);
+}
+
 const kb = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function Card({ glyph, name, where, note, href, tail, children }: { glyph: keyof typeof GLYPH; name: string; where?: string; note?: ComponentChildren; href: string; tail?: ComponentChildren; children?: ComponentChildren }) {

@@ -77,6 +77,7 @@ fn place(name: &str) -> Response {
     let work = json!({"id": 5, "name": "web/mcp-1a2b3c4d", "repo": "acme/web",
         "started_at": "2026-11-24T11:05:10Z", "ready_ms": 38000, "state": "closed",
         "closed_at": "2026-11-24T11:11:12Z",
+        "setup_failed": {"line": "make deps", "why": "exit 2\noutput ended:\nno rule"},
         "artifacts": [{"name": "fee line.png", "version": 1, "kind": "screenshot",
             "content_type": "image/png", "size": 10, "sha256": "0",
             "created_at": "2026-11-24T11:10:00Z"}]});
@@ -229,6 +230,10 @@ fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
     assert_eq!(work["ready_ms"], 38000);
     assert_eq!(work["state"], "closed");
     assert_eq!(work["closed_at"], "2026-11-24T11:11:12Z");
+    assert_eq!(
+        work["setup_failed"],
+        json!({"line": "make deps", "why": "exit 2\noutput ended:\nno rule"})
+    );
     let art = &work["artifacts"][0];
     assert_eq!(art["image"], true);
     assert_eq!(

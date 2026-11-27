@@ -43,7 +43,14 @@ fn text_usage_error_goes_to_stderr() {
 
 #[test]
 fn start_with_a_prompt_points_at_ask() {
-    let o = done(&["start", "try", "--repo", "acme/web", "--prompt", "fix the typo"]);
+    let o = done(&[
+        "start",
+        "try",
+        "--repo",
+        "acme/web",
+        "--prompt",
+        "fix the typo",
+    ]);
     assert_eq!(o.code, 2);
     assert_eq!(
         o.stderr,
