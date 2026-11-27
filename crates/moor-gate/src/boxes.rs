@@ -236,18 +236,11 @@ fn hand_in_description() -> String {
     )
 }
 
-impl BoxTools {
-    /// Every tool the server serves each Box.
-    fn served() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
-        Self::tool_router() + Self::place_router()
-    }
-}
-
 #[allow(
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler(router = Self::served())]
+#[tool_handler(router = (Self::tool_router() + Self::place_router()))]
 impl ServerHandler for BoxTools {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
