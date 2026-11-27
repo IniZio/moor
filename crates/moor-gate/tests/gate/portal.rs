@@ -230,10 +230,6 @@ fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
     assert_eq!(work["ready_ms"], 38000);
     assert_eq!(work["state"], "closed");
     assert_eq!(work["closed_at"], "2026-11-24T11:11:12Z");
-    assert_eq!(
-        work["setup_failed"],
-        json!({"line": "make deps", "why": "exit 2\noutput ended:\nno rule"})
-    );
     let art = &work["artifacts"][0];
     assert_eq!(art["image"], true);
     assert_eq!(
@@ -241,6 +237,18 @@ fn a_question_s_page_carries_its_work_boxes_with_hrefs_naming_the_work_box() {
         "the picture is served by the work Box, not by the place"
     );
     assert_eq!(detail["artifacts"], json!([]));
+}
+
+#[test]
+fn a_question_s_page_carries_the_setup_a_work_box_failed() {
+    let w = world(true, &[]);
+    let cookie = user(&w, "portal-alice-setup");
+    let reply = get(&w.addr, "/account/api/box?box=web%2Fplace", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    assert_eq!(
+        json_of(&reply)["task_boxes"][0]["setup_failed"],
+        json!({"line": "make deps", "why": "exit 2\noutput ended:\nno rule"})
+    );
 }
 
 #[test]

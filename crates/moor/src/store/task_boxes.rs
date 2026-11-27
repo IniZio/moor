@@ -84,30 +84,7 @@ impl Store {
             let (id, kind, at) = time?;
             first.insert((id, kind), Ts::from_millis(at));
         }
-        let setups = reader.rows(
-            Query::select()
-                .columns([Events::Box, Events::Kind, Events::Payload])
-                .from(Events::Table)
-                .and_where(Expr::col(Events::Box).is_in(rows.iter().map(|r| r.id.get())))
-                .and_where(Expr::col(Events::Kind).is_in(["setup_failed", "setup_finished"]))
-                .order_by(Events::Id, Order::Asc),
-            |r| {
-                Ok::<_, super::db::Error>((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            },
-        )?;
-        let mut failed: HashMap<i64, SetupFailedView> = HashMap::new();
-        for setup in setups {
-            let (id, kind, payload) = setup?;
-            if kind == "setup_failed" {
-                failed.insert(id, serde_json::from_str(&payload)?);
-            } else if serde_json::from_str::<serde_json::Value>(&payload)?["ok"] == true {
-                failed.remove(&id);
-            }
-        }
+        let mut failed = self.failed_setups(rows.iter().map(|r| r.id.get()))?;
         Ok(rows
             .into_iter()
             .map(|row| {
@@ -120,5 +97,39 @@ impl Store {
                 }
             })
             .collect())
+    }
+
+    /// The latest `setup_failed` event of each of Boxes `ids` that no passing setup followed.
+    fn failed_setups(
+        &self,
+        ids: impl Iterator<Item = i64>,
+    ) -> Result<HashMap<i64, SetupFailedView>, StoreError> {
+        let setups = self.reader()?.rows(
+            Query::select()
+                .columns([Events::Box, Events::Kind, Events::Payload])
+                .from(Events::Table)
+                .and_where(Expr::col(Events::Box).is_in(ids))
+                .and_where(Expr::col(Events::Kind).is_in(["setup_failed", "setup_finished"]))
+                .order_by(Events::Id, Order::Asc),
+            |r| {
+                Ok::<_, super::db::Error>((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )?;
+        let mut failed = HashMap::new();
+        for setup in setups {
+            let (id, kind, payload) = setup?;
+            if kind == "setup_failed" {
+                failed.insert(id, serde_json::from_str(&payload)?);
+            } else if serde_json::from_str::<serde_json::Value>(&payload)?.get("ok")
+                == Some(&serde_json::Value::Bool(true))
+            {
+                failed.remove(&id);
+            }
+        }
+        Ok(failed)
     }
 }
