@@ -1,6 +1,7 @@
 //! What a Box holds when its agent starts: every file its brief names, after the launch's steps
 //! and the script's cleanup have run.
 
+use std::fmt::Write as _;
 use std::os::unix::fs::PermissionsExt;
 
 use moor_core::contract::skills;
@@ -19,32 +20,25 @@ fn named_paths(brief: &str) -> Vec<String> {
         .collect()
 }
 
-/// Launches `r` into a scratch Box, runs the agent script there with a stub agent, and returns each
-/// path the brief names with what the agent could read there when it started.
-fn seen_at_agent_start(r: LaunchReq) -> Vec<(String, Option<String>)> {
-    let dir = tempfile::TempDir::new().unwrap();
-    let root = dir.path().to_str().unwrap().to_owned();
-    let home = format!("{root}/home");
+/// A fake driver whose Box `id` has its home at `home`.
+fn scratch_driver(home: &str, id: BoxId) -> Arc<FakeDriver> {
     let environ = format!("PATH=/usr/bin\0HOME={home}\0LANG=C\0");
     let d = Arc::new(FakeDriver::new().peek_text("box-1", &environ_path(), &environ));
     d.acquire(&AcquireReq {
         pool_machine: None,
         provider: ProviderId::new("fake"),
-        box_id: r.id,
+        box_id: id,
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
         cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
-    let r = LaunchReq {
-        workdir: BoxPath::under(&root, "work").unwrap(),
-        ..r
-    };
-    agent(&d).launch(&r).unwrap();
-    let (cred, _) = r
-        .dirs_under(&BoxPath::under(&root, "home").unwrap())
-        .unwrap();
+    d
+}
+
+/// Writes each file the launch put into the scratch Box and returns the brief it staged in `cred`.
+fn write_puts(d: &FakeDriver, cred: &BoxPath) -> String {
     let mut brief = String::new();
     for (_, path, bytes, mode) in d.puts() {
         let p = std::path::Path::new(path.as_str());
@@ -55,19 +49,45 @@ fn seen_at_agent_start(r: LaunchReq) -> Vec<(String, Option<String>)> {
             brief = String::from_utf8(bytes).unwrap();
         }
     }
-    let paths = named_paths(&brief);
-    let bin = format!("{root}/bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let copies: String = paths
+    brief
+}
+
+/// A stub agent in `bin` that copies each of `paths` it can read to `$MARKER.<i>`, then touches
+/// `$MARKER`.
+fn stub_agent(bin: &str, paths: &[String]) {
+    std::fs::create_dir_all(bin).unwrap();
+    let copies = paths
         .iter()
         .enumerate()
-        .map(|(i, p)| format!("[ -r '{p}' ] && cat '{p}' > \"$MARKER.{i}\"\n"))
-        .collect();
+        .fold(String::new(), |mut out, (i, p)| {
+            _ = writeln!(out, "[ -r '{p}' ] && cat '{p}' > \"$MARKER.{i}\"");
+            out
+        });
     moor_testkit::write_executable(
         std::path::Path::new(&format!("{bin}/claude")),
         format!("#!/bin/sh\n{copies}touch \"$MARKER\"\n"),
     )
     .unwrap();
+}
+
+/// Launches `r` into a scratch Box, runs the agent script there with a stub agent, and returns each
+/// path the brief names with what the agent could read there when it started.
+fn seen_at_agent_start(r: LaunchReq) -> Vec<(String, Option<String>)> {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path().to_str().unwrap().to_owned();
+    let home = format!("{root}/home");
+    let d = scratch_driver(&home, r.id);
+    let r = LaunchReq {
+        workdir: BoxPath::under(&root, "work").unwrap(),
+        ..r
+    };
+    agent(&d).launch(&r).unwrap();
+    let (cred, _) = r
+        .dirs_under(&BoxPath::under(&root, "home").unwrap())
+        .unwrap();
+    let paths = named_paths(&write_puts(&d, &cred));
+    let bin = format!("{root}/bin");
+    stub_agent(&bin, &paths);
     let script = format!("{}/agent.sh", cred.as_str());
     let status = Command::new("sh")
         .arg(&script)
@@ -111,13 +131,14 @@ fn every_skill_file_a_brief_names_is_readable_when_the_agent_starts() {
         let skills = skills().unwrap();
         assert!(!seen.is_empty(), "a work Box's brief names its skill files");
         for (path, read) in seen {
-            let skill = skills
+            let want = skills
                 .iter()
                 .find(|s| path.ends_with(&format!("/{}/SKILL.md", s.name)))
-                .unwrap_or_else(|| panic!("{path} is not a built-in skill's file"));
+                .map(|s| s.file);
+            assert!(want.is_some(), "{path} is not a built-in skill's file");
             assert_eq!(
                 read.as_deref(),
-                Some(skill.file),
+                want,
                 "{path}, named in the brief, is not readable when the agent starts"
             );
         }

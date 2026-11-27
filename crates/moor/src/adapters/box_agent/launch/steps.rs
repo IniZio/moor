@@ -150,6 +150,21 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
+    /// The built-in skills a work Box lists, each with the step that writes it into the agent's
+    /// skills folder; none for an agent place.
+    fn skills(&self) -> Result<(Vec<SkillEntry>, Vec<BoxStep>), Failure> {
+        if self.req.place {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let dir = self
+            .profile
+            .skills_dir(self.ctx)
+            .map_err(|e| fail("brief", &e))?;
+        Ok(skill_files(&dir, self.req.run.is_some())?
+            .into_iter()
+            .unzip())
+    }
+
     /// Adds every step to `plan`, in the order a failure is reported; on an error `plan` holds the
     /// steps before it.
     pub(super) fn plan(&self, plan: &mut Plan) -> Result<(), Failure> {
@@ -162,15 +177,7 @@ impl Launch<'_> {
         let preseed = self.profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
         let writers = self.profile_setups()?;
         let contract = contract().map_err(|e| fail("brief", &e))?;
-        let (skills, skill_puts): (Vec<SkillEntry>, Vec<BoxStep>) = if req.place {
-            (Vec::new(), Vec::new())
-        } else {
-            let dir = self
-                .profile
-                .skills_dir(ctx)
-                .map_err(|e| fail("brief", &e))?;
-            skill_files(&dir, req.run.is_some())?.into_iter().unzip()
-        };
+        let (skills, skill_puts) = self.skills()?;
         let brief = render(&BriefInput {
             name: req.box_name.as_str(),
             issue: req.issue.as_deref(),
