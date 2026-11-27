@@ -4,9 +4,11 @@
   tools/contract-fixtures/run [-n RUNS] [--instance NAME] FIXTURE... | all
   tools/contract-fixtures/run --check EVIDENCE_DIR FIXTURE
 
-Each fixture is a TOML file in fixtures/. A run starts the fixture's task (a one-off Box) or fires
-its automation (a workflow whose gates moor reads from the prompt), waits for the agent, saves the
-evidence, cleans up what the run made on GitHub, then counts the records each assertion names.
+Each fixture is a TOML file in fixtures/. A run starts the fixture's task (an ask, which moor
+answers in an agent place that starts work Boxes as it needs them) or fires its automation (a
+workflow whose gates moor reads from the prompt), waits for the agent, saves the evidence of the
+place and its work Boxes, cleans up what the run made on GitHub, then counts the records each
+assertion names.
 One row per fixture: "<name> <passes>/<runs>". Exit 1 when any fixture passes fewer than all.
 """
 
@@ -171,30 +173,51 @@ def ref_changes(before, after):
     return out
 
 
-def collect(inst, fx, box, ev, refs_before):
+def show(inst, box):
     rc, out = inst.moor("show", box, "--json", timeout=120)
-    shown = json.loads(out.splitlines()[0])["value"]["box"] if rc == 0 else {}
-    (ev / "show.json").write_text(json.dumps(shown, indent=1))
-    rc, out = inst.moor("events", "--box", box, timeout=120)
-    (ev / "events.jsonl").write_text(out)
-    p = inst.state / "egress" / "proxy" / f"{shown.get('id')}.log"
-    (ev / "proxy.log").write_text(p.read_text() if p.exists() else "")
-    try:
-        ch = inst.call({"cmd": "changes", "box": box})
-        files = [{"path": f.get("path", ""), **flatten(f)} for r in ch["repos"] for f in r["files"]]
-    except RuntimeError as e:
-        files = [{"path": "", "error": str(e)}]
+    return json.loads(out.splitlines()[0])["value"] if rc == 0 else {}
+
+
+def collect(inst, fx, box, ev, refs_before):
+    """Saves the evidence of `box` and, for a task's place, of each work Box it started. Events
+    and the Proxy log come from every one, the place first; changes, probes and artifacts from the
+    work Boxes, which hold the checkouts. Answers the branches, ref changes and pull requests."""
+    shown = show(inst, box)
+    head = shown.get("box") or {}
+    work = [show(inst, t["name"]).get("box") or t for t in shown.get("task_boxes", [])]
+    (ev / "show.json").write_text(json.dumps({"box": head, "task_boxes": work}, indent=1))
+    every = [head, *work] if head else work
+    checkouts = work if fx["mode"] == "task" else [head]
+    events, proxy = "", ""
+    for b in every:
+        rc, out = inst.moor("events", "--box", b.get("name", ""), timeout=120)
+        events += out if out.endswith("\n") or not out else out + "\n"
+        p = inst.state / "egress" / "proxy" / f"{b.get('id')}.log"
+        proxy += p.read_text() if p.exists() else ""
+    (ev / "events.jsonl").write_text(events)
+    (ev / "proxy.log").write_text(proxy)
+    files, probes, arts = [], [], []
+    for b in checkouts:
+        name = b.get("name", "")
+        try:
+            ch = inst.call({"cmd": "changes", "box": name})
+            files += [{"path": f.get("path", ""), "box": name, **flatten(f)}
+                      for r in ch["repos"] for f in r["files"]]
+        except RuntimeError as e:
+            files.append({"path": "", "box": name, "error": str(e)})
+        for pname, cmd in fx["probes"].items():
+            rc, out = inst.moor("exec", name, cmd, timeout=180)
+            probes.append({"name": pname, "box": name, "exit": str(rc), "out": out[-2000:]})
+        rc, out = inst.moor("exec", name, "cd .moor/artifacts 2>/dev/null && for f in *; do [ -f \"$f\" ] "
+                            "&& printf '%s\\001' \"$f\" && head -c 65536 \"$f\" && printf '\\002'; done",
+                            timeout=180)
+        arts += [dict(zip(("name", "text"), chunk.split("\x01", 1)))
+                 for chunk in out.split("\x02") if "\x01" in chunk] if rc == 0 else []
+    for pname in fx["probes"]:
+        if not any(p["name"] == pname for p in probes):
+            probes.append({"name": pname, "box": "", "exit": "", "out": "no work Box to probe"})
     (ev / "changes.json").write_text(json.dumps(files, indent=1))
-    probes = []
-    for pname, cmd in fx["probes"].items():
-        rc, out = inst.moor("exec", box, cmd, timeout=180)
-        probes.append({"name": pname, "exit": str(rc), "out": out[-2000:]})
     (ev / "probes.json").write_text(json.dumps(probes, indent=1))
-    rc, out = inst.moor("exec", box, "cd .moor/artifacts 2>/dev/null && for f in *; do [ -f \"$f\" ] "
-                        "&& printf '%s\\001' \"$f\" && head -c 65536 \"$f\" && printf '\\002'; done",
-                        timeout=180)
-    arts = [dict(zip(("name", "text"), chunk.split("\x01", 1)))
-            for chunk in out.split("\x02") if "\x01" in chunk] if rc == 0 else []
     (ev / "artifacts.json").write_text(json.dumps(arts, indent=1))
     changes = ref_changes(refs_before, gh_refs(fx["repo"]))
     (ev / "refs.json").write_text(json.dumps(changes, indent=1))
@@ -204,10 +227,11 @@ def collect(inst, fx, box, ev, refs_before):
                       c["ref"].removeprefix("refs/heads/"), "--json", "number,state,title,url,headRefName"])
         pulls += json.loads(out) if rc == 0 else []
     (ev / "pulls.json").write_text(json.dumps(pulls, indent=1))
-    return shown.get("branch"), changes, pulls
+    branches = {b.get("branch") for b in every if b.get("branch")}
+    return branches, changes, pulls, [b["name"] for b in work if b.get("name")]
 
 
-def cleanup(repo, branch, changes, pulls, log):
+def cleanup(repo, branches, changes, pulls, log):
     """Closes the run's pull requests and deletes the branches it created."""
     for p in pulls:
         if p["state"] == "OPEN":
@@ -215,7 +239,7 @@ def cleanup(repo, branch, changes, pulls, log):
             log.append(f"closed {repo}#{p['number']} (exit {rc})")
     for c in changes:
         name = c["ref"].removeprefix("refs/heads/")
-        if c["change"] == "created" and (name == branch or any(p["headRefName"] == name for p in pulls)):
+        if c["change"] == "created" and (name in branches or any(p["headRefName"] == name for p in pulls)):
             rc, out = sh(["gh", "api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{name}"])
             log.append(f"deleted branch {name} (exit {rc})")
         elif c["change"] != "deleted":
@@ -238,10 +262,11 @@ def one_run(inst, fx, i, root, log):
     before = gh_refs(fx["repo"])
     problem = None
     if fx["mode"] == "task":
-        box = f"cf-{fx['name'][:20]}-{i}-{int(time.time()) % 100000}"
-        rc, out = inst.moor("start", box, "--node", "local-agent", "--repo", fx["repo"],
-                            "--prompt", fx["prompt"], timeout=900)
-        problem = f"start failed: {out.strip()[-300:]}" if rc else wait_idle(inst, box, secs)
+        try:
+            box = inst.call({"cmd": "ask", "repos": [fx["repo"]], "prompt": fx["prompt"]})["box"]
+            problem = wait_idle(inst, box, secs)
+        except RuntimeError as e:
+            box, problem = None, f"ask failed: {e}"
     else:
         now = inst.call({"cmd": "workflow-run-now", "name": fx["name"]})
         want, deadline, run = now.get("box"), time.time() + secs, None
@@ -257,10 +282,10 @@ def one_run(inst, fx, i, root, log):
             read = inst.call({"cmd": "workflow-run-read", "run": run["id"]})
             (ev / "run.json").write_text(json.dumps(read, indent=1))
         box = (run or {}).get("box") or (run or {}).get("planned_box")
-    branch, changes, pulls = collect(inst, fx, box, ev, before) if box else (None, [], [])
-    if box:
-        inst.moor("close", box, "--force", timeout=300)
-    cleanup(fx["repo"], branch, changes, pulls, log)
+    branches, changes, pulls, work = collect(inst, fx, box, ev, before) if box else (set(), [], [], [])
+    for b in [*work, box] if box else []:
+        inst.moor("close", b, "--force", timeout=300)
+    cleanup(fx["repo"], branches, changes, pulls, log)
     failed = ([problem] if problem else []) + check(fx, ev)
     (ev / "verdict.json").write_text(json.dumps({"box": box, "failed": failed}, indent=1))
     return failed, ev
