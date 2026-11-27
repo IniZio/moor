@@ -83,27 +83,29 @@ moor node ls
 You see the `local` node, with `docker` as how it provides Boxes. The node
 takes as many Boxes as the host's free memory allows.
 
-## 4. Start a Box
+## 4. Start a task
 
 ```sh
-moor start hello --repo OWNER/NAME --prompt "Say hello and stop"
+moor ask --repo OWNER/NAME "Say hello and stop"
 ```
 
-Use a repo that your `gh auth token` can push to. The command prints the Box,
-and its branch `moor/ID-hello`. The first Box of a repo takes a few
-minutes, because it clones and installs from scratch.
+Use a repo that your `gh auth token` can push to. The command prints the
+agent place that took the task, such as `place-1a2b3c4d`. The agent answers
+there, and starts a work Box when the task needs code run. The first Box of a
+repo takes a few minutes, because it clones and installs from scratch.
 
-Watch the agent with `moor inspect hello`. It shows the agent's state, its
-latest messages, and the end of its terminal.
+Watch the agent with `moor inspect place-1a2b3c4d`. It shows the agent's
+state, its latest messages, and the end of its terminal.
 
-## 5. Close the Box
+## 5. Close the place
 
 ```sh
-moor close hello
+moor close place-1a2b3c4d
 ```
 
-`moor close` refuses while the Box holds work that is not pushed, and says how
-to push it. `moor close hello --force` discards that work.
+The agent closes the work Boxes it started once their work is pushed.
+`moor close` refuses a Box that holds work that is not pushed, and says how to
+push it. `--force` discards that work.
 
 ## Next
 

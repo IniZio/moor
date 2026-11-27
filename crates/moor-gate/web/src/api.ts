@@ -688,11 +688,8 @@ export async function boxList(everyone = false): Promise<BoxRow[]> {
 	return (await answer(await fetch(path), v.object({ boxes: v.array(BoxRowSchema) }))).boxes;
 }
 
-/** Starts a Box as the signed-in person; answers the Box's name once it exists. */
-export async function boxStart(
-	csrf: string,
-	body: { repos: string[]; prompt: string; base: string; node: string; plan_first?: boolean },
-): Promise<string> {
+/** Starts a task as the signed-in person in an agent place; answers the place's name. */
+export async function boxStart(csrf: string, body: { repos: string[]; prompt: string }): Promise<string> {
 	const res = await fetch('/account/api/boxes', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', 'X-Moor-Csrf': csrf },

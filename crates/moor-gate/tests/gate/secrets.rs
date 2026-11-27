@@ -84,7 +84,7 @@ fn answer(
         }
         "node-list" => Response::ok("x", Some(nodes::list(node))),
         "node-settings-get" | "node-settings-set" => nodes::answer(node, who, inner),
-        "start-needs" | "start" => needs(vault, who, inner),
+        "start-needs" | "start" | "ask" => needs(vault, who, inner),
         cmd @ ("show" | "artifacts" | "retry" | "workflow-list" | "steer" | "sleep" | "close")
             if who.contains(portal::PREFIX) =>
         {
@@ -95,7 +95,7 @@ fn answer(
     }
 }
 
-/// The answer to `start-needs`, or the refusal of a `start` missing secrets.
+/// The answer to `start-needs`, or the refusal of a `start` or an `ask` missing secrets.
 fn needs(vault: &Vault, who: &str, inner: &Value) -> Response {
     let needs = ["claude", "github"];
     let mine = vault.get(who);

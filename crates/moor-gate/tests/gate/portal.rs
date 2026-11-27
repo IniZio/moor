@@ -394,7 +394,7 @@ fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a
         assert_eq!(reply.status, 400, "{bad}: {}", reply.body);
     }
     assert!(
-        w.cmds().iter().all(|c| c != "start"),
+        w.cmds().iter().all(|c| c != "start" && c != "ask"),
         "nothing reached the controller"
     );
     let out = send(
@@ -405,31 +405,6 @@ fn starting_a_box_from_the_portal_needs_the_page_s_csrf_token_and_a_prompt_and_a
         &ok,
     );
     assert_eq!(out.status, 401);
-}
-
-#[test]
-fn a_portal_start_sends_the_start_request_start_box_sends_and_a_refusal_is_readable() {
-    let w = world(true, &[]);
-    let cookie = user(&w, "portal-alice-7");
-    let csrf = csrf_of(&w, &cookie);
-    let body = json!({"repos": ["acme/web", "acme/lib"], "prompt": "Fix the typo", "base": "main", "node": "engine-03"});
-    let reply = post(&w, &cookie, Some(&csrf), &body.to_string());
-    assert_eq!(reply.status, 400, "{}", reply.body);
-    let why = json_of(&reply)["error"].as_str().unwrap().to_owned();
-    assert!(why.contains("missing secrets claude, github"), "{why}");
-    let start = w
-        .seen
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|r| r["request"]["cmd"] == "start")
-        .cloned()
-        .expect("a start");
-    assert_eq!(start["request"]["repo"], "acme/web");
-    assert_eq!(start["request"]["also"], json!(["acme/lib"]));
-    assert_eq!(start["request"]["prompt"], "Fix the typo");
-    assert_eq!(start["request"]["base"], "main");
-    assert_eq!(start["request"]["node"], "engine-03");
 }
 
 #[test]

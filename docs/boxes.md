@@ -18,7 +18,7 @@ claude mcp add --transport http moor https://HOST/mcp
 
 Start Claude Code and run `/mcp`. Claude Code opens a browser. Sign in and
 approve the `moor:read` and `moor:write` scopes. The `moor` server now lists
-its tools, such as `start_box` and `box_status`.
+its tools, such as `ask` and `box_status`.
 
 Every call acts as you, so you see and change only your own Boxes.
 
@@ -28,8 +28,9 @@ Claude Code picks the tool.
 
 | To | Ask for | Tool |
 | --- | --- | --- |
-| Start a Box | "Start a Box on acme/web to fix the login typo." | `start_box` |
-| Pick where it runs | "List my nodes." Then name one in the start. | `list_nodes` |
+| Start a task | "Ask moor to fix the login typo on acme/web." | `ask` |
+| Start a Box to work in by hand | "Start a Box on acme/web." | `start_box` |
+| Pick where a Box runs | "List my nodes." Then name one in the start. | `list_nodes` |
 | Check on it | "How is fix-typo doing?" | `box_status` |
 | See its terminal | "Show me fix-typo's screen." | `inspect_box` |
 | Steer it | "Tell fix-typo to also update the test." | `send_to_box` |
@@ -37,8 +38,11 @@ Claude Code picks the tool.
 | Retry a failed setup | "Retry fix-typo." | `retry_box` |
 | Close it | "Close fix-typo." | `close_box` |
 
-`start_box` returns once the Box exists. Setup carries on, so follow it with
-`box_status` until the lifecycle is `ready`.
+`ask` returns once moor has started an agent place for the task. Its agent
+reads the repos through GitHub, and starts a work Box when the task needs code
+run. Follow the place with `box_status`. `start_box` returns once the Box
+exists. Setup carries on, so follow it with `box_status` until the lifecycle
+is `ready`. A Box from `start_box` runs no agent.
 
 A `ready` Box can still be stuck. `box_status` sets `stuck` when the agent has
 made no progress for ten minutes, or when the Proxy refused or withheld a

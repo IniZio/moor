@@ -167,22 +167,22 @@ You need:
    Each line names a setting and the layer it came from, such as
    `box provider  [user]  local-container`.
 
-6. Start a Box with a prompt for the agent:
+6. Start a task for an agent:
 
    ```sh
-   moor start fix-typo --prompt "Fix the typo in the README"
+   moor ask --repo OWNER/NAME "Fix the typo in the README"
    ```
 
-   Run it inside a checkout of a GitHub repo, or name one with
-   `--repo OWNER/NAME`. moor creates the machine, the
-   machine clones the repo, and then the agent starts.
+   moor starts an agent place for it and prints the place's name. The agent
+   starts a work Box when it needs code run. moor creates the machine, the
+   machine clones the repo, and setup runs.
 
-7. Follow the Box, and close it when the agent is done:
+7. Follow the place, and close it when the agent is done:
 
    ```sh
-   moor show fix-typo
-   moor wait fix-typo
-   moor close fix-typo
+   moor show place-1a2b3c4d
+   moor wait place-1a2b3c4d
+   moor close place-1a2b3c4d
    ```
 
    `moor close` refuses while the Box has unsaved work, unless you add

@@ -7,7 +7,9 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use moor_core::config::parse_user;
-use moor_core::{BoxName, Request, ShowReq, StartReq, SteerReq};
+use moor_core::request::AskReq;
+use moor_core::seam::forge::ForgeRepo;
+use moor_core::{BoxName, Request, ShowReq, SteerReq};
 use serde_json::{json, Value};
 
 use super::serve;
@@ -16,6 +18,7 @@ use crate::cx::Cx;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::vault::Vault;
@@ -24,7 +27,7 @@ use crate::Moor;
 /// The value of the requester's secret the Box uses.
 const SENTINEL: &str = "sk-sentinel-7f3a91c2d4e85b60";
 
-/// A secret the Box is given, so `start` must find it in the requester's vault.
+/// A secret the Box is given, so the start must find it in the requester's vault.
 const CONFIG: &str = "box_credentials: [my-api-key]\n";
 struct World {
     driver: Arc<FakeDriver>,
@@ -37,6 +40,8 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
     let proc = Arc::new(ScriptedProc::new());
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(FakeEngine::new());
+    let forge = Arc::new(FakeForge::new());
+    forge.answer(ForgeRepo::new("o", "n"), Ok(repo_at("abc123")));
     let cx = Cx::fake_with(
         dir.path(),
         driver.clone(),
@@ -44,6 +49,7 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
         parse_user("test", CONFIG).expect("config"),
     )
     .with_engine(engine.clone())
+    .with_forge(forge)
     .with_proxy_host(Arc::new(host));
     let world = World {
         driver,
@@ -82,33 +88,20 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
     (input, out, frames)
 }
 
-fn start() -> Request {
-    Request::Start(StartReq {
-        gates: None,
-        placement: moor_core::decide::schedule::Placement::FirstOnly,
-        cold: false,
-        config: None,
-        name: BoxName::parse_allow_bare("demo").expect("name"),
-        prompt: Some("ship it".into()),
-        issue: None,
-        base: None,
-        model: None,
-        node: None,
-        no_agent: false,
-        no_setup: false,
-        resume: false,
-        repo: None,
-        parent: None,
-        also: None,
-        identity: None,
-        task: None,
-        run: false,
+/// The place an ask starts first, named by the fake rng's first draw.
+const PLACE: &str = "place-00abcdef";
+
+/// A task, which starts in an agent place.
+fn ask() -> Request {
+    Request::Ask(AskReq {
+        repos: vec![ForgeRepo::new("o", "n")],
+        prompt: "ship it".into(),
     })
 }
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        target: Some(BoxName::parse_allow_bare("demo").expect("name").into()),
+        target: Some(BoxName::parse_allow_bare(PLACE).expect("name").into()),
         events: Some(100),
         agent: true,
         reports: true,
@@ -121,7 +114,7 @@ fn show() -> Request {
 
 fn steer() -> Request {
     Request::Steer(SteerReq {
-        target: BoxName::parse_allow_bare("demo").expect("name").into(),
+        target: BoxName::parse_allow_bare(PLACE).expect("name").into(),
         text: Some("continue".into()),
         menu: None,
         interrupt: false,
@@ -130,7 +123,7 @@ fn steer() -> Request {
 }
 
 #[test]
-fn start_show_steer_frames_and_the_box_never_carry_the_resolved_secret() {
+fn ask_show_steer_frames_and_the_place_never_carry_the_resolved_secret() {
     let (cx, w) = world(FakeProxyHost::new());
     let vault = Vault::load(cx.vault_key().unwrap()).unwrap();
     put_secret(
@@ -140,7 +133,7 @@ fn start_show_steer_frames_and_the_box_never_carry_the_resolved_secret() {
         "my-api-key",
         SENTINEL,
     );
-    let (input, out, frames) = exchange(cx, &[start(), show(), steer()]);
+    let (input, out, frames) = exchange(cx, &[ask(), show(), steer()]);
     assert_eq!(frames.len(), 4, "{out}");
     for f in &frames[1..] {
         assert_eq!(f["frame"], "response", "{out}");

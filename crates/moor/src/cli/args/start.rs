@@ -9,28 +9,18 @@ use super::box_name;
 
 /// Arguments of `start`.
 #[derive(Debug, Args)]
-#[allow(clippy::struct_excessive_bools, reason = "one field per CLI flag")]
 pub(super) struct StartArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     name: BoxName,
-    /// Prompt for the agent.
-    #[arg(long)]
-    prompt: Option<String>,
-    /// Issue reference.
-    #[arg(long)]
-    issue: Option<String>,
     /// Base ref.
     #[arg(long)]
     base: Option<String>,
     /// A repo to clone, as OWNER/NAME or a github.com URL; repeat for more, first one first. The
-    /// agent works in the first, and the rest sit beside it. The current checkout's origin when
+    /// Box's branch is on the first, and the rest sit beside it. The current checkout's origin when
     /// absent. Naming two or more replaces `box.also` from your config.
     #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::super::caller::repo_arg)]
     repo: Vec<moor_core::seam::forge::ForgeRepo>,
-    /// Agent model.
-    #[arg(long)]
-    model: Option<String>,
     /// A node of yours to run the Box on, in place of your default; see `moor node ls`.
     #[arg(long, value_name = "NODE")]
     node: Option<String>,
@@ -42,16 +32,10 @@ pub(super) struct StartArgs {
         value_parser = super::config_text
     )]
     config: Option<String>,
-    /// Do not launch an agent.
-    #[arg(long)]
-    no_agent: bool,
-    /// Skip the repo's setup lines: the Box is ready once the repo is cloned and the agent
-    /// installed, and the agent installs what it needs. A later machine of the Box skips them too.
+    /// Skip the repo's setup lines: the Box is ready once the repo is cloned. A later machine of
+    /// the Box skips them too.
     #[arg(long)]
     no_setup: bool,
-    /// Resume the agent's stored session.
-    #[arg(long)]
-    resume: bool,
     /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
     #[arg(long, value_name = "ID", env = "MOOR_SESSION")]
     parent: Option<i64>,
@@ -67,16 +51,16 @@ impl From<StartArgs> for StartReq {
             cold: false,
             placement: Placement::FirstOnly,
             name: a.name,
-            prompt: a.prompt,
-            issue: a.issue,
+            prompt: None,
+            issue: None,
             base: a.base,
             repo,
-            model: a.model,
+            model: None,
             node: a.node,
             config: override_text(a.config),
-            no_agent: a.no_agent,
+            no_agent: true,
             no_setup: a.no_setup,
-            resume: a.resume,
+            resume: false,
             parent: a.parent.map(SessionId::new),
             also: (!also.is_empty()).then_some(also),
             identity: None,

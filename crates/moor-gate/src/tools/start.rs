@@ -1,8 +1,8 @@
-//! The request `start_box` sends, and how a start answers once its Box exists.
+//! The request `start_box` sends, how a start answers once its Box exists, and the ask a task
+//! from the portal or MCP sends.
 
 use moor_client::Client;
 use moor_core::config::override_text;
-use moor_core::gate::GatesDoc;
 use moor_core::name::{BoxName, ForgeRepo};
 use moor_core::request::{AskReq, Request as ControllerRequest, ShowReq, StartReq};
 use serde_json::Value;
@@ -34,27 +34,18 @@ pub(super) fn start_request(args: StartArgs) -> Result<ControllerRequest, String
     let name = BoxName::parse_allow_bare(&name).map_err(|e| {
         format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
     })?;
-    let gates = match (args.gates, args.outcomes) {
-        (None, Some(_)) => return Err("send outcomes with the gates they end".to_owned()),
-        (None, None) => None,
-        (Some(gates), outcomes) => Some(Box::new(GatesDoc {
-            gates,
-            outcomes: outcomes.unwrap_or_default(),
-            made_from: None,
-        })),
-    };
     Ok(ControllerRequest::Start(StartReq {
-        gates,
+        gates: None,
         placement: moor_core::decide::schedule::Placement::FirstOnly,
         cold: false,
         config: override_text(args.config),
         name,
-        prompt: args.prompt,
+        prompt: None,
         issue: None,
         base: args.base,
         model: None,
         node: args.node,
-        no_agent: false,
+        no_agent: true,
         no_setup: args.no_setup.unwrap_or(false),
         resume: false,
         repo: Some(repo),
@@ -137,9 +128,9 @@ fn setup_restarted(shown: &Value) -> bool {
     shown.pointer("/box/lifecycle") != Some(&Value::from("setup_failed"))
 }
 
-/// Asks `prompt` about `repos`, the first one the task's own, as `person`: the same request
-/// `moor ask` sends. Answers the place that took it, with no work Box behind it. `origin` is
-/// where a refusal sends the person for missing secrets.
+/// Starts a task of `prompt` about `repos`, the first one the task's own, as `person`: the
+/// same request `moor ask` sends. Answers the agent place started for it. `origin` is where a
+/// refusal sends the person for missing secrets.
 pub(crate) fn ask_from_portal(
     controller: &Client,
     person: &Person,
@@ -154,41 +145,6 @@ pub(crate) fn ask_from_portal(
         .collect::<Result<Vec<_>, _>>()?;
     let request = ControllerRequest::Ask(AskReq { repos, prompt });
     send(controller, person, request, Reply::Asked(Some(origin)))
-}
-
-/// What a person asks of the portal to start.
-pub(crate) struct NewBox {
-    /// The repos, each as `owner/name`, first one first.
-    pub(crate) repos: Vec<String>,
-    /// What the agent should do first.
-    pub(crate) prompt: String,
-    /// The revision to branch from.
-    pub(crate) base: Option<String>,
-    /// The node to start on.
-    pub(crate) node: Option<String>,
-}
-
-/// Starts a Box for `person` the way `start_box` does: the same request, answered once the Box
-/// exists, while setup carries on. `origin` is where a refusal sends the person for missing secrets.
-pub(crate) fn start_from_portal(
-    controller: &Client,
-    person: &Person,
-    new: NewBox,
-    origin: std::sync::Arc<str>,
-) -> Result<Value, String> {
-    let request = start_request(StartArgs {
-        gates: None,
-        outcomes: None,
-        repos: new.repos,
-        name: None,
-        prompt: Some(new.prompt),
-        base: new.base,
-        node: new.node,
-        config: None,
-        no_setup: None,
-        wait: None,
-    })?;
-    send_early(controller, person, request, Reply::Started(Some(origin)))
 }
 
 #[cfg(test)]

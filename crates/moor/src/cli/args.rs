@@ -136,9 +136,9 @@ struct Cli {
 /// Every verb.
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// Create or attach a Box.
+    /// Create or attach a Box to work in by hand: it runs the repo's setup and no agent.
     Start(StartArgs),
-    /// Ask a question about some repos; an agent place starts for it.
+    /// Start a task, or ask a question, about some repos; an agent place starts for it.
     Ask(AskArgs),
     /// Run a command in the Box.
     Run(RunArgs),

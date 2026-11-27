@@ -38,6 +38,7 @@ mod events;
 mod exited_start;
 mod forced_close;
 mod fresh_guest;
+mod front;
 mod gates;
 mod identity;
 mod install_link;

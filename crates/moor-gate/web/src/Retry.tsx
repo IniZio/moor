@@ -4,11 +4,11 @@ import { type BoxDetail, boxRetry, failure, workflowRunNow, toError } from './ap
 import { gateLine } from './gate';
 
 /** What the composer opens with when a person starts a failed Box again. */
-export type Draft = { repos: string[]; base: string; prompt: string };
+export type Draft = { repos: string[]; prompt: string };
 
 const AGAIN = 'moor.again';
 
-/** Opens the composer with the same repo, base and prompt as a Box that failed. */
+/** Opens the composer with the same repos and prompt as a Box that failed. */
 function startAgain(draft: Draft) {
 	sessionStorage.setItem(AGAIN, JSON.stringify(draft));
 	location.hash = '#/new';
@@ -20,7 +20,7 @@ export function takeAgain(): Draft | null {
 	sessionStorage.removeItem(AGAIN);
 	try {
 		const draft = raw ? (JSON.parse(raw) as Partial<Draft>) : null;
-		return draft ? { repos: draft.repos ?? [], base: draft.base ?? '', prompt: draft.prompt ?? '' } : null;
+		return draft ? { repos: draft.repos ?? [], prompt: draft.prompt ?? '' } : null;
 	} catch {
 		return null;
 	}
@@ -76,7 +76,7 @@ export function FailedCard({ detail, csrf, onDone }: { detail: BoxDetail; csrf: 
 						type="button"
 						class="t-btn t-btn-once"
 						disabled={busy}
-						onClick={() => startAgain({ repos: detail.repo ? [detail.repo, ...detail.other_repos] : [], base: detail.base ?? '', prompt: promptOf(detail) })}
+						onClick={() => startAgain({ repos: detail.repo ? [detail.repo, ...detail.other_repos] : [], prompt: promptOf(detail) })}
 					>
 						Start again
 					</button>

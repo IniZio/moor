@@ -37,7 +37,7 @@ mod workflow;
 use args::{AskArgs, BoxArgs, CloseArgs, SendArgs, StartArgs};
 pub(crate) use failed::retry_from_portal;
 use reply::Reply;
-pub(crate) use start::{ask_from_portal, start_from_portal, NewBox};
+pub(crate) use start::ask_from_portal;
 use start::{send_early, start_request};
 
 /// The tools; one copy per MCP session.
@@ -83,13 +83,14 @@ impl Tools {
 
     /// Starts a Box.
     #[tool(
-        description = "Start a Box on one or more GitHub repos given as owner/name in `repos`, \
-                       first one first: the agent works in the first, and the rest are cloned \
-                       beside it. Optionally give a name, \
-                       a first prompt for its agent and a base revision of the first repo. The answer names the \
-                       node the Box went to. Returns once the Box \
-                       exists, while setup continues; follow the start with box_status. Pass \
-                       wait=true to block until setup and the agent launch finish. A refusal \
+        description = "Start a Box to work in by hand on one or more GitHub repos given as \
+                       owner/name in `repos`, first one first: its branch is on the first, and \
+                       the rest are cloned beside it. The Box runs the repo's setup and no \
+                       agent. To start a task with words, call ask instead: its agent starts \
+                       work Boxes as it needs them. Optionally give a name and a base revision \
+                       of the first repo. The answer names the node the Box went to. Returns \
+                       once the Box exists, while setup continues; follow the start with \
+                       box_status. Pass wait=true to block until setup finishes. A refusal \
                        for missing secrets names them; the person stores them in a browser on \
                        the account page at the gate's root, never through an agent. Needs the \
                        moor:write scope."
@@ -109,13 +110,15 @@ impl Tools {
             .await
     }
 
-    /// Asks the caller's agent place a question.
+    /// Starts a task in an agent place.
     #[tool(
         name = "ask",
-        description = "Ask a question about one or more GitHub repos given as owner/name in `repos`, \
-                       first one first: the task's own. It goes to your own agent place, as the \
-                       portal's Tasks home sends it, and the answer names the place that took it \
-                       (box), with no work Box behind it. Follow it with box_status, \
+        description = "Start a task, or ask a question, about one or more GitHub repos given \
+                       as owner/name in `repos`, first one first: the task's own. moor starts an \
+                       agent place for it, as the portal's Tasks home does, and the answer names \
+                       that place (box). Its agent reads the repos through GitHub and starts \
+                       work Boxes when the task needs code run; say in the words what it should \
+                       do, such as the branch to start from. Follow it with box_status, \
                        inspect_box or list_boxes. A refusal for missing secrets names them; the person stores them in a browser on \
                        the account page at the gate's root, never through an agent. Needs the \
                        moor:write scope."
@@ -141,8 +144,8 @@ impl Tools {
                     reply.insert(
                         "next".to_owned(),
                         Value::from(
-                            "the place has the question; call box_status or inspect_box with \
-                             this Box's name to read its agent's answer",
+                            "the place has the task; call box_status or inspect_box with \
+                             this Box's name to follow its agent",
                         ),
                     );
                 }

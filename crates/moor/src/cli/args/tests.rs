@@ -18,6 +18,7 @@ mod down;
 mod events;
 mod node;
 mod repo;
+mod start;
 
 /// Parse `moor <args>` into opts and action.
 fn run(args: &[&str]) -> Result<(GlobalOpts, Action), clap::Error> {
@@ -50,21 +51,8 @@ fn box_req(t: &str) -> BoxReq {
 }
 
 #[test]
-fn start_with_all_flags() {
-    let r = req(&[
-        "start",
-        "t1",
-        "--prompt",
-        "g",
-        "--issue",
-        "I-1",
-        "--base",
-        "main",
-        "--model",
-        "haiku",
-        "--no-agent",
-        "--resume",
-    ]);
+fn start_with_all_flags_asks_for_a_box_with_no_agent() {
+    let r = req(&["start", "t1", "--base", "main", "--node", "hv"]);
     assert_eq!(
         r,
         Request::Start(StartReq {
@@ -73,14 +61,14 @@ fn start_with_all_flags() {
             cold: false,
             config: None,
             name: n("t1"),
-            prompt: Some("g".into()),
-            issue: Some("I-1".into()),
+            prompt: None,
+            issue: None,
             base: Some("main".into()),
-            model: Some("haiku".into()),
-            node: None,
+            model: None,
+            node: Some("hv".into()),
             no_agent: true,
             no_setup: false,
-            resume: true,
+            resume: false,
             repo: None,
             parent: None,
             also: None,
