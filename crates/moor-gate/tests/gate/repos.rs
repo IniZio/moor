@@ -134,7 +134,13 @@ fn the_intent_table_reads_raw_with_its_version_for_anyone_signed_in() {
     let reply = get(&w.addr, "/account/api/intents", Some(&cookie));
     assert_eq!(reply.status, 200, "{}", reply.body);
     let v = json_of(&reply);
-    assert_eq!(v["version"], 1);
+    assert_eq!(
+        v["version"],
+        moor_core::reading::IntentTable::shipped()
+            .unwrap()
+            .version
+            .0
+    );
     assert_eq!(v["text"], moor_core::reading::INTENTS_TEXT);
     assert!(v["text"].as_str().unwrap().contains("- name: comment"));
     assert_eq!(get(&w.addr, "/account/api/intents", None).status, 401);

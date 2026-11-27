@@ -7,10 +7,16 @@ use crate::reading::glob::covers;
 use super::{IntentName, IntentTable, Request, TableError, INTENTS_TEXT};
 
 /// Each shipped version's hash: a change to intents.yaml without a version bump fails here.
-const SHIPPED: &[(u32, &str)] = &[(
-    1,
-    "3eb22b20e5e5c255116d0aba53dc160a8acb83bea2979d0140d1db9e1521a4b9",
-)];
+const SHIPPED: &[(u32, &str)] = &[
+    (
+        1,
+        "3eb22b20e5e5c255116d0aba53dc160a8acb83bea2979d0140d1db9e1521a4b9",
+    ),
+    (
+        2,
+        "e38b87ad6cb74edea1aeff67c5768bae90fab24e3f9c01073da083865257aa13",
+    ),
+];
 
 fn table(rows: &str) -> Result<IntentTable, TableError> {
     IntentTable::load(&format!("version: 1\nintents:\n{rows}"))
@@ -47,6 +53,43 @@ fn the_shipped_table_loads_with_its_comment_row() {
         ]
     );
     assert!(matches!(&row.never[..], [Request::Http { method, .. }] if method == "POST"));
+}
+
+fn http(host: &str, method: &str, path: &str) -> Request {
+    Request::Http {
+        host: host.into(),
+        method: method.into(),
+        path: path.into(),
+    }
+}
+
+#[test]
+fn the_merge_row_forbids_the_rest_merge_and_the_graphql_mutation() {
+    let t = IntentTable::shipped().unwrap();
+    let row = t.row(&IntentName::parse("merge").unwrap()).unwrap();
+    assert_eq!(
+        row.never,
+        [
+            http("api.github.com", "PUT", "/repos/{repo}/pulls/*/merge"),
+            Request::Mutation {
+                host: "api.github.com".into(),
+                name: "mergePullRequest".into(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_push_row_forbids_both_receive_pack_paths() {
+    let t = IntentTable::shipped().unwrap();
+    let row = t.row(&IntentName::parse("push").unwrap()).unwrap();
+    assert_eq!(
+        row.never,
+        [
+            http("github.com", "POST", "/{repo}.git/git-receive-pack"),
+            http("github.com", "POST", "/{repo}/git-receive-pack"),
+        ]
+    );
 }
 
 #[test]

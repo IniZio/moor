@@ -210,7 +210,12 @@ fn the_comment_intent_holds_its_row_lines_less_the_read_the_rules_allow() {
     let store = r.cx.store().unwrap();
     let held = store.workflow_reading(REQUESTER_USER, id).unwrap().unwrap();
     let reading = store.reading(REQUESTER_USER, &held).unwrap().unwrap();
-    assert_eq!(reading.context.table.map(|t| t.0), Some(1));
+    assert_eq!(
+        reading.context.table,
+        moor_core::reading::IntentTable::shipped()
+            .ok()
+            .map(|t| t.version)
+    );
     let moor_core::reading::ReadingState::Read(read) = &reading.state else {
         panic!("{:?}", reading.state)
     };
@@ -320,7 +325,13 @@ fn the_listed_reading_shows_the_comment_lines_and_tags_each_hand_written_line() 
     let (id, _, box_id) = r.reader();
     r.hand_in(box_id, &whole()).unwrap();
     let shown = listed_reading(&r, id);
-    assert_eq!(shown["table"], 1);
+    assert_eq!(
+        shown["table"],
+        moor_core::reading::IntentTable::shipped()
+            .unwrap()
+            .version
+            .0
+    );
     let comment = &shown["phrases"][1];
     assert_eq!(comment["mark"], "held", "{shown}");
     assert_eq!(comment["intents"][0]["intent"], "comment");
