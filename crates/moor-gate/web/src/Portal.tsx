@@ -48,7 +48,7 @@ export function usePoll<T>(load: () => Promise<T>, key: string, every: (value: T
 			clearTimeout(timer);
 		};
 	}, [key]);
-	return { value, error, now, reload: () => again.current() };
+	return { value, error, now, reload: () => again.current(), setValue };
 }
 
 export type Boxes = ReturnType<typeof useBoxes>;

@@ -8,14 +8,16 @@ export type FileLine = {
 	lit: boolean;
 	/** The phrases of the reading that this line holds or lists; set only while marks are drawn. */
 	phrases?: string[];
+	/** For a hand-written `may` line, what it is against the reading's lines. */
+	tag?: string;
 };
 
 /** What the pointer or keyboard focus is on while marks are drawn: a phrase, or a file line by its place in the file. */
 export type Hover = { phrase: string } | { line: number } | null;
 
-/** The reading to draw over `prompt`: one that was read, has a solid or dashed phrase, and whose runs say the prompt word for word. */
+/** The reading to draw over `prompt`: one that was read, has a phrase, and whose runs say the prompt word for word. */
 export function marksOf(reading: ReadingView | null | undefined, prompt: string): ReadingView | null {
-	if (reading?.state !== 'read' || !reading.phrases.some((p) => p.mark === 'held' || p.mark === 'asked')) return null;
+	if (reading?.state !== 'read' || reading.phrases.length === 0) return null;
 	return reading.source === prompt && reading.runs.map((r) => r.text).join('') === prompt ? reading : null;
 }
 
@@ -74,14 +76,28 @@ export function onLine(flow: Pick<Workflow, 'cron' | 'timezone' | 'on_pull_reque
 	return parts.length === 0 ? 'on: {}    # only when started by hand' : `on: {${parts.join(', ')}}`;
 }
 
-/** The `may:` lines: the config's extra Proxy entries under their rule, as written. */
-export function mayLines(may: Workflow['may']): FileLine[] {
+/** What a hand-written line is against the reading, in words. */
+const TAGS = {
+	reproduced: 'a phrase holds it',
+	already_allowed: 'the rules allow it already',
+	other_credential: 'a phrase holds it as the other credential',
+	missed: 'no phrase holds it',
+} as const;
+
+/** The `may:` lines: the config's extra Proxy entries under their rule, as written, each tagged by `handwritten` when a reading tagged it. */
+export function mayLines(may: Workflow['may'], handwritten: ReadingView['handwritten'] = []): FileLine[] {
 	const head = (text: string): FileLine => ({ text, kind: 'head', lit: false });
 	const note = (text: string): FileLine => ({ text, kind: 'comment', lit: false });
 	if (may.error) return [head('may:'), note(`  # the config does not parse: ${may.error}`)];
 	const rules = Object.entries(may.allow ?? {});
 	if (rules.length === 0) return [head('may: {}'), note("  # the repo's rules, nothing more")];
-	return [head('may:'), ...rules.flatMap(([rule, entries]) => [head(`  ${rule}:`), ...entries.map((e) => head(`    - ${e}`))])];
+	const tagOf = (rule: string, line: string) => handwritten.find((h) => h.rule === rule && h.line === line)?.tag;
+	const entry = (rule: string, e: string): FileLine => {
+		const tag = tagOf(rule, e);
+		return tag ? { ...head(`    - ${e}`), tag: TAGS[tag] } : head(`    - ${e}`);
+	};
+	const written = handwritten.length > 0 ? [note('  # hand-written')] : [];
+	return [head('may:'), ...written, ...rules.flatMap(([rule, entries]) => [head(`  ${rule}:`), ...entries.map((e) => entry(rule, e))])];
 }
 
 /** The prompt one sentence a line, losing no text: lines stay lines, and a line splits after each sentence end. */
@@ -107,7 +123,7 @@ export function fileLines(flow: Workflow, prompt: string): FileLine[] {
 		{ text: onLine(flow), kind: 'head', lit: false },
 		{ text: `repos: [${flow.repos.join(', ')}]`, kind: 'head', lit: false },
 		{ text: `run_as: ${flow.run_as}`, kind: 'head', lit: false },
-		...mayLines(flow.may),
+		...mayLines(flow.may, marksOf(flow.reading, prompt)?.handwritten),
 		{ text: '---', kind: 'sep', lit: false },
 		...next.map((text, k) => ({ text, kind: 'prompt' as const, lit: lit[k] && text !== '' })),
 	];

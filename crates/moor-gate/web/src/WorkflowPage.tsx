@@ -1,6 +1,6 @@
 import { type RunRow, workflowGet, type Workflow } from './api';
+import { usePoll } from './Portal';
 import { groupByDay, groupByPull, rowTime, shortSha } from './runGroups';
-import { useLoad } from './useLoad';
 import { Failed, markOf, StatusIcon } from './WorkflowBits';
 import { WorkflowActions } from './WorkflowActions';
 import { WorkflowEditor } from './WorkflowEditor';
@@ -56,8 +56,9 @@ function Runs({ flow }: { flow: Workflow }) {
 }
 
 export function WorkflowPage({ csrf, name }: { csrf: string; name: string }) {
-	const { value: flow, setValue, error, reload } = useLoad(() => workflowGet(name), `runs:${name}`);
-	if (error) return <Failed error={error} retry={reload} />;
+	// Polled as a task page is, so a reading that lands or a run that starts shows without a reload.
+	const { value: flow, setValue, error, reload } = usePoll(() => workflowGet(name), `runs:${name}`);
+	if (error && !flow) return <Failed error={error} retry={reload} />;
 	if (!flow) return <p class="muted" aria-busy="true">Loading {name}…</p>;
 	return (
 		<div class="auto">

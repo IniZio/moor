@@ -242,7 +242,9 @@ export const ReadingViewSchema = v.object({
 	state: v.picklist(['reading', 'read', 'failed']),
 	failed: v.nullish(v.string()),
 	/** What differs now from what the reader saw; empty when current. */
-	stale: v.optional(known(v.picklist(['prompt', 'repos', 'rules', 'reader'])), []),
+	stale: v.optional(known(v.picklist(['prompt', 'repos', 'rules', 'reader', 'table'])), []),
+	/** The intent table version its lines came from; none before intents. */
+	table: v.nullish(v.number()),
 	source: v.string(),
 	reader: v.nullish(v.object({ harness: v.string(), model: v.nullish(v.string()), instructions: v.number() })),
 	/** The source cut at phrase edges: the texts joined are the source, and `phrase` names the phrase a cut belongs to. */
@@ -250,10 +252,28 @@ export const ReadingViewSchema = v.object({
 	phrases: known(
 		v.object({
 			id: v.string(),
-			/** Solid or dashed. */
-			mark: v.picklist(['held', 'asked']),
+			/** Solid, dashed, or a request moor has no rule for, which holds nothing. */
+			mark: v.picklist(['held', 'asked', 'unmapped']),
 			effects: v.array(v.string()),
 			why: v.nullish(v.string()),
+			/** The requests its words ask for or forbid, and what moor found for each. */
+			intents: v.optional(
+				known(
+					v.object({
+						intent: v.string(),
+						polarity: v.picklist(['do', 'never']),
+						repo: v.nullish(v.string()),
+						as: v.optional(v.picklist(['person', 'app']), 'person'),
+						found: v.picklist(['lines', 'cannot_hold', 'no_row']),
+						unholdable: v.nullish(v.picklist(['no_rule_for_host', 'no_app'])),
+						/** The row's lines the rules already let through. */
+						already: v.optional(v.array(v.string()), []),
+						/** Whether the table has a row by this name. */
+						row: v.optional(v.boolean(), false),
+					}),
+				),
+				[],
+			),
 		}),
 	),
 	effects: known(
@@ -265,12 +285,16 @@ export const ReadingViewSchema = v.object({
 			line: v.string(),
 			key: v.string(),
 			phrases: v.array(v.string()),
+			/** Where an allow line came from: a config line slice 1 copied, or a table row; none for a gate or outcome, or a kind this page does not know. */
+			from: v.fallback(v.nullish(v.picklist(['listed', 'table'])), null),
 		}),
 	),
 	/** The gates the gate engine gets, as the workflow's own `gates` show them. */
 	gates: v.nullish(v.unknown()),
 	/** The extra Proxy entries, rule to entries, as the workflow's `may` shows them. */
 	may: v.optional(v.record(v.string(), v.array(v.string())), {}),
+	/** The config's own `proxy.allow` lines, each tagged against the reading's lines. */
+	handwritten: v.optional(known(v.object({ rule: v.string(), line: v.string(), tag: v.picklist(['reproduced', 'already_allowed', 'other_credential', 'missed']) })), []),
 });
 
 const WorkflowSchema = v.object({
@@ -371,6 +395,13 @@ function workflowPath(name: string): string {
 
 export async function workflowList(): Promise<WorkflowRow[]> {
 	return (await answer(await fetch('/account/api/workflows'), WorkflowListSchema)).workflows;
+}
+
+const IntentsSchema = v.object({ version: v.nullable(v.number()), text: v.string() });
+
+/** The intent table moor ships, raw: the rows that turn a prompt's requests into `may` lines. */
+export async function intentsGet(): Promise<v.InferOutput<typeof IntentsSchema>> {
+	return answer(await fetch('/account/api/intents'), IntentsSchema);
 }
 
 export async function workflowGet(name: string): Promise<Workflow> {

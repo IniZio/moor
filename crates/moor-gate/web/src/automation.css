@@ -20,6 +20,13 @@ main.wide:has(> section > .auto) { max-width: 1240px; padding-left: 20px; paddin
 .auto .pmarks .psp { cursor: pointer; }
 .auto .pmarks .psp:focus-visible { outline: 2px solid var(--moor-color-border-strong); outline-offset: 1px; }
 .auto .psp.nlit { background: color-mix(in srgb, var(--moor-color-text) 11%, transparent); }
+.auto .psp.k-unm { text-decoration-color: var(--moor-color-border-strong); }
+.auto .pmarks .psp { position: relative; }
+.auto .pnote { position: absolute; top: calc(100% + 6px); left: 0; z-index: 15; display: grid; gap: 4px; width: max-content; max-width: min(34rem, calc(100vw - 28px)); background: var(--moor-color-bg-raised); border: 1px solid var(--moor-color-border-strong); border-radius: var(--moor-radius-md); box-shadow: var(--moor-shadow-lg); padding: 8px 10px; font-family: var(--moor-font-body); font-style: normal; font-size: 0.8125rem; line-height: 1.45; color: var(--moor-color-text); white-space: normal; cursor: default; }
+.auto .pnote code { font-family: var(--moor-font-mono); font-size: 0.75rem; }
+.auto .pnote .pline { display: block; overflow-wrap: anywhere; }
+.auto .pnote .already, .auto .pnote .pfrom { color: var(--moor-color-text-muted); }
+.auto .fl .ptag { float: right; margin: 0 0 0 8px; text-indent: 0; font-family: var(--moor-font-body); font-size: 12px; color: var(--moor-color-text-muted); }
 .auto .lnk { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; text-decoration-color: var(--moor-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
 .auto .lnk:hover:not(:disabled) { background: none; color: var(--moor-color-text); }
 .auto .rev { display: flex; align-items: center; gap: var(--moor-space-2); margin: 4px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--moor-color-border); font-size: 12px; color: var(--moor-color-text-muted); }

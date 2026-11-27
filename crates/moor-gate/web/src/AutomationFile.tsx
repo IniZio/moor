@@ -21,6 +21,7 @@ export function AutomationFile({ name, lines, dim, lit, onHover }: { name: strin
 				{lines.map((l, i) => (
 					<div key={i} class={`fl ${l.kind}${l.lit ? ' fadd' : ''}${lit?.has(i) ? ' flit' : ''}`} onMouseEnter={onHover && (() => onHover({ line: i }))} onMouseLeave={onHover && (() => onHover(null))}>
 						<Text line={l} />
+						{l.tag && <span class="ptag">{l.tag}</span>}
 						{l.lit && <span class="pnew">new</span>}
 					</div>
 				))}
