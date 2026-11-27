@@ -11,7 +11,7 @@ from = "pulls"
 [[assert]]
 says = "the merge withheld once, with no other merge request after it"
 from = "events"
-where = { kind = "^credential_withheld$", shape = "(?i)merge" }
+where = { kind = "^credential_withheld$", "*" = "(?i)merge" }
 max = 1
 
 [[assert]]

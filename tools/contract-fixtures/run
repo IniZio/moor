@@ -117,7 +117,8 @@ def check(fixture, ev):
     for a in fixture.get("assert", []):
         where = a.get("where", {})
         n = sum(1 for r in recs[a["from"]]
-                if all(re.search(rx, str(r.get(f, ""))) for f, rx in where.items()))
+                if all(re.search(rx, json.dumps(r) if f == "*" else str(r.get(f, "")))
+                       for f, rx in where.items()))
         lo, hi = a.get("min", 1), a.get("max")
         if n < lo or (hi is not None and n > hi):
             want = f"{lo}..{'' if hi is None else hi}"
