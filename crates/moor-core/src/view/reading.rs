@@ -12,16 +12,18 @@ use crate::config::proxy::ToolRule;
 use crate::gate::GatesDoc;
 use crate::name::ForgeRepo;
 use crate::reading::{
-    Context, Effect, EffectId, IntentTable, Mark, Origin, ProxyAllow, Read, Reading, ReadingState,
-    RulesPin,
+    Context, Effect, EffectId, IntentTable, Mark, ProxyAllow, Read, Reading, ReadingState, RulesPin,
 };
 use crate::workflow::PromptHash;
 
+mod effects;
 mod intents;
 mod kinds;
 #[cfg(test)]
 mod tests;
 
+pub use effects::EffectView;
+use effects::{effect, listed, may};
 pub use intents::{HandwrittenView, IntentView, Tag};
 pub use kinds::{EffectKind, FromView, MarkView, Stale, ViewState};
 
@@ -61,24 +63,6 @@ pub struct PhraseView {
     /// The reader's own words, shown on hover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
-}
-
-/// One thing moor holds.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EffectView {
-    /// Its id, such as `e1`.
-    pub id: String,
-    /// What it is.
-    pub kind: EffectKind,
-    /// What the file or the gate list shows: an allow's entry, a gate's or outcome's name.
-    pub line: String,
-    /// Equal across readings for the same effect.
-    pub key: String,
-    /// The phrases that hold it.
-    pub phrases: Vec<String>,
-    /// Where an allow came from; none for a gate or outcome.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<FromView>,
 }
 
 /// One reading of one prompt.
@@ -289,26 +273,6 @@ fn shown(read: &Read, source: &str, allow: &ProxyAllow, table: Option<&IntentTab
     }
 }
 
-/// Whether `e` still stands: a slice-1 allow effect needs its entry in `allow`.
-fn listed(e: &Effect, allow: &ProxyAllow) -> bool {
-    match e {
-        Effect::Allow {
-            rule,
-            entry,
-            from: Origin::Listed,
-            ..
-        } => allow
-            .get(rule)
-            .is_some_and(|entries| entries.contains(entry)),
-        Effect::Allow {
-            from: Origin::Table,
-            ..
-        }
-        | Effect::Gate { .. }
-        | Effect::Outcome { .. } => true,
-    }
-}
-
 /// The phrases of `read` holding only the effects in `alive`; one left holding none is asked,
 /// unless it names a request no row covers.
 fn phrases(read: &Read, alive: &HashSet<EffectId>, table: Option<&IntentTable>) -> Vec<PhraseView> {
@@ -321,7 +285,7 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>, table: Option<&IntentTable>) 
                     .filter(|e| alive.contains(e))
                     .map(ToString::to_string)
                     .collect(),
-                Mark::Asked {} | Mark::Unmapped {} => Vec::new(),
+                Mark::Asked { .. } | Mark::Unmapped {} => Vec::new(),
             };
             PhraseView {
                 id: p.id.to_string(),
@@ -340,40 +304,6 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>, table: Option<&IntentTable>) 
             }
         })
         .collect()
-}
-
-/// `e` as shown, held by `phrases`.
-fn effect(e: &Effect, phrases: &[String]) -> EffectView {
-    let (kind, line, from) = match e {
-        Effect::Gate { doc, .. } => (EffectKind::Gate, doc.name.clone(), None),
-        Effect::Outcome { doc, .. } => (EffectKind::Outcome, doc.name.clone(), None),
-        Effect::Allow { entry, from, .. } => {
-            let from = match from {
-                Origin::Listed => FromView::Listed,
-                Origin::Table => FromView::Table,
-            };
-            (EffectKind::Allow, entry.clone(), Some(from))
-        }
-    };
-    EffectView {
-        id: e.id().to_string(),
-        kind,
-        line,
-        key: e.key().to_string(),
-        phrases: phrases.to_vec(),
-        from,
-    }
-}
-
-/// The allow entries of `effects` by rule, in effect order.
-fn may(effects: &[&Effect]) -> BTreeMap<String, Vec<String>> {
-    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for e in effects {
-        if let Effect::Allow { rule, entry, .. } = e {
-            out.entry(rule.clone()).or_default().push(entry.clone());
-        }
-    }
-    out
 }
 
 /// What of `ctx` differs from `now`, in the order of [`Stale`]; a newer table counts only when

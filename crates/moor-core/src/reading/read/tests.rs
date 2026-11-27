@@ -242,7 +242,7 @@ fn snapshot_read() -> Read {
         vec![
             phrase(0, quote("Take screenshots", None), (0, 16), held(0), Some("a gate needs the files")),
             phrase(1, quote("comment", Some("one ")), (27, 34), held(1), None),
-            phrase(2, quote("soon", None), (35, 39), Mark::Asked {}, None),
+            phrase(2, quote("soon", None), (35, 39), Mark::Asked { allowed: None }, None),
         ],
         vec![
             serde_json::from_value(json!({"kind": "gate", "id": "e1", "doc": {"name": "screenshots", "evidence": ["shot-*"]}})).unwrap(),

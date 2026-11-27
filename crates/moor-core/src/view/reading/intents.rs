@@ -72,6 +72,8 @@ pub(super) fn intent(u: &IntentUse, table: Option<&IntentTable>) -> IntentView {
         ),
         Found::CannotHold { why, .. } => ("cannot_hold", Some(*why), Vec::new()),
         Found::NoRow => ("no_row", None, Vec::new()),
+        Found::Refused => ("refused", None, Vec::new()),
+        Found::LetThrough(_) => ("let_through", None, Vec::new()),
     };
     IntentView {
         intent: u.intent.to_string(),
@@ -150,7 +152,7 @@ pub(super) fn table_changes(read: &Read, read_with: TableVersion, table: &Intent
                 .iter()
                 .filter_map(|e| entries.get(&e.to_string()).copied())
                 .collect(),
-            Mark::Asked {} | Mark::Unmapped {} => BTreeSet::new(),
+            Mark::Asked { .. } | Mark::Unmapped {} => BTreeSet::new(),
         };
         let mut had = held;
         let mut now = BTreeSet::new();

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Effect, EffectId, IntentUse, PhraseId, ReaderRun};
+use super::{Allowed, Effect, EffectId, IntentUse, PhraseId, ReaderRun};
 use crate::gate::GatesDoc;
 
 #[cfg(test)]
@@ -199,7 +199,12 @@ pub enum Mark {
         effects: EffectIds,
     },
     /// Dashed: only asked of the agent.
-    Asked {},
+    Asked {
+        /// For forbidding words, the request the rules let through and the rule; older JSON
+        /// reads as none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allowed: Option<Allowed>,
+    },
     /// "moor has no rule for this": a request no row covers. Holds nothing.
     Unmapped {},
 }
@@ -276,7 +281,7 @@ impl TryFrom<Stored> for Read {
             .iter()
             .filter_map(|p| match &p.mark {
                 Mark::Held { effects } => Some(effects.iter()),
-                Mark::Asked {} | Mark::Unmapped {} => None,
+                Mark::Asked { .. } | Mark::Unmapped {} => None,
             })
             .flatten()
             .copied()

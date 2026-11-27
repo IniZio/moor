@@ -63,4 +63,6 @@ pub enum EffectKind {
     Outcome,
     /// A `may` line.
     Allow,
+    /// A request forbidding words name, which the pinned rules refuse.
+    Withheld,
 }

@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::IntentName;
+use super::{IntentName, Request};
 use crate::name::ForgeRepo;
 
 /// One intent a phrase names, and what expansion found for it.
@@ -53,6 +53,10 @@ pub enum Found {
         /// The row's lines the pinned rules already let through.
         already: Vec<Line>,
     },
+    /// A `never` row: the pinned rules refuse every request it lists; they are withheld effects.
+    Refused,
+    /// A `never` row whose request the pinned rules let through, so the clause holds nothing.
+    LetThrough(Allowed),
     /// A line of the row moor cannot hold, so the clause holds nothing.
     CannotHold {
         /// The line.
@@ -81,4 +85,14 @@ pub struct Line {
     pub rule: String,
     /// The entry, raw.
     pub entry: String,
+}
+
+/// A forbidding clause moor cannot hold: the pinned rules, or the reading's own lines, let
+/// `request` through under `rule`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Allowed {
+    /// The request let through.
+    pub request: Request,
+    /// The rule that lets it through, as `proxy.allow` keys it.
+    pub rule: String,
 }
