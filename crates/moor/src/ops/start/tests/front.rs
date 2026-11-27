@@ -19,6 +19,15 @@ fn a_front_start_makes_a_box_that_runs_no_agent() {
     let v = from_front(&w.cx, req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert!(engine.launches().is_empty());
+    let shown = crate::ops::show::run(
+        &w.cx,
+        &moor_core::ShowReq {
+            target: Some(req("demo").name.into()),
+            ..moor_core::ShowReq::default()
+        },
+    )
+    .unwrap();
+    assert!(shown.boxed.unwrap().by_hand);
     assert!(w
         .cx
         .store()

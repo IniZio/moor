@@ -51,6 +51,7 @@ fn row(lifecycle: BoxLifecycle, session: SessionState) -> BoxView {
         ties: crate::view::BoxTies::default(),
         owner: None,
         task_at: None,
+        by_hand: false,
     }
 }
 
@@ -117,6 +118,16 @@ fn a_ready_box_follows_its_session_and_agent() {
     assert_eq!(state(&b), Progress::Done);
     b.session_state = SessionState::Ended;
     assert_eq!(state(&b), Progress::Done);
+}
+
+#[test]
+fn an_idle_box_no_agent_ever_ran_in_is_ready_not_done() {
+    let mut b = row(BoxLifecycle::Ready, SessionState::Idle);
+    b.by_hand = true;
+    let t = derive(&b, &[], ten());
+    assert_eq!((t.state, t.line.as_str()), (Progress::Ready, "ready"));
+    b.session_state = SessionState::Working;
+    assert_eq!(state(&b), Progress::Working);
 }
 
 #[test]

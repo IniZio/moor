@@ -44,6 +44,7 @@ fn sample_box() -> BoxView {
         ties: crate::view::BoxTies::default(),
         owner: None,
         task_at: None,
+        by_hand: false,
     }
 }
 

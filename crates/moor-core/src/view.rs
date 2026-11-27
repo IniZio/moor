@@ -200,6 +200,9 @@ pub struct BoxView {
     /// work Box.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_at: Option<String>,
+    /// No agent ever ran in the Box: a person works in it by hand; set by `show`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub by_hand: bool,
 }
 
 /// Outcome of the agent launch.

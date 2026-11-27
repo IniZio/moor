@@ -499,7 +499,7 @@ export async function runAnswer(csrf: string, name: string, id: number, yes: boo
 	return answer(res, RunSchema);
 }
 
-const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'asleep', 'closed', 'failed']);
+const ProgressSchema = v.picklist(['queued', 'setting_up', 'working', 'needs_you', 'done', 'ready', 'asleep', 'closed', 'failed']);
 
 const PrSchema = v.object({ repo: v.string(), number: v.number(), url: v.string() });
 

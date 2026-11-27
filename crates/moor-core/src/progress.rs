@@ -41,6 +41,8 @@ pub enum Progress {
     NeedsYou,
     /// The agent finished its turn and is quiet.
     Done,
+    /// The machine is up and runs no agent: a person works in it.
+    Ready,
     /// The Box sleeps.
     Asleep,
     /// The Box is closed.
@@ -178,6 +180,7 @@ fn ready_state(b: &BoxView) -> Progress {
     match b.session_state {
         SessionState::Starting | SessionState::Working => Progress::Working,
         SessionState::Idle | SessionState::Ended if gate::holds(b) => Progress::Working,
+        SessionState::Idle | SessionState::Ended if b.by_hand => Progress::Ready,
         SessionState::Idle | SessionState::Ended => Progress::Done,
     }
 }
@@ -253,6 +256,7 @@ fn line_of(
             }
         }
         Progress::Asleep => "asleep".to_owned(),
+        Progress::Ready => "ready".to_owned(),
         Progress::Closed => closed_failure(events)
             .and_then(|e| timeline(std::slice::from_ref(e)).pop())
             .map_or_else(|| "closed".to_owned(), |e| first_line(&e.text)),

@@ -248,6 +248,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     detail.gate = gate_of(store, row.id)?;
     detail.ties = ties_of_one(store, row.id)?;
     detail.owner = owner_of(cx, store, row.user)?;
+    detail.by_hand = store.first_launch_at(row.id)?.is_none();
     detail.said = if req.agent {
         said_of(store, row.id)?
     } else {
@@ -359,6 +360,7 @@ fn list(cx: &Cx, store: &Store, now: Ts, everyone: bool) -> Result<ShowView, Com
         view.gate = gate_of(store, row.id)?;
         view.ties = ties.remove(&row.id).unwrap_or_default();
         view.owner = owner_of(cx, store, row.user)?;
+        view.by_hand = store.first_launch_at(row.id)?.is_none();
         let events = store.events(row.id, PROGRESS_EVENTS)?;
         let events: Vec<EventView> = events.iter().map(event_view).collect();
         view.progress = Some(progress::derive(&view, &events, now.as_millis()));
