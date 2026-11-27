@@ -3,7 +3,7 @@
 use moor_client::link::boxes::{BoxAnswer, BoxOp};
 use moor_client::link::ops;
 
-use super::inside::Mark;
+use super::provider::Mark;
 use super::{answer, inside, refused, valid_name, BoxProvider, Boxes, Wire};
 
 impl<P: BoxProvider> Boxes<P> {

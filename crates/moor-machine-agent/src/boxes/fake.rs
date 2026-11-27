@@ -14,8 +14,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
-use super::inside::Mark;
-use super::provider::{BoxProvider, Ended, Env, Notes, Observed, PlaceState, ProvideError, Spec};
+use super::provider::{
+    BoxProvider, Ended, Env, Mark, Notes, Observed, PlaceState, ProvideError, Spec,
+};
 use super::Slug;
 
 /// One fake Box.

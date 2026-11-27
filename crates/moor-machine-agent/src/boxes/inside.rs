@@ -5,12 +5,9 @@
 //! never by closing its half of the stream: a stream that ends before the command exits means
 //! the controller is gone, so the command's process group is ended (TERM, then KILL after 5 s).
 
-use std::hash::{BuildHasher, Hasher, RandomState};
 use std::io;
 use std::os::fd::OwnedFd;
 use std::process::{ExitStatus, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use moor_client::link::boxes::Size;
@@ -46,25 +43,6 @@ pub(super) fn script(env: &[(String, String)], cwd: Option<&str>, argv: &[String
     });
     let words: Vec<String> = argv.iter().map(|a| ops::quote(a)).collect();
     ops::script(env, &format!("{go}exec {}", words.join(" ")))
-}
-
-/// What tells one command's processes inside a Box from every other's: unique on this machine.
-pub(crate) struct Mark(String);
-
-impl Mark {
-    /// A mark no other command of this agent, or of an agent before it, has had.
-    pub(super) fn new() -> Self {
-        static RUN: OnceLock<u64> = OnceLock::new();
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let run = RUN.get_or_init(|| RandomState::new().build_hasher().finish());
-        let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        Self(format!("{run:016x}-{n}"))
-    }
-
-    /// The mark as text.
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 /// A command started in a place, before its stream carries anything.

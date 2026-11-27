@@ -3,6 +3,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
+use std::hash::{BuildHasher, Hasher, RandomState};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use moor_client::link::lease::Cache;
 use moor_core::seam::driver::Place;
@@ -10,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
-use super::inside::Mark;
 use super::Slug;
 
 /// What an open makes a Box from.
@@ -102,6 +104,25 @@ pub(crate) struct Observed {
     pub(crate) oom_kills: u32,
     /// MiB of the host the Box holds, when the provider can tell.
     pub(crate) mem_mib: Option<u64>,
+}
+
+/// What tells one command's processes inside a Box from every other's: unique on this machine.
+pub(crate) struct Mark(String);
+
+impl Mark {
+    /// A mark no other command of this agent, or of an agent before it, has had.
+    pub(crate) fn new() -> Self {
+        static RUN: OnceLock<u64> = OnceLock::new();
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let run = RUN.get_or_init(|| RandomState::new().build_hasher().finish());
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        Self(format!("{run:016x}-{n}"))
+    }
+
+    /// The mark as text.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// What a provider promises about a Box: two places, a workdir that is the same path with the

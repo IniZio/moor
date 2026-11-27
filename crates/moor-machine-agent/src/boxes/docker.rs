@@ -14,8 +14,7 @@ use moor_client::link::ops;
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
-use super::inside::Mark;
-use super::provider::{BoxProvider, Env, Notes, Observed, ProvideError, Spec};
+use super::provider::{BoxProvider, Env, Mark, Notes, Observed, ProvideError, Spec};
 use super::Slug;
 use args::{agent_run, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
 pub use cache::parse_age;
