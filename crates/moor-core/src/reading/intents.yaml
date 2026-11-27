@@ -1,0 +1,20 @@
+version: 1
+intents:
+  - name: comment
+    words: comment on, reply on or leave a note on a pull request or issue; one comment kept up to date
+    app: true
+    do:
+      api.github.com:
+        - "POST /repos/{repo}/issues/*/comments"
+        - "PATCH /repos/{repo}/issues/comments/*"
+        - "GET /repos/{repo}/issues/*/comments"
+    never:
+      api.github.com:
+        - "POST /repos/{repo}/issues/*/comments"
+    examples:
+      match:
+        - "POST https://api.github.com/repos/acme/web/issues/12/comments"
+        - "PATCH https://api.github.com/repos/acme/web/issues/comments/99"
+      no_match:
+        - "DELETE https://api.github.com/repos/acme/web/issues/comments/99"
+        - "POST https://api.github.com/repos/acme/other/issues/12/comments"

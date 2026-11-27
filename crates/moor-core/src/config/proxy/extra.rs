@@ -44,7 +44,10 @@ pub(in crate::config) fn check_extra_allow(
 }
 
 /// One entry: upper-case methods (no `*`), a path that names `{repo}` and no other slot or `**`.
-fn check_entry(entry: &str) -> Result<(), String> {
+///
+/// # Errors
+/// Why the entry cannot join a rule.
+pub(crate) fn check_entry(entry: &str) -> Result<(), String> {
     let bad = || {
         format!(
             "an extra entry must be \"METHOD /path/with/{{repo}}\", for example \"PATCH /repos/{{repo}}/issues/comments/*\", got {entry:?}"

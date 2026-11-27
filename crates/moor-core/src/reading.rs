@@ -15,11 +15,13 @@ use crate::user::UserId;
 use crate::workflow::{PromptHash, WorkflowId};
 
 mod effect;
+mod glob;
 mod hand_in;
 mod id;
 mod place;
 mod read;
 mod refusal;
+mod table;
 #[cfg(test)]
 mod tests;
 
@@ -28,6 +30,9 @@ pub use hand_in::{EffectDoc, HandIn, MarkDoc, PhraseDoc};
 pub use id::{EffectId, IdError, PhraseId, ReadingId};
 pub use read::{EffectIds, Mark, Phrase, Quote, Read, Run, Span};
 pub use refusal::Refusal;
+pub use table::{
+    Intent, IntentName, IntentTable, Request, RowLine, TableError, TableVersion, INTENTS_TEXT,
+};
 
 /// The workflow config's `proxy.allow`: rule name to its extra entries.
 pub type ProxyAllow = BTreeMap<String, Vec<String>>;
