@@ -10,12 +10,12 @@ use moor_core::SteerReq;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::quiet::may_tell;
+use crate::ops::common::quiet::may_tell_news;
 use crate::ops::steer;
 use crate::store::{BoxRow, Store};
 
 /// Steers the agent of `row` that the gate before the one in hand has passed, when the gate in hand
-/// waits for the agent, the agent is quiet and nothing was steered since. Whether it did.
+/// waits for the agent, moor may tell it news and nothing was steered since. Whether it did.
 ///
 /// # Errors
 /// A store failure, or the steer being refused.
@@ -44,7 +44,7 @@ pub(super) fn hand_over(
     else {
         return Ok(false);
     };
-    if !may_tell(cx, store, row)? {
+    if !may_tell_news(cx, store, row)? {
         return Ok(false);
     }
     let wrote = store.gate_line_at(row.id, i64::try_from(lines.len()).unwrap_or(i64::MAX))?;
