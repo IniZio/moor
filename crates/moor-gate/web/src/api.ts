@@ -256,6 +256,8 @@ export const ReadingViewSchema = v.object({
 			mark: v.picklist(['held', 'asked', 'unmapped']),
 			effects: v.array(v.string()),
 			why: v.nullish(v.string()),
+			/** For forbidding words the rules let through: the request, and the rule that lets it. */
+			allowed: v.nullish(v.object({ rule: v.string(), request: v.string() })),
 			/** The requests its words ask for or forbid, and what moor found for each. */
 			intents: v.optional(
 				known(
@@ -264,7 +266,7 @@ export const ReadingViewSchema = v.object({
 						polarity: v.picklist(['do', 'never']),
 						repo: v.nullish(v.string()),
 						as: v.optional(v.picklist(['person', 'app']), 'person'),
-						found: v.picklist(['lines', 'cannot_hold', 'no_row']),
+						found: v.picklist(['lines', 'refused', 'let_through', 'cannot_hold', 'no_row']),
 						unholdable: v.nullish(v.picklist(['no_rule_for_host', 'no_app'])),
 						/** The row's lines the rules already let through. */
 						already: v.optional(v.array(v.string()), []),
@@ -279,13 +281,13 @@ export const ReadingViewSchema = v.object({
 	effects: known(
 		v.object({
 			id: v.string(),
-			/** `withheld` is a request the pinned rules refuse; the controller sends none before slice 5. */
+			/** `withheld` is a request forbidding words name, which the pinned rules refuse. */
 			kind: v.picklist(['gate', 'outcome', 'allow', 'withheld']),
 			/** What the file or the gate list shows: an allow's entry as written under its rule, a gate's or outcome's name. */
 			line: v.string(),
 			key: v.string(),
 			phrases: v.array(v.string()),
-			/** Where an allow line came from: a config line slice 1 copied, or a table row; none for a gate or outcome, or a kind this page does not know. */
+			/** Where an allow line or withheld request came from: a config line slice 1 copied, or a table row; none for a gate or outcome, or a kind this page does not know. */
 			from: v.fallback(v.nullish(v.picklist(['listed', 'table'])), null),
 		}),
 	),
