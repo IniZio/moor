@@ -186,6 +186,23 @@ async fn until(client: &mut DuplexStream, seen: &mut String, needle: &str) {
     }
 }
 
+/// Whether a process whose whole command line is `line` runs in `container`.
+fn runs(container: &str, line: &str) -> bool {
+    docker(&["exec", container, "pgrep", "-fx", line])
+}
+
+/// Waits up to `limit` for `holds` to be true.
+async fn within(limit: Duration, holds: impl Fn() -> bool) -> Result<(), ()> {
+    let deadline = tokio::time::Instant::now() + limit;
+    while !holds() {
+        if tokio::time::Instant::now() >= deadline {
+            return Err(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Ok(())
+}
+
 async fn state_of(rig: &Rig, slug: &str) -> ReportState {
     let controller = Slug::parse(slug).unwrap().controller().unwrap();
     let BoxAnswer::Listed { boxes } = one(rig, &BoxOp::List { controller }).await else {
@@ -279,6 +296,35 @@ async fn a_docker_box_lives_from_open_to_close() {
         .unwrap();
     until(&mut term, &mut seen, "winch 50 132").await;
     write_frame(&mut term, &Frame::In(b"q\n")).await.unwrap();
+
+    step("dropped stream");
+    for (place, container) in [(Place::Work, &names.work), (Place::Agent, &names.agent)] {
+        let kept = streaming(
+            &rig,
+            &exec(MAIN, place, "sh -c 'sleep 701; :'", None, false),
+        )
+        .await;
+        let dropped = streaming(
+            &rig,
+            &exec(MAIN, place, "sh -c 'sleep 601; :'", None, false),
+        )
+        .await;
+        within(Duration::from_secs(20), || runs(container, "sleep 601"))
+            .await
+            .unwrap_or_else(|()| panic!("{place:?}: the command never started"));
+        drop(dropped);
+        within(Duration::from_secs(10), || !runs(container, "sleep 601"))
+            .await
+            .unwrap_or_else(|()| panic!("{place:?}: the command outlived its stream"));
+        assert!(
+            runs(container, "sleep 701"),
+            "{place:?}: the other command ended"
+        );
+        drop(kept);
+        within(Duration::from_secs(10), || !runs(container, "sleep 701"))
+            .await
+            .unwrap_or_else(|()| panic!("{place:?}: the other command outlived its stream"));
+    }
 
     step("forward");
     // Forward: a listener in the Box's network, probed and then carried.
