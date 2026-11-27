@@ -423,7 +423,7 @@ The prose and the types use one name for one thing.
 - **A reading's job.** `ReadingState` is reading, failed or read. `RulesPin` names one pinned rules revision.
 - **A phrase.** A `Phrase` is the reader's `Quote`, placed by moor at a `Span`.
 - **A clause's intent.** An `IntentUse` holds the intent's name, its `Polarity` of `Do` or `Never`, its repo and its `SendAs`. Its `Found` says what expansion found.
-- **What expansion finds.** `Lines` for a `do` intent with a row. `Refused` or `LetThrough` for a `never` intent. `CannotHold` with an `Unholdable` reason. `NoRow` when the table lacks the name, which marks the phrase `Unmapped`.
+- **What expansion finds.** `Lines` for a `do` intent with a row. `Refused` or `LetThrough` for a `never` intent. `CannotHold` with an `Unholdable` reason. `NoRow` when the table lacks the name. The view shows that verb as "moor has no rule for this". A phrase whose intents all lack a row is `Unmapped`.
 - **A line.** A `Line` is a rule and a raw entry. In the table it is a `RowLine`, by host. In a hand-in it is a `LineDoc`, by host.
 - **A request.** A `Request` is one HTTP call or GraphQL mutation, as the rules judge it.
 - **A proposal.** A `Proposal` points at its phrase and carries a `Proposed` line or request.
@@ -453,7 +453,7 @@ impl Read {
 - **Every effect is checked at hand-in.** Gates and outcomes go through `Gates::parse`. Every line passes the checks of [expansion](#expansion-and-its-checks). A withheld request must be refused by the pinned rules plus the reading's own allow entries. A check that fails refuses the hand-in, naming the phrase or effect.
 - **A line says who the write goes out as.** A line under the pinned rule for its host goes with the person's token. It goes as the GitHub App only when its clause sets `as: app` and its row has `app: true`. Such a line sits under `github-app`, which joins the `app` lines of the pinned rule for `api.github.com`, as `proxy.allow` does today.
 - **Solid means checked.** A phrase is solid only through `Held`, and `Held` needs at least one checked effect. A phrase with an enforceable part and a hopeful part is two phrases.
-- **A phrase is held whole.** It is held only when each intent it names is held. One intent let through, unholdable or without a row leaves the phrase holding nothing. A gate it names must then be held by another phrase, or the hand-in is refused naming the gate.
+- **A phrase is settled per intent.** It holds every line its intents with a row give. An intent without a row drops none of them. It holds nothing itself and shows by name. One sentence often lists verbs the table covers beside verbs it does not, and dropping the covered ones would hold less than moor can. One intent let through or unholdable still leaves the phrase asked. A gate a phrase names needs an intent with a row in that phrase or another, or the hand-in is refused naming the gate.
 - **Forbidding words never narrow the rules.** A `never` phrase whose request the pinned rules let through is `Asked`, never held. Its `allowed` names the request and the rule that lets it through. moor checks that this rule does let it through. The page shows the note with a link to the rules page. A reading never narrows the rules by itself. A person who wants the words held changes the rules text.
 - **Held effects keep their key.** An effect's key is its kind plus one part. That part is a gate's name, an outcome's name in lower case, an allow's rule and entry, or a withheld request. Gate names are lower case by `GateDoc`'s own rule, so "Screenshots" is refused. moor compares every reading with the held one by key. Each effect shows as same, changed or new. A held effect the reading lacks shows as gone. A person sees every difference before Save. Effect ids are new in every reading, and only the key links readings. An effect's origin is not part of its key. So a line a row now gives, where a person once accepted it, shows as same.
 - **Nothing held unseen.** Lines reach the Proxy only from a reading adopted by a Save that showed them. A new line against the held reading needs a tick.
@@ -711,7 +711,7 @@ A front draws marks from `runs` and `phrases` alone. It needs no offsets, so tex
 | Case | How it resolves |
 | --- | --- |
 | Two clauses with the same intent | Two phrases. Each line is one effect, held by both. Hover on either lights the same lines. |
-| One clause with two intents | One phrase naming both. Its lines are the union. It is held only when both are. |
+| One clause with two intents | One phrase naming both. Its lines are the union of what each holds. An intent without a row adds nothing and shows by name. |
 | A row needs a parameter the clause does not give | No row needs one today. A row that does will list it, and moor will refuse a hand-in without it. The reader then marks the phrase unclear and asks. |
 | A row whose lines the pinned rules cannot hold | No rule for the host, or `as: app` with no App. The phrase is dashed with the reason and holds nothing, never a part. |
 | The table gains a row for a clause that was unmapped | Stale for `table`. Read again names the new row, and its lines wait for a tick. |
