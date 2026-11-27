@@ -100,7 +100,7 @@ Impossible:
 
 ### Reading a prompt for moor
 
-The reader runs in a short Box that reads a prompt and its repos, then hands in a reading.
+The reader runs in an agent place that moor starts with the automation's repos, with no checkout and no setup. It reads the prompt and the repos through GitHub, then hands in a reading.
 
 Cannot know:
 

@@ -1,4 +1,4 @@
-//! What the agent is told when it writes a plan instead of following one: a short Box that drafts
+//! What the agent is told when it writes a plan instead of following one: an agent place that drafts
 //! a workflow's plan, and a one-off that proposes its plan and waits for approval first.
 
 use super::PlanDoc;
@@ -98,7 +98,7 @@ fn how_to_hand_in() -> String {
     )
 }
 
-/// How a draft prompt opens, so a front can tell a drafting Box from a person's own.
+/// How a draft prompt opens, so a front can tell a drafting place from a person's own.
 const DRAFT_HEAD: &str = "Draft a plan for this workflow prompt.";
 
 /// Whether `text` is a prompt `draft_prompt` made.
@@ -107,7 +107,7 @@ pub fn is_draft_prompt(text: &str) -> bool {
     text.starts_with(DRAFT_HEAD)
 }
 
-/// What a short Box that reads the workflow prompt `prompt` is asked, with `config` its runs get.
+/// What the agent place that reads the workflow prompt `prompt` is asked, with `config` its runs get.
 ///
 /// It hands in a reading when the prompt names gates or anything moor can hold, and leaves a
 /// step plan as a file otherwise.

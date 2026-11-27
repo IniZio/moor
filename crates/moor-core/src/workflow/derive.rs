@@ -1,6 +1,6 @@
 //! Where moor stands in reading a workflow's prompt. A person writes the prompt; moor reads it and
 //! keeps its reading: a plan of steps, or gates a run must pass. A new prompt asks for a reading,
-//! a short Box writes it as `plan.json`, and only that Box's reading is ever stored.
+//! an agent place writes it as `plan.json`, and only that place's reading is ever stored.
 
 use serde::{Deserialize, Serialize};
 

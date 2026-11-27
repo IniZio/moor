@@ -14,7 +14,7 @@ use std::sync::{Mutex, PoisonError};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::domain::hands::HandsState;
-use moor_core::domain::place::{BoxKind, PlaceState};
+use moor_core::domain::place::{BoxKind, Claim, PlaceState};
 use moor_core::user::{Identity, UserId};
 use moor_core::view::StartView;
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind, StartReq};
@@ -277,7 +277,7 @@ fn free_name(cx: &Cx, store: &Store) -> Result<BoxName, CommandError> {
 }
 
 /// Why the failed place `row` failed.
-fn failure(row: &BoxRow) -> String {
+pub(crate) fn failure(row: &BoxRow) -> String {
     row.state_reason.clone().unwrap_or_else(|| {
         row.launch_failure.as_ref().map_or_else(
             || "its agent did not launch".to_owned(),
@@ -293,6 +293,33 @@ fn failed_line(row: &BoxRow, email: &str) -> String {
         "agent place {} of {email} failed: {why}; it stays until closed, and no other starts",
         row.name.as_str()
     )
+}
+
+/// Starts place `name`, which holds `claim` from its insert, with the claim's first message as its
+/// agent's first prompt. No list gates it: an ask checks its caller, and moor starts a reader.
+///
+/// # Errors
+/// A failed start or store write.
+pub(crate) fn start_claimed(
+    cx: &Cx,
+    store: &Store,
+    name: BoxName,
+    claim: Claim,
+) -> Result<BoxId, CommandError> {
+    let req = StartReq {
+        prompt: Some(claim.first_message()),
+        placement: moor_core::request::Placement::default(),
+        ..StartReq::named(name)
+    };
+    let v = super::start::run_as(cx, &req, BoxKind::Place(PlaceState::Claimed(claim)))?;
+    let id = BoxId::new(v.boxed.id);
+    if v.agent.launched {
+        // The launch planned the claim's rules before the agent ran, and carried the first message.
+        let now = cx.clock().now().as_millis();
+        store.claim_served(id, now)?;
+        store.claim_steered(id, now)?;
+    }
+    Ok(id)
 }
 
 /// What a start makes of its Box: a place when it asks for one, else a work Box.

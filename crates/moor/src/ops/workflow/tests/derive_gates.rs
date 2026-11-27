@@ -87,7 +87,7 @@ fn pr_evidence_gates_hold_the_proof_before_the_one_comment_is_checked() {
     let r = rig();
     let id = r.reading(PR_PROMPT, None, false);
     let job = r.plan_pass().unwrap();
-    let asked = job.req.prompt.as_deref().unwrap();
+    let asked = job.claim.prompt.as_str();
     assert!(asked.contains("report_step for gate proof") && asked.contains("\"outcomes\""));
     assert!(
         asked.contains("PR_RERUN"),

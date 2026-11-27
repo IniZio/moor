@@ -14,7 +14,7 @@ The owner approved these answers on 2026-11-23. Notes after a dash say where thi
 4. **The Plan first checkbox.** Retired with pull request 7. "Show me a plan first" reads as a gate with plan.md and your yes.
 5. **YAML input on `set_repo_config`.** Both are taken until every stored repo has a note, then words only. — Superseded. Repo rules are raw text written through an agent since 2026-11-24. The reader never reads them into prose.
 6. **Answers moor cannot hold yet.** The reader offers only answers moor can enforce, and its instructions list them. "Wait for my yes before you open it" waits for a pull request capability.
-7. **A warm reading Box.** None at first. Add one per person if pull request 4 measures over 45 seconds at the median.
+7. **A warm reading Box.** None at first. Add one per person if pull request 4 measures over 45 seconds at the median. — Superseded. The reader runs in an agent place that moor starts for each reading.
 8. **Readings for tasks started over MCP or Slack.** No reading. `start_box` keeps taking gates directly.
 9. **Where a reading of an automation sits.** On the workflow revision for now. — Superseded. A reading is its own immutable row. The workflow, a run and a Box point at one.
 
@@ -46,7 +46,7 @@ The owner approved these on 2026-11-26, after research against similar products.
 
 ## What exists today
 
-- **The reader.** A save that changes an automation's prompt starts a short Box. It reads the repos and leaves a plan file, a step plan or a `GatesDoc`. moor polls for the file, per [derive.rs](https://github.com/IniZio/moor/blob/619767483/crates/moor/src/ops/workflow/derive.rs).
+- **The reader.** A save that changes an automation's prompt starts an agent place that holds the automation's repos, with no checkout and no setup. Its agent reads the repos through GitHub under the repos' rules. It hands in a reading, or leaves a plan file with a step plan or a `GatesDoc`. moor polls for the file. A place that fails to start, fails to launch or ends without either leaves that failure or its agent's last line on the draft, per [derive.rs](https://github.com/IniZio/moor/blob/619767483/crates/moor/src/ops/workflow/derive.rs).
 - **What is kept.** The workflow row holds `gates` or `plan`, and `plan_draft` while a reading is made. `GatesDoc.made_from` holds the prompt hash. `gates_by` says whether a person wrote them.
 - **The `may` list.** The file's `may:` lines are the workflow config's `proxy.allow`. A person writes them over MCP. No phrase produced them.
 - **Runs.** A run's Box gets the workflow's gates at start and keeps them in `box_gates`. Nothing records which reading the run was held to.
@@ -551,7 +551,7 @@ A step plan stays in `workflows.plan`, with `plan_draft`, `made_from` and `Gates
 ```mermaid
 stateDiagram-v2
 	[*] --> Reading: Read it, a save over MCP, or Read again
-	Reading --> Failed: refused 3 times, quiet 2 min, 30 min, or the reader's Box closed
+	Reading --> Failed: refused 3 times, quiet 2 min, 30 min, or the reader's place closed
 	Reading --> Open: read, with a question
 	Reading --> Whole: read, no question
 	Open --> Superseded: an answer makes a child reading
@@ -611,7 +611,7 @@ sequenceDiagram
   - Set `as: app` only when the words ask for the write to show as the App.
   - An answer's text replaces the whole phrase and reads as a sentence in place.
   - Offer only answers moor can enforce, or an answer that keeps the words asked.
-- **How it hands in.** One MCP tool, `hand_in_reading`, on the Box-facing listener. Its JSON Schema comes from the Rust type `HandIn`, given in [the hand-in](#the-hand-in-from-slice-1-to-intents). The reader labels gates its own way, and moor issues the ids. Any harness that speaks MCP can be the reader. The reader is an agent in a Box today, and an idle agent place can take the job later.
+- **How it hands in.** One MCP tool, `hand_in_reading`, on the Box-facing listener. Its JSON Schema comes from the Rust type `HandIn`, given in [the hand-in](#the-hand-in-from-slice-1-to-intents). The reader labels gates its own way, and moor issues the ids. Any harness that speaks MCP can be the reader. The reader is an agent in an agent place.
 - **Step plans.** The reader may still leave a step plan in the plan file, as today. Then no reading is made. A plan file with gates is taken as a reading with effects and no phrases.
 - **Adoption.** A reading becomes the automation's when its source is the saved prompt, no question is open and each new line is ticked. The portal sends the id with Save. A save over MCP sends none, so moor reads the saved prompt and adopts that reading when it lands whole and adds no line. One with a question or a new line waits, and the older reading holds until then. The person answers and ticks in the portal or over their own MCP connection.
 - **One-off tasks.** Start sends the reading id. moor refuses an open question or a stale context. It starts the Box with the reading's source as the prompt, its gates and its `may`, and keeps the id on the Box. Decision 8 stands, so `start_box` over MCP takes gates directly.
@@ -810,6 +810,6 @@ Each takes one word. Each has our recommendation.
 
 1. **Save when the reader failed?** The prompt saves and the older reading holds, marked stale. Recommend yes.
 2. **Start a one-off as written when the reader failed?** The Box holds only the repo's rules. Recommend yes.
-3. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes.
+3. **Read in an idle agent place?** Faster than a new Box, with a new Box as the fallback. Recommend yes. — Answered yes. The reader runs in an agent place. moor starts a new place for each reading and takes no person's idle place. Who keeps a pre-started place stays open until the `agent_places` list goes.
 4. **Inbox item for a reading that waits?** A question or lines to tick, left by an MCP save. Recommend yes.
 5. **A pull request slot in the Proxy?** `{pull}` would let "this pull request" hold one pull request, not any. Recommend yes, after slice 10.
