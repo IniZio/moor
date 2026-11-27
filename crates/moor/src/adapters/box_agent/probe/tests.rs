@@ -60,6 +60,10 @@ impl AgentAdapter for Stub {
         self.preseed(ctx)
     }
 
+    fn skills_dir(&self, ctx: &LaunchCtx) -> Result<BoxPath, NameError> {
+        BoxPath::under(ctx.home.as_str(), "skills")
+    }
+
     fn busy_marker(&self) -> &'static str {
         "busy"
     }

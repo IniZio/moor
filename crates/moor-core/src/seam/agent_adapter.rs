@@ -219,6 +219,13 @@ pub trait AgentAdapter: Send + Sync {
     /// Returns a [`NameError`] when a path cannot be formed.
     fn hook_writer(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError>;
 
+    /// The folder this agent finds its skills in, one folder per skill; a launch writes moor's
+    /// built-in skills there.
+    ///
+    /// # Errors
+    /// Returns a [`NameError`] when a path cannot be formed.
+    fn skills_dir(&self, ctx: &LaunchCtx) -> Result<BoxPath, NameError>;
+
     /// The pane text, in lower case, that shows the agent is working on a prompt.
     fn busy_marker(&self) -> &str;
 

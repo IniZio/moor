@@ -2,7 +2,7 @@
 
 use moor_core::activity::{Note, Question};
 use moor_core::boxscript::quote;
-use moor_core::name::NameError;
+use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_adapter::{
     AgentAdapter, AgentInstall, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
     NOTHING_TO_ARCHIVE,
@@ -103,6 +103,10 @@ impl AgentAdapter for Claude {
 
     fn env(&self, ctx: &LaunchCtx) -> Vec<EnvVar> {
         launch::env(ctx)
+    }
+
+    fn skills_dir(&self, ctx: &LaunchCtx) -> Result<BoxPath, NameError> {
+        BoxPath::under(ctx.home.as_str(), ".claude/skills")
     }
 
     fn busy_marker(&self) -> &'static str {

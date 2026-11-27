@@ -42,7 +42,9 @@ fn seen_at_agent_start(r: LaunchReq) -> Vec<(String, Option<String>)> {
         ..r
     };
     agent(&d).launch(&r).unwrap();
-    let (cred, _) = r.dirs_under(&BoxPath::under(&root, "home").unwrap()).unwrap();
+    let (cred, _) = r
+        .dirs_under(&BoxPath::under(&root, "home").unwrap())
+        .unwrap();
     let mut brief = String::new();
     for (_, path, bytes, mode) in d.puts() {
         let p = std::path::Path::new(path.as_str());
@@ -83,7 +85,12 @@ fn seen_at_agent_start(r: LaunchReq) -> Vec<(String, Option<String>)> {
     paths
         .into_iter()
         .enumerate()
-        .map(|(i, p)| (p, std::fs::read_to_string(format!("{root}/started.{i}")).ok()))
+        .map(|(i, p)| {
+            (
+                p,
+                std::fs::read_to_string(format!("{root}/started.{i}")).ok(),
+            )
+        })
         .collect()
 }
 
@@ -102,10 +109,7 @@ fn every_skill_file_a_brief_names_is_readable_when_the_agent_starts() {
     for r in [task, run] {
         let seen = seen_at_agent_start(r);
         let skills = skills().unwrap();
-        assert!(
-            !seen.is_empty(),
-            "a work Box's brief names its skill files"
-        );
+        assert!(!seen.is_empty(), "a work Box's brief names its skill files");
         for (path, read) in seen {
             let skill = skills
                 .iter()
