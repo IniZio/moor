@@ -23,7 +23,15 @@ pub(super) fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up<'_>) -
     };
     let path = canonical_path(&head.target);
     match path.strip_suffix(RECEIVE_PACK) {
-        Some(repo) => push(shared, git, client, up, (&head, repo)),
+        Some(repo) => {
+            // The canonical path is lowercased; a plainly spelled target keeps the repo's case.
+            let raw = head.target.split(['?', '#']).next().unwrap_or_default();
+            let repo = raw
+                .get(..repo.len())
+                .filter(|r| r.eq_ignore_ascii_case(repo))
+                .unwrap_or(repo);
+            push(shared, git, client, up, (&head, repo))
+        }
         None => pass(shared, client, up, &head),
     }
 }
