@@ -62,6 +62,7 @@ lint: sccache-basedirs
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
+	tools/contract-fixtures-selftest.sh
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 

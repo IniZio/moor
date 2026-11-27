@@ -1,0 +1,100 @@
+{
+ "workflow": "nothing-to-do",
+ "yours": true,
+ "run": {
+  "id": 1,
+  "due_at": 1795755976634,
+  "outcome": "finished",
+  "phase": "done",
+  "verdict": {
+   "name": "nothing to do",
+   "tone": "plain",
+   "says": "WORKLIST.md is missing or lists no items, so there was nothing to apply."
+  },
+  "trigger": "manual",
+  "box": "nothing-to-do/w1-m20261127050616",
+  "history": [
+   {
+    "at": 1795755976634,
+    "entry": {
+     "kind": "queued"
+    }
+   },
+   {
+    "at": 1795756000468,
+    "entry": {
+     "kind": "entered",
+     "step": "applied",
+     "try_n": 1
+    }
+   },
+   {
+    "at": 1795756011454,
+    "entry": {
+     "kind": "outcome_reached",
+     "outcome": {
+      "name": "nothing to do",
+      "tone": "plain",
+      "says": "WORKLIST.md is missing or lists no items, so there was nothing to apply."
+     }
+    }
+   },
+   {
+    "at": 1795756016181,
+    "entry": {
+     "kind": "ended",
+     "phase_before": "running",
+     "outcome": {
+      "outcome": "delivered",
+      "result": "",
+      "verdict": {
+       "name": "nothing to do",
+       "tone": "plain",
+       "says": "WORKLIST.md is missing or lists no items, so there was nothing to apply."
+      }
+     }
+    }
+   }
+  ],
+  "plan": {
+   "steps": [
+    {
+     "id": "applied",
+     "title": "applied",
+     "kind": "gate",
+     "done_when": "the agent reports applied.md; its checks exit 0",
+     "command": "shas=$(grep -oE '\\b[0-9a-f]{7,40}\\b' .moor/artifacts/applied.md | sort -u); [ -n \"$shas\" ] && for s in $shas; do git cat-file -e \"$s^{commit}\" || exit 1; done",
+     "checks": [
+      {
+       "run": "shas=$(grep -oE '\\b[0-9a-f]{7,40}\\b' .moor/artifacts/applied.md | sort -u); [ -n \"$shas\" ] && for s in $shas; do git cat-file -e \"$s^{commit}\" || exit 1; done",
+       "says": "applied.md lists at least one commit and every commit it names exists in the repo."
+      }
+     ],
+     "evidence": [
+      "applied.md"
+     ],
+     "max_tries": 2
+    },
+    {
+     "id": "pull-request",
+     "title": "pull-request",
+     "kind": "gate",
+     "done_when": "the agent reports pr.md; its checks exit 0",
+     "command": "url=$(grep -oE 'https://github\\.com/[^/ ]+/[^/ ]+/pull/[0-9]+' .moor/artifacts/pr.md | head -n1); [ -n \"$url\" ] && [ \"$(gh pr view \"$url\" --json state --jq .state)\" = OPEN ]",
+     "checks": [
+      {
+       "run": "url=$(grep -oE 'https://github\\.com/[^/ ]+/[^/ ]+/pull/[0-9]+' .moor/artifacts/pr.md | head -n1); [ -n \"$url\" ] && [ \"$(gh pr view \"$url\" --json state --jq .state)\" = OPEN ]",
+       "says": "pr.md holds a pull request URL and that pull request is open."
+      }
+     ],
+     "evidence": [
+      "pr.md"
+     ],
+     "max_tries": 2
+    }
+   ]
+  }
+ },
+ "outputs": [],
+ "contract": 1
+}

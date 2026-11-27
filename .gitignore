@@ -5,3 +5,4 @@
 /site/.astro
 /crates/moor-gate/web/node_modules
 /crates/moor-gate/web/dist
+__pycache__/

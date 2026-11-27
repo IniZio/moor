@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Run moor's agent-contract fixtures on a private verify-moor-live instance.
+
+  tools/contract-fixtures/run [-n RUNS] [--instance NAME] FIXTURE... | all
+  tools/contract-fixtures/run --check EVIDENCE_DIR FIXTURE
+
+Each fixture is a TOML file in fixtures/. A run starts the fixture's task (a one-off Box) or fires
+its automation (a workflow whose gates moor reads from the prompt), waits for the agent, saves the
+evidence, cleans up what the run made on GitHub, then counts the records each assertion names.
+One row per fixture: "<name> <passes>/<runs>". Exit 1 when any fixture passes fewer than all.
+"""
+
+import argparse
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import tomllib
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+MVL = Path(os.environ.get("MVL_BIN", Path.home() / ".claude/skills/verify-moor-live/bin"))
+RUNS = Path(os.environ.get("MVL_RUNS", Path.home() / ".local/state/moor-verify-live/runs"))
+SOURCES = ("events", "proxy", "gates", "run", "outputs", "refs", "pulls", "changes", "probes",
+           "artifacts", "final")
+DEFAULT_SETUP = ["cargo build", "cargo test"]
+
+
+def load_fixture(name):
+    f = HERE / "fixtures" / f"{name}.toml"
+    d = tomllib.loads(f.read_text())
+    d["name"] = name
+    d.setdefault("repo", "IniZio/moor-pilot-example")
+    d.setdefault("setup", DEFAULT_SETUP)
+    d.setdefault("timeout_minutes", 20)
+    d.setdefault("probes", {})
+    if d.get("mode") not in ("task", "run") or not d.get("prompt") or not d.get("assert"):
+        bad(f"{f}: a fixture needs mode (task or run), prompt and at least one assert")
+    for a in d["assert"]:
+        if a.get("from") not in SOURCES or not a.get("says"):
+            bad(f"{f}: assertion {a.get('says')!r} needs says and a from among {', '.join(SOURCES)}")
+        for rx in a.get("where", {}).values():
+            try:
+                re.compile(rx)
+            except re.error as e:
+                bad(f"{f}: assertion {a['says']!r}: {e}")
+    return d
+
+
+def bad(why):
+    print(why, file=sys.stderr)
+    sys.exit(2)
+
+
+def flatten(d, prefix=""):
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(flatten(v, key + "."))
+        elif isinstance(v, str):
+            out[key] = v
+        else:
+            out[key] = json.dumps(v)
+    return out
+
+
+def read_json(p, default):
+    return json.loads(p.read_text()) if p.exists() else default
+
+
+def records(ev):
+    """Every source as a list of flat records, read from one run's evidence folder."""
+    events = []
+    p = ev / "events.jsonl"
+    for line in p.read_text().splitlines() if p.exists() else []:
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if e.get("frame") == "event":
+            events.append({"kind": e["kind"], **flatten(e.get("payload") or {})})
+    proxy = []
+    p = ev / "proxy.log"
+    for line in p.read_text().splitlines() if p.exists() else []:
+        parts = line.split()
+        if len(parts) >= 4:
+            proxy.append({"ts": parts[0], "method": parts[1], "rule": parts[2], "status": parts[3]})
+    run = read_json(ev / "run.json", None)
+    said = [e["text"] for e in events if e["kind"] == "agent_said" and "text" in e]
+    final = [{"text": said[-1], "lines": str(len(said[-1].strip().splitlines()))}] if said else []
+    return {
+        "events": events,
+        "proxy": proxy,
+        "gates": [flatten(h["entry"]) for h in run["run"].get("history", [])] if run else [],
+        "run": [flatten({"outcome": run["run"]["outcome"], "phase": run["run"].get("phase", ""),
+                         "verdict": (run["run"].get("verdict") or {}).get("name", ""),
+                         "step": run["run"].get("step", ""), "contract": run.get("contract")})]
+        if run else [],
+        "outputs": [flatten(o) for o in run.get("outputs", [])] if run else [],
+        "refs": read_json(ev / "refs.json", []),
+        "pulls": read_json(ev / "pulls.json", []),
+        "changes": read_json(ev / "changes.json", []),
+        "probes": read_json(ev / "probes.json", []),
+        "artifacts": read_json(ev / "artifacts.json", []),
+        "final": final,
+    }
+
+
+def check(fixture, ev):
+    """The assertions that failed, each as one line; empty when the run passed."""
+    recs = records(ev)
+    failed = []
+    for a in fixture.get("assert", []):
+        where = a.get("where", {})
+        n = sum(1 for r in recs[a["from"]]
+                if all(re.search(rx, json.dumps(r) if f == "*" else str(r.get(f, "")))
+                       for f, rx in where.items()))
+        lo, hi = a.get("min", 1), a.get("max")
+        if n < lo or (hi is not None and n > hi):
+            want = f"{lo}..{'' if hi is None else hi}"
+            failed.append(f"{a['says']} ({a['from']} {json.dumps(where)}: {n}, wanted {want})")
+    return failed
+
+
+# ---- live: everything below drives a private instance ----
+
+def sh(args, stdin=None, timeout=600, env=None):
+    r = subprocess.run(args, input=stdin, capture_output=True, text=True, timeout=timeout,
+                       env={**os.environ, **(env or {})})
+    return r.returncode, r.stdout + r.stderr
+
+
+class Instance:
+    def __init__(self, name):
+        self.name = name
+        rt = os.environ.get("XDG_RUNTIME_DIR", f"/tmp/mvl-{os.getuid()}")
+        self.state = Path(rt) / "mvl" / name / "s"
+
+    def moor(self, *args, stdin=None, timeout=600):
+        return sh([str(MVL / "moor"), *args], stdin, timeout, {"MVL_NAME": self.name})
+
+    def call(self, req):
+        rc, out = self.moor("call", "--json", stdin=json.dumps(req))
+        try:
+            env = json.loads(out.splitlines()[0])
+        except (json.JSONDecodeError, IndexError):
+            raise RuntimeError(f"{req['cmd']}: {out.strip()[:300]}") from None
+        if env.get("class") != "ok":
+            raise RuntimeError(f"{req['cmd']}: {env.get('error')}")
+        return env["value"]
+
+
+def gh_refs(repo):
+    rc, out = sh(["gh", "api", "--paginate", f"repos/{repo}/git/matching-refs/heads/",
+                  "--jq", ".[] | [.ref, .object.sha] | @tsv"])
+    if rc:
+        raise RuntimeError(f"gh refs: {out.strip()[:300]}")
+    return dict(line.split("\t") for line in out.splitlines() if "\t" in line)
+
+
+def ref_changes(before, after):
+    out = []
+    for ref in sorted(set(before) | set(after)):
+        if before.get(ref) != after.get(ref):
+            change = "created" if ref not in before else "deleted" if ref not in after else "moved"
+            out.append({"ref": ref, "sha": after.get(ref, ""), "change": change})
+    return out
+
+
+def collect(inst, fx, box, ev, refs_before):
+    rc, out = inst.moor("show", box, "--json", timeout=120)
+    shown = json.loads(out.splitlines()[0])["value"]["box"] if rc == 0 else {}
+    (ev / "show.json").write_text(json.dumps(shown, indent=1))
+    rc, out = inst.moor("events", "--box", box, timeout=120)
+    (ev / "events.jsonl").write_text(out)
+    p = inst.state / "egress" / "proxy" / f"{shown.get('id')}.log"
+    (ev / "proxy.log").write_text(p.read_text() if p.exists() else "")
+    try:
+        ch = inst.call({"cmd": "changes", "box": box})
+        files = [{"path": f.get("path", ""), **flatten(f)} for r in ch["repos"] for f in r["files"]]
+    except RuntimeError as e:
+        files = [{"path": "", "error": str(e)}]
+    (ev / "changes.json").write_text(json.dumps(files, indent=1))
+    probes = []
+    for pname, cmd in fx["probes"].items():
+        rc, out = inst.moor("exec", box, cmd, timeout=180)
+        probes.append({"name": pname, "exit": str(rc), "out": out[-2000:]})
+    (ev / "probes.json").write_text(json.dumps(probes, indent=1))
+    rc, out = inst.moor("exec", box, "cd .moor/artifacts 2>/dev/null && for f in *; do [ -f \"$f\" ] "
+                        "&& printf '%s\\001' \"$f\" && head -c 65536 \"$f\" && printf '\\002'; done",
+                        timeout=180)
+    arts = [dict(zip(("name", "text"), chunk.split("\x01", 1)))
+            for chunk in out.split("\x02") if "\x01" in chunk] if rc == 0 else []
+    (ev / "artifacts.json").write_text(json.dumps(arts, indent=1))
+    changes = ref_changes(refs_before, gh_refs(fx["repo"]))
+    (ev / "refs.json").write_text(json.dumps(changes, indent=1))
+    pulls = []
+    for c in changes:
+        rc, out = sh(["gh", "pr", "list", "-R", fx["repo"], "--state", "all", "--head",
+                      c["ref"].removeprefix("refs/heads/"), "--json", "number,state,title,url,headRefName"])
+        pulls += json.loads(out) if rc == 0 else []
+    (ev / "pulls.json").write_text(json.dumps(pulls, indent=1))
+    return shown.get("branch"), changes, pulls
+
+
+def cleanup(repo, branch, changes, pulls, log):
+    """Closes the run's pull requests and deletes the branches it created."""
+    for p in pulls:
+        if p["state"] == "OPEN":
+            rc, out = sh(["gh", "pr", "close", str(p["number"]), "-R", repo])
+            log.append(f"closed {repo}#{p['number']} (exit {rc})")
+    for c in changes:
+        name = c["ref"].removeprefix("refs/heads/")
+        if c["change"] == "created" and (name == branch or any(p["headRefName"] == name for p in pulls)):
+            rc, out = sh(["gh", "api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{name}"])
+            log.append(f"deleted branch {name} (exit {rc})")
+        elif c["change"] != "deleted":
+            log.append(f"left {c['ref']} {c['change']}: not this run's branch")
+
+
+def wait_idle(inst, box, secs):
+    for wait in (secs, 60):
+        rc, out = inst.moor("wait", box, "--for", "idle", "--timeout", str(wait), timeout=wait + 60)
+        if rc:
+            return f"agent not idle: {out.strip()[-200:]}"
+        time.sleep(4)
+    return None
+
+
+def one_run(inst, fx, i, root, log):
+    ev = root / f"{fx['name']}-{i}"
+    ev.mkdir(parents=True)
+    secs = fx["timeout_minutes"] * 60
+    before = gh_refs(fx["repo"])
+    problem = None
+    if fx["mode"] == "task":
+        box = f"cf-{fx['name'][:20]}-{i}-{int(time.time()) % 100000}"
+        rc, out = inst.moor("start", box, "--node", "local-agent", "--repo", fx["repo"],
+                            "--prompt", fx["prompt"], timeout=900)
+        problem = f"start failed: {out.strip()[-300:]}" if rc else wait_idle(inst, box, secs)
+    else:
+        now = inst.call({"cmd": "workflow-run-now", "name": fx["name"]})
+        want, deadline, run = now.get("box"), time.time() + secs, None
+        while now.get("status") != "refused" and time.time() < deadline:
+            runs = inst.call({"cmd": "workflow-run-list", "workflow": fx["name"], "limit": 1})["runs"]
+            run = runs[0] if runs and want in (runs[0].get("box"), runs[0].get("planned_box")) else None
+            if run and run.get("phase") in ("done", "waiting"):
+                break
+            time.sleep(10)
+        else:
+            problem = f"run not done after {fx['timeout_minutes']} min: {now}"
+        if run:
+            read = inst.call({"cmd": "workflow-run-read", "run": run["id"]})
+            (ev / "run.json").write_text(json.dumps(read, indent=1))
+        box = (run or {}).get("box") or (run or {}).get("planned_box")
+    branch, changes, pulls = collect(inst, fx, box, ev, before) if box else (None, [], [])
+    if box:
+        inst.moor("close", box, "--force", timeout=300)
+    cleanup(fx["repo"], branch, changes, pulls, log)
+    failed = ([problem] if problem else []) + check(fx, ev)
+    (ev / "verdict.json").write_text(json.dumps({"box": box, "failed": failed}, indent=1))
+    return failed, ev
+
+
+def prepare(inst, fx):
+    inst.moor("repo", "config", "set", fx["repo"],
+              stdin="setup:\n" + "".join(f"  - {s}\n" for s in fx["setup"]))
+    if fx["mode"] != "run":
+        return
+    inst.call({"cmd": "workflow-add", "name": fx["name"], "repos": [fx["repo"]],
+               "prompt": fx["prompt"], "timeout_minutes": fx["timeout_minutes"]})
+    deadline = time.time() + 900
+    while time.time() < deadline:
+        w = next(w for w in inst.call({"cmd": "workflow-list"})["workflows"] if w["name"] == fx["name"])
+        if not w.get("plan_making"):
+            return w
+        time.sleep(10)
+    raise RuntimeError("moor did not read the prompt in 15 min")
+
+
+def main():
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    ap = argparse.ArgumentParser()
+    ap.add_argument("fixtures", nargs="+")
+    ap.add_argument("-n", "--runs", type=int, default=3)
+    ap.add_argument("--instance", default="cf-fixtures")
+    ap.add_argument("--worktree", default=str(HERE.parent.parent))
+    ap.add_argument("--check", metavar="EVIDENCE_DIR")
+    a = ap.parse_args()
+    names = sorted(p.stem for p in (HERE / "fixtures").glob("*.toml")) if a.fixtures == ["all"] else a.fixtures
+    fixtures = [load_fixture(n) for n in names]
+    if a.check:
+        failed = check(fixtures[0], Path(a.check))
+        for f in failed:
+            print(f"  failed: {f}")
+        return 1 if failed else 0
+    root = RUNS / "contract-fixtures" / time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    root.mkdir(parents=True)
+    log, rows, bad = [], [], False
+    inst = Instance(a.instance)
+    rc, out = sh([str(HERE / "instance.sh"), "up", a.instance, a.worktree], timeout=2400)
+    (root / "instance-up.log").write_text(out)
+    try:
+        if rc:
+            raise SystemExit(f"instance did not come up; see {root}/instance-up.log")
+        for fx in fixtures:
+            if fx.get("needs"):
+                rows.append(f"{fx['name']} skipped (needs: {fx['needs']})")
+                continue
+            try:
+                w = prepare(inst, fx)
+                (root / f"{fx['name']}-workflow.json").write_text(json.dumps(w, indent=1))
+                results = [one_run(inst, fx, i, root, log) for i in range(1, a.runs + 1)]
+            except (RuntimeError, subprocess.TimeoutExpired) as e:
+                results = [([f"harness: {e}"], root)]
+            passes = sum(1 for f, _ in results if not f)
+            bad |= passes < a.runs
+            block = [f"{fx['name']} {passes}/{a.runs}"]
+            for i, (f, ev) in enumerate(results, 1):
+                block += [f"  run {i} failed: {line}  evidence {ev}" for line in f]
+            print("\n".join(block), flush=True)
+            rows += block
+    finally:
+        _, out = sh([str(HERE / "instance.sh"), "down", a.instance], timeout=900)
+        (root / "instance-down.log").write_text(out)
+        (root / "cleanup.log").write_text("\n".join(log) + "\n")
+    print("\n".join(["", f"evidence {root}", *rows, *(f"github: {line}" for line in log)]))
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
