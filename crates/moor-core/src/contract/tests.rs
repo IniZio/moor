@@ -169,6 +169,19 @@ fn a_place_starts_a_box_without_setup_only_to_find_why_setup_failed() {
 }
 
 #[test]
+fn a_place_sends_repo_work_to_a_work_box() {
+    let text = render(&[Situation::Every, Situation::Place], true);
+    assert!(
+        text.contains(
+            "- [answer] This place is for reading and answering. Anything that changes a repo, \
+             runs its code or its tools, or installs a tool for that work happens in a work Box \
+             you start with start_box. moor refuses repo writes from here."
+        ),
+        "{text}"
+    );
+}
+
+#[test]
 fn without_the_moor_server_no_tool_block() {
     let text = render(&[Situation::Every, Situation::Box], false);
     assert!(!text.contains("## moor tools"), "{text}");
