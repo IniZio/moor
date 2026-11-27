@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -93,6 +94,8 @@ struct Run {
     state: Mutex<State>,
     /// Notified once it ends.
     ended: Condvar,
+    /// Set once the place's agent is stopped, which stops the command.
+    ending: AtomicBool,
 }
 
 impl Run {
@@ -111,9 +114,14 @@ fn runs() -> &'static Runs {
     RUNS.get_or_init(Mutex::default)
 }
 
+/// `cx`'s state directory, which keeps one controller's runs apart from another's.
+fn dir(cx: &Cx) -> PathBuf {
+    cx.state_dir().map(PathBuf::from).unwrap_or_default()
+}
+
 /// The key of run `id` in `cx`'s state directory.
 fn key(cx: &Cx, id: BoxRunId) -> (PathBuf, BoxRunId) {
-    (cx.state_dir().map(PathBuf::from).unwrap_or_default(), id)
+    (dir(cx), id)
 }
 
 /// A new run's handle, which carries its command's output and end.
@@ -132,6 +140,7 @@ pub(crate) fn register(cx: &Cx, place: BoxId) -> Started {
         place,
         state: Mutex::default(),
         ended: Condvar::new(),
+        ending: AtomicBool::new(false),
     });
     let mut all = runs().lock().unwrap_or_else(PoisonError::into_inner);
     all.retain(|_, r| {
@@ -148,6 +157,18 @@ pub(crate) fn register(cx: &Cx, place: BoxId) -> Started {
     all.insert(key(cx, id), Arc::clone(&run));
     drop(all);
     Started { id, run }
+}
+
+/// Stops every command of `place` in `cx`'s state directory that still runs, since a command
+/// the place's agent started ends with the agent.
+pub(crate) fn end_place(cx: &Cx, place: BoxId) {
+    let dir = dir(cx);
+    let all = runs().lock().unwrap_or_else(PoisonError::into_inner);
+    for ((at, _), run) in all.iter() {
+        if *at == dir && run.place == place {
+            run.ending.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Writes one stream of a run.
@@ -194,11 +215,12 @@ impl Started {
                 stderr: true,
             },
         );
+        let stop = || stop() || self.run.ending.load(Ordering::Relaxed);
         let ended = exec(Pipes {
             stdin: Box::new(io::empty()),
             stdout: &mut stdout,
             stderr: &mut stderr,
-            stop,
+            stop: &stop,
         });
         let mut state = self.run.state();
         state.end = Some(ended.map_err(|e| (e.kind, e.error.to_string())));

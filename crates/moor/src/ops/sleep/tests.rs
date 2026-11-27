@@ -164,6 +164,41 @@ fn sleeps_an_idle_box() {
 }
 
 #[test]
+fn sleeping_a_place_stops_the_commands_its_agent_runs_in_work_boxes() {
+    use crate::ops::box_tool::runs;
+    use moor_core::view::{BoxRunState, ExecView};
+    let f = idle();
+    let started = runs::register(&f.cx, f.id);
+    let id = started.id;
+    let clock = f.cx.clock_arc();
+    let worker = std::thread::spawn(move || {
+        started.run(
+            || clock.instant(),
+            &|| false,
+            |pipes| {
+                for _ in 0..2000 {
+                    if (pipes.stop)() {
+                        return Ok(ExecView {
+                            exit: None,
+                            timed_out: false,
+                        });
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Ok(ExecView {
+                    exit: Some(0),
+                    timed_out: false,
+                })
+            },
+        );
+    });
+    run(&f.cx, &req()).unwrap();
+    worker.join().unwrap();
+    let ended = runs::answer(&f.cx, f.id, id, runs::WINDOW, &|| false).unwrap();
+    assert_eq!(ended.state, BoxRunState::Stopped);
+}
+
+#[test]
 fn sleeps_a_working_box_without_a_run() {
     let f = fx();
     assert_eq!(states(&f).0, BoxLifecycle::Ready);
