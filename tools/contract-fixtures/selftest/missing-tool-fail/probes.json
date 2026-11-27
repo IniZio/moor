@@ -1,0 +1,7 @@
+[
+ {
+  "name": "shellcheck",
+  "exit": "0",
+  "out": "/home/agent/.local/bin/shellcheck\n"
+ }
+]

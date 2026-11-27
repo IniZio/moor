@@ -1,0 +1,29 @@
+keys = ["gates", "publish", "outputs", "run-link"]
+mode = "run"
+needs = "github-app"
+prompt = """
+For the pull request that fired the run, build it and run its tests, then post one evidence \
+comment on the pull request and set a commit status. moor holds the run open until its gates \
+pass, in order: gate `checked`, evidence `test-output.txt`; then gate `posted`, with a check \
+that the comment exists."""
+
+[[assert]]
+says = "both gates reported with top-level files"
+from = "gates"
+where = { kind = "^reported$", "report.result" = "^ok$", "report.evidence" = '^\["[^/"]+"' }
+min = 2
+
+[[assert]]
+says = "the comment reported through report_output"
+from = "outputs"
+where = { kind = "(?i)comment" }
+
+[[assert]]
+says = "the status reported through report_output"
+from = "outputs"
+where = { kind = "(?i)status" }
+
+[[assert]]
+says = "the run's link in the comment"
+from = "final"
+where = { text = "https?://\\S+/runs?/" }

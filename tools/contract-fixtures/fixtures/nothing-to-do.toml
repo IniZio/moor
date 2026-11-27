@@ -1,0 +1,39 @@
+# A run with no work to do: one line, then quiet, and the anytime outcome holds.
+keys = ["outcome"]
+mode = "run"
+prompt = """
+Each run applies the work list in WORKLIST.md at the repo root, one commit per item, and opens \
+one pull request for them. moor holds the run open until its gates pass, in order: gate \
+`applied`, evidence `applied.md` listing each item with its commit; then gate `pull-request`, \
+evidence `pr.md` holding the pull request URL, with a check that the pull request is open. When \
+WORKLIST.md is missing or lists nothing, the run ends with the outcome `nothing to do` (plain), \
+which can end a run before its gates pass."""
+
+[[assert]]
+says = "the anytime outcome holds"
+from = "run"
+where = { verdict = "(?i)^nothing to do$" }
+
+[[assert]]
+says = "the final message is one line"
+from = "final"
+where = { lines = "^1$" }
+
+[[assert]]
+says = "quiet: one turn"
+from = "events"
+where = { kind = "^turn_done$" }
+max = 1
+
+[[assert]]
+says = "quiet: no gate reported"
+from = "gates"
+where = { kind = "^reported$" }
+min = 0
+max = 0
+
+[[assert]]
+says = "quiet: nothing pushed"
+from = "refs"
+min = 0
+max = 0
