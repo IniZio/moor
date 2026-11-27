@@ -52,6 +52,9 @@ pub enum BoxCall {
         /// Skip the repo's setup lines on every machine the Box gets.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         no_setup: bool,
+        /// The revision of `repo` to branch from; its default branch when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
     },
     /// Close one of the user's open work Boxes. It has no `force`: a Box that holds work not
     /// pushed stays open, as a person's `moor close` leaves it.

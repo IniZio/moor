@@ -43,9 +43,12 @@ struct StartArgs {
     name: String,
     /// The repos, each `owner/name`, the Box's own first. Only your task's repos.
     repos: Vec<String>,
-    /// Skip the repo's setup lines, so the Box is ready once the repos are cloned; you install
-    /// what you need with `exec_in_box`. False by default.
+    /// Skip the repo's setup lines. Set it only to find out why a setup line failed, in a Box
+    /// that runs none of them. False by default.
     no_setup: Option<bool>,
+    /// The revision of the first repo to branch from, such as a branch the task names; the
+    /// repo's default branch when left out.
+    base: Option<String>,
 }
 
 /// Arguments of `close_box`.
@@ -116,10 +119,11 @@ impl BoxTools {
     /// Starts a Box for the caller place's user on its task's repos.
     #[tool(
         description = "Start a Box for your user on your task's repos: the first is the Box's \
-                       own, the rest are cloned beside it. The Box runs no agent: run commands in it with \
-                       exec_in_box. Set no_setup to skip the repo's setup lines when the work \
-                       does not need them. Only from an agent place a task has claimed. \
-                       Answers once the start ends."
+                       own, the rest are cloned beside it, and the repo's setup runs. The Box \
+                       runs no agent: run commands in it with exec_in_box. Give base to branch \
+                       from a revision other than the default branch. Set no_setup only to find \
+                       out why a setup line failed. Only from an agent place a task has \
+                       claimed. Answers once the start ends."
     )]
     async fn start_box(
         &self,
@@ -184,6 +188,7 @@ fn start_call(args: &StartArgs) -> Result<BoxCall, String> {
         repo,
         also: repos.collect::<Result<_, _>>()?,
         no_setup: args.no_setup.unwrap_or(false),
+        base: args.base.clone(),
     })
 }
 
