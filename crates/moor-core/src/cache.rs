@@ -260,8 +260,9 @@ impl CachePlan {
     }
 
     /// Keys every volume of `layers` to its scope for `user` and `repo`; a Box without a repo
-    /// gets the operator's volumes only. The agent's group ends in `a` and any other volume with
-    /// restore steps in `x`, so one bad group never empties another.
+    /// gets the operator's volumes and the `tools` preset, kept per user alone. The agent's group
+    /// ends in `a` and any other volume with restore steps in `x`, so one bad group never empties
+    /// another.
     ///
     /// # Errors
     /// As [`CacheLayers::declared`].

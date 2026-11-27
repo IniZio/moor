@@ -65,9 +65,9 @@ impl CacheLayers {
         self.resolve(repo).map(|r| r.volumes)
     }
 
-    /// Every volume of a Box, presets first, and the declared volumes left out. Presets and repo
-    /// volumes need a repo. A preset without restore steps that shares a name or a directory with a declared
-    /// volume yields to it. A declared volume whose directory meets that of a preset with restore steps is dropped
+    /// Every volume of a Box, presets first, and the declared volumes left out. Repo volumes and
+    /// every preset but `tools` need a repo. A preset without restore steps that shares a name or a
+    /// directory with a declared volume yields to it. A declared volume whose directory meets that of a preset with restore steps is dropped
     /// instead, whether that preset is kept or not, so no other volume ever holds it.
     ///
     /// # Errors
@@ -112,7 +112,7 @@ impl CacheLayers {
             }
         }
         let kept = presets.into_iter().filter(|p| {
-            has_repo
+            (has_repo || p.name.as_str() == presets::TOOLS)
                 && self.repo.presets.keeps(p.name.as_str())
                 && self.operator.presets.keeps(p.name.as_str())
                 && !declared.iter().any(|d| overlap(&d.volume, p).is_some())

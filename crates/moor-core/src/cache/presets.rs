@@ -60,6 +60,10 @@ const FIXED: [(&str, &[&str]); 16] = [
     ("git", &[GIT_MIRROR]),
 ];
 
+/// The name of the `tools` preset: what the agent profile installs. It is the one preset a Box with
+/// no repo keeps, since an agent place runs the profile's `setup.sh` and installs its plugins too.
+pub const TOOLS: &str = "tools";
+
 /// The directory of the `git` preset.
 pub const GIT_MIRROR: &str = "~/.local/share/git-mirror";
 

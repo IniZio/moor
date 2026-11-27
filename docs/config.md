@@ -342,6 +342,8 @@ moor refuses the paths it writes for each Box. Those include `~/.ssh`,
 | `git` | `~/.local/share/git-mirror`: a bare mirror of the repo, which the clone fetches into and clones from |
 
 A preset and a repo config volume are kept per user and repo.
+An agent place has no repo and keeps only the `tools` preset, per user, so its second start
+does not download the profile's tools again.
 A user config volume is kept per user. Another user's Box never sees a cache.
 
 On a Docker machine, a package store such as `pnpm` or `rust` is shared by the
