@@ -4,6 +4,8 @@ use super::*;
 use moor_core::contract::SkillEntry;
 use moor_core::seam::engine::RunLaunch;
 
+use crate::testing::contract::OLD_TEXT;
+
 fn input(issue: Option<&str>) -> BriefInput<'_> {
     BriefInput {
         name: "t1",
@@ -221,32 +223,6 @@ fn a_place_brief_offers_a_work_box_without_setup_and_a_work_brief_does_not() {
     assert!(place.contains("pass `no_setup` to `start_box`"), "{place}");
     assert!(!render(&input(None)).contains("no_setup"));
 }
-
-/// Sentences of the task and run Box texts the contract replaced, one from each deleted part.
-const OLD_TEXT: &[&str] = &[
-    "You are running inside the machine",
-    "Report the command's real exit code",
-    "`sudo -n` may work here",
-    "If a tool the work needs is missing, install it",
-    "Before you tell the person a tool or program is missing",
-    "Do not add Co-Authored-By trailers",
-    "When you opened a pull request, end your final message with its URL.",
-    "You may receive follow-up messages (steers)",
-    "Decide on your own when you reasonably can",
-    "Reports are how you show work to a human",
-    "To show a human a file",
-    "attach a published file to a pull request",
-    "Do not run `gh auth login`",
-    "do not retry or look for a way around it",
-    "After each write outside moor, such as a pull request comment",
-    "Report only the gate that is in hand",
-    "load it first if your tools",
-    "moor tells you when each gate is in hand",
-    "How the run ends is not yours to say",
-    "Never fake evidence or a result",
-    "If you find there is nothing to do",
-    "Or call it with result fail",
-];
 
 fn run_gates() -> moor_core::gate::Gates {
     let doc: moor_core::gate::GatesDoc = serde_json::from_value(serde_json::json!({

@@ -134,7 +134,7 @@ fn delivers_the_hook_writer_files() {
         paths,
         [
             format!("{CRED}/brief.md"),
-            format!("{CRED}/skills/moor-attach-files/SKILL.md"),
+            "/home/box/.claude/skills/moor-attach-files/SKILL.md".to_owned(),
             "/work/box-1/.moor/hook.sh".to_owned(),
             "/work/box-1/.moor/hooks.json".to_owned(),
             format!("{CRED}/agent.sh"),
@@ -385,7 +385,6 @@ fn a_proxy_launch_stages_only_the_brief_and_the_agent_script() {
         staged,
         [
             (format!("{CRED}/brief.md"), 0o600),
-            (format!("{CRED}/skills/moor-attach-files/SKILL.md"), 0o600),
             (format!("{CRED}/agent.sh"), 0o600)
         ]
     );
@@ -449,7 +448,9 @@ fn the_agent_gets_the_proxy_env_and_the_ca_after_the_cred_dir_is_gone() {
 
 use scratch_run::Scratch;
 
+mod agent_start;
 mod batch;
+mod contract;
 mod env_tests;
 mod places;
 mod profile_tests;

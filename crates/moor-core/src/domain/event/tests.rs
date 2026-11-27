@@ -1,8 +1,9 @@
 //! Tests for the event kinds, payloads and step-to-event tables.
 
 use super::*;
+use crate::domain::box_state::BoxLifecycle;
 use crate::domain::hands::{HandsInput, HandsState};
-use crate::name::BoxHandle;
+use crate::name::{BoxHandle, RunId};
 use index::event_index;
 
 const PINNED_KINDS: &[&str] = &[
