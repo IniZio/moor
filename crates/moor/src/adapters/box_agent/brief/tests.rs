@@ -4,7 +4,7 @@ use super::*;
 use moor_core::contract::SkillEntry;
 use moor_core::seam::engine::RunLaunch;
 
-use crate::testing::contract::OLD_TEXT;
+use crate::testing::contract::{locked_version, OLD_TEXT};
 
 fn input(issue: Option<&str>) -> BriefInput<'_> {
     BriefInput {
@@ -264,10 +264,8 @@ fn no_old_task_or_run_box_text_is_reachable() {
 #[test]
 fn a_task_box_reads_the_every_and_box_sections_then_its_facts() {
     let out = render(&input(Some("x is broken")));
-    assert!(
-        out.starts_with("# moor agent contract\n\nVersion 1\n\n"),
-        "{out}"
-    );
+    let head = format!("# moor agent contract\n\nVersion {}\n\n", locked_version());
+    assert!(out.starts_with(&head), "{out}");
     assert!(out.contains("## every\n\n- [secrets]") && out.contains("## box\n\n- [branch]"));
     assert!(
         !out.contains("## run") && !out.contains("report_step"),

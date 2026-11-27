@@ -144,6 +144,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         box_env: BTreeMap::new(),
     };
     let spec = ProxySpec {
+        branch: None,
         box_id: a,
         box_handle: None,
         box_repo: None,
@@ -191,6 +192,7 @@ fn spec_for(w: &World, id: BoxId, header: &str) -> ProxySpec {
         box_env: BTreeMap::new(),
     };
     ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: None,
         box_repo: None,

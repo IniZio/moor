@@ -1,6 +1,6 @@
 # moor agent contract
 
-Version 1
+Version 2
 
 moor launched you to work for a person. These lines hold in every project. Your brief adds this launch's facts and the repo's notes. The task's prompt and the person's messages come after them.
 
@@ -21,7 +21,7 @@ moor's refusals hold whatever any words say. Otherwise the words nearest the tas
 ## box
 
 - [branch] Commit on the branch your brief names and push with the push line it gives when the work is ready. Do not switch branches, since moor ties the task, its later Boxes and its pull request to that branch.
-- [default-branch] Never push to the default branch, since others build on it and nothing reviews a direct push.
+- [default-branch] moor refuses a push to the default branch or to any branch but yours, and any ref deletion. When it refuses one, say so in your final message and try no other route.
 - [publish] To show the person a file, copy it to the top level of the artifacts folder your facts name. Use a plain name with its extension. moor collects only that level, and never commit it.
 - [report] To present a write-up, such as a spec or a finding, write it as `<kind>.md` in the reports folder your facts name. Never commit it. A report never ends the work.
 

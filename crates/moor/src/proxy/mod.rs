@@ -19,6 +19,7 @@ pub(crate) mod keeper;
 pub(crate) mod ledger;
 pub(crate) mod links;
 pub(crate) mod nono;
+pub(crate) mod push;
 pub(crate) mod route;
 pub(crate) mod token;
 

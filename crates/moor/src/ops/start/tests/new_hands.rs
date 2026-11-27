@@ -84,6 +84,7 @@ fn a_start_after_lost_hands_acquires_new_hands_under_their_own_slug() {
 /// Writes a Proxy spec about Box `id`'s hands `inc`, as that machine's setup does.
 fn write_vm_facts(store: &Store, id: BoxId, inc: HandsInc) -> Result<(), StoreError> {
     let spec = ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: Some(BoxHandle::new(format!("box-{}", inc.get()))),
         box_repo: None,

@@ -21,6 +21,10 @@ pub struct ProxySpec {
     /// The repos the Box lists after `box_repo`, which get its write rules too.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub other_repos: Vec<ForgeRepo>,
+    /// The branch moor ties the Box to, the one ref its pushes may move in each of its repos;
+    /// none owns no ref.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// The resolved tool rules the Proxy enforces.
     #[serde(default)]
     pub rules: Vec<ResolvedRule>,

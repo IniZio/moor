@@ -26,7 +26,7 @@ pub(super) fn classify(target: &str) -> Route {
 
 /// The path part of `target` percent-decoded, lowercased, with backslashes
 /// as slashes, dot segments resolved and empty segments dropped.
-fn canonical_path(target: &str) -> String {
+pub(super) fn canonical_path(target: &str) -> String {
     let path = target.split(['?', '#']).next().unwrap_or_default();
     let bytes = path.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());

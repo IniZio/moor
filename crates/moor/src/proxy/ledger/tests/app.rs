@@ -50,6 +50,7 @@ fn app_box_with(w: &World, repo: Option<ForgeRepo>, others: Vec<ForgeRepo>) -> B
         box_env: BTreeMap::new(),
     };
     let spec = ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: None,
         box_repo: repo,

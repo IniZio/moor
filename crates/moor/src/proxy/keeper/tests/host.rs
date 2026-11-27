@@ -65,6 +65,7 @@ fn a_row_from_before_the_forwarder_gets_a_forward_port_and_the_exec_delivers_it(
         .unwrap();
     let host = kept_proxy(&w);
     let spec = ProxySpec {
+        branch: None,
         box_id: w.id,
         box_handle: Some(w.handle()),
         box_repo: None,
@@ -123,6 +124,7 @@ fn a_box_whose_local_shared_proxy_has_stopped_fails_its_proxy_step_naming_it() {
     });
     host.route = crate::proxy::route::EgressRoute::Local { socket };
     let spec = ProxySpec {
+        branch: None,
         box_id: w.id,
         box_handle: Some(w.handle()),
         box_repo: None,

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox, SpecFields};
-use moor_core::domain::event::Event;
+use moor_core::domain::event::{EgressEvent, Event};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 use serde_json::json;
@@ -43,6 +43,32 @@ fn egress_refused_is_appended() {
         json!({"host": "evil.example", "rule": "gh", "method": null, "category": null})
     );
     assert_eq!(row.ts, Ts::from_millis(1_000));
+}
+
+#[test]
+fn push_refused_is_appended_with_its_ref_and_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, id) = setup(dir.path());
+    let e = Event::Egress(EgressEvent::PushRefused {
+        host: "github.com".into(),
+        repo: "acme/widgets".into(),
+        git_ref: Some("refs/heads/main".into()),
+        key: "branch".into(),
+        reason: "moor refuses a push to refs/heads/main".into(),
+    });
+    store.record_proxy_event(id, &e).unwrap();
+    let rows = store.events(id, 100).unwrap();
+    let row = rows.iter().find(|r| r.kind == "push_refused").unwrap();
+    let field = |k: &str| {
+        row.payload
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(field("ref"), "refs/heads/main");
+    assert_eq!(field("key"), "branch");
+    assert_eq!(field("repo"), "acme/widgets");
 }
 
 #[test]

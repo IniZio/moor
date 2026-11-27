@@ -7,6 +7,7 @@ use super::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
 
 fn spec(id: i64) -> ProxySpec {
     ProxySpec {
+        branch: None,
         box_id: BoxId::new(id),
         box_handle: None,
         other_repos: Vec::new(),

@@ -28,6 +28,7 @@ fn a_box_supervisor_reads_the_spec_the_controller_recorded() {
     let on = box_ledger_with(&w.store, id, Arc::clone(&w.vault));
     assert_eq!(on.spec(), Ok(None));
     let spec = ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: None,
         other_repos: Vec::new(),

@@ -157,8 +157,8 @@ Each statement closes one or more gaps above. Enforcement column. **Planned** me
 | `skills` | E6 | Reader only, through the runbook version at hand-in. Planned. |
 | `tools` | E5 | None. |
 | `final` | E9, E2 | None. |
-| `branch` | B1 | Planned, the push guard. |
-| `default-branch` | B2 | Planned, the push guard. |
+| `branch` | B1 | The push guard refuses a push to any other ref. |
+| `default-branch` | B2 | The push guard refuses it. |
 | `publish` | B3 | Collection reads only the top level. |
 | `report` | B4 | None. |
 | `unattended` | R1 | None. |
@@ -472,7 +472,7 @@ Checked at 25b86767c.
 | GraphQL writes | The default rules pass seven pull request mutations, `updatePullRequest` among them, and withhold the rest. |
 | Approve | The default rules pass `POST /repos/{repo}/pulls/*/reviews`. |
 | Close | The default rules pass `PATCH /repos/{repo}/pulls/*`. |
-| Push | The Proxy passes `git-receive-pack` for the Box's repos on any ref. |
+| Push | The push guard passes `git-receive-pack` only for the Box's branch, and records a refusal as `push_refused`. |
 | `MOOR_PULL_*` | Set only for a run fired by a pull request. A manual run has none either, so their absence does not mean a cron run. |
 | `MOOR_RUN_URL` | Set only when the controller knows its portal address. |
 | `.moor.yaml` | moor no longer reads it. |

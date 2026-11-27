@@ -6,6 +6,7 @@
 mod egress;
 mod framing;
 mod linked;
+mod push;
 mod scope;
 
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -173,7 +174,9 @@ fn upstream_tls() -> (Arc<ServerConfig>, String) {
     let issuer = Issuer::new(ca_params, ca_key);
     let leaf_key = KeyPair::generate().unwrap();
     let mut leaf = CertificateParams::default();
-    leaf.subject_alt_names = vec![SanType::DnsName("api.github.com".try_into().unwrap())];
+    leaf.subject_alt_names = ["api.github.com", "github.com"]
+        .map(|n| SanType::DnsName(n.try_into().unwrap()))
+        .to_vec();
     leaf.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     let leaf_cert = leaf.signed_by(&leaf_key, &issuer).unwrap();
     let mut config =
@@ -298,6 +301,7 @@ fn rig_placeholder(
         guard,
         rest: Vec::new(),
         scope: moor_core::config::proxy::default_graphql(),
+        git: None,
     })
     .unwrap();
     Rig { filter, up, ca_pem }
@@ -383,7 +387,8 @@ impl Client {
                 .unwrap()
                 .with_root_certificates(roots)
                 .with_no_client_auth();
-        let name = ServerName::try_from("api.github.com").unwrap();
+        let host = target.rsplit_once(':').map_or(target, |(h, _)| h);
+        let name = ServerName::try_from(host.to_owned()).unwrap();
         let conn = ClientConnection::new(Arc::new(config), name).unwrap();
         Ok(Self {
             io: BufReader::new(StreamOwned::new(conn, tcp)),

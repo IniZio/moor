@@ -148,6 +148,7 @@ mod tests {
 
     fn spec(id: BoxId) -> ProxySpec {
         ProxySpec {
+            branch: None,
             box_id: id,
             box_handle: None,
             other_repos: Vec::new(),

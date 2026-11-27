@@ -68,6 +68,7 @@ impl World {
             .unwrap();
         let token = String::from_utf8(token.expose().to_vec()).unwrap();
         let spec = ProxySpec {
+            branch: None,
             box_id: id,
             box_handle: None,
             box_repo: None,

@@ -57,8 +57,10 @@ pub(crate) const GITHUB_HOST: &str = "github.com";
 pub(crate) struct Chain<'a> {
     /// The external proxy (the loopback filter). Every CONNECT goes here.
     pub(crate) proxy: SocketAddr,
-    /// Hostname (no port) whose TLS the filter terminates.
+    /// Hostname (no port) whose TLS the filter terminates and whose GraphQL it judges.
     pub(crate) host: &'a str,
+    /// The git host (no port) whose TLS the filter also terminates, to read its pushes.
+    pub(crate) git_host: Option<&'a str>,
     /// Box CA certificate PEM that signs the filter's leaf for `host`.
     pub(crate) ca_pem: &'a Path,
 }
@@ -112,10 +114,11 @@ fn route_for(
     host: &str,
     id_forms: bool,
 ) -> RouteConfig {
+    let is = |name: &str| bare_host(host).eq_ignore_ascii_case(name);
     let chained = spec
         .chain
         .as_ref()
-        .filter(|c| bare_host(host).eq_ignore_ascii_case(c.host));
+        .filter(|c| is(c.host) || c.git_host.is_some_and(is));
     let mut endpoint_rules: Vec<EndpointRule> = rule
         .endpoint_rules
         .iter()
@@ -124,7 +127,7 @@ fn route_for(
             path: r.path.clone(),
         })
         .collect();
-    if id_forms && chained.is_some() {
+    if id_forms && chained.is_some_and(|c| is(c.host)) {
         for id_form in repo_id_forms(&endpoint_rules) {
             if !endpoint_rules.contains(&id_form) {
                 endpoint_rules.push(id_form);

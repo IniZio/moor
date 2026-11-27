@@ -318,6 +318,7 @@ pub(super) fn rig_spec_with(
     let box_id = host.new_box("demo", None);
     let ledger = box_ledger(&host.store, box_id);
     let spec = ProxySpec {
+        branch: None,
         box_id,
         box_handle: None,
         other_repos: other,
