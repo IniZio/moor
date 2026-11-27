@@ -6,7 +6,7 @@ use super::*;
 use crate::testing::contract::{locked_version, OLD_TEXT};
 
 /// A run's launch: its link, a failed setup, and a first message that names its gates.
-fn run_req() -> LaunchReq {
+pub(super) fn run_req() -> LaunchReq {
     let doc: moor_core::gate::GatesDoc = serde_json::from_value(serde_json::json!({
         "gates": [{"name": "proof", "evidence": ["proof.md"], "checks": ["true"]}],
         "outcomes": [

@@ -450,6 +450,7 @@ fn the_agent_gets_the_proxy_env_and_the_ca_after_the_cred_dir_is_gone() {
 use scratch_run::Scratch;
 
 mod batch;
+mod agent_start;
 mod contract;
 mod env_tests;
 mod places;
