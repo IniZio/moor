@@ -266,7 +266,7 @@ fn cache_rows_show_names_and_paths_and_never_a_key() {
 }
 
 #[test]
-fn a_box_without_a_repo_lists_no_presets() {
+fn a_box_without_a_repo_lists_only_the_tools_preset() {
     let d = tempfile::tempdir().unwrap();
     let v = run(
         &cx(d.path()),
@@ -276,7 +276,13 @@ fn a_box_without_a_repo_lists_no_presets() {
         },
     )
     .unwrap();
-    assert!(!v.rows.iter().any(|r| r.kind == EnvKind::Cache));
+    let caches: Vec<&str> = v
+        .rows
+        .iter()
+        .filter(|r| r.kind == EnvKind::Cache)
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(caches, ["tools"]);
 }
 
 /// The size and the layer it came from, from both the `size` row and the provider summary.
