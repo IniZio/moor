@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 
 import type { ReadingView } from './api';
 import { RulesView } from './Gates';
+import type { Hover } from './promptFile';
 import { PromptMarks } from './PromptMarks';
 import { all, textOf } from './testkit';
 
@@ -140,4 +141,70 @@ test('a lit forbidding phrase the rules let through names the request and the ru
 	expect(said).toContain('github-git');
 	expect(said).not.toContain('cannot hold');
 	expect(all(note, 'a').map((a) => (a.props as { href?: string }).href)).toContain('#/repos/acme/web/rules');
+});
+
+const APPROVE = { intent: 'approve', polarity: 'never' as const, repo: null, as: 'person' as const, found: 'no_row', already: [], row: false, unholdable: null };
+const MERGE_ROW = { intent: 'merge', polarity: 'never' as const, repo: null, as: 'person' as const, found: 'refused', already: [], row: true, unholdable: null };
+
+test('a lit forbidding phrase naming verbs no row covers lists its withheld requests and each verb moor has no rule for', () => {
+	const r = forbidding();
+	const said = textOf(noteOf(PromptMarks({ reading: { ...r, phrases: [{ ...r.phrases[0], intents: [APPROVE, MERGE_ROW] }, r.phrases[1]] }, lit: new Set(['a']), onHover: () => {} })));
+	expect(said).toContain(`${MERGE} withheld`);
+	expect(said).toContain(`${MUTATION} withheld`);
+	expect(said).toContain('from merge, table 2');
+	expect(said).toContain('moor has no rule for this (approve)');
+});
+
+test('a lit phrase holding no line names no row it came from', () => {
+	const r = forbidding();
+	const said = textOf(noteOf(PromptMarks({ reading: { ...r, phrases: [{ ...r.phrases[0], mark: 'asked', effects: [] }, r.phrases[1]], effects: [] }, lit: new Set(['a']), onHover: () => {} })));
+	expect(said).not.toContain('from merge');
+	expect(said).not.toContain('withheld');
+});
+
+/** The parts of a focus or key event the phrase reads. */
+type Target = { name: string };
+type Ev = { key?: string; relatedTarget?: Target | null; currentTarget: { contains?: (n: Target | null) => boolean; focus?: () => void } };
+type Handlers = { onBlur?: (e: Ev) => void; onFocusOut?: (e: Ev) => void; onKeyDown?: (e: Ev) => void };
+
+/** The lit phrase `b` of `forbidding()`, its rules link and the hovers it sent. */
+const litPush = () => {
+	const hovers: Hover[] = [];
+	const el = PromptMarks({ reading: forbidding(), lit: new Set(['b']), onHover: (on) => hovers.push(on), rules: '#/repos/acme/web/rules' });
+	const span = spans(el).find((s) => (s.props as { 'data-id'?: string })['data-id'] === 'b');
+	expect(span).toBeDefined();
+	const link = all(noteOf(el), 'a').find((a) => a.props.href === '#/repos/acme/web/rules');
+	expect(link).toBeDefined();
+	return { el, on: (span as { props: Handlers }).props, link: link as NonNullable<typeof link>, hovers };
+};
+
+/** Focus leaving the phrase's own element for `to`, as a browser fires it: blur, then focusout. */
+const focusLeaves = (on: Handlers, to: Target, inside: boolean) => {
+	const e: Ev = { relatedTarget: to, currentTarget: { contains: (n) => inside && n === to } };
+	on.onBlur?.(e);
+	on.onFocusOut?.(e);
+};
+
+test('focus moving from a phrase into its note keeps the note, and the rules link activates', () => {
+	const { el, on, link, hovers } = litPush();
+	focusLeaves(on, { name: 'rules link' }, true);
+	expect(hovers).not.toContain(null);
+	expect(all(noteOf(el), 'a').some((a) => a.props.href === '#/repos/acme/web/rules')).toBe(true);
+	let stopped = false;
+	(link.props.onClick as (e: { stopPropagation: () => void }) => void)({ stopPropagation: () => (stopped = true) });
+	expect(stopped).toBe(true);
+});
+
+test('focus leaving a phrase and its note closes the note', () => {
+	const { on, hovers } = litPush();
+	focusLeaves(on, { name: 'the next field' }, false);
+	expect(hovers.at(-1)).toBeNull();
+});
+
+test('Escape on a phrase or inside its note closes the note and keeps focus on the phrase', () => {
+	const { on, hovers } = litPush();
+	let focused = false;
+	on.onKeyDown?.({ key: 'Escape', currentTarget: { focus: () => (focused = true) } });
+	expect(hovers.at(-1)).toBeNull();
+	expect(focused).toBe(true);
 });
