@@ -2,6 +2,7 @@
 
 pub(crate) mod agent;
 pub(crate) mod clock;
+pub(crate) mod contract;
 pub(crate) mod cx;
 pub(crate) mod db;
 pub(crate) mod driver;
