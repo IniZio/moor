@@ -257,6 +257,47 @@ fn every_spelling_of_the_push_path_meets_the_guard() {
     assert!(rig.seen().is_empty());
 }
 
+/// Bytes that do not compress, like a pack.
+fn noise(n: usize) -> Vec<u8> {
+    let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+    (0..n)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x.to_le_bytes()[3]
+        })
+        .collect()
+}
+
+#[test]
+fn a_large_fetch_passes_byte_for_byte() {
+    let pack = noise(8 << 20);
+    let mut reply = b"HTTP/1.1 200 OK\r\ncontent-type: application/x-git-upload-pack-result\r\n\
+        transfer-encoding: chunked\r\n\r\n"
+        .to_vec();
+    for piece in pack.chunks(81_920) {
+        reply.extend_from_slice(format!("{:x}\r\n", piece.len()).as_bytes());
+        reply.extend_from_slice(piece);
+        reply.extend_from_slice(b"\r\n");
+    }
+    reply.extend_from_slice(b"0\r\n\r\n");
+    let rig = GitRig::start(fixed(reply));
+    let wants = noise(1520);
+    let mut request = format!(
+        "POST /acme/widgets.git/git-upload-pack HTTP/1.1\r\nhost: github.com\r\n\
+         content-type: application/x-git-upload-pack-request\r\ncontent-encoding: gzip\r\n\
+         content-length: {}\r\n\r\n",
+        wants.len()
+    )
+    .into_bytes();
+    request.extend_from_slice(&wants);
+    let resp = rig.client().call(&request);
+    assert_eq!(resp.status(), 200, "{}", resp.head);
+    assert!(resp.body == pack, "the pack changed on the way");
+    assert_eq!(rig.seen().first().unwrap().raw, request);
+}
+
 #[test]
 fn other_git_requests_pass_untouched() {
     let rig = GitRig::start(Arc::new(|_: &Wire| {
