@@ -60,6 +60,7 @@ fn start_for(host: &Host, up: &Upstream, vault: &Arc<Vault>, name: &str, user: U
     let secrets: UserSecretsFn =
         Arc::new(move |name, _| shared.secret(name, None).map_err(|e| e.to_string()));
     let spec = ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: None,
         other_repos: Vec::new(),

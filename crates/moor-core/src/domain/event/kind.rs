@@ -115,6 +115,7 @@ pub const EVENT_KINDS: &[&str] = &[
     "egress_aborted",
     "egress_recovered",
     "credential_withheld",
+    "push_refused",
     "proxy_credential_failed",
     "agent_rate_limited",
     "proxy_credential_rejected",

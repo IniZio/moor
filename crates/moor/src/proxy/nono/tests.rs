@@ -262,6 +262,7 @@ fn chain_cfg(rules: &[ResolvedRule]) -> NonoConfig {
     let chain = Chain {
         proxy: "127.0.0.1:9911".parse().unwrap(),
         host: GITHUB_API_HOST,
+        git_host: None,
         ca_pem: Path::new("/tmp/box-ca.pem"),
     };
     cfg_chained(rules, Some(Path::new("/tmp/up.pem")), Some(chain))
@@ -317,6 +318,40 @@ fn chained_host_routes_trust_the_box_ca_and_others_keep_upstream() {
         by_host("uploads.github.com:443").as_deref(),
         Some("/tmp/up.pem")
     );
+}
+
+#[test]
+fn the_git_host_trusts_the_box_ca_only_while_the_push_guard_reads_it() {
+    let rules = [
+        rule("gh", &[GITHUB_API_HOST], bearer()),
+        rule("git", &["github.com"], bearer()),
+    ];
+    let git_ca = |git_host| {
+        let chain = Chain {
+            proxy: "127.0.0.1:9911".parse().unwrap(),
+            host: GITHUB_API_HOST,
+            git_host,
+            ca_pem: Path::new("/tmp/box-ca.pem"),
+        };
+        cfg_chained(&rules, Some(Path::new("/tmp/up.pem")), Some(chain))
+            .inner()
+            .routes
+            .iter()
+            .find(|r| r.upstream == "https://github.com")
+            .map(|r| {
+                let ids = r.endpoint_rules.iter();
+                (
+                    r.tls_ca.clone(),
+                    ids.filter(|e| e.path.starts_with("/repositories/")).count(),
+                )
+            })
+            .unwrap()
+    };
+    assert_eq!(
+        git_ca(Some("github.com")),
+        (Some("/tmp/box-ca.pem".to_owned()), 0)
+    );
+    assert_eq!(git_ca(None), (Some("/tmp/up.pem".to_owned()), 0));
 }
 
 #[test]

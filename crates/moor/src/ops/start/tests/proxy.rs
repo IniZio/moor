@@ -129,6 +129,21 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 #[test]
+fn the_spec_carries_the_branch_the_push_guard_lets_the_box_move() {
+    let (w, _, fake) = host_world(FakeProxyHost::new());
+    script_repo(&w, None);
+    let v = run(&w.cx, &prompt_repo_req()).unwrap();
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(v.boxed.id))
+            .unwrap()
+            .unwrap();
+    assert_eq!(spec_of(&fake).branch, row.branch);
+    assert_eq!(row.branch, Some(format!("moor/{}-demo", v.boxed.id)));
+}
+
+#[test]
 fn the_spec_carries_the_box_repo_and_resolved_rules() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     script_repo(&w, None);

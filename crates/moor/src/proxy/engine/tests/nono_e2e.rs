@@ -107,6 +107,7 @@ fn engine_injects_the_credential_audits_requests_and_stops() {
     let up = upstream::start(host.dir.path());
     let id = host.new_box("demo", None);
     let spec = ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: None,
         other_repos: Vec::new(),

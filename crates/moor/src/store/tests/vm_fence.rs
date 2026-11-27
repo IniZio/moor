@@ -29,6 +29,7 @@ fn is_stale(got: &Result<(), StoreError>, id: BoxId) -> bool {
 
 fn spec(id: BoxId, handle: &str, inc: Option<HandsInc>) -> ProxySpec {
     ProxySpec {
+        branch: None,
         box_id: id,
         box_handle: Some(BoxHandle::new(handle)),
         box_repo: None,

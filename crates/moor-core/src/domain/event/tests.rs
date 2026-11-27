@@ -428,6 +428,13 @@ fn all_events() -> Vec<Event> {
             sha256: s("ab"),
             harness: s("claude-code"),
         }),
+        Event::Egress(EgressEvent::PushRefused {
+            host: s("github.com"),
+            repo: s("acme/widgets"),
+            git_ref: Some(s("refs/heads/main")),
+            key: s("branch"),
+            reason: s("moor refuses a push to refs/heads/main"),
+        }),
     ]
 }
 
@@ -445,7 +452,7 @@ fn asserted_kinds_are_the_frozen_twenty() {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 107);
+    assert_eq!(all.len(), 108);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

@@ -15,15 +15,19 @@ use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
 use rustls::ServerConfig;
 
 use crate::proxy::guard::Guard;
+use crate::proxy::push::{Owned, PushRefusal};
 use check::Turns;
 use lookup::NodeCache;
 use repo_ids::RepoIds;
 use upstream::Upstream;
 
+mod body;
 mod check;
 mod gate;
+mod git;
 pub(crate) mod http;
 pub(crate) mod lookup;
+mod relay;
 mod repo_ids;
 mod route;
 mod serve;
@@ -73,6 +77,18 @@ pub(crate) struct FilterSpec {
     pub(crate) rest: Vec<EndpointRule>,
     /// The GraphQL roots and mutations the rule lets through.
     pub(crate) scope: Scope,
+    /// The git host whose pushes the push guard reads; none tunnels it raw.
+    pub(crate) git: Option<GitSpec>,
+}
+
+/// The git host the filter terminates so the push guard reads every push.
+pub(crate) struct GitSpec {
+    /// The host, such as `github.com`, on the judged port.
+    pub(crate) host: String,
+    /// Connections to the real git host.
+    pub(crate) upstream: Upstream,
+    /// The ref the Box owns in each of its repos.
+    pub(crate) owned: Owned,
 }
 
 /// One refused request, reported without body, path, query or headers.
@@ -152,6 +168,10 @@ pub(super) struct Shared {
     checking: Turns,
     /// Refusals not yet drained.
     refusals: Mutex<VecDeque<Refusal>>,
+    /// The git host, when the push guard reads its pushes.
+    pub(super) git: Option<GitSpec>,
+    /// Refused pushes not yet drained.
+    pushes: Mutex<VecDeque<PushRefusal>>,
     /// Set when the filter is stopping.
     stop: AtomicBool,
 }
@@ -174,6 +194,15 @@ impl Shared {
             method: method.to_owned(),
             category,
         });
+    }
+
+    /// Records a refused push, dropping the oldest when the buffer is full.
+    pub(super) fn push_refused(&self, refusal: PushRefusal) {
+        let mut q = self.pushes.lock().unwrap_or_else(PoisonError::into_inner);
+        if q.len() >= MAX_REFUSALS {
+            q.pop_front();
+        }
+        q.push_back(refusal);
     }
 
     /// Notes a request forwarded without its credential.
@@ -267,6 +296,8 @@ impl GraphqlFilter {
             rest,
             checking: Turns::default(),
             refusals: Mutex::new(VecDeque::new()),
+            git: spec.git,
+            pushes: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
         });
         let acceptor = Arc::clone(&shared);
@@ -289,6 +320,21 @@ impl GraphqlFilter {
     /// Takes the refusals recorded since the last call.
     pub(crate) fn drain_refusals(&self) -> Vec<Refusal> {
         self.shared.lock_refusals().drain(..).collect()
+    }
+
+    /// Whether the filter terminates the git host to read its pushes.
+    pub(crate) fn guards_pushes(&self) -> bool {
+        self.shared.git.is_some()
+    }
+
+    /// Takes the pushes refused since the last call.
+    pub(crate) fn drain_pushes(&self) -> Vec<PushRefusal> {
+        let mut q = self
+            .shared
+            .pushes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        q.drain(..).collect()
     }
 
     /// Takes the requests forwarded without credential since the last call.

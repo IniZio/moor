@@ -18,6 +18,7 @@ use self::limits::Limits;
 use super::rule_of_route;
 use crate::proxy::graphql::WithheldRequest;
 use crate::proxy::ledger::BoxLedger;
+use crate::proxy::push::PushRefusal;
 use crate::proxy::ProxyLog;
 
 /// Where audit outcomes go.
@@ -44,6 +45,8 @@ pub(crate) trait EgressSink {
     }
     /// Records a rate limit, rejection or recovery of a credential rule.
     fn limit(&self, _event: &Event) {}
+    /// Records a push the push guard refused.
+    fn push_refused(&self, _refusal: &PushRefusal) {}
 }
 
 /// One refused egress attempt.
@@ -285,6 +288,11 @@ impl EgressSink for BoxSink<'_> {
 
     fn limit(&self, event: &Event) {
         self.ledger.record_event(event);
+    }
+
+    fn push_refused(&self, p: &PushRefusal) {
+        self.log.record("POST", "push-guard", 403);
+        self.ledger.record_event(&p.event());
     }
 }
 

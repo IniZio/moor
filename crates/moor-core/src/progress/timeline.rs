@@ -79,6 +79,7 @@ impl Class {
             | "profile_failed"
             | "agent_link_lost"
             | "credential_withheld"
+            | "push_refused"
             | "machine_forward_failed"
             | "machine_refused"
             | "agent_prompt_blocked" => Self::Error,

@@ -51,7 +51,7 @@ pub(crate) fn proxy(
     repo: Option<&ForgeRepo>,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
-    let (user, plan) = box_plan(cx, box_id, repo, &cfg.proxy_allow)?;
+    let (user, branch, plan) = box_plan(cx, box_id, repo, &cfg.proxy_allow)?;
     let cache_env = cfg.cache.env(repo);
     let repo_env = under_repo_env(&cache_env, cfg);
     let (box_handle, hands_inc) = hands.map_or((None, None), |(h, inc)| (Some(h), Some(inc.get())));
@@ -61,6 +61,7 @@ pub(crate) fn proxy(
         hands_inc,
         box_repo: plan.repos.first().cloned(),
         other_repos: plan.repos.get(1..).unwrap_or_default().to_vec(),
+        branch,
         rules: plan.rules,
         user,
     };
@@ -171,8 +172,12 @@ fn box_plan(
     box_id: BoxId,
     repo: Option<&ForgeRepo>,
     extra: &BTreeMap<String, Vec<String>>,
-) -> Result<(UserId, ProxyPlan), String> {
-    let (user, others) = requester(cx, box_id)?;
+) -> Result<(UserId, Option<String>, ProxyPlan), String> {
+    let Requester {
+        user,
+        branch,
+        others,
+    } = requester(cx, box_id)?;
     let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
     // A Box with a profile fetches its profile checkout even when it has no repo.
     let has_profile = cx
@@ -182,12 +187,23 @@ fn box_plan(
         .map_err(|e| e.to_string())?
         .is_some();
     let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
-    Ok((user, plan(cx, &repos, &mcp.servers, has_profile, extra)?))
+    let plan = plan(cx, &repos, &mcp.servers, has_profile, extra)?;
+    Ok((user, branch, plan))
 }
 
-/// The user the Box acts for and the repos it lists after its primary, read from its row. A
-/// claimed place has no primary, so it lists its claim's repos, the task's first.
-fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String> {
+/// What a Box's row says its Proxy acts for.
+struct Requester {
+    /// The user the Box acts for.
+    user: UserId,
+    /// The branch moor ties the Box to, which its pushes may move.
+    branch: Option<String>,
+    /// The repos the Box lists after its primary.
+    others: Vec<ForgeRepo>,
+}
+
+/// The user the Box acts for, its branch and the repos it lists after its primary, read from its
+/// row. A claimed place has no primary, so it lists its claim's repos, the task's first.
+fn requester(cx: &Cx, box_id: BoxId) -> Result<Requester, String> {
     let row = cx
         .store()
         .map_err(|e| e.error.to_string())?
@@ -197,6 +213,7 @@ fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String>
         user: Some(user),
         repo,
         kind,
+        branch,
         ..
     }) = row
     else {
@@ -207,7 +224,11 @@ fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String>
         (None, BoxKind::Place(PlaceState::Claimed(claim))) => claim.repos().cloned().collect(),
         (None, _) => Vec::new(),
     };
-    Ok((user, others))
+    Ok(Requester {
+        user,
+        branch,
+        others,
+    })
 }
 
 /// The variable names the `provider`'s platform puts in the Box that moor removes.

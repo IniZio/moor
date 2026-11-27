@@ -20,6 +20,21 @@ pub enum EgressEvent {
     EgressAborted(EgressHost),
     /// The Proxy allowed a request to a host whose intercepted TLS handshake was aborted earlier.
     EgressRecovered(EgressHost),
+    /// The Proxy's push guard refused a push: it moved a ref the Box does not own, deleted a ref,
+    /// or could not be read.
+    PushRefused {
+        /// The git host the push was for.
+        host: String,
+        /// The repo path the push was for, such as `acme/widgets`.
+        repo: String,
+        /// The ref the refusal names, such as `refs/heads/main`; none for a push moor could not read.
+        #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+        git_ref: Option<String>,
+        /// The contract key the refusal keeps, such as `branch`.
+        key: String,
+        /// What the push was told, the ref and the key included.
+        reason: String,
+    },
     /// The Box reached hosts it had not reached before, or a count changed.
     EgressSeen {
         /// The rows that are new or whose count changed.
@@ -35,6 +50,7 @@ impl EgressEvent {
             Self::EgressAborted(_) => "egress_aborted",
             Self::EgressRecovered(_) => "egress_recovered",
             Self::EgressSeen { .. } => "egress_seen",
+            Self::PushRefused { .. } => "push_refused",
         }
     }
 }

@@ -6,16 +6,17 @@ use std::time::Duration;
 
 use rustls::{ServerConnection, StreamOwned};
 
-use super::check::{checked, unencoded, Relay};
+use super::body::send_rest;
+use super::body::BodyState;
+use super::check::{unencoded, Relay};
 use super::gate::{gate, without_credential, Gate};
-use super::http::{
-    copy_body, read_head, read_response_head, request_framing, response_framing, wants_close,
-    write_refusal, Framing, Head, HttpError,
-};
+use super::git;
+use super::http::{copy_body, read_head, request_framing, write_refusal, Framing, Head, HttpError};
+use super::relay::relay;
 use super::repo_ids::{gate_id, IdGate};
 use super::route::{classify, Route};
 use super::tunnel::{dial, parse_authority, splice};
-use super::upstream::TlsStream;
+use super::upstream::{TlsStream, Upstream};
 use super::{Shared, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
 use crate::proxy::chain;
 use crate::proxy::guard::Route as Path;
@@ -32,21 +33,28 @@ const DRAIN_READS: usize = 256;
 const DRAIN_STEP: Duration = Duration::from_millis(200);
 
 /// The client side after the handshake.
-type Client = BufReader<StreamOwned<ServerConnection, TcpStream>>;
-/// The lazily opened upstream side.
-type Up = Option<BufReader<TlsStream>>;
+pub(super) type Client = BufReader<StreamOwned<ServerConnection, TcpStream>>;
+/// The upstream a connection forwards to, opened lazily.
+pub(super) struct Up<'a> {
+    /// The host it dials.
+    to: &'a Upstream,
+    /// The open connection, if any.
+    conn: Option<BufReader<TlsStream>>,
+}
 
 /// What follows the request head on the wire.
-enum Payload<'a> {
+pub(super) enum Payload<'a> {
     /// Bytes already read, sent as they came.
     Raw(&'a [u8]),
     /// A body still to be streamed from the client.
     Stream(Framing),
+    /// A push's command list, already read, then the rest of its body from the client.
+    Pushed(&'a [u8], BodyState),
 }
 
 /// Whether to keep serving the connection.
 #[derive(PartialEq, Eq)]
-enum Flow {
+pub(super) enum Flow {
     /// Read the next request.
     Continue,
     /// Close the connection.
@@ -59,23 +67,34 @@ pub(super) fn connection(mut tcp: TcpStream, shared: &Shared) {
     {
         return;
     }
-    if tunnel(&mut tcp, shared).is_err() {
+    let Ok(mode) = tunnel(&mut tcp, shared) else {
         return;
-    }
+    };
     let Ok(conn) = ServerConnection::new(shared.tls.clone()) else {
         return;
     };
     let mut client: Client = BufReader::new(StreamOwned::new(conn, tcp));
-    let mut up: Up = None;
-    while serve_one(shared, &mut client, &mut up) == Flow::Continue {}
+    let (one, to): (fn(&Shared, &mut Client, &mut Up<'_>) -> Flow, _) = match (mode, &shared.git) {
+        (Mode::Git, Some(g)) => (git::serve_one, &g.upstream),
+        _ => (serve_one, &shared.upstream),
+    };
+    let mut up = Up { to, conn: None };
+    while one(shared, &mut client, &mut up) == Flow::Continue {}
     client.get_mut().conn.send_close_notify();
     drop(client.get_mut().flush());
 }
 
-/// Handles the `CONNECT`. The judged host and port get the GraphQL path;
-/// any other target is tunnelled raw, and only to an address the guard
-/// vetted.
-fn tunnel(tcp: &mut TcpStream, shared: &Shared) -> Result<(), ()> {
+/// Which host a tunnel the filter terminates is for.
+enum Mode {
+    /// The judged API host.
+    Api,
+    /// The git host, whose pushes the push guard reads.
+    Git,
+}
+
+/// Handles the `CONNECT`. The judged host and port get the GraphQL path and the git host the
+/// push guard; any other target is tunnelled raw, and only to an address the guard vetted.
+fn tunnel(tcp: &mut TcpStream, shared: &Shared) -> Result<Mode, ()> {
     let (head, pending) = {
         let mut r = BufReader::new(&*tcp);
         let head = read_head(&mut r).map_err(drop)?;
@@ -87,17 +106,21 @@ fn tunnel(tcp: &mut TcpStream, shared: &Shared) -> Result<(), ()> {
         None
     };
     let Some((host, port)) = target else {
-        return scope_refusal(tcp, shared, &head);
+        return scope_refusal(tcp, shared, &head).map(|()| Mode::Api);
     };
-    if !host.eq_ignore_ascii_case(&shared.host) {
-        return raw_tunnel(tcp, shared, &host, port, &pending);
-    }
-    if port != shared.port {
-        return scope_refusal(tcp, shared, &head);
-    }
+    let git = shared.git.as_ref().map(|g| g.host.as_str());
+    let mode = if git.is_some_and(|g| host.eq_ignore_ascii_case(g)) && port == shared.port {
+        Mode::Git
+    } else if !host.eq_ignore_ascii_case(&shared.host) {
+        return raw_tunnel(tcp, shared, &host, port, &pending).map(|()| Mode::Api);
+    } else if port != shared.port {
+        return scope_refusal(tcp, shared, &head).map(|()| Mode::Api);
+    } else {
+        Mode::Api
+    };
     tcp.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .map_err(drop)?;
-    Ok(())
+    Ok(mode)
 }
 
 /// Refuses a tunnel to a port other than the judged one.
@@ -151,34 +174,48 @@ fn refuse(shared: &Shared, client: &mut Client, method: &str, status: u16, msg: 
     Flow::Close
 }
 
-/// Reads and handles one request.
-fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
+/// Reads one request head, or answers why not and says to close.
+pub(super) fn request_head(client: &mut Client) -> Result<Head, Flow> {
     let head = match read_head(client) {
         Ok(h) => h,
-        Err(HttpError::Malformed) => return bad(client, 400, "moor: malformed request"),
-        Err(HttpError::TooLarge) => return bad(client, 413, "moor: request head too large"),
-        Err(_) => return Flow::Close,
+        Err(HttpError::Malformed) => return Err(bad(client, 400, "moor: malformed request")),
+        Err(HttpError::TooLarge) => return Err(bad(client, 413, "moor: request head too large")),
+        Err(_) => return Err(Flow::Close),
     };
     if !head.target.starts_with('/') {
-        return bad(client, 400, "moor: malformed request");
+        return Err(bad(client, 400, "moor: malformed request"));
     }
     // nono matches the whole target, `#` included, while the routes below judge only the
     // part before it; a fragment never belongs on the wire, so nothing is forwarded.
     if head.target.contains('#') {
-        return bad(client, 400, "moor: fragment in request target");
+        return Err(bad(client, 400, "moor: fragment in request target"));
     }
+    Ok(head)
+}
+
+/// Forwards a request whose body is not read, streaming it to `to`.
+pub(super) fn pass(shared: &Shared, client: &mut Client, up: &mut Up<'_>, head: &Head) -> Flow {
+    match request_framing(head) {
+        Ok(f) => forward(shared, client, up, head, &Payload::Stream(f), Relay::Plain),
+        Err(_) => bad(client, 400, "moor: malformed request"),
+    }
+}
+
+/// Reads and handles one request to the judged host.
+fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up<'_>) -> Flow {
+    let head = match request_head(client) {
+        Ok(h) => h,
+        Err(flow) => return flow,
+    };
     match classify(&head.target) {
-        Route::Passthrough => match request_framing(&head) {
-            Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), Relay::Plain),
-            Err(_) => bad(client, 400, "moor: malformed request"),
-        },
+        Route::Passthrough => pass(shared, client, up, &head),
         Route::RepoId(canonical) => repo_id(shared, client, up, &head, &canonical),
         Route::Graphql => graphql(shared, client, up, &head),
     }
 }
 
 /// Handles a request to the GraphQL path.
-fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Flow {
+fn graphql(shared: &Shared, client: &mut Client, up: &mut Up<'_>, head: &Head) -> Flow {
     if head.target != "/graphql" {
         let reason = "query string or non-canonical path on /graphql is not allowed";
         return refuse(
@@ -227,7 +264,7 @@ fn graphql(shared: &Shared, client: &mut Client, up: &mut Up, head: &Head) -> Fl
 fn repo_id(
     shared: &Shared,
     client: &mut Client,
-    up: &mut Up,
+    up: &mut Up<'_>,
     head: &Head,
     canonical: &str,
 ) -> Flow {
@@ -258,14 +295,14 @@ fn repo_id(
 }
 
 /// Answers a request that is not acceptable HTTP, without recording it.
-fn bad(client: &mut Client, status: u16, msg: &str) -> Flow {
+pub(super) fn bad(client: &mut Client, status: u16, msg: &str) -> Flow {
     deliver_refusal(client, status, msg);
     Flow::Close
 }
 
 /// Writes a refusal, closes TLS cleanly and discards the unread request so
 /// the answer is not lost to a connection reset.
-fn deliver_refusal(client: &mut Client, status: u16, msg: &str) {
+pub(super) fn deliver_refusal(client: &mut Client, status: u16, msg: &str) {
     let stream = client.get_mut();
     drop(write_refusal(stream, status, msg));
     stream.conn.send_close_notify();
@@ -289,28 +326,28 @@ fn drain(tcp: &mut TcpStream) {
 }
 
 /// Sends the request upstream and relays the response.
-fn forward(
+pub(super) fn forward(
     shared: &Shared,
     client: &mut Client,
-    up: &mut Up,
+    up: &mut Up<'_>,
     head: &Head,
     payload: &Payload<'_>,
     how: Relay<'_>,
 ) -> Flow {
-    if up.is_none() {
-        *up = shared.upstream.connect().ok().map(BufReader::new);
+    if up.conn.is_none() {
+        up.conn = up.to.connect().ok().map(BufReader::new);
     }
-    let Some(conn) = up.as_mut() else {
+    let Some(conn) = up.conn.as_mut() else {
         return unavailable(client);
     };
     if send(conn, client, head, payload).is_err() {
-        *up = None;
+        up.conn = None;
         return unavailable(client);
     }
     let mut sent = false;
     let flow = relay(shared, conn, client, head, &mut sent, how);
     if flow == Flow::Close {
-        *up = None;
+        up.conn = None;
     }
     if !sent && flow == Flow::Close {
         return unavailable(client);
@@ -335,66 +372,7 @@ fn send(
     match payload {
         Payload::Raw(body) => w.write_all(body).map_err(drop)?,
         Payload::Stream(f) => copy_body(client, w, f).map_err(drop)?,
+        Payload::Pushed(prefix, rest) => send_rest(client, w, prefix, *rest).map_err(drop)?,
     }
     w.flush().map_err(drop)
-}
-
-/// Relays the response, setting `sent` once a byte reached the client. A
-/// rejection is noted before any byte is relayed.
-fn relay(
-    shared: &Shared,
-    conn: &mut BufReader<TlsStream>,
-    client: &mut Client,
-    head: &Head,
-    sent: &mut bool,
-    how: Relay<'_>,
-) -> Flow {
-    let resp = loop {
-        let Ok(resp) = read_response_head(conn) else {
-            return Flow::Close;
-        };
-        if (100..200).contains(&resp.status) && resp.status != 101 {
-            if client.get_mut().write_all(&resp.raw).is_err() || client.get_mut().flush().is_err() {
-                *sent = true;
-                return Flow::Close;
-            }
-            *sent = true;
-            continue;
-        }
-        break resp;
-    };
-    if matches!(how, Relay::Anonymous) && matches!(resp.status, 401 | 403) {
-        shared.excuse(resp.status);
-    }
-    *sent = true;
-    let Ok(framing) = response_framing(&resp, &head.method) else {
-        return Flow::Close;
-    };
-    if let Relay::Checked(linked) = how {
-        match checked(&resp, &framing, conn, linked, &shared.repos) {
-            Ok((head, body))
-                if client
-                    .get_mut()
-                    .write_all(&head)
-                    .and_then(|()| client.get_mut().write_all(&body))
-                    .is_ok() => {}
-            Ok(_) => return Flow::Close,
-            Err(msg) => return bad(client, 502, &msg),
-        }
-    } else {
-        let out = client.get_mut();
-        if out.write_all(&resp.raw).is_err() || copy_body(conn, out, &framing).is_err() {
-            return Flow::Close;
-        }
-    }
-    let out = client.get_mut();
-    if out.flush().is_err()
-        || resp.status == 101
-        || framing == Framing::UntilClose
-        || wants_close(&head.headers)
-        || wants_close(&resp.headers)
-    {
-        return Flow::Close;
-    }
-    Flow::Continue
 }

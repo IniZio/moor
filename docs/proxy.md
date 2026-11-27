@@ -36,7 +36,11 @@ environment or its git config, there is nothing to leak.
 The rules are narrower than the token, so a Box cannot do everything you can.
 
 - **Git.** A Box can fetch any repo your `github` token can read, including
-  submodules. It can push only to its own repos.
+  submodules. It can push only to its own branch, the one moor ties the Box to,
+  in its own repos. The push guard reads each push's ref updates. It refuses a
+  push to the default branch or to any other ref. It also refuses a ref
+  deletion and a push it cannot read. git shows each refused ref with moor's
+  reason.
 - **GitHub API.** A Box can read repo metadata, releases, tags and file contents of any repo
   your token can read. For its own repos, it can also read Dependabot alerts
   and required checks. It can read the token owner's own profile, `GET /user`,
@@ -71,7 +75,8 @@ A request the rules do not allow leaves without the credential, or is refused.
 moor records the refusal as an event on the Box. The event names the host, the
 rule and the reason, never the token or the body. `box_status` then shows `stuck` with a kind such
 as `egress_refused` or `credential_withheld`, so you can tell a blocked agent
-from a slow one.
+from a slow one. A refused push is a `push_refused` event. It names the repo,
+the ref and the contract key `branch`.
 
 ## What the Proxy does not protect
 

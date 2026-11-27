@@ -14,12 +14,15 @@ use moor_core::{BoxId, Secret};
 
 use crate::proxy::chain::Proxy;
 use crate::proxy::graphql::upstream::Upstream;
-use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
+use crate::proxy::graphql::{FilterSpec, GitSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
 use crate::proxy::ledger::BoxLedger;
 use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
-use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
+use crate::proxy::nono::{
+    build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST, GITHUB_HOST,
+};
+use crate::proxy::push::Owned;
 use crate::proxy::token::base64url;
 use crate::proxy::ProxyLog;
 
@@ -78,6 +81,7 @@ pub(crate) fn engine(parts: &Parts<'_>, box_id: BoxId, spec: &ProxySpec) -> Resu
         chain: graphql.as_ref().map(|f| Chain {
             proxy: f.addr(),
             host: GITHUB_API_HOST,
+            git_host: f.guards_pushes().then_some(GITHUB_HOST),
             ca_pem: &ca_pem,
         }),
         only_rules: false,
@@ -138,6 +142,9 @@ impl Engine {
         let sink: &dyn EgressSink = &sink;
         for w in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
             self.withheld.note(GITHUB_API_HOST, &w, sink);
+        }
+        for p in self.graphql.iter().flat_map(GraphqlFilter::drain_pushes) {
+            sink.push_refused(&p);
         }
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
             sink.refused(&Refusal {
@@ -210,6 +217,18 @@ fn start_filter(
         .map_err(|err| fail(&err))?
         .with_guard(guard.clone());
     let ephemeral = ca.ephemeral().map_err(|err| fail(&err))?;
+    // Every push carries the git host's credential, so the push guard reads every push there.
+    let git = if spec.rules.iter().any(|r| lists_host(r, GITHUB_HOST)) {
+        Some(GitSpec {
+            host: GITHUB_HOST.to_owned(),
+            upstream: Upstream::new(GITHUB_HOST, 443, parts.upstream_dial, parts.upstream_ca)
+                .map_err(|err| fail(&err))?
+                .with_guard(guard.clone()),
+            owned: Owned::branch(spec.branch.as_deref()),
+        })
+    } else {
+        None
+    };
     GraphqlFilter::start(FilterSpec {
         ca: ephemeral,
         repos: repos
@@ -235,6 +254,7 @@ fn start_filter(
         scope: github
             .and_then(|r| r.graphql.clone())
             .unwrap_or_else(default_graphql),
+        git,
     })
     .map(Some)
     .map_err(|err| fail(&err))

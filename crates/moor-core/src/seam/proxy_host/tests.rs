@@ -2,6 +2,7 @@ use super::*;
 
 fn spec(full: bool) -> ProxySpec {
     ProxySpec {
+        branch: None,
         box_id: BoxId::new(7),
         box_handle: full.then(|| BoxHandle::new("box-1")),
         other_repos: Vec::new(),
