@@ -6,7 +6,7 @@
 //! claim, which [`resolve_interrupted`] settles from the Box's name and never by starting again:
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
-use moor_core::decide::workflow::{run_verdict, workflow_due, RunVerdict, WorkflowVerdict};
+use moor_core::decide::workflow::{workflow_due, WorkflowVerdict};
 use moor_core::domain::event::close_reason::CloseReason;
 use moor_core::gate::{Gates, GatesDoc};
 use moor_core::name::ForgeRepo;
@@ -19,7 +19,6 @@ use moor_core::workflow::{
 use moor_core::{BoxId, BoxName, StartReq};
 
 use crate::cx::Cx;
-use crate::ops::common::quiet::box_facts;
 use crate::ops::start;
 use crate::store::{Store, StoreError};
 use advance::finish_runs;
@@ -28,11 +27,12 @@ pub(crate) use box_closed::settle_closed_box;
 pub(crate) use check::{run_check, CheckJob};
 pub(crate) use derive::{hand_in as reading_hand_in, pass as plan_pass, start_draft, DraftJob};
 use facts::history;
+pub(crate) use interrupted::resolve_interrupted;
 pub(crate) use now::{run as run_now, spawn_start};
 use previous::close_previous;
 pub(crate) use pull_event::{on_pull_request, PullAction, PullEvent};
 pub(crate) use report::run as step_report;
-use settle::{broken_detail, close_open_box, enforce_start_limit, expire_runs};
+use settle::{close_open_box, enforce_start_limit, expire_runs};
 
 /// One claimed firing, ready to start a Box.
 #[derive(Debug, Clone)]
@@ -335,52 +335,6 @@ fn start_box(cx: &Cx, store: &Store, claimed: &StartJob) -> RunState {
     }
 }
 
-/// Settles each claim an earlier process left, never starting a Box: one whose Box is open
-/// becomes its run, any other is recorded as refused. Returns what to log.
-pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
-    let mut out = Vec::new();
-    let Ok(store) = cx.store() else { return out };
-    let claims = store.starting_workflow_runs().unwrap_or_default();
-    for run in claims {
-        let workflow = store.workflow_by_id(run.workflow).ok().flatten();
-        let found = workflow
-            .as_ref()
-            .and_then(|w| box_name(w.id, w.name.as_str(), run.due_at, &run.cause).ok())
-            .and_then(|name| store.open_box_by_name(&name).ok().flatten());
-        let now = cx.clock().now();
-        let state = match (found, workflow) {
-            (Some(row), Some(w)) => {
-                match box_facts(store, &row).map(|f| run_verdict(Some(&f), now)) {
-                    Ok(RunVerdict::Broken) => RunState::Done(RunEnd::Refused {
-                        detail: broken_detail(store, &row),
-                    }),
-                    _ => RunState::Running {
-                        box_id: row.id,
-                        at: gated::first_step(
-                            store.box_gates(row.id).ok().flatten().as_ref(),
-                            store.run_plan(run.id, &w.prompt).map_or_else(
-                                |_| w.plan.first().id.clone(),
-                                |p| p.first().id.clone(),
-                            ),
-                        ),
-                        try_n: 1,
-                    },
-                }
-            }
-            _ => RunState::Done(RunEnd::Refused {
-                detail: "the controller stopped before the Box started".to_owned(),
-            }),
-        };
-        if let Err(e) = store.resolve_workflow_start(run.id, &state, now) {
-            out.push(format!(
-                "could not settle a claimed run of {}: {e}",
-                run.repo
-            ));
-        }
-    }
-    out
-}
-
 mod advance;
 mod answer;
 mod box_closed;
@@ -390,6 +344,7 @@ mod derive;
 mod eligible;
 mod facts;
 mod gated;
+mod interrupted;
 mod now;
 mod previous;
 mod pull;
