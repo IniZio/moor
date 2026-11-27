@@ -203,7 +203,10 @@ fn a_place_tool_refuses_a_field_it_does_not_take_and_names_it() {
         args["gates"] = json!([]);
         let result = l.call(Some("41"), tool, args);
         assert_eq!(result["isError"], true, "{tool}: {result}");
-        assert!(text(&result).contains("unknown field `gates`"), "{tool}: {result}");
+        assert!(
+            text(&result).contains("unknown field `gates`"),
+            "{tool}: {result}"
+        );
     }
     assert!(l.seen.try_recv().is_err());
 }
