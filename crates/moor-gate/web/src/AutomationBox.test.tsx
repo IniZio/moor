@@ -182,3 +182,10 @@ test('the marked block says the words of the source in any script', () => {
 	expect(wordsOf(el)).toBe(source);
 	expect(phraseSpans(el).map(textOf)).toEqual(['运行检查。', '发布一条评论']);
 });
+
+test('a reading a later change made stale says why beside the revision', () => {
+	const pills = (el: El) => all(el, 'span').filter((s) => classOf(s).includes('pill')).map(textOf);
+	expect(pills(marked(reading()))).toEqual([]);
+	expect(pills(marked(reading({ stale: ['rules'] })))).toEqual(["marks stale: the repo's rules changed"]);
+	expect(pills(marked(reading({ stale: ['rules', 'table'] })))).toEqual(["marks stale: the repo's rules changed, the intent table changed"]);
+});
