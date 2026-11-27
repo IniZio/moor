@@ -134,9 +134,10 @@ fn each_hand_written_line_is_tagged_against_the_reading() {
 
 #[test]
 fn a_newer_table_makes_a_reading_stale_only_when_it_changes_it() {
-    assert_eq!(view(&read(1), &ProxyAllow::new())["stale"], json!([]));
+    let current = IntentTable::shipped().unwrap().version.0;
+    assert_eq!(view(&read(current), &ProxyAllow::new())["stale"], json!([]));
     assert_eq!(
-        view(&read(0), &ProxyAllow::new())["stale"],
+        view(&read(current - 1), &ProxyAllow::new())["stale"],
         json!(["table"]),
         "the status clause had no row"
     );

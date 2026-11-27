@@ -6,14 +6,19 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use effects::Effects;
+
 use super::expand::{expand, Pinned};
+use super::never::let_through;
 use super::place::{place, Miss};
 use super::{
-    Effect, EffectId, EffectIds, Found, IntentTable, IntentUse, Line, Mark, Origin, Phrase,
-    PhraseId, Polarity, Quote, Read, ReaderRun, Refusal, SendAs, Span,
+    Effect, EffectId, EffectIds, Found, IntentTable, IntentUse, Line, Mark, Phrase, PhraseId,
+    Polarity, Quote, Read, ReaderRun, Refusal, Request, SendAs, Span,
 };
 use crate::gate::{GateDoc, Gates, OutcomeDoc};
 use crate::name::ForgeRepo;
+
+mod effects;
 
 /// What a reader hands in: phrases by quote, and the gates and outcomes they hold.
 ///
@@ -112,6 +117,25 @@ struct Pending<'a> {
     intents: Vec<IntentUse>,
     /// The lines its intents add.
     lines: Vec<Line>,
+    /// The requests each intent forbids, by the place of the intent; empty for a `do` one.
+    forbids: Vec<Vec<Request>>,
+}
+
+impl Pending<'_> {
+    /// Each `never` intent checked against `pinned` and the reading's `own` lines: still
+    /// refused, or let through, naming the request and the rule, and then forbidding nothing.
+    fn forbid(&mut self, pinned: &Pinned<'_>, own: &[Line]) {
+        for (u, requests) in self.intents.iter_mut().zip(&mut self.forbids) {
+            if u.found != Found::Refused {
+                continue;
+            }
+            let repo = u.repo.as_ref().map(ToString::to_string);
+            if let Some(allowed) = let_through(requests, repo.as_deref(), pinned, own) {
+                u.found = Found::LetThrough(allowed);
+                requests.clear();
+            }
+        }
+    }
 }
 
 /// The read `doc` hands in for `source`, or the first thing wrong with it.
@@ -121,11 +145,11 @@ pub(super) fn check(
     against: &Against<'_>,
     reader: ReaderRun,
 ) -> Result<Read, Refusal> {
-    let mut effects = effects(&doc.effects)?;
+    let given = effects(&doc.effects)?;
     let labels: HashMap<&str, EffectId> = doc
         .effects
         .iter()
-        .zip(&effects)
+        .zip(&given)
         .map(|(d, e)| (d.label(), e.id()))
         .collect();
     let mut placed = doc
@@ -143,17 +167,26 @@ pub(super) fn check(
             second: b.doc.quote.exact.clone(),
         });
     }
-    let mut allows: BTreeMap<Line, EffectId> = BTreeMap::new();
+    let own: Vec<Line> = placed.iter().flat_map(|p| p.lines.clone()).collect();
+    for p in &mut placed {
+        p.forbid(against.pinned, &own);
+    }
+    let mut all = Effects {
+        list: given,
+        allows: BTreeMap::new(),
+        withheld: BTreeMap::new(),
+    };
     let phrases: Vec<Phrase> = placed
         .into_iter()
         .enumerate()
-        .map(|(at, p)| settle(PhraseId::nth(at), p, &mut effects, &mut allows))
+        .map(|(at, p)| settle(PhraseId::nth(at), p, &mut all))
         .collect();
+    let effects = all.list;
     let held: HashSet<EffectId> = phrases
         .iter()
         .filter_map(|p| match &p.mark {
             Mark::Held { effects } => Some(effects.iter()),
-            Mark::Asked {} | Mark::Unmapped {} => None,
+            Mark::Asked { .. } | Mark::Unmapped {} => None,
         })
         .flatten()
         .copied()
@@ -171,40 +204,34 @@ pub(super) fn check(
     Ok(Read::new(phrases, effects, Some(reader)))
 }
 
-/// The phrase `p` with its mark: held when every intent found its lines and it holds at least one
-/// effect, its lines joining `effects` once each by `allows`; else unmapped or asked, holding nothing.
-fn settle(
-    id: PhraseId,
-    p: Pending<'_>,
-    effects: &mut Vec<Effect>,
-    allows: &mut BTreeMap<Line, EffectId>,
-) -> Phrase {
+/// The phrase `p` with its mark: held when every intent found its lines or has its requests
+/// refused and it holds at least one effect, its lines and requests joining `all` once each;
+/// else unmapped, or asked naming what the rules let through, holding nothing.
+fn settle(id: PhraseId, p: Pending<'_>, all: &mut Effects) -> Phrase {
     let whole = p
         .intents
         .iter()
-        .all(|i| matches!(i.found, Found::Lines { .. }));
+        .all(|i| matches!(i.found, Found::Lines { .. } | Found::Refused));
     let mark = if whole {
         let mut ids = p.holds;
-        for line in p.lines {
-            let next = EffectId::nth(effects.len());
-            let id = *allows.entry(line.clone()).or_insert_with(|| {
-                effects.push(Effect::Allow {
-                    id: next,
-                    rule: line.rule,
-                    entry: line.entry,
-                    from: Origin::Table,
-                });
-                next
-            });
+        let mut added: Vec<EffectId> = p.lines.into_iter().map(|l| all.allow(l)).collect();
+        added.extend(p.forbids.into_iter().flatten().map(|r| all.withhold(r)));
+        for id in added {
             if !ids.contains(&id) {
                 ids.push(id);
             }
         }
-        EffectIds::try_from(ids).map_or(Mark::Asked {}, |effects| Mark::Held { effects })
+        EffectIds::try_from(ids).map_or(Mark::Asked { allowed: None }, |effects| Mark::Held {
+            effects,
+        })
     } else if p.intents.iter().any(|i| i.found == Found::NoRow) {
         Mark::Unmapped {}
     } else {
-        Mark::Asked {}
+        let allowed = p.intents.iter().find_map(|i| match &i.found {
+            Found::LetThrough(a) => Some(a.clone()),
+            _ => None,
+        });
+        Mark::Asked { allowed }
     };
     Phrase {
         id,
@@ -250,16 +277,18 @@ fn pending<'a>(
     }
     let mut intents = Vec::with_capacity(p.intents.len());
     let mut lines = Vec::new();
+    let mut forbids = Vec::with_capacity(p.intents.len());
     for doc in &p.intents {
-        let (used, added) = expand(
+        let e = expand(
             doc,
             &p.quote.exact,
             against.table,
             against.pinned,
             against.repos,
         )?;
-        intents.push(used);
-        lines.extend(added);
+        intents.push(e.used);
+        lines.extend(e.adds);
+        forbids.push(e.forbids);
     }
     Ok(Pending {
         at,
@@ -267,6 +296,7 @@ fn pending<'a>(
         holds,
         intents,
         lines,
+        forbids,
     })
 }
 

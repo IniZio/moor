@@ -70,3 +70,41 @@ pub(super) fn covers(rule: &str, line: &str, repo: Option<&str>) -> bool {
     let one = |a: &str, b: &str| a == "*" || (!b.contains('*') && segment(a, b));
     methods.iter().all(|m| takes(&rule_methods, m)) && walk(&g, &p, &one)
 }
+
+/// Whether `rule` lets through at least one request `request` stands for, both with `{repo}` as
+/// `repo` or, when none, as the same Box repo. Two segments that both hold a `*` among other
+/// characters are taken to meet, so a doubt reads as let through.
+pub(super) fn meets(rule: &str, request: &str, repo: Option<&str>) -> bool {
+    if rule == "*" {
+        return true;
+    }
+    let (Some((rule_methods, glob)), Some((methods, path))) =
+        (split(rule, repo), split(request, repo))
+    else {
+        return false;
+    };
+    let g: Vec<_> = glob.split('/').collect();
+    let p: Vec<_> = path.split('/').collect();
+    let one = |a: &str, b: &str| match (a.contains('*'), b.contains('*')) {
+        (false, false) => a == b,
+        (true, false) => segment(a, b),
+        (false, true) => segment(b, a),
+        (true, true) => true,
+    };
+    methods.iter().any(|m| *m == "*" || takes(&rule_methods, m)) && both_ways(&g, &p, &one)
+}
+
+/// Like [`walk`], with `**` on either side.
+fn both_ways(g: &[&str], p: &[&str], one: &dyn Fn(&str, &str) -> bool) -> bool {
+    match (g.split_first(), p.split_first()) {
+        (None, None) => true,
+        (Some((&"**", gr)), _) => {
+            both_ways(gr, p, one) || p.split_first().is_some_and(|(_, pr)| both_ways(g, pr, one))
+        }
+        (_, Some((&"**", pr))) => {
+            both_ways(g, pr, one) || g.split_first().is_some_and(|(_, gr)| both_ways(gr, p, one))
+        }
+        (Some((a, gr)), Some((b, pr))) => one(a, b) && both_ways(gr, pr, one),
+        _ => false,
+    }
+}

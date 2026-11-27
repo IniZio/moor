@@ -20,6 +20,7 @@ mod glob;
 mod hand_in;
 mod id;
 mod intent;
+mod never;
 mod place;
 mod read;
 mod refusal;
@@ -31,7 +32,7 @@ pub use effect::{Change, Comparison, Effect, EffectKey, Origin};
 pub use expand::{lets_through, Pinned};
 pub use hand_in::{EffectDoc, HandIn, IntentDoc, PhraseDoc};
 pub use id::{EffectId, IdError, PhraseId, ReadingId};
-pub use intent::{Found, IntentUse, Line, Polarity, SendAs, Unholdable};
+pub use intent::{Allowed, Found, IntentUse, Line, Polarity, SendAs, Unholdable};
 pub use read::{EffectIds, Mark, Phrase, Quote, Read, Run, Span};
 pub use refusal::Refusal;
 pub use table::{

@@ -1,4 +1,4 @@
-version: 1
+version: 2
 intents:
   - name: comment
     words: comment on, reply on or leave a note on a pull request or issue; one comment kept up to date
@@ -18,3 +18,35 @@ intents:
       no_match:
         - "DELETE https://api.github.com/repos/acme/web/issues/comments/99"
         - "POST https://api.github.com/repos/acme/other/issues/12/comments"
+  - name: merge
+    words: merge a pull request
+    do:
+      api.github.com:
+        - "PUT /repos/{repo}/pulls/*/merge"
+    never:
+      api.github.com:
+        - "PUT /repos/{repo}/pulls/*/merge"
+        - "POST /graphql mutation mergePullRequest"
+    examples:
+      match:
+        - "PUT https://api.github.com/repos/acme/web/pulls/12/merge"
+      no_match:
+        - "PUT https://api.github.com/repos/acme/web/pulls/12"
+        - "PUT https://api.github.com/repos/acme/other/pulls/12/merge"
+  - name: push
+    words: push commits or a branch to a repo
+    do:
+      github.com:
+        - "POST /{repo}.git/git-receive-pack"
+        - "POST /{repo}/git-receive-pack"
+    never:
+      github.com:
+        - "POST /{repo}.git/git-receive-pack"
+        - "POST /{repo}/git-receive-pack"
+    examples:
+      match:
+        - "POST https://github.com/acme/web.git/git-receive-pack"
+        - "POST https://github.com/acme/web/git-receive-pack"
+      no_match:
+        - "POST https://github.com/acme/web.git/git-upload-pack"
+        - "POST https://github.com/acme/other.git/git-receive-pack"

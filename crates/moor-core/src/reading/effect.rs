@@ -6,7 +6,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use super::{EffectId, Read};
+use super::{EffectId, Read, Request};
 use crate::gate::{GateDoc, OutcomeDoc};
 
 /// What moor holds. Each one is checked when the read is handed in.
@@ -39,9 +39,18 @@ pub enum Effect {
         #[serde(default, skip_serializing_if = "Origin::is_listed")]
         from: Origin,
     },
+    /// A request forbidding words name, which the pinned rules refuse.
+    Withheld {
+        /// Its id.
+        id: EffectId,
+        /// The request.
+        request: Request,
+        /// Where it came from; not part of its key.
+        from: Origin,
+    },
 }
 
-/// Where an allow effect came from.
+/// Where an allow or withheld effect came from.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
@@ -65,7 +74,10 @@ impl Effect {
     #[must_use]
     pub const fn id(&self) -> EffectId {
         match self {
-            Self::Gate { id, .. } | Self::Outcome { id, .. } | Self::Allow { id, .. } => *id,
+            Self::Gate { id, .. }
+            | Self::Outcome { id, .. }
+            | Self::Allow { id, .. }
+            | Self::Withheld { id, .. } => *id,
         }
     }
 
@@ -79,6 +91,7 @@ impl Effect {
                 rule: rule.clone(),
                 entry: entry.clone(),
             },
+            Self::Withheld { request, .. } => EffectKey::Withheld(request.clone()),
         }
     }
 
@@ -106,6 +119,8 @@ pub enum EffectKey {
         /// The entry.
         entry: String,
     },
+    /// A withheld request.
+    Withheld(Request),
 }
 
 impl fmt::Display for EffectKey {
@@ -114,6 +129,7 @@ impl fmt::Display for EffectKey {
             Self::Gate(name) => write!(f, "gate:{name}"),
             Self::Outcome(name) => write!(f, "outcome:{name}"),
             Self::Allow { rule, entry } => write!(f, "allow:{rule}:{entry}"),
+            Self::Withheld(request) => write!(f, "withheld:{}:{request}", request.host()),
         }
     }
 }

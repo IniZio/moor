@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 
 use super::glob;
-use crate::config::proxy::check_allow_entry;
+use crate::config::proxy::{check_allow_entry, GRAPHQL_ENTRY};
 use crate::config::{check, parse_strict};
 
 #[cfg(test)]
@@ -92,7 +92,7 @@ pub struct RowLine {
 }
 
 /// A request a Box could make, as the rules judge it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
     /// One HTTP call, its path a shape such as `/repos/{repo}/pulls/*/merge`.
@@ -111,6 +111,26 @@ pub enum Request {
         /// The mutation.
         name: String,
     },
+}
+
+impl Request {
+    /// The host it goes to.
+    #[must_use]
+    pub fn host(&self) -> &str {
+        match self {
+            Self::Http { host, .. } | Self::Mutation { host, .. } => host,
+        }
+    }
+}
+
+/// As the table writes it under its host: `METHOD /path`, or `POST /graphql mutation NAME`.
+impl fmt::Display for Request {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Http { method, path, .. } => write!(f, "{method} {path}"),
+            Self::Mutation { name, .. } => write!(f, "{GRAPHQL_ENTRY} mutation {name}"),
+        }
+    }
 }
 
 /// Why the table does not load, naming the first bad row.

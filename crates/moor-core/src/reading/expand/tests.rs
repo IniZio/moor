@@ -164,7 +164,7 @@ fn as_app_on_a_controller_with_no_app_holds_nothing_and_says_why() {
         false,
     )
     .unwrap();
-    assert_eq!(read.phrases()[0].mark, Mark::Asked {});
+    assert_eq!(read.phrases()[0].mark, Mark::Asked { allowed: None });
     assert!(matches!(
         &read.phrases()[0].intents[0].found,
         Found::CannotHold {
@@ -185,7 +185,7 @@ fn a_line_for_a_host_the_rules_lack_holds_nothing() {
         true,
     )
     .unwrap();
-    assert_eq!(read.phrases()[0].mark, Mark::Asked {});
+    assert_eq!(read.phrases()[0].mark, Mark::Asked { allowed: None });
     assert!(matches!(
         &read.phrases()[0].intents[0].found,
         Found::CannotHold {
@@ -233,11 +233,12 @@ fn an_intent_name_that_is_not_lower_case_words_is_refused() {
 }
 
 #[test]
-fn forbidding_words_hold_nothing_before_withheld_effects_exist() {
+fn forbidding_a_comment_the_rules_refuse_holds_its_never_request() {
     let never = json!({"intent": "comment", "polarity": "never"});
     let read = read(SOURCE, json!({"phrases": [intent("Post one comment", &[], &never), asked("Take screenshots")], "effects": []})).unwrap();
-    assert!(read.effects().is_empty());
-    assert_eq!(read.phrases()[1].mark, Mark::Unmapped {});
+    assert_eq!(read.effects().len(), 1);
+    assert!(matches!(read.effects()[0], Effect::Withheld { .. }));
+    assert!(matches!(read.phrases()[1].mark, Mark::Held { .. }));
 }
 
 #[test]
