@@ -60,9 +60,21 @@ pub struct PhraseView {
     /// The requests its words ask for or forbid.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub intents: Vec<IntentView>,
+    /// For forbidding words the rules let through: the request and the rule that lets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<AllowedView>,
     /// The reader's own words, shown on hover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
+}
+
+/// A request the rules let through, which forbidding words cannot hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AllowedView {
+    /// The rule that lets it through, as `proxy.allow` keys it.
+    pub rule: String,
+    /// The request, as the table writes it.
+    pub request: String,
 }
 
 /// One reading of one prompt.
@@ -300,6 +312,13 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>, table: Option<&IntentTable>) 
                     .iter()
                     .map(|u| intents::intent(u, table))
                     .collect(),
+                allowed: match &p.mark {
+                    Mark::Asked { allowed: Some(a) } => Some(AllowedView {
+                        rule: a.rule.clone(),
+                        request: a.request.to_string(),
+                    }),
+                    _ => None,
+                },
                 why: p.why.clone(),
             }
         })
