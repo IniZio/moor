@@ -128,6 +128,19 @@ fn the_list_holds_each_repo_of_the_persons_boxes_once_sorted() {
 }
 
 #[test]
+fn the_intent_table_reads_raw_with_its_version_for_anyone_signed_in() {
+    let w = world(true, &[]);
+    let cookie = sign_in(&w.addr);
+    let reply = get(&w.addr, "/account/api/intents", Some(&cookie));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let v = json_of(&reply);
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["text"], moor_core::reading::INTENTS_TEXT);
+    assert!(v["text"].as_str().unwrap().contains("- name: comment"));
+    assert_eq!(get(&w.addr, "/account/api/intents", None).status, 401);
+}
+
+#[test]
 fn the_app_lists_only_the_installed_repos_the_person_has_in_moor() {
     let w = world(true, &[]);
     let cookie = sign_in(&w.addr);

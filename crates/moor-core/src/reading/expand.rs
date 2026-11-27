@@ -113,6 +113,21 @@ fn line_of(
     Ok((Line { rule, entry }, already))
 }
 
+/// Whether `rules` already let `entry` through under `rule`, a rule id or [`APP_CREDENTIAL`]
+/// for the App's lines of the rule for the GitHub API.
+#[must_use]
+pub fn lets_through(rules: &BTreeMap<String, ToolRule>, rule: &str, entry: &str) -> bool {
+    let covering = if rule == APP_CREDENTIAL {
+        rules
+            .values()
+            .find(|r| r.hosts.iter().any(|h| h.eq_ignore_ascii_case(GRAPHQL_HOST)))
+            .map(|r| lines_of(&r.app, false))
+    } else {
+        rules.get(rule).map(|r| lines_of(&r.allow, true))
+    };
+    covering.is_some_and(|c| c.iter().any(|c| covers(c, entry, None)))
+}
+
 /// The entries of a rule that let requests through; a rule with no path list lets all through.
 fn lines_of(entries: &[String], open_when_empty: bool) -> Vec<String> {
     if entries.is_empty() && open_when_empty {

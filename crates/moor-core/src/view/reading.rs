@@ -1,69 +1,29 @@
 //! `ReadingView`: what moor made of an automation's prompt, as the portal draws it.
 //!
-//! `docs/specs/prompt-reading.md`, "The API", is the shape; slice 1 sends held and asked phrases and
-//! gate, outcome and allow effects.
+//! `docs/specs/prompt-reading.md`, "The API", is the shape: held, asked and unmapped phrases with
+//! their intents, gate, outcome and allow effects with where each allow came from, and the
+//! config's hand-written lines tagged against the reading.
 
 use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::proxy::ToolRule;
 use crate::gate::GatesDoc;
 use crate::name::ForgeRepo;
 use crate::reading::{
-    Context, Effect, EffectId, Mark, ProxyAllow, Read, Reading, ReadingState, RulesPin,
+    Context, Effect, EffectId, IntentTable, Mark, Origin, ProxyAllow, Read, Reading, ReadingState,
+    RulesPin,
 };
 use crate::workflow::PromptHash;
 
+mod intents;
+mod kinds;
 #[cfg(test)]
 mod tests;
 
-/// Where the reading stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewState {
-    /// A reader is reading.
-    Reading,
-    /// Read.
-    Read,
-    /// No read came.
-    Failed,
-}
-
-/// What differs now from what the reader saw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Stale {
-    /// The prompt changed.
-    Prompt,
-    /// The repo list changed.
-    Repos,
-    /// A rules text the reading pinned was saved again.
-    Rules,
-    /// moor's reader instructions changed.
-    Reader,
-}
-
-/// The underline a phrase draws: solid or dashed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MarkView {
-    /// Solid: moor holds the agent to it.
-    Held,
-    /// Dashed: only asked.
-    Asked,
-}
-
-/// What an effect is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EffectKind {
-    /// A gate.
-    Gate,
-    /// An outcome.
-    Outcome,
-    /// A `may` line.
-    Allow,
-}
+pub use intents::{HandwrittenView, IntentView, Tag};
+pub use kinds::{EffectKind, FromView, MarkView, Stale, ViewState};
 
 /// Who read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +55,9 @@ pub struct PhraseView {
     pub mark: MarkView,
     /// The effects it lights.
     pub effects: Vec<String>,
+    /// The requests its words ask for or forbid.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intents: Vec<IntentView>,
     /// The reader's own words, shown on hover.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
@@ -113,6 +76,9 @@ pub struct EffectView {
     pub key: String,
     /// The phrases that hold it.
     pub phrases: Vec<String>,
+    /// Where an allow came from; none for a gate or outcome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<FromView>,
 }
 
 /// One reading of one prompt.
@@ -128,6 +94,9 @@ pub struct ReadingView {
     /// What differs now from what the reader saw; empty when current.
     #[serde(default)]
     pub stale: Vec<Stale>,
+    /// The intent table version it was expanded with; none before intents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<u32>,
     /// The words read.
     pub source: String,
     /// Who read it; none for a view built from stored gates.
@@ -142,6 +111,9 @@ pub struct ReadingView {
     pub gates: Option<GatesDoc>,
     /// The extra Proxy entries by rule.
     pub may: BTreeMap<String, Vec<String>>,
+    /// The config's `proxy.allow` lines, tagged against an intent reading's lines.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub handwritten: Vec<HandwrittenView>,
 }
 
 /// What is true now, to tell what a reading was read against from what is.
@@ -157,6 +129,10 @@ pub struct Current<'a> {
     pub instructions: u32,
     /// The workflow config's `proxy.allow`.
     pub allow: &'a ProxyAllow,
+    /// The rules text a Box of it follows now, by rule id.
+    pub rules_text: &'a BTreeMap<String, ToolRule>,
+    /// The intent table moor runs; none when it did not load.
+    pub table: Option<&'a IntentTable>,
 }
 
 impl ReadingView {
@@ -169,7 +145,7 @@ impl ReadingView {
                 ViewState::Read,
                 None,
                 read.reader().cloned(),
-                shown(read, &reading.source, now.allow),
+                shown(read, &reading.source, now.allow, now.table),
             ),
             ReadingState::Reading { by, .. } => (
                 ViewState::Reading,
@@ -188,7 +164,8 @@ impl ReadingView {
             id: Some(reading.id.to_string()),
             state,
             failed,
-            stale: stale(&reading.context, now),
+            stale: stale(&reading.context, now, &reading.state),
+            table: reading.context.table.map(|t| t.0),
             source: reading.source.clone(),
             reader: reader.map(|r| ReaderView {
                 harness: r.harness,
@@ -200,6 +177,12 @@ impl ReadingView {
             effects: shown.effects,
             gates: shown.gates,
             may: shown.may,
+            handwritten: match (&reading.state, reading.context.table) {
+                (ReadingState::Read(read), Some(_)) => {
+                    intents::handwritten(read, now.allow, now.rules_text)
+                }
+                _ => Vec::new(),
+            },
         }
     }
 
@@ -207,12 +190,13 @@ impl ReadingView {
     /// its `prompt`.
     #[must_use]
     pub fn from_gates(prompt: &str, doc: &GatesDoc) -> Self {
-        let shown = shown(&Read::from_gates(doc), prompt, &ProxyAllow::new());
+        let shown = shown(&Read::from_gates(doc), prompt, &ProxyAllow::new(), None);
         Self {
             id: None,
             state: ViewState::Read,
             failed: None,
             stale: Vec::new(),
+            table: None,
             source: prompt.to_owned(),
             reader: None,
             runs: shown.runs,
@@ -220,6 +204,7 @@ impl ReadingView {
             effects: shown.effects,
             gates: shown.gates,
             may: shown.may,
+            handwritten: Vec::new(),
         }
     }
 }
@@ -262,9 +247,9 @@ fn whole(source: &str) -> Vec<RunView> {
     }]
 }
 
-/// `read` of `source`, less the allow effects `allow` no longer lists. Phrases that do not fit
-/// `source` are not the words read, so they draw no marks.
-fn shown(read: &Read, source: &str, allow: &ProxyAllow) -> Shown {
+/// `read` of `source`, less the slice-1 allow effects `allow` no longer lists. Phrases that do
+/// not fit `source` are not the words read, so they draw no marks.
+fn shown(read: &Read, source: &str, allow: &ProxyAllow, table: Option<&IntentTable>) -> Shown {
     let kept: Vec<&Effect> = read.effects().iter().filter(|e| listed(e, allow)).collect();
     let base = Shown {
         gates: read.gates(),
@@ -278,7 +263,7 @@ fn shown(read: &Read, source: &str, allow: &ProxyAllow) -> Shown {
         };
     };
     let alive: HashSet<EffectId> = kept.iter().map(|e| e.id()).collect();
-    let phrases = phrases(read, &alive);
+    let phrases = phrases(read, &alive, table);
     Shown {
         runs: cut
             .into_iter()
@@ -304,18 +289,29 @@ fn shown(read: &Read, source: &str, allow: &ProxyAllow) -> Shown {
     }
 }
 
-/// Whether the Proxy still gets `e`: an allow effect needs its entry in `allow`.
+/// Whether `e` still stands: a slice-1 allow effect needs its entry in `allow`.
 fn listed(e: &Effect, allow: &ProxyAllow) -> bool {
     match e {
-        Effect::Allow { rule, entry, .. } => allow
+        Effect::Allow {
+            rule,
+            entry,
+            from: Origin::Listed,
+            ..
+        } => allow
             .get(rule)
             .is_some_and(|entries| entries.contains(entry)),
-        Effect::Gate { .. } | Effect::Outcome { .. } => true,
+        Effect::Allow {
+            from: Origin::Table,
+            ..
+        }
+        | Effect::Gate { .. }
+        | Effect::Outcome { .. } => true,
     }
 }
 
-/// The phrases of `read` holding only the effects in `alive`; one left holding none is asked.
-fn phrases(read: &Read, alive: &HashSet<EffectId>) -> Vec<PhraseView> {
+/// The phrases of `read` holding only the effects in `alive`; one left holding none is asked,
+/// unless it names a request no row covers.
+fn phrases(read: &Read, alive: &HashSet<EffectId>, table: Option<&IntentTable>) -> Vec<PhraseView> {
     read.phrases()
         .iter()
         .map(|p| {
@@ -329,12 +325,17 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>) -> Vec<PhraseView> {
             };
             PhraseView {
                 id: p.id.to_string(),
-                mark: if effects.is_empty() {
-                    MarkView::Asked
-                } else {
-                    MarkView::Held
+                mark: match (&p.mark, effects.is_empty()) {
+                    (Mark::Unmapped {}, _) => MarkView::Unmapped,
+                    (_, true) => MarkView::Asked,
+                    (_, false) => MarkView::Held,
                 },
                 effects,
+                intents: p
+                    .intents
+                    .iter()
+                    .map(|u| intents::intent(u, table))
+                    .collect(),
                 why: p.why.clone(),
             }
         })
@@ -343,10 +344,16 @@ fn phrases(read: &Read, alive: &HashSet<EffectId>) -> Vec<PhraseView> {
 
 /// `e` as shown, held by `phrases`.
 fn effect(e: &Effect, phrases: &[String]) -> EffectView {
-    let (kind, line) = match e {
-        Effect::Gate { doc, .. } => (EffectKind::Gate, doc.name.clone()),
-        Effect::Outcome { doc, .. } => (EffectKind::Outcome, doc.name.clone()),
-        Effect::Allow { entry, .. } => (EffectKind::Allow, entry.clone()),
+    let (kind, line, from) = match e {
+        Effect::Gate { doc, .. } => (EffectKind::Gate, doc.name.clone(), None),
+        Effect::Outcome { doc, .. } => (EffectKind::Outcome, doc.name.clone(), None),
+        Effect::Allow { entry, from, .. } => {
+            let from = match from {
+                Origin::Listed => FromView::Listed,
+                Origin::Table => FromView::Table,
+            };
+            (EffectKind::Allow, entry.clone(), Some(from))
+        }
     };
     EffectView {
         id: e.id().to_string(),
@@ -354,6 +361,7 @@ fn effect(e: &Effect, phrases: &[String]) -> EffectView {
         line,
         key: e.key().to_string(),
         phrases: phrases.to_vec(),
+        from,
     }
 }
 
@@ -368,13 +376,19 @@ fn may(effects: &[&Effect]) -> BTreeMap<String, Vec<String>> {
     out
 }
 
-/// What of `ctx` differs from `now`, in the order of [`Stale`].
-fn stale(ctx: &Context, now: &Current<'_>) -> Vec<Stale> {
+/// What of `ctx` differs from `now`, in the order of [`Stale`]; a newer table counts only when
+/// it changes what `state` read.
+fn stale(ctx: &Context, now: &Current<'_>, state: &ReadingState) -> Vec<Stale> {
+    let table = match (state, ctx.table, now.table) {
+        (ReadingState::Read(read), Some(was), Some(is)) => intents::table_changes(read, was, is),
+        _ => false,
+    };
     [
         (ctx.source_hash != PromptHash::of(now.prompt), Stale::Prompt),
         (ctx.repos != now.repos, Stale::Repos),
         (ctx.rules != now.rules, Stale::Rules),
         (ctx.instructions != now.instructions, Stale::Reader),
+        (table, Stale::Table),
     ]
     .into_iter()
     .filter_map(|(differs, why)| differs.then_some(why))
