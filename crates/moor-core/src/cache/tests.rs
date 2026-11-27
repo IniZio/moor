@@ -167,7 +167,12 @@ fn presets_expand_to_the_table() {
         ("android-sdk", vec!["/opt/android-sdk"]),
         (
             "tools",
-            vec!["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
+            vec![
+                "~/.bun/bin",
+                "~/.local/bin",
+                "~/.claude/plugins",
+                "~/.local/share/gh/extensions",
+            ],
         ),
         ("git", vec!["~/.local/share/git-mirror"]),
     ];
@@ -302,13 +307,13 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
 }
 
 #[test]
-fn a_box_without_a_repo_gets_only_operator_volumes() {
+fn a_box_without_a_repo_gets_the_tools_preset_and_the_operator_volumes() {
     let l = layers(
         "",
         "cache: {volumes: [{name: cargo-bin, path: ~/.cargo/bin}]}",
     );
     let p = CachePlan::build(UserId::new(7), None, &l, &salt(1)).unwrap();
-    assert_eq!(names(&p), ["cargo-bin"]);
+    assert_eq!(names(&p), ["tools", "cargo-bin"]);
 }
 
 #[test]

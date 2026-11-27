@@ -11,7 +11,15 @@ fn tools(p: &CachePlan) -> &PlannedVolume {
 fn what_the_profile_installs_is_a_preset() {
     let p = plan(&layers("", ""));
     let paths: Vec<&str> = tools(&p).paths.iter().map(CachePath::as_str).collect();
-    assert_eq!(paths, ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"]);
+    assert_eq!(
+        paths,
+        [
+            "~/.bun/bin",
+            "~/.local/bin",
+            "~/.claude/plugins",
+            "~/.local/share/gh/extensions"
+        ]
+    );
 }
 
 #[test]
@@ -65,4 +73,33 @@ fn no_kept_pnpm_preset_means_no_pnpm_env() {
         .env(Some(&r))
         .is_empty());
     assert!(layers("", "").env(None).is_empty());
+}
+
+fn bare(l: &CacheLayers, user: i64, salt_byte: u8) -> CachePlan {
+    CachePlan::build(UserId::new(user), None, l, &salt(salt_byte)).unwrap()
+}
+
+#[test]
+fn a_box_with_no_repo_keeps_the_tools_preset_and_no_other() {
+    let p = bare(&layers("", ""), 7, 1);
+    assert_eq!(names(&p), ["tools"]);
+    assert_eq!(p.scope(), None);
+}
+
+#[test]
+fn the_tools_volume_of_a_box_with_no_repo_is_one_per_user_and_not_a_repo_volume() {
+    let l = layers("", "");
+    let key = |p: &CachePlan| tools(p).key.clone();
+    let first = key(&bare(&l, 7, 1));
+    assert_eq!(key(&bare(&l, 7, 1)), first);
+    assert_ne!(key(&bare(&l, 8, 1)), first);
+    assert_ne!(key(&bare(&l, 7, 2)), first);
+    assert_ne!(key(&plan(&l)), first);
+}
+
+#[test]
+fn an_operator_can_turn_the_tools_preset_off_for_a_box_with_no_repo() {
+    for yaml in ["cache: {presets: false}", "cache: {presets: [tools]}"] {
+        assert!(bare(&layers("", yaml), 7, 1).is_empty(), "{yaml}");
+    }
 }

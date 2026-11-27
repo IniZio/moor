@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_client::link::lease::{Cache, CacheVolume};
+use moor_core::cache::presets::TOOLS_PATHS;
 use tokio::sync::RwLock;
 
 use super::args::SLUG_LABEL;
@@ -31,10 +32,6 @@ const MARK_LABEL: &str = "moor.cache.mark";
 const SCOPE_LEN: usize = 16;
 /// The most paths of one Box the agent mounts.
 const MOST_MOUNTS: usize = 64;
-
-/// Paths the agent place uses too: the agent profile's `setup.sh` runs in both places, and the
-/// plugins install where Claude runs.
-const AGENT_PLACE: [&str; 3] = ["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"];
 
 /// Paths of tools whose caches take concurrent writers; every other path is copied per Box. The
 /// git mirrors take them because the clone script holds a `flock` while it writes one.
@@ -140,7 +137,7 @@ pub(super) fn mounts(slug: &Slug, cache: Option<&Cache>) -> Result<Vec<Mount>, P
                 canonical: format!("moor-cache-{}-{n}", v.key),
                 private: copy.then(|| format!("{}-cache-{}-{n}", slug.as_str(), v.name)),
                 path: absolute(path)?,
-                both: AGENT_PLACE.contains(&path.as_str()),
+                both: TOOLS_PATHS.contains(&path.as_str()),
             });
         }
     }

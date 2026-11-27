@@ -28,7 +28,8 @@ $su systemctl start docker.socket docker.service"#;
 /// Presets whose paths are the tools' own defaults, in `~/` form.
 ///
 /// `tools` is what the agent profile and its plugins install for the Box user: Bun and the
-/// `~/.local/bin` binaries its `setup.sh` downloads, and the plugin marketplaces and installs.
+/// `~/.local/bin` binaries and `gh` extensions its `setup.sh` downloads, and the plugin
+/// marketplaces and installs.
 ///
 /// `git` holds a bare mirror of each repo the Box clones, at `<owner>/<name>.git` below
 /// [`GIT_MIRROR`];
@@ -53,12 +54,24 @@ const FIXED: [(&str, &[&str]); 16] = [
     ("bundler", &["~/.bundle/cache", "~/.local/share/gem"]),
     ("android", &["~/.android/cache", "~/.android/build-cache"]),
     ("android-sdk", &["/opt/android-sdk"]),
-    (
-        "tools",
-        &["~/.bun/bin", "~/.local/bin", "~/.claude/plugins"],
-    ),
+    ("tools", &TOOLS_PATHS),
     ("git", &[GIT_MIRROR]),
 ];
+
+/// The paths of the `tools` preset, which the agent place mounts too.
+///
+/// The profile's `setup.sh` runs in both places and the plugins install where Claude runs.
+/// `gh extension install` puts what it downloads in the last path.
+pub const TOOLS_PATHS: [&str; 4] = [
+    "~/.bun/bin",
+    "~/.local/bin",
+    "~/.claude/plugins",
+    "~/.local/share/gh/extensions",
+];
+
+/// The name of the `tools` preset: what the agent profile installs. It is the one preset a Box with
+/// no repo keeps, since an agent place runs the profile's `setup.sh` and installs its plugins too.
+pub const TOOLS: &str = "tools";
 
 /// The directory of the `git` preset.
 pub const GIT_MIRROR: &str = "~/.local/share/git-mirror";
