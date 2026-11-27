@@ -201,11 +201,16 @@ fn an_older_controller_refusing_token_spec_keeps_tend_behaviour() {
     );
     assert_eq!(last_auth(&w).as_deref(), Some("Bearer test-token-1"));
     assert!(refused.load(Ordering::SeqCst) > 0, "it asked for the spec");
+    let before = server.engines();
     token_form(&w);
-    eventually("tending to follow the new spec", || {
-        drop(w.get(open(&server, &w.token, &w.target()).unwrap()));
-        last_auth(&w).as_deref() == Some("Token test-token-1")
+    eventually("tending to rebuild the proxy", || {
+        server.engines() != before
     });
+    assert_eq!(
+        w.get(open(&server, &w.token, &w.target()).unwrap()),
+        "HTTP/1.1 200 OK"
+    );
+    assert_eq!(last_auth(&w).as_deref(), Some("Token test-token-1"));
     server.drain(Duration::from_secs(5));
 }
 
