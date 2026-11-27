@@ -14,6 +14,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
+use super::inside::Mark;
 use super::provider::{BoxProvider, Ended, Env, Notes, Observed, PlaceState, ProvideError, Spec};
 use super::Slug;
 
@@ -218,7 +219,7 @@ impl BoxProvider for FakeProvider {
             .collect()
     }
 
-    fn carrier(&self, slug: &Slug, place: Place, _tty: bool) -> Command {
+    fn carrier(&self, slug: &Slug, place: Place, _tty: bool, _mark: &Mark) -> Command {
         let fake = self.boxes().get(slug).cloned().unwrap_or_default();
         let mut sh = Command::new("/bin/sh");
         sh.current_dir(self.workdir(slug))

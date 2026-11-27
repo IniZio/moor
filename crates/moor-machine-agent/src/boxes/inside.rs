@@ -5,9 +5,12 @@
 //! never by closing its half of the stream: a stream that ends before the command exits means
 //! the controller is gone, so the command's process group is ended (TERM, then KILL after 5 s).
 
+use std::hash::{BuildHasher, Hasher, RandomState};
 use std::io;
 use std::os::fd::OwnedFd;
 use std::process::{ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use moor_client::link::boxes::Size;
@@ -43,6 +46,25 @@ pub(super) fn script(env: &[(String, String)], cwd: Option<&str>, argv: &[String
     });
     let words: Vec<String> = argv.iter().map(|a| ops::quote(a)).collect();
     ops::script(env, &format!("{go}exec {}", words.join(" ")))
+}
+
+/// What tells one command's processes inside a Box from every other's: unique on this machine.
+pub(crate) struct Mark(String);
+
+impl Mark {
+    /// A mark no other command of this agent, or of an agent before it, has had.
+    pub(super) fn new() -> Self {
+        static RUN: OnceLock<u64> = OnceLock::new();
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let run = RUN.get_or_init(|| RandomState::new().build_hasher().finish());
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        Self(format!("{run:016x}-{n}"))
+    }
+
+    /// The mark as text.
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// A command started in a place, before its stream carries anything.
@@ -115,8 +137,9 @@ fn on_terminal(carrier: &Command, script: &str, size: Size) -> io::Result<Starte
 }
 
 /// Carries the started command's stdio over `stream` as frames until it exits or the controller
-/// is gone, and ends with its `exit` frame. `place` says whether code 75 means down.
-pub(super) async fn pump<S>(started: Started, place: Place, stream: S)
+/// is gone, and ends with its `exit` frame. When the controller is gone, `end_inside` ends what the
+/// command left inside the Box. `place` says whether code 75 means down.
+pub(super) async fn pump<S>(started: Started, place: Place, stream: S, end_inside: Option<Command>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -143,7 +166,7 @@ where
             let _ = chan::write_frame(&mut wr, &Frame::Exit(exit)).await;
             let _ = wr.shutdown().await;
         }
-        Ended::Gone => end_group(&mut child).await,
+        Ended::Gone => end(&mut child, end_inside).await,
     }
 }
 
@@ -291,6 +314,21 @@ async fn feed(mut sink: Sink, mut rx: mpsc::Receiver<Vec<u8>>, eot: bool) {
     let _ = sink.shutdown().await;
 }
 
+/// Ends the carrier's process group and, with `ender`, what it started inside the Box.
+async fn end(child: &mut Child, ender: Option<Command>) {
+    let inside = async {
+        if let Some(mut ender) = ender {
+            let _ = ender
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+        }
+    };
+    tokio::join!(end_group(child), inside);
+}
+
 /// Ends the carrier's process group: TERM, then KILL if it is still there after [`GRACE`].
 async fn end_group(child: &mut Child) {
     let group = child
@@ -319,8 +357,9 @@ pub(super) fn start_forward(mut carrier: Command, script: &str) -> io::Result<Ch
 }
 
 /// Carries `stream`'s bytes to the forward `child` and its output back until the far side
-/// closes, or the controller does and the far side has had [`GRACE`] to finish.
-pub(super) async fn bridge<S>(mut child: Child, stream: S)
+/// closes, or the controller does and the far side has had [`GRACE`] to finish; then `ender` ends
+/// what the carrier left inside the Box.
+pub(super) async fn bridge<S>(mut child: Child, stream: S, ender: Option<Command>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -344,7 +383,7 @@ where
         let _ = wr.shutdown().await;
     };
     tokio::join!(up, down);
-    end_group(&mut child).await;
+    end(&mut child, ender).await;
 }
 
 /// Runs the probe `carrier` on `script` and says whether it exited 0.

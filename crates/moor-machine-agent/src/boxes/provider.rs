@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+use super::inside::Mark;
 use super::Slug;
 
 /// What an open makes a Box from.
@@ -158,8 +159,14 @@ pub(crate) trait BoxProvider: Send + Sync + 'static {
     }
 
     /// A command that runs one shell script, its last argument, in `place`; on a terminal when
-    /// `tty`. It starts in the workdir.
-    fn carrier(&self, slug: &Slug, place: Place, tty: bool) -> Command;
+    /// `tty`. It starts in the workdir, and what it starts inside the Box carries `mark`.
+    fn carrier(&self, slug: &Slug, place: Place, tty: bool, mark: &Mark) -> Command;
+
+    /// A command that ends every process inside the Box that carries `mark`, for a carrier
+    /// whose end does not end them. None when ending the carrier's process group ends them.
+    fn ender(&self, _slug: &Slug, _mark: &Mark) -> Option<Command> {
+        None
+    }
 
     /// A script for the agent place that carries its stdin and stdout to `port` on the Box's
     /// loopback.

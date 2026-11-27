@@ -14,6 +14,7 @@ use moor_client::link::ops;
 use moor_core::seam::driver::Place;
 use tokio::process::Command;
 
+use super::inside::Mark;
 use super::provider::{BoxProvider, Env, Notes, Observed, ProvideError, Spec};
 use super::Slug;
 use args::{agent_run, work_memory_mib, work_run, SLUG_LABEL, WORKDIR};
@@ -40,6 +41,25 @@ const AGENT_READY_TRIES: u32 = 60;
 const WORK_READY_TRIES: u32 = 180;
 /// The work place gets this long to stop its Docker and sshd before Docker kills it.
 const STOP_SECONDS: &str = "10";
+/// The variable that marks every process of one command in the agent place.
+const MARK_VAR: &str = "MOOR_EXEC_MARK";
+/// Ends the agent place's processes that carry the mark `$1`: TERM, then KILL for any still
+/// there 3 s later.
+const END_MARKED: &str = r#"marked() {
+  for d in /proc/[0-9]*; do
+    grep -qzx "MOOR_EXEC_MARK=$1" "$d/environ" 2>/dev/null && echo "${d#/proc/}"
+  done
+}
+pids=$(marked "$1")
+[ -n "$pids" ] || exit 0
+kill -TERM $pids 2>/dev/null
+for _ in $(seq 30); do
+  sleep 0.1
+  pids=$(marked "$1")
+  [ -n "$pids" ] || exit 0
+done
+kill -KILL $pids 2>/dev/null
+exit 0"#;
 /// The network Boxes join unless told otherwise.
 const NETWORK: &str = "moor";
 
@@ -320,13 +340,17 @@ impl BoxProvider for Docker {
         Self::held_mib_all().await
     }
 
-    fn carrier(&self, slug: &Slug, place: Place, tty: bool) -> Command {
+    fn carrier(&self, slug: &Slug, place: Place, tty: bool, mark: &Mark) -> Command {
         let names = Names::of(slug);
+        let marked = format!("{MARK_VAR}={}", mark.as_str());
         let mut args = vec!["exec", "-i"];
         if tty {
             args.push("-t");
         }
-        args.extend(["-w", WORKDIR, &names.agent]);
+        // docker exec leaves what it started running when its client dies, so every process of
+        // the command carries the mark the ender finds. A work place command is ended through its
+        // ssh client here, whose end box-shell's watcher turns into the end of its process group.
+        args.extend(["-e", &marked, "-w", WORKDIR, &names.agent]);
         // Both places run a login shell, which is what reads the Box's environment. The work
         // place is reached through box-shell, which says "down" with exit 75.
         args.extend(match place {
@@ -334,5 +358,18 @@ impl BoxProvider for Docker {
             Place::Work => ["box-shell", "-c"],
         });
         Cli::command(args)
+    }
+
+    fn ender(&self, slug: &Slug, mark: &Mark) -> Option<Command> {
+        let names = Names::of(slug);
+        Some(Cli::command([
+            "exec",
+            &names.agent,
+            "bash",
+            "-c",
+            END_MARKED,
+            "end-marked",
+            mark.as_str(),
+        ]))
     }
 }

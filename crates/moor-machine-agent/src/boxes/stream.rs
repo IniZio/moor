@@ -3,6 +3,7 @@
 use moor_client::link::boxes::{BoxAnswer, BoxOp};
 use moor_client::link::ops;
 
+use super::inside::Mark;
 use super::{answer, inside, refused, valid_name, BoxProvider, Boxes, Wire};
 
 impl<P: BoxProvider> Boxes<P> {
@@ -30,16 +31,18 @@ impl<P: BoxProvider> Boxes<P> {
             let Some(slug) = self.awake(slug)? else {
                 return Ok(None);
             };
-            let carrier = self.provider.carrier(&slug, *place, tty.is_some());
+            let mark = Mark::new();
+            let carrier = self.provider.carrier(&slug, *place, tty.is_some(), &mark);
+            let ender = self.provider.ender(&slug, &mark);
             let script = inside::script(env, cwd.as_deref(), argv);
             inside::start(carrier, &script, *stdin, *tty)
-                .map(Some)
+                .map(|started| Some((started, ender)))
                 .map_err(|e| format!("cannot start the command: {e}"))
         };
         match started.await {
-            Ok(Some(started)) => {
+            Ok(Some((started, ender))) => {
                 answer(&mut stream, BoxAnswer::Streaming).await;
-                inside::pump(started, *place, stream).await;
+                inside::pump(started, *place, stream, ender).await;
             }
             Ok(None) => answer(&mut stream, BoxAnswer::Gone).await,
             Err(reason) => answer(&mut stream, refused(reason)).await,
@@ -56,9 +59,10 @@ impl<P: BoxProvider> Boxes<P> {
             Ok(None) => return answer(&mut stream, BoxAnswer::Gone).await,
             Err(reason) => return answer(&mut stream, refused(reason)).await,
         };
-        let carrier = self
-            .provider
-            .carrier(&slug, moor_core::seam::driver::Place::Agent, false);
+        let mark = Mark::new();
+        let carrier =
+            self.provider
+                .carrier(&slug, moor_core::seam::driver::Place::Agent, false, &mark);
         if *probe {
             let script = format!(
                 "exec bash -c {}",
@@ -73,7 +77,7 @@ impl<P: BoxProvider> Boxes<P> {
         match inside::start_forward(carrier, &self.provider.forward_script(*port)) {
             Ok(child) => {
                 answer(&mut stream, BoxAnswer::Streaming).await;
-                inside::bridge(child, stream).await;
+                inside::bridge(child, stream, self.provider.ender(&slug, &mark)).await;
             }
             Err(e) => answer(&mut stream, refused(format!("cannot reach the port: {e}"))).await,
         }
