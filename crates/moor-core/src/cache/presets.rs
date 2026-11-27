@@ -54,20 +54,20 @@ const FIXED: [(&str, &[&str]); 16] = [
     ("bundler", &["~/.bundle/cache", "~/.local/share/gem"]),
     ("android", &["~/.android/cache", "~/.android/build-cache"]),
     ("android-sdk", &["/opt/android-sdk"]),
-    (
-        "tools",
-        &[
-            "~/.bun/bin",
-            "~/.local/bin",
-            "~/.claude/plugins",
-            GH_EXTENSIONS,
-        ],
-    ),
+    ("tools", &TOOLS_PATHS),
     ("git", &[GIT_MIRROR]),
 ];
 
-/// Where `gh extension install` puts what it downloads, which a profile's `setup.sh` runs.
-pub const GH_EXTENSIONS: &str = "~/.local/share/gh/extensions";
+/// The paths of the `tools` preset, which the agent place mounts too.
+///
+/// The profile's `setup.sh` runs in both places and the plugins install where Claude runs.
+/// `gh extension install` puts what it downloads in the last path.
+pub const TOOLS_PATHS: [&str; 4] = [
+    "~/.bun/bin",
+    "~/.local/bin",
+    "~/.claude/plugins",
+    "~/.local/share/gh/extensions",
+];
 
 /// The name of the `tools` preset: what the agent profile installs. It is the one preset a Box with
 /// no repo keeps, since an agent place runs the profile's `setup.sh` and installs its plugins too.

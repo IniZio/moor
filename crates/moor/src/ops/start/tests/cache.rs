@@ -219,7 +219,7 @@ fn a_box_with_no_repo_gets_the_tools_preset_so_a_later_one_starts_warm() {
     run(&w.cx, &req("demo")).unwrap();
     let plans = w.driver.acquired_plans();
     assert_eq!(plans.len(), 1);
-    assert_eq!(names(&plans[0]), ["tools"]);
+    assert_eq!(names(plans.first().unwrap()), ["tools"]);
     assert!(cache_warnings(&w).is_empty());
 }
 

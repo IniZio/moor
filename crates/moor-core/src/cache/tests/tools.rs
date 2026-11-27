@@ -87,7 +87,7 @@ fn a_box_with_no_repo_keeps_the_tools_preset_and_no_other() {
 }
 
 #[test]
-fn the_tools_volume_of_a_box_with_no_repo_is_one_per_user_and_not_a_repo_boxs() {
+fn the_tools_volume_of_a_box_with_no_repo_is_one_per_user_and_not_a_repo_volume() {
     let l = layers("", "");
     let key = |p: &CachePlan| tools(p).key.clone();
     let first = key(&bare(&l, 7, 1));
