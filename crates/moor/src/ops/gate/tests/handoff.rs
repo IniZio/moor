@@ -10,6 +10,7 @@ use moor_core::gate::{GateLine, GateNext, GateStatus};
 use moor_core::workflow::{StepId, StepResult};
 
 use super::fx::{evidence_gate, fx, gate, Fx};
+use crate::testing::agent;
 
 fn id(name: &str) -> StepId {
     StepId::parse(name).unwrap()
@@ -130,4 +131,46 @@ fn a_person_who_steered_after_the_pass_has_told_the_agent_already() {
     let told = f.told();
     assert_eq!(told.len(), 2, "{told:?}");
     assert!(told[1].contains("has no report yet"), "{}", told[1]);
+}
+
+#[test]
+fn an_agent_that_ended_its_turn_beside_background_work_is_told_the_gate_passed() {
+    let f = fx(|_| {
+        vec![
+            evidence_gate("review", &["review.md"], &["true"], 1),
+            evidence_gate("audit", &["audit.md"], &[], 1),
+        ]
+    });
+    let now = f.cx.clock().now();
+    f.engine.set_probes("agent-1", agent::working(now));
+    f.leave(&[("review.md", 5)]);
+    let reply = f.report("review", StepResult::Ok, &["review.md"]);
+    assert!(!reply.error, "{reply:?}");
+    f.pass();
+    assert_eq!(
+        f.standing().0,
+        GateStatus::Open {
+            gate: id("audit"),
+            try_n: 1,
+            next: GateNext::Agent
+        },
+        "the check passed the review while the agent was still on its turn"
+    );
+
+    f.pause(1);
+    let now = f.cx.clock().now();
+    f.engine.set_probes(
+        "agent-1",
+        agent::waiting(&["emulator -avd base"], true, now),
+    );
+    f.pass();
+    f.pass();
+    let told = f.told();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("Gate `review` has passed"), "{}", told[0]);
+    assert!(
+        told[0].contains("Gate `audit` is now in hand"),
+        "{}",
+        told[0]
+    );
 }
