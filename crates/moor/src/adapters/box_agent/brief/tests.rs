@@ -127,13 +127,12 @@ fn a_place_brief_opens_the_pull_request_from_the_place_with_gh() {
     for words in [
         "git push origin HEAD",
         "from this place with gh",
-        "`command -v gh`",
         "Do not commit it",
         "Name the files you saved in your final message",
     ] {
         assert!(place.contains(words), "{words} in {place}");
     }
-    assert!(out.contains("install -D /tmp/"), "{out}");
+    assert!(!out.contains("install -D"), "{out}");
 }
 
 #[test]
@@ -344,20 +343,4 @@ fn the_skills_and_tools_are_listed_only_when_the_launch_has_them() {
         !bare.contains("## moor tools") && !bare.contains("## moor skills"),
         "{bare}"
     );
-}
-
-#[test]
-fn a_box_without_gh_gets_the_pinned_recipe_as_a_fact() {
-    let out = render(&input(None));
-    let recipe = out
-        .split("```sh\n")
-        .nth(1)
-        .and_then(|s| s.split("```").next())
-        .unwrap();
-    let check = std::process::Command::new("bash")
-        .args(["-n", "-c", recipe])
-        .status()
-        .unwrap();
-    assert!(check.success(), "{recipe}");
-    assert!(recipe.contains("sha256sum -c"), "{recipe}");
 }

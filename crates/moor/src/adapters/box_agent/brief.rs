@@ -89,7 +89,6 @@ fn facts(b: &BriefInput, out: &mut String) {
     if let Some(n) = b.setup_exit {
         setup_failed(n, out);
     }
-    out.push_str(GH_RECIPE);
 }
 
 /// An agent place's brief.
@@ -109,7 +108,6 @@ fn place(b: &BriefInput) -> String {
          your final message. A Report never means the Box is finished; keep working \
          until the work is done, and do not stop after reporting.\n\n",
     );
-    out.push_str(GH_RECIPE);
     out.push_str(GH_PLACE);
     out
 }
@@ -131,8 +129,7 @@ const PLACE: &str = "You are running inside the machine, in an agent place: it h
     moor collects it within about 30 seconds and when the Box closes, and it stays on the task \
     after the Box is gone. Do not commit it. Name the files you saved in your final message. \
     Commit your work in the Box and push it with `git push origin HEAD`. Then open the pull \
-    request from this place with gh, installing gh with the recipe below when \
-    `command -v gh` finds none, and end your final message with its URL. Then close the Box \
+    request from this place with gh, and end your final message with its URL. Then close the Box \
     with `close_box`, which refuses unpushed work. A later work Box of this task starts on \
     the task's branch with the commits pushed before, so its push adds to the same pull \
     request: open a new one only when none is open. One work Box of a task is open at a \
@@ -170,21 +167,6 @@ fn project_facts(b: &BriefInput, out: &mut String) {
         );
     }
 }
-
-/// How to get gh when the Box image lacks it: a pinned release, checked against its sha256.
-const GH_RECIPE: &str = r#"When `command -v gh` finds nothing, install gh into `~/.local/bin` with this, then run gh as usual:
-
-```sh
-v=2.105.0; f=gh_${v}_linux_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz
-curl -fsSL --retry 3 -o /tmp/$f https://github.com/cli/cli/releases/download/v$v/$f
-printf '%s\n' \
-  '79e7ab5db738c48777b696e374f8b428f0647debfb424f44d2f426370407fe2f  gh_2.105.0_linux_amd64.tar.gz' \
-  'b1278c75107423d818f1937fd92cafc9e5e9b606631568f68d7fb816f5885a02  gh_2.105.0_linux_arm64.tar.gz' \
-  | grep " $f" | (cd /tmp && sha256sum -c --quiet) \
-  && tar -xzf /tmp/$f -C /tmp && install -D /tmp/${f%.tar.gz}/bin/gh ~/.local/bin/gh
-```
-
-"#;
 
 /// How gh reaches GitHub from an agent place, and what the Proxy withholds there.
 const GH_PLACE: &str = "gh reaches GitHub as the Box owner through moor's Proxy. gh's environment holds only a placeholder, and the Proxy puts the owner's credential on each request its rules allow. Do not run `gh auth login` or change gh's credentials or config. Reads of any repo carry the credential; writes are limited to the repos this Box or task names. A 401 or 404 on a write (a push, a pull request, a comment) to any other repo means the Proxy withheld the credential. Posting a comment on an issue or pull request (`gh pr comment`, `gh issue comment`, or `POST /repos/{owner}/{repo}/issues/<number>/comments`) is withheld unless this Box's config asks for it, so a 401 there is expected: do not retry or look for a way around it, and put what you would have said in your report.\n";
