@@ -19,6 +19,7 @@ use super::{box_of, failed, BoxTools};
 
 /// Arguments of `exec_in_box`.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct ExecArgs {
     /// The work Box's name, one this task started and still open.
     r#box: String,
@@ -31,13 +32,16 @@ struct ExecArgs {
 
 /// Arguments of `exec_wait`.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct WaitArgs {
     /// The run id of an `exec_in_box` answer whose state was running.
     run: u32,
 }
 
-/// Arguments of `start_box`.
+/// Arguments of `start_box`. A field it does not know is refused, so an agent never believes a
+/// field it sent did something.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct StartArgs {
     /// The new Box's name, such as `repo/label`.
     name: String,
@@ -49,10 +53,15 @@ struct StartArgs {
     /// The revision of the first repo to branch from, such as a branch the task names; the
     /// repo's default branch when left out.
     base: Option<String>,
+    /// Not a field the tool takes: read only to refuse it with the reason, which is not in the
+    /// schema.
+    #[schemars(skip)]
+    prompt: Option<Value>,
 }
 
 /// Arguments of `close_box`.
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct CloseArgs {
     /// The work Box's name, one this task started and still open.
     r#box: String,
@@ -174,8 +183,15 @@ fn exec_call(args: ExecArgs) -> Result<BoxCall, String> {
     })
 }
 
+/// Why `start_box` refuses a `prompt`.
+const NO_PROMPT: &str = "start_box takes no prompt: a work Box runs no agent. Do the work \
+                         yourself: run its commands in the Box with exec_in_box.";
+
 /// The `start` call `args` ask for.
 fn start_call(args: &StartArgs) -> Result<BoxCall, String> {
+    if args.prompt.is_some() {
+        return Err(NO_PROMPT.to_owned());
+    }
     let mut repos = args
         .repos
         .iter()
