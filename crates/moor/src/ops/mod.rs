@@ -58,6 +58,7 @@ pub(crate) mod workflow;
 
 pub(crate) use auto_close::{pass as auto_close_pass, Looked as AutoCloseLooked};
 pub(crate) use close::wanted::pass as wanted_pass;
+pub(crate) use start::front::ASK_INSTEAD;
 pub(crate) use common::promote::pass as promote_pass;
 pub(crate) use gate::checks::{pass as gate_pass, run as run_gate_check, Job as GateJob};
 #[cfg(test)]

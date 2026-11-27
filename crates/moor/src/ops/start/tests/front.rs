@@ -57,13 +57,20 @@ fn a_front_start_carrying_what_only_an_agent_reads_is_refused_and_makes_no_box()
             ..req("demo")
         },
     ];
-    for r in carrying {
+    for (r, what) in carrying
+        .into_iter()
+        .zip(["prompt", "issue", "model", "resume", "gates"])
+    {
         let e = from_front(&w.cx, r).unwrap_err();
         assert_eq!(e.kind, ErrorKind::Usage, "{}", e.error);
-        assert!(
-            e.hints.iter().any(|h| h.contains("moor ask")),
-            "{:?}",
-            e.hints
+        assert_eq!(
+            e.error.to_string(),
+            format!("a Box a person starts runs no agent, so its start takes no {what}")
+        );
+        assert_eq!(
+            e.hints,
+            ["to start a task with words, type `moor ask --repo OWNER/NAME TEXT` or use the ask \
+              tool; its agent starts work Boxes as it needs them"]
         );
     }
     assert!(w
