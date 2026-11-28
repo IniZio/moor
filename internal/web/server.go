@@ -42,6 +42,7 @@ type Deps struct {
 	Start    TaskStarter
 	Act      TaskActions
 	Tasks    TaskReader
+	Machines MachineService
 	Ready    func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
@@ -91,6 +92,10 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Post("/api/tasks/{id}/stop", s.stopTask)
 		r.Post("/api/tasks/{id}/end", s.endTask)
 		r.Post("/api/tasks/{id}/retry", s.retryTask)
+		r.Get("/api/machines", s.listMachines)
+		r.Post("/api/machines", s.addMachine)
+		r.Post("/api/machines/{id}/{action}", s.actOnMachine)
+		r.Delete("/api/machines/{id}", s.removeMachine)
 		r.Get("/api/settings", s.getSettings)
 		r.Put("/api/settings", s.putSettings)
 		r.Post("/api/settings/check", s.checkSettings)

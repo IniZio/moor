@@ -164,7 +164,7 @@ func (s sessions) Watch(ctx context.Context, task string, on func(runner.Session
 func stateOf(t herdr.Terminal) runner.SessionState {
 	switch {
 	case !t.Live():
-		return runner.SessionState{State: "finished", Code: t.Code()}
+		return runner.SessionState{State: wire.SessionFinished, Code: t.Code()}
 	case t.Status != nil:
 		return runner.SessionState{State: t.Status.State}
 	}

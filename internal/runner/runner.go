@@ -26,7 +26,7 @@ const (
 )
 
 // SessionPart is the part name of the harness session in task.watch lines.
-const SessionPart = "session"
+const SessionPart = wire.SessionPart
 
 // Config wires a runner. Dial makes one link, already through its handshake.
 type Config struct {

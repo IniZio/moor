@@ -36,15 +36,16 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 	}
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
 	tasks := task.New(db, systemClock{}, task.Config{})
+	rn := newRunners(ctx, cfg, db, tasks, svc)
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins},
-		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: tasks, Tasks: db, Ready: db.Ping},
+		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: tasks, Tasks: db, Machines: rn.machines, Ready: db.Ping},
 	)
 	if err != nil {
 		db.Close()
 		return nil, nil, fmt.Errorf("build the web handler: %w", err)
 	}
-	return handler, db.Close, nil
+	return rn.mount(handler), func() { rn.close(); db.Close() }, nil
 }
 
 // noSpecs stands in for the team's home when none is configured.

@@ -59,6 +59,9 @@ func parse(args []string) (options, error) {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "join" {
+		return join(args[1:])
+	}
 	o, err := parse(args)
 	if err != nil {
 		return err

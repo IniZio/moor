@@ -160,6 +160,13 @@ type TaskStart struct {
 
 type TaskWatch struct{}
 
+// SessionPart is the part of a task.watch line about the harness session, and SessionFinished its
+// state once the harness exited.
+const (
+	SessionPart     = "session"
+	SessionFinished = "finished"
+)
+
 type TaskWatchLine struct {
 	Fence
 	Part  string `json:"part"`

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/IniZio/moor/internal/adapter/secretbox"
 )
@@ -17,6 +18,8 @@ type config struct {
 	userHeader     string
 	orgName        string
 	homeDir        string
+	publicURL      string
+	linkTick       time.Duration
 	trustedOrigins []string
 	secretKey      []byte
 }
@@ -36,6 +39,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&c.database, "database-url", getenv("PORTAL_DATABASE_URL"), "Postgres URL (PORTAL_DATABASE_URL)")
 	fs.StringVar(&c.userHeader, "user-header", getenv("PORTAL_USER_HEADER"), "request header that carries the signed-in person (PORTAL_USER_HEADER)")
 	fs.StringVar(&c.homeDir, "home-dir", getenv("PORTAL_HOME_DIR"), "folder holding the checked-out team home, whose tasks/*.yaml are the task specs (PORTAL_HOME_DIR); without it there are no task specs")
+	fs.StringVar(&c.publicURL, "public-url", getenv("PORTAL_PUBLIC_URL"), "address runners reach the portal at, such as https://portal.example.com (PORTAL_PUBLIC_URL); without it no machine can join or link")
 	fs.StringVar(&c.orgName, "org-name", getenv("PORTAL_ORG_NAME"), "organisation name shown on Settings (PORTAL_ORG_NAME)")
 	fs.StringVar(&origins, "trusted-origins", getenv("PORTAL_TRUSTED_ORIGINS"), "comma-separated origins allowed to post when the proxy rewrites the host (PORTAL_TRUSTED_ORIGINS)")
 	if err := fs.Parse(args); err != nil {

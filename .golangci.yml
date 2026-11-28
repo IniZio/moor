@@ -89,6 +89,15 @@ linters:
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/task
             - github.com/IniZio/moor/internal/runner
+        machine:
+          files: ["**/internal/machine/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/wire
+            - github.com/IniZio/moor/internal/task
+            - github.com/IniZio/moor/internal/machine
         adapter-github:
           files: ["**/internal/adapter/github/**"]
           list-mode: lax

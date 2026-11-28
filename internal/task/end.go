@@ -36,6 +36,13 @@ func (s *Service) TimeLimit(ctx context.Context, id domain.TaskID) (Outcome, err
 	})
 }
 
+// MachineRevoked fails a task whose machine was revoked while it started or ran.
+func (s *Service) MachineRevoked(ctx context.Context, id domain.TaskID) (Outcome, error) {
+	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {
+		return e.run(t, op{signal: domain.RunnerRevoked, settled: []domain.State{domain.Failed}, reason: "machine revoked"})
+	})
+}
+
 // Steer is input into the session. On a done task inside its keep window it reopens the task.
 func (s *Service) Steer(ctx context.Context, id domain.TaskID) (Outcome, error) {
 	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {

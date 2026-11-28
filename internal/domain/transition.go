@@ -22,21 +22,23 @@ const (
 	Steered
 	NewerRev
 	Cancel
+	RunnerRevoked
 )
 
 var signalNames = map[Signal]string{
-	SlotFree:     "slot free",
-	PartsUp:      "parts up",
-	PartFailed:   "part failed",
-	BoxRecreated: "box recreated",
-	Published:    "published",
-	Delivered:    "delivered",
-	PersonEnded:  "person ended",
-	SessionEnded: "session ended",
-	TimeLimit:    "time limit",
-	Steered:      "steered",
-	NewerRev:     "newer rev",
-	Cancel:       "cancel",
+	SlotFree:      "slot free",
+	PartsUp:       "parts up",
+	PartFailed:    "part failed",
+	BoxRecreated:  "box recreated",
+	Published:     "published",
+	Delivered:     "delivered",
+	PersonEnded:   "person ended",
+	SessionEnded:  "session ended",
+	TimeLimit:     "time limit",
+	Steered:       "steered",
+	NewerRev:      "newer rev",
+	Cancel:        "cancel",
+	RunnerRevoked: "machine revoked",
 }
 
 func (s Signal) String() string {
@@ -95,6 +97,8 @@ var rules = []rule{
 	{Done, Steered, Running, always},
 	{Running, SessionEnded, Failed, always},
 	{Running, TimeLimit, Failed, always},
+	{Starting, RunnerRevoked, Failed, always},
+	{Running, RunnerRevoked, Failed, always},
 	{Waiting, NewerRev, Superseded, byEvent},
 	{Starting, NewerRev, Superseded, byEvent},
 	{Running, NewerRev, Superseded, byEvent},

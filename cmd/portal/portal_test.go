@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/IniZio/moor/internal/adapter/secretbox"
@@ -24,11 +25,19 @@ type app struct {
 	handler http.Handler
 	dsn     string
 	key     []byte
+	close   func()
+	// joinedPortal is the portal the last join command dials.
+	joinedPortal string
 }
 
 func newApp(t *testing.T, opts ...func(*config)) *app {
 	t.Helper()
-	dsn := pgtest.SchemaDSN(t)
+	return newAppOn(t, pgtest.SchemaDSN(t), opts...)
+}
+
+// newAppOn builds a portal on the database dsn names, which other portals may share.
+func newAppOn(t *testing.T, dsn string, opts ...func(*config)) *app {
+	t.Helper()
 	key, err := base64.StdEncoding.DecodeString(testKeyB64)
 	if err != nil || len(key) != secretbox.KeySize {
 		t.Fatalf("test key: %v", err)
@@ -41,8 +50,9 @@ func newApp(t *testing.T, opts ...func(*config)) *app {
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	t.Cleanup(closeApp)
-	return &app{t: t, handler: handler, dsn: dsn, key: key}
+	closeOnce := sync.OnceFunc(closeApp)
+	t.Cleanup(closeOnce)
+	return &app{t: t, handler: handler, dsn: dsn, key: key, close: closeOnce}
 }
 
 // req is one request. Header names the person unless Anon is set.
