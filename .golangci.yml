@@ -73,6 +73,13 @@ linters:
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/task
             - github.com/IniZio/moor/internal/web
+        settings:
+          files: ["**/internal/settings/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/settings
         runner:
           files: ["**/internal/runner/**"]
           list-mode: lax
@@ -120,6 +127,10 @@ linters:
             - go.yaml.in/yaml/v3
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/adapter/yamlfile
+        adapter-secretbox:
+          files: ["**/internal/adapter/secretbox/**"]
+          list-mode: strict
+          allow: [$gostd, github.com/IniZio/moor/internal/adapter/secretbox]
         adapter-herdr:
           files: ["**/internal/adapter/herdr/**"]
           list-mode: strict
