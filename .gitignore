@@ -3,3 +3,4 @@
 node_modules/
 /images/proxy/moor-proxy
 /images/desk/publish
+/dist/
