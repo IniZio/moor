@@ -1,0 +1,180 @@
+{{- include "portal.checkStop" . }}
+{{- $secrets := required "secrets.existingSecret must name a Secret that holds the database URL and keys" .Values.secrets.existingSecret }}
+{{- $header := required "portal.userHeader must name the header your sign-in proxy sets" .Values.portal.userHeader }}
+{{- $keys := .Values.secrets.keys }}
+{{- $gh := .Values.portal.github }}
+{{- if and $gh.appID (not $gh.privateKeySecret) }}{{ fail "portal.github.privateKeySecret must name the Secret that holds the GitHub App's key when portal.github.appID is set" }}{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "portal.fullname" . }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "portal.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "portal.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "portal.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "portal.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: portal
+          image: {{ include "portal.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PORTAL_LISTEN
+              value: 0.0.0.0:8080
+            - name: PORTAL_INTERNAL_URL
+              value: http://$(POD_IP):8080
+            - name: PORTAL_USER_HEADER
+              value: {{ $header | quote }}
+            {{- with .Values.portal.orgName }}
+            - name: PORTAL_ORG_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.portal.publicURL }}
+            - name: PORTAL_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.portal.trustedOrigins }}
+            - name: PORTAL_TRUSTED_ORIGINS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .Values.portal.homeDir }}
+            - name: PORTAL_HOME_DIR
+              value: {{ . | quote }}
+            {{- end }}
+            - name: PORTAL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secrets }}
+                  key: {{ $keys.databaseURL }}
+            - name: PORTAL_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secrets }}
+                  key: {{ $keys.secretKey }}
+            - name: PORTAL_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secrets }}
+                  key: {{ $keys.internalSecret }}
+            {{- if $gh.appID }}
+            - name: PORTAL_GITHUB_APP_ID
+              value: {{ $gh.appID | quote }}
+            - name: PORTAL_GITHUB_PRIVATE_KEY_FILE
+              value: /etc/portal/github/{{ $gh.privateKeyKey }}
+            - name: PORTAL_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secrets }}
+                  key: {{ $keys.githubWebhookSecret }}
+            {{- with $gh.apiURL }}
+            - name: PORTAL_GITHUB_API_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readinessPath }}
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.livenessPath }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.stop.waitSeconds }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if or $gh.appID .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- if $gh.appID }}
+            - name: github-key
+              mountPath: /etc/portal/github
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+      {{- if or $gh.appID .Values.extraVolumes }}
+      volumes:
+        {{- if $gh.appID }}
+        - name: github-key
+          secret:
+            secretName: {{ $gh.privateKeySecret }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: portal
+description: The tasking portal. Pages, webhooks and runner links, with its state in an existing Postgres.
+type: application
+version: 0.1.0
+appVersion: "dev"
+kubeVersion: ">=1.30.0-0"

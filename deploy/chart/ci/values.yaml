@@ -1,0 +1,4 @@
+portal:
+  userHeader: X-Forwarded-Email
+secrets:
+  existingSecret: portal-secrets

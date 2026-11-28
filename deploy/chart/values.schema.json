@@ -1,0 +1,265 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Pods to run. Two or more roll one at a time. The portal keeps no state in the pod."
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The portal image. A digest wins over a tag. With neither, the chart's appVersion is the tag.",
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "description": "Such as sha256:... Pin by digest in production."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Existing image pull Secrets, as a list of {name: ...}."
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "description": "The pod mounts no service account token whichever one it runs as."
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The portal's own settings, each the environment variable of the same name in cmd/portal.",
+      "properties": {
+        "userHeader": {
+          "type": "string",
+          "description": "Required. The request header the sign-in proxy sets to the signed-in person, PORTAL_USER_HEADER. The portal trusts it without checking, so only the proxy may reach the Service. With oauth2-proxy in reverse-proxy mode it is X-Forwarded-Email."
+        },
+        "orgName": {
+          "type": "string",
+          "description": "Organisation name shown on Settings, PORTAL_ORG_NAME."
+        },
+        "publicURL": {
+          "type": "string",
+          "description": "The address runners reach the portal at, such as https://portal.example.org, PORTAL_PUBLIC_URL. Without it no machine can join or link."
+        },
+        "trustedOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Origins allowed to post when the proxy rewrites the host, PORTAL_TRUSTED_ORIGINS."
+        },
+        "homeDir": {
+          "type": "string",
+          "description": "Folder holding the checked-out team home, PORTAL_HOME_DIR. Mount it through extraVolumes. The chart does not fetch it."
+        },
+        "github": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The GitHub App that starts tasks from pull requests and answers them. Leave appID empty and the portal serves no /hooks/github.",
+          "properties": {
+            "appID": {
+              "type": ["string", "integer"],
+              "description": "The App's number, PORTAL_GITHUB_APP_ID."
+            },
+            "apiURL": {
+              "type": "string",
+              "description": "GitHub's API address, PORTAL_GITHUB_API_URL. Leave empty for github.com."
+            },
+            "privateKeySecret": {
+              "type": "string",
+              "description": "Existing Secret that holds the App's private key. Required with appID. It is mounted read-only."
+            },
+            "privateKeyKey": {
+              "type": "string",
+              "description": "The key inside that Secret."
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The chart never holds a secret value. It reads these from one existing Secret.",
+      "properties": {
+        "existingSecret": {
+          "type": "string",
+          "description": "Required. Name of an existing Secret in the release's namespace."
+        },
+        "keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Which key of that Secret holds what.",
+          "properties": {
+            "databaseURL": {
+              "type": "string",
+              "description": "A Postgres URL, PORTAL_DATABASE_URL. The chart ships no Postgres."
+            },
+            "secretKey": {
+              "type": "string",
+              "description": "Base64 of 32 random bytes, PORTAL_SECRET_KEY. It encrypts stored secret values: losing it loses them."
+            },
+            "internalSecret": {
+              "type": "string",
+              "description": "One value every replica shares, PORTAL_INTERNAL_SECRET, so a terminal can hop to the replica that holds a machine's link."
+            },
+            "githubWebhookSecret": {
+              "type": "string",
+              "description": "The secret that signs GitHub's deliveries, PORTAL_GITHUB_WEBHOOK_SECRET. Read only when github.appID is set."
+            }
+          }
+        }
+      }
+    },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The stop rule. A pod told to stop fails readiness, waits for traffic to move, then drains.",
+      "properties": {
+        "waitSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "preStop sleep while the Service stops sending traffic."
+        },
+        "drainSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The longest the portal may drain after SIGTERM. The spec's bound is 30."
+        }
+      }
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "description": "Must be longer than stop.waitSeconds + stop.drainSeconds. The chart refuses to render otherwise."
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "readinessPath": {
+          "type": "string"
+        },
+        "livenessPath": {
+          "type": "string"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Point the sign-in proxy's upstream here.",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "nodePort": {
+          "type": ["integer", "null"],
+          "description": "Only with type NodePort."
+        },
+        "annotations": {
+          "type": "object"
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Off by default. It exposes only the machine paths, never the pages, because the portal trusts the user header.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "tlsSecretName": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The paths sent to the portal. The defaults are the GitHub webhook and the runner join and link, which cannot sit behind a browser sign-in. People reach the portal through the sign-in proxy instead."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Event streams are long responses: turn response buffering off and raise read timeouts if the controller buffers by default."
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxUnavailable": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "podAnnotations": {
+      "type": "object"
+    },
+    "extraEnv": {
+      "type": "array"
+    },
+    "extraVolumes": {
+      "type": "array"
+    },
+    "extraVolumeMounts": {
+      "type": "array"
+    },
+    "nodeSelector": {
+      "type": "object"
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    }
+  }
+}

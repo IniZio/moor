@@ -1,0 +1,18 @@
+config:
+  existingSecret: oauth2-proxy
+extraArgs:
+  provider: oidc
+  oidc-issuer-url: https://issuer.example.org
+  email-domain: example.org
+  upstream: http://portal.portal.svc.cluster.local:80
+  pass-user-headers: "true"
+  reverse-proxy: "true"
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - portal.example.org
+  tls:
+    - secretName: portal-example-org-tls
+      hosts:
+        - portal.example.org

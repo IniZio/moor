@@ -1,0 +1,79 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/example-org/portal
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount:
+  create: true
+  name: ""
+
+portal:
+  userHeader: ""
+  orgName: ""
+  publicURL: ""
+  trustedOrigins: []
+  homeDir: ""
+  github:
+    appID: ""
+    apiURL: ""
+    privateKeySecret: ""
+    privateKeyKey: private-key.pem
+
+secrets:
+  existingSecret: ""
+  keys:
+    databaseURL: database-url
+    secretKey: secret-key
+    internalSecret: internal-secret
+    githubWebhookSecret: github-webhook-secret
+
+stop:
+  waitSeconds: 10
+  drainSeconds: 30
+terminationGracePeriodSeconds: 60
+
+probes:
+  readinessPath: /readyz
+  livenessPath: /healthz
+
+service:
+  type: ClusterIP
+  port: 80
+  nodePort: null
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tlsSecretName: ""
+  paths:
+    - /hooks/github
+    - /runner/join
+    - /runner/link
+  annotations: {}
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+podAnnotations: {}
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+nodeSelector: {}
+tolerations: []
+affinity: {}

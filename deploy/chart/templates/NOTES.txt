@@ -1,0 +1,7 @@
+The portal is installed as {{ include "portal.fullname" . }}.
+
+Reach it from your machine, with the header the sign-in proxy would set:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "portal.fullname" . }} 8080:{{ .Values.service.port }}
+  curl -H '{{ .Values.portal.userHeader }}: you@example.org' http://127.0.0.1:8080/tasks
+
+The portal trusts {{ .Values.portal.userHeader }} without checking it. Only the sign-in proxy may reach this Service.

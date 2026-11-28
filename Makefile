@@ -7,8 +7,11 @@ STORE_TESTS := $(if $(or $(MOOR_TEST_POSTGRES_DSN),$(shell docker info >/dev/nul
 DOCKER_TESTS := $(if $(MOOR_SKIP_DOCKER_TESTS),,$(shell docker info >/dev/null 2>&1 && echo test-docker))
 IMAGES := box desk relay proxy
 PORTAL_IMAGE := moor-fresh-portal:dev
+KUBECONFORM_VERSION := 0.8.0
+YQ_VERSION := 4.54.3
+CHART_TESTS := $(if $(shell command -v helm 2>/dev/null),chart-lint)
 
-.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image
+.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image chart-tools chart-lint
 
 setup:
 	@golangci-lint version 2>/dev/null | grep -q 'version $(GOLANGCI_LINT_VERSION) ' || \
@@ -61,10 +64,19 @@ images:
 test-docker: images
 	sh scripts/test-docker.sh
 
-ci: audit generate-check lint lint-selftest test $(STORE_TESTS) $(DOCKER_TESTS)
+ci: audit generate-check lint lint-selftest test $(STORE_TESTS) $(DOCKER_TESTS) $(CHART_TESTS)
 
 herdr-golden:
 	go test -tags herdrgolden -run TestRecordTranscripts -count=1 ./internal/adapter/herdr/
 
 image:
 	docker build -q --network host --provenance=false -f deploy/Dockerfile --build-arg VERSION=$$(git describe --tags --always --dirty) -t $(PORTAL_IMAGE) .
+
+chart-tools:
+	@kubeconform -v 2>/dev/null | grep -q '$(KUBECONFORM_VERSION)' || GOTOOLCHAIN=auto go install github.com/yannh/kubeconform/cmd/kubeconform@v$(KUBECONFORM_VERSION)
+	@yq --version 2>/dev/null | grep -q 'v$(YQ_VERSION)' || GOTOOLCHAIN=auto go install github.com/mikefarah/yq/v4@v$(YQ_VERSION)
+
+chart-lint: chart-tools
+	helm lint deploy/chart -f deploy/chart/ci/values.yaml
+	helm template portal deploy/chart -f deploy/chart/ci/values.yaml | kubeconform -strict -summary -kubernetes-version 1.31.0
+	sh deploy/chart-test.sh
