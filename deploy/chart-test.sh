@@ -54,7 +54,12 @@ check "GitHub key mounted from a secret" "$(ghenv '.spec.template.spec.volumes[]
 
 ing=$(render --set ingress.enabled=true --set ingress.host=portal.example.org)
 check "ingress on request" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | .spec.rules[0].host')" portal.example.org
-check "ingress exposes only the machine paths" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | [.spec.rules[0].http.paths[].path] | join(" ")')" "/hooks/github /runner/join /runner/link"
+check "ingress exposes only the machine paths" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | [.spec.rules[0].http.paths[].path] | join(" ")')" "/hooks/github /runner/join /runner/link /internal/policy /internal/connections /internal/blocked /api/tasks/[^/]+/results"
+check "only the wildcard path is a pattern" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | [.spec.rules[0].http.paths[] | select(.pathType == "ImplementationSpecific") | .path] | join(" ")')" "/api/tasks/[^/]+/results"
+check "patterns are read as regular expressions" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | .metadata.annotations["nginx.ingress.kubernetes.io/use-regex"]')" true
+check "ingress leaves out what a person uses" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | [.spec.rules[0].http.paths[].path | select(. == "/" or . == "/api" or . == "/api/tasks" or test("^/internal/terminal") or . == "/internal")] | length')" 0
+noregex=$(render --set ingress.enabled=true --set ingress.host=portal.example.org --set 'ingress.patterns=null')
+check "no pattern, no regex annotation" "$(printf '%s\n' "$noregex" | pick 'select(.kind == "Ingress") | .metadata.annotations["nginx.ingress.kubernetes.io/use-regex"] // "none"')" none
 
 np=$(render --set service.type=NodePort --set service.nodePort=30080)
 check "node port when set" "$(printf '%s\n' "$np" | pick 'select(.kind == "Service") | .spec.ports[0].nodePort')" 30080

@@ -216,7 +216,12 @@
         "paths": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "The paths sent to the portal. The defaults are the GitHub webhook and the runner join and link, which cannot sit behind a browser sign-in. People reach the portal through the sign-in proxy instead."
+          "description": "The paths sent to the portal. The defaults are the GitHub webhook, the runner join and link, and the routes the tasks' proxies call with their per-task tokens. None of them can sit behind a browser sign-in. People reach the portal through the sign-in proxy instead."
+        },
+        "patterns": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Paths with a wildcard segment, written as regular expressions and routed with pathType ImplementationSpecific. The default is the desk's publish route, /api/tasks/<id>/results. With any, the chart sets ingress-nginx's use-regex annotation, so another controller needs its own way to read them."
         },
         "annotations": {
           "type": "object",

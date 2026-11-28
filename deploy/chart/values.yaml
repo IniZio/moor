@@ -53,10 +53,17 @@ ingress:
   className: ""
   host: ""
   tlsSecretName: ""
+  # What reaches the portal from outside the sign-in: the webhook, the runner's join and link, and what the
+  # tasks' own proxies and desks call with their per-task tokens. No page and no person's API is here.
   paths:
     - /hooks/github
     - /runner/join
     - /runner/link
+    - /internal/policy
+    - /internal/connections
+    - /internal/blocked
+  patterns:
+    - /api/tasks/[^/]+/results
   annotations: {}
 
 podDisruptionBudget:

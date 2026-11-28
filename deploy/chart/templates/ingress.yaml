@@ -6,7 +6,11 @@ metadata:
   name: {{ include "portal.fullname" . }}
   labels:
     {{- include "portal.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $annotations := .Values.ingress.annotations | default dict }}
+  {{- if .Values.ingress.patterns }}
+  {{- $annotations = merge (dict "nginx.ingress.kubernetes.io/use-regex" "true") $annotations }}
+  {{- end }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -26,6 +30,15 @@ spec:
           {{- range .Values.ingress.paths }}
           - path: {{ . }}
             pathType: Prefix
+            backend:
+              service:
+                name: {{ include "portal.fullname" $ }}
+                port:
+                  name: http
+          {{- end }}
+          {{- range .Values.ingress.patterns }}
+          - path: {{ . | quote }}
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: {{ include "portal.fullname" $ }}
