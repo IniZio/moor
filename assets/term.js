@@ -130,8 +130,6 @@ function start(el) {
     connect('steer');
   }
 
-  // keys sends what a person typed. What xterm.js answers by itself to the session's queries is dropped: the
-  // desk's terminal answers those, and a reply would reach the session as typing and reopen a done task.
   function keys(b) {
     if (readonly || performance.now() - lastHuman > 1000) return;
     if (steering()) {
