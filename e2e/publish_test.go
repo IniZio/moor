@@ -129,7 +129,11 @@ func reviewOnce(t *testing.T, pt *portal, id, desk string, snap snapshot) {
 	if n := len(eventTexts(snap, "note")) - len(setUpNotes(snap)); n != 1 {
 		t.Errorf("%d notes beyond the set up ones, want the one review note: %v", n, eventTexts(snap, "note"))
 	}
-	played := mustRun(t, "docker", "exec", desk, "cat", "/desk/play.out")
+	var played string
+	eventually(t, 30*time.Second, "the stand-in's record of its second publish", func() bool {
+		played, _ = runCmd("docker", "exec", desk, "cat", "/desk/play.out")
+		return strings.Count(played, "publish rc=") >= 2
+	})
 	if strings.Count(played, "heard Check your page") != 1 || strings.Count(played, "publish rc=0") < 2 {
 		t.Errorf("the stand-in's record:\n%s", played)
 	}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -246,6 +247,20 @@ func standIn(t *testing.T, d *Docker, task domain.TaskID) {
 	}
 	if owner := sh(t, "docker", "exec", d.name(task, string(Box)), "stat", "-c", "%u", "/workspace/standin.txt"); owner != "1000" {
 		t.Fatalf("the file the stand-in wrote is owned by %s outside the namespace, want the Box user 1000", owner)
+	}
+	everyShellInTheBox(t, d, task)
+}
+
+// everyShellInTheBox reads what the stand-in ran in each way a harness spawns its shell: each one ran in the Box, in
+// the folder it was started in, with its arguments, and wrote where the desk reads its temp files.
+func everyShellInTheBox(t *testing.T, d *Docker, task domain.TaskID) {
+	box := d.name(task, string(Box))
+	want := []string{
+		"plain rc=0 " + box, "login rc=0 " + box, "cluster rc=0 " + box, "errexit rc=0 " + box,
+		"args rc=0 name one " + box, "shell rc=0 " + box, "cwd rc=0 /workspace/sub " + box, "tmp rc=0 " + box,
+	}
+	if got := strings.Split(waitFile(t, d.name(task, string(Desk)), "/desk/shells.out"), "\n"); !slices.Equal(got, want) {
+		t.Fatalf("the shells ran as\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 

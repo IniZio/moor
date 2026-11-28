@@ -159,6 +159,7 @@ type TaskStart struct {
 	ModelToken    string          `json:"model_token"`
 	Proxies       ProxyAccess     `json:"proxies"`
 	BoxEnv        []EnvVar        `json:"box_env,omitempty"`
+	DeskEnv       []EnvVar        `json:"desk_env,omitempty"`
 	SecretRules   json.RawMessage `json:"secret_rules"`
 }
 

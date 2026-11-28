@@ -48,7 +48,7 @@ func newRunners(ctx context.Context, cfg config, db *store.Store, tasks *task.Se
 	rn.machines = machine.New(db, tasks, systemClock{}, cfg.publicURL).WithRunnerArgs(cfg.runnerArgs)
 	rn.control = machine.NewControl(machine.ControlConfig{
 		Store: db, Tasks: tasks, Clock: systemClock{}, Access: newTokens(cfg.secretKey).scoped(cfg.publicURL),
-		BoxEnv: boxEnv(svc, rn.log), Tick: cfg.linkTick, Log: rn.log,
+		BoxEnv: ruleEnv(svc, domain.BoxProxy, rn.log), DeskEnv: ruleEnv(svc, domain.DeskProxy, rn.log), Tick: cfg.linkTick, Log: rn.log,
 	})
 	if u, err := url.Parse(cfg.publicURL); err == nil && u.Host != "" {
 		rn.hs, _ = link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{db}, Presence: presence{db, rn.holder}})

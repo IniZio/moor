@@ -1,0 +1,10 @@
+#!/bin/bash.real
+while :; do
+  for d in /share/publish/req.*; do
+    [ -f "$d/ready" ] && [ ! -f "$d/taken" ] || continue
+    touch "$d/taken"
+    publish "$d/page.html" --verdict "$(cat "$d/verdict")" > "$d/out" 2>&1
+    echo $? > "$d/done"
+  done
+  sleep 0.5
+done

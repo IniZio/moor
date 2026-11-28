@@ -16,10 +16,11 @@ const (
 	volBoxCache  = "boxcache"
 	volBoxCA     = "boxca"
 	volDeskCA    = "deskca"
+	volShare     = "share"
 )
 
 var (
-	taskVolumes = []string{volWorkspace, volDesk, volKeys, volBoxCA, volDeskCA}
+	taskVolumes = []string{volWorkspace, volDesk, volKeys, volBoxCA, volDeskCA, volShare}
 	boxVolumes  = []string{volBoxDocker, volBoxCache}
 )
 
@@ -87,7 +88,7 @@ func (d *Docker) boxArgs(l layout) []string {
 		"-e", "DOCKER_TLS_CERTDIR=", "-e", "BOX_DNS="+l.innerIP(3),
 		"-e", "HTTPS_PROXY=http://x:"+l.boxPass+"@"+l.innerIP(2)+":8080",
 		"-e", "HTTP_PROXY=http://"+l.innerIP(3)+":8081", "-e", "NO_PROXY=localhost,127.0.0.1",
-		"-v", n(volWorkspace)+":/workspace", "-v", n(volKeys)+":/keys:ro",
+		"-v", n(volWorkspace)+":/workspace", "-v", n(volKeys)+":/keys:ro", "-v", n(volShare)+":/share",
 		"-v", n(volBoxDocker)+":/home/rootless/.local/share/docker", "-v", n(volBoxCache)+":/home/rootless/.cache",
 	)
 }
@@ -101,7 +102,7 @@ func (d *Docker) deskArgs(l layout) []string {
 		"-e", "HTTPS_PROXY="+proxy, "-e", "HTTP_PROXY="+proxy,
 		"-e", "NO_PROXY="+n(string(Box))+","+n(string(DeskProxy))+",localhost,127.0.0.1",
 		"-e", "HARNESS_BOX_SSH=rootless@"+n(string(Box)),
-		"-v", n(volWorkspace)+":/workspace", "-v", n(volDesk)+":/desk", "-v", n(volKeys)+":/keys:ro",
+		"-v", n(volWorkspace)+":/workspace", "-v", n(volDesk)+":/desk", "-v", n(volKeys)+":/keys:ro", "-v", n(volShare)+":/share",
 	)
 }
 
@@ -192,7 +193,7 @@ func (d *Docker) remove(ctx context.Context, kind string, names []string) error 
 // initScript makes the key the desk signs in to the Box with. The key lands under its final name
 // last, so a run cut short leaves no half key behind.
 const initScript = `[ -f /keys/id ] || { rm -f /keys/new /keys/new.pub && ssh-keygen -q -t ed25519 -N "" -f /keys/new ` +
-	`&& mv /keys/new.pub /keys/id.pub && mv /keys/new /keys/id; } && chown -R 1000:1000 /keys && chown 1000:1000 /workspace /desk ` +
+	`&& mv /keys/new.pub /keys/id.pub && mv /keys/new /keys/id; } && chown -R 1000:1000 /keys && chown 1000:1000 /workspace /desk /share ` +
 	`&& chown 65534:65534 /boxca /deskca`
 
 func (d *Docker) initVolumes(ctx context.Context, l layout) error {
@@ -204,7 +205,7 @@ func (d *Docker) initVolumes(ctx context.Context, l layout) error {
 	args := append([]string{"run", "--rm", "--name", name}, d.labels(k, "init")...)
 	args = append(args, "--network", "none", "--user", "root", "--entrypoint", "sh",
 		"-v", d.name(k.Task, volKeys)+":/keys", "-v", d.name(k.Task, volWorkspace)+":/workspace",
-		"-v", d.name(k.Task, volDesk)+":/desk", "-v", d.name(k.Task, volBoxCA)+":/boxca", "-v", d.name(k.Task, volDeskCA)+":/deskca",
+		"-v", d.name(k.Task, volDesk)+":/desk", "-v", d.name(k.Task, volShare)+":/share", "-v", d.name(k.Task, volBoxCA)+":/boxca", "-v", d.name(k.Task, volDeskCA)+":/deskca",
 		d.cfg.Images.Box, "-c", initScript)
 	_, err := d.run(ctx, args...)
 	return err

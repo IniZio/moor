@@ -153,13 +153,14 @@ func (a proxyAPI) Blocked(ctx context.Context, task domain.TaskID, token string,
 	return a.svc.RecordBlocked(ctx, h) //nolint:wrapcheck // the web branches on the service's own errors
 }
 
-// boxEnv reads the variables the newest settings set in a task's Box: each rule of the Box egress proxy's policy
-// gives its box_env, a placeholder as its fake token and {repo} as the task's repository. A failed read sets none.
-func boxEnv(svc *settings.Service, log *slog.Logger) func(context.Context, domain.Task) []wire.EnvVar {
+// ruleEnv reads the variables the newest settings set for a task from each rule the proxy of kind enforces, a
+// placeholder as its fake token and {repo} as the task's repository. The Box egress proxy's rules set the Box's, and
+// the model rules, which only the desk proxy enforces, set the harness session's. A failed read sets none.
+func ruleEnv(svc *settings.Service, kind domain.ProxyKind, log *slog.Logger) func(context.Context, domain.Task) []wire.EnvVar {
 	return func(ctx context.Context, t domain.Task) []wire.EnvVar {
-		p, err := svc.Policy(ctx, domain.BoxProxy, domain.Rule{}, t.Repo)
+		p, err := svc.Policy(ctx, kind, domain.Rule{}, t.Repo)
 		if err != nil {
-			log.Warn("box env", "task", t.ID, "err", err)
+			log.Warn("rule env", "proxy", kind, "task", t.ID, "err", err)
 			return nil
 		}
 		var out []wire.EnvVar

@@ -137,12 +137,14 @@ func (h host) connect(ctx context.Context, task string) (io.ReadWriteCloser, err
 const sessionName = "task"
 
 // sessions runs the harness session in herdr-core in the desk. connect opens a fresh stream to the
-// desk's herdr-core, and attach runs a command in the desk under a PTY.
+// desk's herdr-core, and attach runs a command in the desk under a PTY. harness names the launcher argv runs, empty
+// for the image's default.
 type sessions struct {
 	connect func(ctx context.Context, task string) (io.ReadWriteCloser, error)
 	attach  func(ctx context.Context, task string, s wire.Size, argv ...string) (runner.TTY, error)
 	clear   func(ctx context.Context, task string) error
 	argv    []string
+	harness string
 }
 
 // ClearViewers ends every hc attach in the task's desk.
@@ -196,7 +198,7 @@ func (s sessions) dial(ctx context.Context, task string) (*herdr.Conn, error) {
 	return c, nil
 }
 
-// Start runs the harness with the task's prompt in its environment. A session already live under
+// Start runs the harness with sessionEnv as its environment. A session already live under
 // the name converges: herdr-core refuses the second one as name_taken.
 func (s sessions) Start(ctx context.Context, t wire.TaskStart) error {
 	c, err := s.dial(ctx, t.Task)
@@ -206,13 +208,27 @@ func (s sessions) Start(ctx context.Context, t wire.TaskStart) error {
 	defer func() { _ = c.Close() }()
 	_, err = c.Run(ctx, herdr.RunReq{
 		Argv: s.argv, Name: sessionName, Cwd: "/workspace", NoParent: true,
-		Env:    map[string]string{"TASK_PROMPT": t.Prompt},
+		Env:    sessionEnv(t, s.harness),
 		Labels: map[string]string{"moor.task": t.Task, "moor.run": strconv.FormatInt(t.Run, 10)},
 	})
 	if err != nil && !herdr.IsKind(err, herdr.KindNameTaken) {
 		return fmt.Errorf("start the session of %s: %w", t.Task, err)
 	}
 	return nil
+}
+
+// sessionEnv is the harness session's environment: the variables the settings give the desk, then the task's prompt
+// and the launcher's name, which no setting replaces.
+func sessionEnv(t wire.TaskStart, harness string) map[string]string {
+	env := map[string]string{}
+	for _, v := range t.DeskEnv {
+		env[v.Name] = v.Value
+	}
+	env["TASK_PROMPT"] = t.Prompt
+	if harness != "" {
+		env["MOOR_HARNESS"] = harness
+	}
+	return env
 }
 
 // Watch reports the session now and after every herdr-core event in the desk. A subscribed stream

@@ -37,6 +37,9 @@ func unitFor(exe string, o options) (unit, error) {
 	if o.cloneURL != "" && o.cloneURL != runner.DefaultCloneURL {
 		argv = append(argv, "-clone-url", o.cloneURL)
 	}
+	if o.harness != "" {
+		argv = append(argv, "-harness", o.harness)
+	}
 	return unit{name: "moor-runner-" + o.id + ".service", description: "moor runner " + o.id, argv: argv}, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -22,6 +23,9 @@ import (
 )
 
 var version = "dev"
+
+// harnessRE is a launcher's name, a file name in the desk image's launcher folder.
+var harnessRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -37,6 +41,7 @@ type options struct {
 	images                      docker.Images
 	slots                       int
 	cloneURL                    string
+	harness                     string
 }
 
 // flags adds the options' flags to fs. portalHelp says what -portal means to the command.
@@ -51,6 +56,7 @@ func (o *options) flags(fs *flag.FlagSet, portalHelp string) {
 	fs.StringVar(&o.images.Proxy, "proxy-image", "", "proxy image")
 	fs.IntVar(&o.slots, "slots", 1, "tasks this machine runs at once")
 	fs.StringVar(&o.cloneURL, "clone-url", runner.DefaultCloneURL, "clone URL of a task's repository, {host} and {path} filled in")
+	fs.StringVar(&o.harness, "harness", "", "launcher in the desk image that runs a task's session; empty takes the image's default")
 }
 
 func parse(args []string) (options, error) {
@@ -62,6 +68,9 @@ func parse(args []string) (options, error) {
 	}
 	if o.portal == "" || o.id == "" || o.keyFile == "" {
 		return o, errors.New("-portal, -id and -key are required")
+	}
+	if o.harness != "" && !harnessRE.MatchString(o.harness) {
+		return o, fmt.Errorf("-harness %q is not a launcher name: 1-32 of a-z 0-9 -", o.harness)
 	}
 	return o, nil
 }
@@ -91,7 +100,7 @@ func serve(ctx context.Context, o options) error {
 		return fmt.Errorf("docker: %w", err)
 	}
 	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
-	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, clear: host{d}.clear, argv: []string{"harness"}}, o.cloneURL)
+	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, clear: host{d}.clear, argv: []string{"harness"}, harness: o.harness}, o.cloneURL)
 	err = r.Run(ctx)
 	if errors.Is(err, runner.ErrRevoked) {
 		slog.Warn("this machine was revoked in the portal; its task containers are removed and the runner ends")

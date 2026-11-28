@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -213,23 +214,60 @@ func judgeRequest(r *http.Request, rule domain.Rule) verdict {
 	return verdict{pass: &rule}
 }
 
-// inject adds the rule's credential to the request when the policy gives it.
+// inject adds the rule's credential to the request when the policy gives it. The value replaces the header the rule
+// names, so a placeholder the client sent there never goes on. A placeholder left in any other header is refused.
 func (p *Proxy) inject(r *http.Request, pol *domain.Policy, rule domain.Rule) (*http.Request, *http.Response) {
-	if rule.Credential == "" || !pol.Gives(rule.Credential) {
+	if rule.Credential == "" {
 		return r, nil
 	}
-	v, err := p.value(r.Context(), pol.Version, rule.Credential)
-	if err != nil {
-		p.cfg.Log.Warn("credential value", "credential", rule.Credential, "err", err)
-		return r, goproxy.NewResponse(r, "text/plain; charset=utf-8", http.StatusBadGateway, "the proxy could not read credential "+strconv.Quote(rule.Credential)+"\n")
+	if pol.Gives(rule.Credential) {
+		v, err := p.value(r.Context(), pol.Version, rule.Credential)
+		if err != nil {
+			p.cfg.Log.Warn("credential value", "credential", rule.Credential, "err", err)
+			return r, goproxy.NewResponse(r, "text/plain; charset=utf-8", http.StatusBadGateway, "the proxy could not read credential "+strconv.Quote(rule.Credential)+"\n")
+		}
+		setCredential(r, rule.Inject, v)
 	}
-	switch in := rule.Inject.(type) {
+	if name, ok := carries(r.Header, rule.Placeholder()); ok {
+		body := fmt.Sprintf("the request carries the placeholder of rule %q in its %s header, which the rule does not fill: "+
+			"set the credential, or point the rule's inject at that header\n", rule.Name, name)
+		return r, goproxy.NewResponse(r, "text/plain; charset=utf-8", http.StatusBadGateway, body)
+	}
+	return r, nil
+}
+
+func setCredential(r *http.Request, in domain.Inject, v string) {
+	switch in := in.(type) {
 	case domain.HeaderInject:
 		r.Header.Set(in.Name, strings.ReplaceAll(in.Form, domain.SecretMark, v))
 	case domain.BasicInject:
 		r.SetBasicAuth(in.User, v)
 	}
-	return r, nil
+}
+
+// carries names the first header whose value holds the placeholder.
+func carries(h http.Header, placeholder string) (string, bool) {
+	for name, vals := range h {
+		for _, v := range vals {
+			if strings.Contains(v, placeholder) || strings.Contains(decodedBasic(v), placeholder) {
+				return name, true
+			}
+		}
+	}
+	return "", false
+}
+
+// decodedBasic is the user and password of a Basic value, empty for any other value.
+func decodedBasic(v string) string {
+	rest, ok := strings.CutPrefix(v, "Basic ")
+	if !ok {
+		return ""
+	}
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(rest))
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // target is the request's host and port, the port from its scheme when the address names none.

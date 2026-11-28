@@ -1,3 +1,11 @@
 #!/bin/bash.real
-export BOX_SSH="${BOX_SSH:-$HARNESS_BOX_SSH}"
-exec standin
+export BOX_SSH="${BOX_SSH:-$HARNESS_BOX_SSH}" SHELL=/bin/bash TMPDIR=/share/tmp
+mkdir -p /share/tmp /share/publish
+name=${MOOR_HARNESS:-standin}
+launcher=/usr/local/lib/harness/$name
+if [[ ! $name =~ ^[a-z0-9][a-z0-9-]*$ ]] || [ ! -x "$launcher" ]; then
+  echo "harness: the desk image has no launcher named $name" >&2
+  exit 2
+fi
+publish-relay &
+exec "$launcher"

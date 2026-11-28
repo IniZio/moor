@@ -23,6 +23,21 @@ rules:
     allow: "*"
 `
 
+// modelDoc adds a model rule: only the desk proxy enforces it, and its placeholder goes to the harness session.
+const modelDoc = settingsDoc + `  model:
+    hosts: [api.anthropic.com]
+    credential: model
+    inject: {header: Authorization, form: "Bearer {secret}"}
+    allow: "*"
+    box_env: {MODEL_TOKEN: placeholder}
+credentials:
+  model:
+    value: ` + modelKey + `
+`
+
+// modelKey is the model credential's synthetic value. It is never printed.
+const modelKey = "synthetic-model-5e2a"
+
 var joinLine = regexp.MustCompile(`^runner join -portal (\S+) -id (\S+) -token (\S+) -key runner\.key$`)
 
 // images are the runner's image flags for the images make images built, under the tag make passes in
@@ -88,12 +103,12 @@ func TestATaskRunsOnARealRunnerOutlivesAPortalRestartAndIsCancelled(t *testing.T
 	})
 	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(settingsDoc, "")}, nil)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(modelDoc, "")}, nil)
 	keyFile := dir + "/runner.key"
 	id := joined(t, pt, runnerBin, keyFile)
 	start(t, "runner", nil, runnerBin, append([]string{
 		"-portal", "ws://" + pt.addr + "/runner/link", "-id", id,
-		"-key", keyFile, "-prefix", prefix,
+		"-key", keyFile, "-prefix", prefix, "-harness", "standin",
 	}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, id) == "linked" })
 
@@ -151,9 +166,16 @@ func sessionHasThePromptAndTheBox(t *testing.T, prefix string, id domain.TaskID)
 		env = out
 		return err == nil && strings.Contains(out, "TASK_PROMPT=")
 	})
-	for _, want := range []string{"TASK_PROMPT=Fix the checkout", "BOX_SSH=rootless@" + prefix + "-" + string(id) + "-box"} {
+	for _, want := range []string{"TASK_PROMPT=Fix the checkout", "BOX_SSH=rootless@" + prefix + "-" + string(id) + "-box", "MOOR_HARNESS=standin", "MODEL_TOKEN=moor-placeholder-model"} {
 		if !strings.Contains(env, want+"\n") {
 			t.Errorf("the harness environment lacks %q:\n%s", want, env)
 		}
+	}
+	if strings.Contains(env, modelKey) {
+		t.Errorf("the harness environment holds the model credential")
+	}
+	boxEnv := mustRun(t, "docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", prefix+"-"+string(id)+"-box")
+	if strings.Contains(boxEnv, "MODEL_TOKEN") || strings.Contains(boxEnv, modelKey) {
+		t.Errorf("the model rule's variable or credential reached the Box")
 	}
 }

@@ -19,8 +19,9 @@ RUN printf '\n[tool_alias]\npnpm = "npm:pnpm"\n\n[settings]\nexec_auto_install =
 USER root
 RUN docker compose version && docker buildx version && psql --version && ffmpeg -version | head -1 && chromium-browser --version
 COPY box-entry.sh /usr/local/bin/box-entry.sh
+COPY publish /usr/local/bin/publish
 COPY docker-config.json /home/rootless/.docker/config.json
-RUN chmod +x /usr/local/bin/box-entry.sh && chown -R 1000:1000 /home/rootless/.docker && rm -rf /home/rootless/.cache && mkdir -p /home/rootless/.cache && chown 1000:1000 /home/rootless/.cache
+RUN chmod +x /usr/local/bin/box-entry.sh /usr/local/bin/publish && chown -R 1000:1000 /home/rootless/.docker && rm -rf /home/rootless/.cache && mkdir -p /home/rootless/.cache && chown 1000:1000 /home/rootless/.cache
 ENV DOCKERD_ROOTLESS_ROOTLESSKIT_MTU=1280
 USER rootless
 ENTRYPOINT ["/usr/local/bin/box-entry.sh"]

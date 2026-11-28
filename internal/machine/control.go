@@ -12,16 +12,17 @@ import (
 )
 
 // ControlConfig wires the control of runner links. Access gives a task's proxies the portal's address and
-// their tokens, sent when the task starts, and BoxEnv the variables the settings set in its Box, if any. Zero
-// Tick takes the default.
+// their tokens, sent when the task starts, BoxEnv the variables the settings set in its Box, and DeskEnv those they
+// set in its harness session on the desk, if any. Zero Tick takes the default.
 type ControlConfig struct {
-	Store  Store
-	Tasks  Tasks
-	Clock  Clock
-	Access func(t domain.Task) wire.ProxyAccess
-	BoxEnv func(ctx context.Context, t domain.Task) []wire.EnvVar
-	Tick   time.Duration
-	Log    *slog.Logger
+	Store   Store
+	Tasks   Tasks
+	Clock   Clock
+	Access  func(t domain.Task) wire.ProxyAccess
+	BoxEnv  func(ctx context.Context, t domain.Task) []wire.EnvVar
+	DeskEnv func(ctx context.Context, t domain.Task) []wire.EnvVar
+	Tick    time.Duration
+	Log     *slog.Logger
 }
 
 const defaultTick = 2 * time.Second

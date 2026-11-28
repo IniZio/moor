@@ -245,6 +245,7 @@ func TestEachProblemNamesItsLine(t *testing.T) {
 		{"a form without the secret", []string{"    hosts: [a.example]", "    credential: key", "    inject: {header: X-Key, form: \"Bearer\"}", "    allow: \"*\""}, 8, "{secret}"},
 		{"a placeholder without a credential", []string{"    hosts: [a.example]", "    allow: \"*\"", "    box_env: {TOKEN: placeholder}"}, 8, "placeholder"},
 		{"a variable the product sets", []string{"    hosts: [a.example]", "    allow: \"*\"", "    box_env: {HTTPS_PROXY: x}"}, 8, "product sets"},
+		{"a variable the harness session holds", []string{"    hosts: [a.example]", "    allow: \"*\"", "    box_env: {TASK_PROMPT: x}"}, 8, "product sets"},
 		{"a mutation that is no field name", []string{"    hosts: [a.example]", "    allow: \"*\"", "    graphql_mutations: [\"merge pull\"]"}, 8, "field name"},
 		{"an unknown rule key", []string{"    hosts: [a.example]", "    allow: \"*\"", "    deny: [x]"}, 8, "unknown key"},
 	}

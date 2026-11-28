@@ -17,10 +17,14 @@ rules:
     hosts: [registry.npmjs.org]
     allow: ["GET /**"]
   anthropic:
+    # A model rule's box_env goes to the harness on the desk, not the Box. It holds a placeholder; the desk
+    # proxy puts the key in its place. For a subscription token instead: inject {header: Authorization,
+    # form: "Bearer {secret}"} and box_env {CLAUDE_CODE_OAUTH_TOKEN: placeholder}.
     hosts: [api.anthropic.com]
     credential: anthropic
     inject: {header: x-api-key, form: "{secret}"}
     allow: "*"
+    box_env: {ANTHROPIC_API_KEY: placeholder}
   github-api:
     hosts: [api.github.com]
     credential: github

@@ -20,7 +20,7 @@ hear() {
 play() {
   while read -r -u 3 step a b; do
     case "$step" in
-      publish) r=$(publish "$a" --verdict "$b" 2>&1); printf 'publish rc=%s %s\n' "$?" "$r" >> /desk/play.out ;;
+      publish) cp "$a" /share/tmp/page.html; r=$(bash -c 'publish "$0" --verdict "$1"' /share/tmp/page.html "$b" 2>&1); printf 'publish rc=%s %s\n' "$?" "$r" >> /desk/play.out ;;
       wait) hear "$a ${b}"; printf 'heard %s %s\n' "$a" "$b" >> /desk/play.out ;;
     esac
   done 3< /desk/script
@@ -32,3 +32,20 @@ run write 'echo standin > /workspace/standin.txt && id -u'
 run allowed 'curl -s -o /dev/null -w "%{http_code}" https://registry.npmjs.org/'
 run blocked 'curl -s -o /dev/null -w "%{http_connect}" https://example.com/'
 mv "$out.tmp" "$out"
+shells=/desk/shells.out
+form() {
+  r=$("${@:2}" 2>&1)
+  printf '%s rc=%s %s\n' "$1" "$?" "$r" >> "$shells.tmp"
+}
+rm -f "$shells.tmp"
+form plain bash -c hostname
+form login /bin/bash -c -l hostname
+form cluster bash -lc hostname
+form errexit /usr/bin/bash -e -o pipefail -c hostname
+form args bash -c 'echo "$0 $1 $(hostname)"' name one
+form shell "$SHELL" -c hostname
+mkdir -p /workspace/sub
+form cwd sh -c 'cd /workspace/sub && bash -c "echo \$(pwd) \$(hostname)"'
+bash -c "hostname >| $TMPDIR/probe"
+form tmp cat "$TMPDIR/probe"
+mv "$shells.tmp" "$shells"

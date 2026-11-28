@@ -42,9 +42,12 @@ type Entry struct {
 }
 
 var (
-	pathText  = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$`)
-	envName   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	reserved  = []string{"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "BOX_DNS", "DOCKER_TLS_CERTDIR", "BOX_ENV", "PATH", "HOME", "DOCKER_HOST"}
+	pathText = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$`)
+	envName  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	reserved = []string{
+		"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "BOX_DNS", "DOCKER_TLS_CERTDIR", "BOX_ENV", "PATH", "HOME", "DOCKER_HOST",
+		"TASK_PROMPT", "MOOR_HARNESS", "BOX_SSH", "HARNESS_BOX_SSH", "MOOR_PORTAL", "MOOR_TASK", "MOOR_TASK_TOKEN", "TMPDIR", "SHELL",
+	}
 	entryHelp = `an entry is "METHODS /path", methods split by | such as GET|POST, and a path where * is one segment, ** any and {repo} the task's repository`
 )
 
@@ -115,7 +118,7 @@ const SecretMark = "{secret}"
 // and the proxy adds the real value on the wire.
 const PlaceholderText = "placeholder"
 
-// EnvVar is one variable a rule sets in the Box.
+// EnvVar is one variable a rule sets in the Box, or for a model rule in the harness session on the desk.
 type EnvVar struct {
 	Name  string
 	Value string

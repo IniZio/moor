@@ -61,6 +61,9 @@ func (h *holding) start(ctx context.Context, t domain.Task) {
 	if h.c.cfg.BoxEnv != nil {
 		s.BoxEnv = h.c.cfg.BoxEnv(ctx, t)
 	}
+	if h.c.cfg.DeskEnv != nil {
+		s.DeskEnv = h.c.cfg.DeskEnv(ctx, t)
+	}
 	err := call(ctx, h.link, wire.KindTaskStart, s, nil)
 	var we *wire.Error
 	switch {

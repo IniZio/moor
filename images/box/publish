@@ -1,0 +1,25 @@
+#!/bin/sh
+# publish <page.html> --verdict "<line>": the desk publishes the page for the task, and this prints its answer.
+page= verdict= have=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --verdict|-verdict) verdict=$2 have=1; shift 2 ;;
+    --verdict=*|-verdict=*) verdict=${1#*=} have=1; shift ;;
+    *) page=$1; shift ;;
+  esac
+done
+if [ -z "$page" ] || [ -z "$have" ]; then
+  echo 'usage: publish <page.html> --verdict "one line that says how it went"' >&2
+  exit 2
+fi
+[ -f "$page" ] || { echo "publish: no file $page" >&2; exit 1; }
+mkdir -p /share/publish
+d=$(mktemp -d /share/publish/req.XXXXXX)
+cp "$page" "$d/page.html" && printf '%s' "$verdict" > "$d/verdict" && touch "$d/ready"
+i=0
+while [ ! -f "$d/done" ] && [ $i -lt 1200 ]; do sleep 0.25; i=$((i + 1)); done
+[ -f "$d/done" ] || { echo "publish: the desk did not answer in 5 minutes" >&2; exit 1; }
+cat "$d/out"
+rc=$(cat "$d/done")
+rm -rf "$d"
+exit "$rc"

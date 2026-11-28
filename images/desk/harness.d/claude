@@ -1,0 +1,16 @@
+#!/bin/bash.real
+set -e
+export DISABLE_AUTOUPDATER=1 DISABLE_UPDATES=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 CLAUDE_CODE_SHELL=/usr/bin/bash
+key_tail=$(printf '%s' "${ANTHROPIC_API_KEY:-}" | tail -c 20)
+mkdir -p ~/.claude
+cat > ~/.claude.json <<EOF
+{"hasCompletedOnboarding": true, "theme": "dark", "bypassPermissionsModeAccepted": true,
+ "customApiKeyResponses": {"approved": ["$key_tail"], "rejected": []},
+ "projects": {"/workspace": {"hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true}}}
+EOF
+cat > ~/.claude/settings.json <<'EOF'
+{"permissions": {"defaultMode": "bypassPermissions"}, "skipDangerousModePermissionPrompt": true,
+ "attribution": {"commit": "", "pr": ""}}
+EOF
+exec claude --permission-mode bypassPermissions --append-system-prompt "$(cat /usr/local/share/harness/instructions.md)" "$TASK_PROMPT"
