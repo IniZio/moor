@@ -53,8 +53,6 @@ type Deps struct {
 	Proxies ProxyAPI
 	Results Results
 	Blocked BlockedRequests
-	// Ready is not read: readiness reports the process only, so a slow database never takes a pod out of service.
-	Ready func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
 }

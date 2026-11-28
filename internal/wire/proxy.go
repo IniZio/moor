@@ -4,7 +4,8 @@ import "time"
 
 // ProxyAccess is how a task's two proxies reach the portal: its address, and a token for each proxy that
 // names the task and the proxy. Only the proxies hold the proxy tokens, never the Box or the desk. TaskToken is
-// the task scope's token, which the desk's publish tool presents, and it opens nothing a proxy's token does.
+// the task scope's token, which the desk proxy puts on the desk's publish calls, and it opens nothing a proxy's
+// token does.
 type ProxyAccess struct {
 	Portal    string `json:"portal"`
 	BoxToken  string `json:"box_token"`

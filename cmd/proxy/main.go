@@ -27,7 +27,7 @@ func main() {
 
 func run() error {
 	cfg := proxy.Config{
-		Portal: os.Getenv("MOOR_PORTAL"), Task: os.Getenv("MOOR_TASK"), Token: os.Getenv("MOOR_TOKEN"),
+		Portal: os.Getenv("MOOR_PORTAL"), Task: os.Getenv("MOOR_TASK"), Token: os.Getenv("MOOR_TOKEN"), TaskToken: os.Getenv("MOOR_TASK_TOKEN"),
 		Pass: os.Getenv("MOOR_PROXY_PASS"), Poll: time.Second, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 	if cfg.Portal == "" || cfg.Task == "" || cfg.Token == "" || cfg.Pass == "" {

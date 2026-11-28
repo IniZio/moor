@@ -3,9 +3,12 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -57,10 +60,7 @@ func TestAnAgentPublishesAndGetsTheReviewTurnAndTheCommentIsPostedOnceThenEdited
 	dsn := pgtest.SchemaDSN(t)
 	dir := t.TempDir()
 	fakeURL, keyFile := fakeGitHub(t, dir)
-	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: gatewayAddr(t), dsn: dsn, env: []string{
-		"PORTAL_HOME_DIR=" + homeWith(t, dir), "PORTAL_GITHUB_APP_ID=17", "PORTAL_GITHUB_PRIVATE_KEY_FILE=" + keyFile,
-		"PORTAL_GITHUB_API_URL=" + fakeURL + "/", "PORTAL_GITHUB_WEBHOOK_SECRET=" + hookSecret,
-	}}
+	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: gatewayAddr(t), dsn: dsn, env: []string{"PORTAL_HOME_DIR=" + homeWith(t, dir)}}
 	runnerBin := build(t, dir, "cmd/runner")
 	prefix := "moore9a-" + randHex(t, 4)
 	t.Cleanup(func() {
@@ -69,7 +69,7 @@ func TestAnAgentPublishesAndGetsTheReviewTurnAndTheCommentIsPostedOnceThenEdited
 		}
 	})
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": settingsDoc}, nil)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": appSettings(t, fakeURL, keyFile)}, nil)
 	keyPath := dir + "/runner.key"
 	mid := joined(t, pt, runnerBin, keyPath)
 	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyPath, "-prefix", prefix}, images...)...)
@@ -81,11 +81,7 @@ func TestAnAgentPublishesAndGetsTheReviewTurnAndTheCommentIsPostedOnceThenEdited
 	defer db.Close()
 	eventually(t, 3*time.Minute, "the task running", taskIs(t, db, domain.TaskID(id), domain.Running))
 	desk := prefix + "-" + id + "-desk"
-	for n, name := range []string{"page1", "page2", "page3"} {
-		deskWrite(t, desk, "/desk/"+name+".html", "<h1>Evidence v"+string(rune('1'+n))+"</h1><p>An agent drove the app. 5 < 6 & ok.</p>")
-	}
-	deskWrite(t, desk, "/desk/script", script)
-	deskWrite(t, desk, "/desk/go", "")
+	play(t, desk)
 
 	var snap snapshot
 	read := func() { pt.call(t, "GET", "/api/tasks/"+id, nil, &snap) }
@@ -99,12 +95,33 @@ func TestAnAgentPublishesAndGetsTheReviewTurnAndTheCommentIsPostedOnceThenEdited
 	t.Run("a served page is the published one, sandboxed", func(t *testing.T) { pageServed(t, pt, snap) })
 	t.Run("a teammate's line reopens it and the comment is edited, not made again", func(t *testing.T) { reopened(t, pt, fakeURL, id) })
 	t.Run("a person cannot publish", func(t *testing.T) { personRefused(t, pt, id) })
+	t.Run("the desk holds no trace of the task token", func(t *testing.T) { noTaskToken(t, desk, prefix+"-"+id+"-deskproxy") })
 	holdForABrowser(t, pt.addr, id)
 	left := leftBehind(t, prefix)
 	t.Logf("the done task keeps its desk and Box for the keep window, which nothing ends yet, so the test removed %d containers, %d networks and %d volumes", len(left["container"]), len(left["network"]), len(left["volume"]))
 	if again := remaining(t, prefix); len(again) != 0 {
 		t.Errorf("still on the host after the removal: %v", again)
 	}
+}
+
+// play gives the stand-in in the desk its pages and its script, and starts it.
+func play(t *testing.T, desk string) {
+	for n, name := range []string{"page1", "page2", "page3"} {
+		deskWrite(t, desk, "/desk/"+name+".html", "<h1>Evidence v"+string(rune('1'+n))+"</h1><p>An agent drove the app. 5 < 6 & ok.</p>")
+	}
+	deskWrite(t, desk, "/desk/script", script)
+	deskWrite(t, desk, "/desk/go", "")
+}
+
+// appSettings is the settings a person saves: the repository, the rules of the task and the GitHub App, whose API
+// is the fake GitHub.
+func appSettings(t *testing.T, api, keyFile string) string {
+	t.Helper()
+	key, err := os.ReadFile(keyFile)
+	must(t, err)
+	indented := "        " + strings.ReplaceAll(strings.TrimSpace(string(key)), "\n", "\n        ")
+	return settingsDoc + "credentials:\n  github:\n    github_app:\n      app_id: 17\n      private_key: |\n" + indented +
+		"\n      webhook_secret: " + hookSecret + "\n      api_url: " + api + "/\n"
 }
 
 func reviewOnce(t *testing.T, pt *portal, id, desk string, snap snapshot) {
@@ -209,6 +226,61 @@ func reopened(t *testing.T, pt *portal, fakeURL, id string) {
 	if snap.Task.State != "done" {
 		t.Errorf("after the harness exited the task is %s", snap.Task.State)
 	}
+}
+
+// noTaskToken looks for the task token, which only the desk proxy holds, in the desk's environment, processes and
+// files. The token goes to grep on stdin, so the search leaves no trace of its own.
+func noTaskToken(t *testing.T, desk, deskProxy string) {
+	env := mustRun(t, "docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", deskProxy)
+	token := ""
+	for _, l := range strings.Split(env, "\n") {
+		if v, ok := strings.CutPrefix(l, "MOOR_TASK_TOKEN="); ok {
+			token = v
+		}
+	}
+	if !strings.HasPrefix(token, "task.") {
+		t.Fatalf("the desk proxy holds no task token:\n%s", env)
+	}
+	seen := mustRun(t, "docker", "exec", desk, "bash.real", "-c", "env; ps -eo args; cat /proc/[0-9]*/environ 2>/dev/null | tr '\\0' '\\n'")
+	if strings.Contains(seen, token) || !strings.Contains(seen, "MOOR_TASK_TOKEN=moor-placeholder-task") {
+		t.Fatalf("the desk's environment and processes hold the token, or lack the placeholder")
+	}
+	if n := strings.Count(scanDesk(t, desk, token), "\n"); n != 0 {
+		t.Fatalf("%d files of the desk hold the token", n)
+	}
+	if got := scanDesk(t, desk, "Five of five flows passed."); !strings.Contains(got, "/desk/script") {
+		t.Fatalf("the same search does not find a line the desk's files hold, so it proves nothing: %q", got)
+	}
+}
+
+var denied = regexp.MustCompile(`(?m)^grep: (.+): Permission denied$`)
+
+// scanDesk names the files of the desk that hold what. The desk drops every capability, so even its root cannot
+// read some files: each of those is read from the host through docker cp.
+func scanDesk(t *testing.T, desk, what string) string {
+	t.Helper()
+	cmd := exec.Command("docker", "exec", "-i", "-u", "0", desk, "grep", "-rlF", "-D", "skip", "-f", "-", "/", "--exclude-dir=proc", "--exclude-dir=sys", "--exclude-dir=dev")
+	cmd.Stdin = strings.NewReader(what + "\n")
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	var ee *exec.ExitError
+	if err != nil && (!errors.As(err, &ee) || ee.ExitCode() > 2) {
+		t.Fatalf("the file search did not run to an end: %v: %s", err, stderr.String())
+	}
+	if rest := strings.TrimSpace(denied.ReplaceAllString(stderr.String(), "")); rest != "" {
+		t.Fatalf("the file search failed past unreadable files: %s", rest)
+	}
+	found := stdout.String()
+	for _, m := range denied.FindAllStringSubmatch(stderr.String(), -1) {
+		cp := exec.Command("sh", "-c", `docker cp "$0:$1" - | grep -caF -f -`, desk, m[1])
+		cp.Stdin = strings.NewReader(what + "\n")
+		out, _ := cp.Output()
+		if n := strings.TrimSpace(string(out)); n != "0" {
+			found += m[1] + " (read from the host)\n"
+		}
+	}
+	return found
 }
 
 func personRefused(t *testing.T, pt *portal, id string) {

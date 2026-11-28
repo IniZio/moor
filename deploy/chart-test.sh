@@ -44,13 +44,6 @@ check "no GitHub settings by default" "$(dep '[.spec.template.spec.containers[0]
 refuses "refuses a missing Secret name" --set secrets.existingSecret=
 refuses "refuses a missing user header" --set portal.userHeader=
 refuses "refuses a grace period that cuts the drain" --set stop.waitSeconds=10 --set stop.drainSeconds=30 --set terminationGracePeriodSeconds=40
-refuses "refuses a GitHub App without its key Secret" --set portal.github.appID=123
-
-gh=$(render --set portal.github.appID=123 --set portal.github.privateKeySecret=portal-github --set portal.github.apiURL=https://api.example.org/)
-ghenv() { printf '%s\n' "$gh" | pick "select(.kind == \"Deployment\") | $1"; }
-check "GitHub App id set" "$(ghenv '.spec.template.spec.containers[0].env[] | select(.name == "PORTAL_GITHUB_APP_ID") | .value')" 123
-check "GitHub webhook secret from a secret" "$(ghenv '.spec.template.spec.containers[0].env[] | select(.name == "PORTAL_GITHUB_WEBHOOK_SECRET") | .valueFrom.secretKeyRef.key')" github-webhook-secret
-check "GitHub key mounted from a secret" "$(ghenv '.spec.template.spec.volumes[] | select(.name == "github-key") | .secret.secretName')" portal-github
 
 ing=$(render --set ingress.enabled=true --set ingress.host=portal.example.org)
 check "ingress on request" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | .spec.rules[0].host')" portal.example.org

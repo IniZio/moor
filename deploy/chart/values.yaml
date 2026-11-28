@@ -19,11 +19,6 @@ portal:
   publicURL: ""
   trustedOrigins: []
   homeDir: ""
-  github:
-    appID: ""
-    apiURL: ""
-    privateKeySecret: ""
-    privateKeyKey: private-key.pem
 
 secrets:
   existingSecret: ""
@@ -31,7 +26,6 @@ secrets:
     databaseURL: database-url
     secretKey: secret-key
     internalSecret: internal-secret
-    githubWebhookSecret: github-webhook-secret
 
 stop:
   waitSeconds: 10

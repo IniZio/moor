@@ -2,8 +2,6 @@
 {{- $secrets := required "secrets.existingSecret must name a Secret that holds the database URL and keys" .Values.secrets.existingSecret }}
 {{- $header := required "portal.userHeader must name the header your sign-in proxy sets" .Values.portal.userHeader }}
 {{- $keys := .Values.secrets.keys }}
-{{- $gh := .Values.portal.github }}
-{{- if and $gh.appID (not $gh.privateKeySecret) }}{{ fail "portal.github.privateKeySecret must name the Secret that holds the GitHub App's key when portal.github.appID is set" }}{{ end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -99,21 +97,6 @@ spec:
                 secretKeyRef:
                   name: {{ $secrets }}
                   key: {{ $keys.internalSecret }}
-            {{- if $gh.appID }}
-            - name: PORTAL_GITHUB_APP_ID
-              value: {{ $gh.appID | quote }}
-            - name: PORTAL_GITHUB_PRIVATE_KEY_FILE
-              value: /etc/portal/github/{{ $gh.privateKeyKey }}
-            - name: PORTAL_GITHUB_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $secrets }}
-                  key: {{ $keys.githubWebhookSecret }}
-            {{- with $gh.apiURL }}
-            - name: PORTAL_GITHUB_API_URL
-              value: {{ . | quote }}
-            {{- end }}
-            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -144,27 +127,13 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or $gh.appID .Values.extraVolumeMounts }}
+          {{- with .Values.extraVolumeMounts }}
           volumeMounts:
-            {{- if $gh.appID }}
-            - name: github-key
-              mountPath: /etc/portal/github
-              readOnly: true
-            {{- end }}
-            {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
-            {{- end }}
           {{- end }}
-      {{- if or $gh.appID .Values.extraVolumes }}
+      {{- with .Values.extraVolumes }}
       volumes:
-        {{- if $gh.appID }}
-        - name: github-key
-          secret:
-            secretName: {{ $gh.privateKeySecret }}
-        {{- end }}
-        {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

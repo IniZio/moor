@@ -83,29 +83,6 @@
         "homeDir": {
           "type": "string",
           "description": "Folder holding the checked-out team home, PORTAL_HOME_DIR. Mount it through extraVolumes. The chart does not fetch it."
-        },
-        "github": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "The GitHub App that starts tasks from pull requests and answers them. Leave appID empty and the portal serves no /hooks/github.",
-          "properties": {
-            "appID": {
-              "type": ["string", "integer"],
-              "description": "The App's number, PORTAL_GITHUB_APP_ID."
-            },
-            "apiURL": {
-              "type": "string",
-              "description": "GitHub's API address, PORTAL_GITHUB_API_URL. Leave empty for github.com."
-            },
-            "privateKeySecret": {
-              "type": "string",
-              "description": "Existing Secret that holds the App's private key. Required with appID. It is mounted read-only."
-            },
-            "privateKeyKey": {
-              "type": "string",
-              "description": "The key inside that Secret."
-            }
-          }
         }
       }
     },
@@ -134,10 +111,6 @@
             "internalSecret": {
               "type": "string",
               "description": "One value every replica shares, PORTAL_INTERNAL_SECRET, so a terminal can hop to the replica that holds a machine's link."
-            },
-            "githubWebhookSecret": {
-              "type": "string",
-              "description": "The secret that signs GitHub's deliveries, PORTAL_GITHUB_WEBHOOK_SECRET. Read only when github.appID is set."
             }
           }
         }

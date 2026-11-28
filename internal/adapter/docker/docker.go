@@ -34,8 +34,9 @@ type Config struct {
 
 // Spec is everything Up needs for a task. Portal is the address the proxies read the task's policy at,
 // and BoxToken and DeskToken are the tokens of the Box egress proxy and the desk proxy there. TaskToken is the
-// task scope's token, which only the desk holds, for its publish tool. A spec with none leaves the desk without one. BoxEnv are the
-// variables the settings set in the Box, which hold no secret.
+// task scope's token, which only the desk proxy holds: the desk holds a placeholder for its publish tool, and the
+// desk proxy puts the token on its calls. A spec with none leaves both without one. BoxEnv are the variables the
+// settings set in the Box, which hold no secret.
 type Spec struct {
 	Key       Key
 	Portal    string

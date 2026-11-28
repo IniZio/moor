@@ -7,12 +7,11 @@ import (
 
 	"github.com/IniZio/moor/internal/adapter/github"
 	"github.com/IniZio/moor/internal/adapter/store"
-	"github.com/IniZio/moor/internal/answer"
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/task"
 )
 
-// publisher is what a publish goes through: the answer service, which posts what the publish leaves owing.
+// publisher is what a publish goes through.
 type publisher interface {
 	Publish(ctx context.Context, id domain.TaskID, in task.PublishInput) (task.Outcome, error)
 }
@@ -25,8 +24,7 @@ type stage struct {
 }
 
 // publishOne stands in for a runner and an agent on a task a webhook started: it takes a waiting task up to running,
-// then publishes a result with the line and the address, one version more than the task has. A task that answers its
-// event is answered, so the comment on its pull request is made, or edited when it was made before.
+// then publishes a result with the line and the address, one version more than the task has.
 func (s stage) publishOne(ctx context.Context, id domain.TaskID, line, url string) error {
 	svc, reads, pub := s.svc, s.reads, s.pub
 	t, err := reads.Load(ctx, id)
@@ -52,23 +50,14 @@ func (s stage) publishOne(ctx context.Context, id domain.TaskID, line, url strin
 	return nil
 }
 
-// publishTask publishes a result on a task of the database, answering through the GitHub App when one is given.
-func publishTask(ctx context.Context, dsn string, app github.Config, idText, line, url string) error {
+// publishTask publishes a result on a task of the database. It holds no GitHub App, so the answer a pull request's
+// task owes stays owing: the portal posts answers.
+func publishTask(ctx context.Context, dsn, idText, line, url string) error {
 	db, err := store.Open(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("open the database: %w", err)
 	}
 	defer db.Close()
-	cfg := task.Config{Answerable: map[domain.EventSource]bool{github.Source: true}}
-	svc := task.New(db, clock{}, cfg)
-	posters := map[domain.EventSource]answer.Poster{}
-	if app.AppID != 0 {
-		a, err := github.New(app)
-		if err != nil {
-			return fmt.Errorf("github app: %w", err)
-		}
-		posters[github.Source] = a
-	}
-	pub := answer.New(answer.Deps{Tasks: svc, Reads: db, Deliveries: db, Posters: posters, Clock: clock{}})
-	return stage{svc, db, pub}.publishOne(ctx, domain.TaskID(idText), line, url)
+	svc := task.New(db, clock{}, task.Config{Answerable: map[domain.EventSource]bool{github.Source: true}})
+	return stage{svc, db, svc}.publishOne(ctx, domain.TaskID(idText), line, url)
 }

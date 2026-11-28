@@ -22,17 +22,19 @@ import (
 
 // Config wires a proxy. Portal is the portal's address, and Token the proxy's own token for Task. Pass is the
 // password clients present in Proxy-Authorization. Upstream verifies upstream servers and takes the system
-// roots when nil. CA signs the certificates the proxy shows its clients.
+// roots when nil. CA signs the certificates the proxy shows its clients. TaskToken, which only the desk proxy
+// holds, is the task scope's token: the proxy sets it on the task's calls to the portal's task-scope routes.
 type Config struct {
-	Portal   string
-	Task     string
-	Token    string
-	Pass     string
-	Poll     time.Duration
-	Client   *http.Client
-	Upstream *tls.Config
-	CA       *tls.Certificate
-	Log      *slog.Logger
+	Portal    string
+	Task      string
+	Token     string
+	TaskToken string
+	Pass      string
+	Poll      time.Duration
+	Client    *http.Client
+	Upstream  *tls.Config
+	CA        *tls.Certificate
+	Log       *slog.Logger
 }
 
 // Proxy enforces the newest policy it read. Until it has read one it refuses everything.
@@ -43,6 +45,7 @@ type Proxy struct {
 	mu     sync.Mutex
 	values map[string]cached
 	mitm   *goproxy.ConnectAction
+	home   *home
 }
 
 // cached is a credential's value as read under one policy version. A newer version drops it, so a rotated or
@@ -63,7 +66,7 @@ func New(cfg Config) *Proxy {
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{Timeout: 10 * time.Second}
 	}
-	p := &Proxy{cfg: cfg, values: map[string]cached{}}
+	p := &Proxy{cfg: cfg, values: map[string]cached{}, home: homeOf(cfg)}
 	gp := goproxy.NewProxyHttpServer()
 	gp.Logger = slog.NewLogLogger(cfg.Log.Handler(), slog.LevelDebug)
 	gp.Tr = &http.Transport{
@@ -98,7 +101,7 @@ func (p *Proxy) connect(target string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectA
 		go p.report(host, port, domain.TunnelMethod, "", v)
 		return answer(deny(r, string(domain.TunnelMethod), host, port, v)), target
 	}
-	if intercepts(rules, host) {
+	if intercepts(rules, host) || p.home.is(host, port) {
 		ctx.UserData = authed{}
 		return p.mitm, target
 	}
@@ -170,6 +173,9 @@ func (p *Proxy) handle(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 	if v.pass == nil {
 		go p.report(host, port, method, path, v)
 		return r, deny(r, r.Method, host, port, v)
+	}
+	if p.home.is(host, port) && path == p.home.route {
+		r.Header.Set("Authorization", "Bearer "+p.cfg.TaskToken)
 	}
 	return p.inject(r, pol, *v.pass)
 }

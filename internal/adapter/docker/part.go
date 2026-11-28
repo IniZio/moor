@@ -45,7 +45,8 @@ func (d *Docker) plan(l layout, p Part) partPlan {
 	case Box:
 		return partPlan{args: d.boxArgs(l), image: im.Box}
 	case DeskProxy:
-		return partPlan{args: d.proxyArgs(l, l.deskPass, l.spec.DeskToken, volDeskCA), image: im.Proxy, join: []join{{net: n(netDesk)}}}
+		args := append(d.proxyArgs(l, l.deskPass, l.spec.DeskToken, volDeskCA), "-e", "MOOR_TASK_TOKEN="+l.spec.TaskToken)
+		return partPlan{args: args, image: im.Proxy, join: []join{{net: n(netDesk)}}}
 	case Desk:
 		return partPlan{args: d.deskArgs(l), image: im.Desk, join: []join{{net: n(netInner)}}}
 	}
@@ -104,12 +105,15 @@ func (d *Docker) deskArgs(l layout) []string {
 	)
 }
 
+// taskPlaceholder is the task token the desk holds. The desk proxy puts the real one on the task's portal calls.
+const taskPlaceholder = "moor-placeholder-task"
+
 // taskArgs give the desk what its publish tool needs to call the portal as its task, through the desk proxy.
 func taskArgs(s Spec) []string {
 	if s.TaskToken == "" {
 		return nil
 	}
-	return []string{"-e", "MOOR_PORTAL=" + s.Portal, "-e", "MOOR_TASK=" + string(s.Key.Task), "-e", "MOOR_TASK_TOKEN=" + s.TaskToken}
+	return []string{"-e", "MOOR_PORTAL=" + s.Portal, "-e", "MOOR_TASK=" + string(s.Key.Task), "-e", "MOOR_TASK_TOKEN=" + taskPlaceholder}
 }
 
 func probe(p Part) []string {

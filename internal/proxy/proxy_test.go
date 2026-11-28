@@ -36,6 +36,7 @@ type fakePortal struct {
 	blocked []wire.BlockedReport
 	ended   bool
 	expires time.Time
+	calls   map[string]string
 }
 
 func (f *fakePortal) askedFor() []string {
@@ -72,6 +73,11 @@ func (f *fakePortal) reports() []wire.BlockedReport {
 func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		f.calls[r.URL.Path] = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer "+token || f.ended {
 		http.Error(w, "no", http.StatusUnauthorized)
 		return
@@ -106,12 +112,15 @@ type rig struct {
 	client *http.Client
 	proxy  string
 	p      *proxy.Proxy
+	home   *httptest.Server
 }
 
-func newRig(t *testing.T, pol wire.Policy) *rig {
+// newRig starts the proxy under pol. Each opt changes the proxy's config before it starts.
+func newRig(t *testing.T, pol wire.Policy, opts ...func(*proxy.Config)) *rig {
 	t.Helper()
-	g := &rig{portal: &fakePortal{policy: pol}}
+	g := &rig{portal: &fakePortal{policy: pol, calls: map[string]string{}}}
 	portal := httptest.NewServer(g.portal)
+	g.home = portal
 	g.tlsUp = httptest.NewTLSServer(http.HandlerFunc(echo))
 	g.plain = httptest.NewServer(http.HandlerFunc(echo))
 	ca, caPEM, err := proxy.NewCA(time.Now())
@@ -120,7 +129,11 @@ func newRig(t *testing.T, pol wire.Policy) *rig {
 	}
 	upstream := x509.NewCertPool()
 	upstream.AddCert(g.tlsUp.Certificate())
-	g.p = proxy.New(proxy.Config{Portal: portal.URL, Task: "7", Token: token, Pass: pass, Poll: 20 * time.Millisecond, Upstream: &tls.Config{RootCAs: upstream}, CA: ca})
+	cfg := proxy.Config{Portal: portal.URL, Task: "7", Token: token, Pass: pass, Poll: 20 * time.Millisecond, Upstream: &tls.Config{RootCAs: upstream}, CA: ca}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	g.p = proxy.New(cfg)
 	srv := httptest.NewServer(g.p)
 	ctx, cancel := context.WithCancel(context.Background())
 	go g.p.Run(ctx)

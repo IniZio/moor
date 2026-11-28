@@ -169,7 +169,7 @@ func TestTaskLifecycle(t *testing.T) {
 		t.Fatalf("want %d parts running, got %v", len(parts), first)
 	}
 
-	t.Run("only the desk holds the task token", func(t *testing.T) { onlyTheDeskHoldsTheTaskToken(t, d, key.Task) })
+	t.Run("only the desk proxy holds the task token", func(t *testing.T) { onlyTheDeskProxyHoldsTheTaskToken(t, d, key.Task) })
 	t.Run("box cannot reach the desk proxy", func(t *testing.T) { boxCannotReachDeskProxy(t, d, key.Task) })
 	t.Run("stand-in runs three commands in the box", func(t *testing.T) { standIn(t, d, key.Task) })
 	t.Run("nested container fetches and writes a bind mount", func(t *testing.T) { nested(t, d, key.Task) })
@@ -185,14 +185,16 @@ func TestTaskLifecycle(t *testing.T) {
 	t.Run("another adapter lists the task and takes it down", func(t *testing.T) { readopt(t, cfg, Key{Task: key.Task, Run: 1, Gen: 2}) })
 }
 
-func onlyTheDeskHoldsTheTaskToken(t *testing.T, d *Docker, task domain.TaskID) {
+// onlyTheDeskProxyHoldsTheTaskToken checks the desk holds the placeholder its publish tool presents, and the
+// desk proxy, which swaps it on the wire, holds the token.
+func onlyTheDeskProxyHoldsTheTaskToken(t *testing.T, d *Docker, task domain.TaskID) {
 	for _, p := range parts {
 		env := sh(t, "docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", d.name(task, string(p)))
-		if has := strings.Contains(env, "MOOR_TASK_TOKEN=task.t\n"); has != (p == Desk) {
+		if has := strings.Contains(env, "task.t"); has != (p == DeskProxy) {
 			t.Errorf("%s holds the task token: %v", p, has)
 		}
-		if p == Desk && !strings.Contains(env, "MOOR_TASK=t1\n") {
-			t.Errorf("the desk does not know its task:\n%s", env)
+		if p == Desk && (!strings.Contains(env, "MOOR_TASK=t1\n") || !strings.Contains(env, "MOOR_TASK_TOKEN="+taskPlaceholder+"\n")) {
+			t.Errorf("the desk does not know its task or lacks the placeholder:\n%s", env)
 		}
 	}
 }
