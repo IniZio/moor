@@ -18,6 +18,7 @@ type Store interface {
 	Heard(ctx context.Context, id domain.RunnerID, gen int64, at time.Time) (bool, error)
 	DrainMachine(ctx context.Context, id domain.RunnerID, at time.Time) error
 	DisconnectMachine(ctx context.Context, id domain.RunnerID) error
+	ResumeMachine(ctx context.Context, id domain.RunnerID) error
 	RevokeMachine(ctx context.Context, id domain.RunnerID, at time.Time) error
 	RemoveMachine(ctx context.Context, id domain.RunnerID) error
 	WaitingTasks(ctx context.Context, limit int) ([]domain.TaskID, error)

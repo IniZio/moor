@@ -106,6 +106,8 @@ func (s *Service) Act(ctx context.Context, id domain.RunnerID, by domain.Person,
 	switch a {
 	case domain.Drain:
 		err = s.store.DrainMachine(ctx, id, now)
+	case domain.Resume:
+		err = s.resume(ctx, m)
 	case domain.Disconnect:
 		err = s.store.DisconnectMachine(ctx, id)
 	case domain.Revoke:
@@ -119,6 +121,18 @@ func (s *Service) Act(ctx context.Context, id domain.RunnerID, by domain.Person,
 		return acted, fmt.Errorf("%s %s: %w", a, id, err)
 	}
 	return acted, nil
+}
+
+// resume puts a draining machine back in service. Clearing the drain twice is harmless, so two resumes
+// that both read it as draining end in the same state.
+func (s *Service) resume(ctx context.Context, m domain.Machine) error {
+	if m.State(s.clock.Now()) != domain.MachineDraining {
+		return domain.ErrNotDraining
+	}
+	if err := s.store.ResumeMachine(ctx, m.ID); err != nil {
+		return fmt.Errorf("clear the drain: %w", err)
+	}
+	return nil
 }
 
 // revoke refuses the machine's key, which also ends its link, then fails the tasks it starts or runs and

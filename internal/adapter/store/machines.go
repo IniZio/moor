@@ -102,6 +102,10 @@ func (s *Store) DrainMachine(ctx context.Context, id domain.RunnerID, at time.Ti
 	return s.action(ctx, id, "drain", "UPDATE machines SET draining_since = COALESCE(draining_since, $2) WHERE id = $1", at)
 }
 
+func (s *Store) ResumeMachine(ctx context.Context, id domain.RunnerID) error {
+	return s.action(ctx, id, "resume", "UPDATE machines SET draining_since = NULL WHERE id = $1")
+}
+
 func (s *Store) DisconnectMachine(ctx context.Context, id domain.RunnerID) error {
 	return s.action(ctx, id, "disconnect", "UPDATE machines SET link_gen = link_gen + 1, holder_addr = '' WHERE id = $1")
 }

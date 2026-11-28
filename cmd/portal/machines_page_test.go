@@ -101,7 +101,7 @@ func TestTheMenuItemsFollowTheStateAndRemoveComesOnlyAfterARevoke(t *testing.T) 
 	}{
 		{waiting, "joining", []string{"Revoke"}},
 		{offline, "offline", []string{"Revoke"}},
-		{draining, "draining", []string{"Disconnect", "Revoke"}},
+		{draining, "draining", []string{"Resume", "Disconnect", "Revoke"}},
 		{revoked, "revoked", []string{"Remove"}},
 		{m.id, "online", []string{"Drain", "Disconnect", "Revoke"}},
 	} {
@@ -112,6 +112,24 @@ func TestTheMenuItemsFollowTheStateAndRemoveComesOnlyAfterARevoke(t *testing.T) 
 		if !strings.Contains(row, `<span class="st `+c.state+`">`+c.state+"</span>") {
 			t.Errorf("row %s does not show %s: %s", c.id, c.state, row)
 		}
+	}
+}
+
+func TestADrainingRowOffersResumeThatPostsToTheResumeRoute(t *testing.T) {
+	a := newApp(t, withPublicURL)
+	id, token := a.addMachine("Mia")
+	a.join(id, token, "build-1")
+	if row := rowOf(t, a.do(get("Mia", "/machines")).body, id); strings.Contains(row, "Resume") {
+		t.Errorf("a machine in service offers Resume: %s", row)
+	}
+	a.act("Mia", id, "drain").has(t, http.StatusOK)
+	row := rowOf(t, a.do(get("Mia", "/machines")).body, id)
+	if !strings.Contains(row, `hx-post="/api/machines/`+id+`/resume"`) {
+		t.Errorf("the draining row's Resume does not post to its route: %s", row)
+	}
+	a.act("Mia", id, "resume").has(t, http.StatusOK)
+	if row := rowOf(t, a.do(hx(get("Mia", "/api/machines"))).body, id); strings.Contains(row, "Resume") {
+		t.Errorf("a resumed machine still offers Resume: %s", row)
 	}
 }
 

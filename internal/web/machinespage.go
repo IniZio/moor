@@ -21,7 +21,7 @@ const machinesChanged = "machines-changed"
 // menuByState is what the row menu offers for each state. Remove only follows a revoke.
 var menuByState = map[domain.MachineState][]string{
 	domain.MachineLinked:   {"Drain", "Disconnect", "Revoke"},
-	domain.MachineDraining: {"Disconnect", "Revoke"},
+	domain.MachineDraining: {"Resume", "Disconnect", "Revoke"},
 	domain.MachineOffline:  {"Revoke"},
 	domain.MachineJoining:  {"Revoke"},
 	domain.MachineRevoked:  {"Remove"},
@@ -172,6 +172,8 @@ func actedText(a domain.MachineAction, acted domain.MachineActed) string {
 	switch a {
 	case domain.Drain:
 		return name + " is draining. Its running tasks finish. It takes no new ones."
+	case domain.Resume:
+		return name + " is taking tasks again."
 	case domain.Disconnect:
 		return "Link to " + name + " closed. It may reconnect at once. Its tasks keep running."
 	case domain.Revoke:

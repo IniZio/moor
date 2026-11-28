@@ -12,6 +12,8 @@ var (
 	ErrNotEnroller = errors.New("only the member who enrolled the machine controls it")
 	// ErrJoinRefused is a join whose token is unknown, used, expired or for another machine.
 	ErrJoinRefused = errors.New("the join token is not valid")
+	// ErrNotDraining is a resume of a machine that is not draining.
+	ErrNotDraining = errors.New("only a draining machine can be resumed")
 	// ErrNotRevoked is a remove of a machine that is not revoked.
 	ErrNotRevoked = errors.New("only a revoked machine can be removed")
 )
@@ -89,6 +91,7 @@ type MachineAction string
 
 const (
 	Drain      MachineAction = "drain"
+	Resume     MachineAction = "resume"
 	Disconnect MachineAction = "disconnect"
 	Revoke     MachineAction = "revoke"
 	Remove     MachineAction = "remove"

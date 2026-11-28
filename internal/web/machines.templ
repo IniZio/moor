@@ -43,6 +43,8 @@ templ menuItem(v machineRowView, item string) {
 	switch item {
 		case "Drain":
 			<button type="button" role="menuitem" hx-post={ machinePath(v.ID, "drain") } hx-swap="none">Drain</button>
+		case "Resume":
+			<button type="button" role="menuitem" hx-post={ machinePath(v.ID, "resume") } hx-swap="none">Resume</button>
 		case "Disconnect":
 			<button type="button" role="menuitem" hx-post={ machinePath(v.ID, "disconnect") } hx-swap="none">Disconnect</button>
 		case "Revoke":

@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"regexp"
 	"testing"
+	"time"
+
+	"github.com/IniZio/moor/internal/adapter/store/pgtest"
+	"github.com/IniZio/moor/internal/domain"
 )
 
 type machineRow struct {
@@ -129,6 +133,63 @@ func TestOnlyTheEnrollerActsOnAMachineAndRemoveNeedsARevoke(t *testing.T) {
 	}
 	act("Mia", "drain").has(t, http.StatusNotFound)
 	a.do(req{method: http.MethodPost, path: "/api/machines/" + id + "/reboot", person: "Mia"}).has(t, http.StatusNotFound)
+}
+
+func TestResumeTakesADrainedMachineBackAndRefusesOneThatIsNotDraining(t *testing.T) {
+	a := newApp(t, withPublicURL)
+	id, token := a.addMachine("Mia")
+	a.join(id, token, "build-1")
+	a.act("Mia", id, "resume").has(t, http.StatusConflict, "This machine is not draining.")
+	a.act("Mia", id, "drain").has(t, http.StatusOK)
+	if got := a.machines("Mia")[id]; got.State != "draining" {
+		t.Fatalf("after drain: %+v", got)
+	}
+	a.act("Mia", id, "resume").has(t, http.StatusOK, "build-1 is taking tasks again.", `id="toast"`)
+	if got := a.machines("Mia")[id]; got.State != "offline" {
+		t.Errorf("after resume: %+v", got)
+	}
+	a.act("Mia", id, "resume").has(t, http.StatusConflict, "This machine is not draining.")
+	if got := a.machines("Mia")[id]; got.State != "offline" {
+		t.Errorf("a repeated resume changed the machine: %+v", got)
+	}
+	a.act("Mia", id, "drain").has(t, http.StatusOK)
+	a.act("Mia", id, "resume").has(t, http.StatusOK)
+	a.act("Mia", id, "revoke").has(t, http.StatusOK)
+	a.act("Mia", id, "resume").has(t, http.StatusConflict, "This machine is not draining.")
+	a.act("Mia", "m-nope", "resume").has(t, http.StatusNotFound)
+}
+
+func TestAnotherMemberCannotResumeAndAPlainCallerGetsNoContent(t *testing.T) {
+	a := newApp(t, withPublicURL)
+	id, token := a.addMachine("Mia")
+	a.join(id, token, "build-1")
+	a.act("Mia", id, "drain").has(t, http.StatusOK)
+	r := a.act("Ken", id, "resume")
+	r.has(t, http.StatusForbidden, "Only the member who added this machine can change it.", `id="toast"`)
+	if r.header.Get("HX-Trigger") != "" {
+		t.Error("a refused resume must not refresh the rows")
+	}
+	if got := a.machines("Mia")[id]; got.State != "draining" {
+		t.Errorf("a refused member resumed the machine: %+v", got)
+	}
+	a.do(req{method: http.MethodPost, path: "/api/machines/" + id + "/resume", person: "Mia"}).has(t, http.StatusNoContent)
+}
+
+func TestAResumedMachineIsOfferedTasksAgain(t *testing.T) {
+	p := startReplica(t, pgtest.SchemaDSN(t), "127.0.0.1:0")
+	p.withRepos()
+	_, db := p.tasks()
+	m := enrol(t, p, "host-a")
+	m.run(t, p.addr)
+	eventually(t, "the machine linked", func() bool { return p.machines("Mia")[m.id].State == "linked" })
+	p.act("Mia", m.id, "drain").has(t, http.StatusOK)
+	id := p.startTask("Fix the checkout")
+	time.Sleep(500 * time.Millisecond)
+	if !stateIs(t, db, id, domain.Waiting)() {
+		t.Fatal("a draining machine took a task")
+	}
+	p.act("Mia", m.id, "resume").has(t, http.StatusOK)
+	eventually(t, "the task running", stateIs(t, db, id, domain.Running))
 }
 
 func TestTheMachineRoutesNeedAPerson(t *testing.T) {

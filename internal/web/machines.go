@@ -77,7 +77,7 @@ func (s *server) addMachine(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"machine": s.jsonMachineOf(r, e.Machine), "join_command": e.JoinCommand})
 }
 
-var rowActions = map[string]domain.MachineAction{"drain": domain.Drain, "disconnect": domain.Disconnect, "revoke": domain.Revoke}
+var rowActions = map[string]domain.MachineAction{"drain": domain.Drain, "resume": domain.Resume, "disconnect": domain.Disconnect, "revoke": domain.Revoke}
 
 func (s *server) actOnMachine(w http.ResponseWriter, r *http.Request) {
 	a, ok := rowActions[chi.URLParam(r, "action")]
@@ -95,6 +95,7 @@ func (s *server) removeMachine(w http.ResponseWriter, r *http.Request) {
 const (
 	msgNotEnroller = "Only the member who added this machine can change it."
 	msgNotRevoked  = "Revoke the machine before you remove it."
+	msgNotDraining = "This machine is not draining."
 )
 
 func (s *server) actMachine(w http.ResponseWriter, r *http.Request, a domain.MachineAction) {
@@ -106,6 +107,8 @@ func (s *server) actMachine(w http.ResponseWriter, r *http.Request, a domain.Mac
 		http.NotFound(w, r)
 	case errors.Is(err, domain.ErrNotEnroller):
 		refusal(w, r, http.StatusForbidden, msgNotEnroller)
+	case errors.Is(err, domain.ErrNotDraining):
+		refusal(w, r, http.StatusConflict, msgNotDraining)
 	case errors.Is(err, domain.ErrNotRevoked):
 		refusal(w, r, http.StatusConflict, msgNotRevoked)
 	default:

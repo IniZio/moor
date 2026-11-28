@@ -32,6 +32,9 @@ type MachineStore interface {
 	// DrainMachine keeps the time of the first drain.
 	DrainMachine(ctx context.Context, id domain.RunnerID, at time.Time) error
 	DisconnectMachine(ctx context.Context, id domain.RunnerID) error
+	// ResumeMachine clears the drain, so the machine takes new tasks again. A machine that is not
+	// draining is left as it is and is not an error.
+	ResumeMachine(ctx context.Context, id domain.RunnerID) error
 	RevokeMachine(ctx context.Context, id domain.RunnerID, at time.Time) error
 	// RemoveMachine returns domain.ErrNotRevoked for a machine that is not revoked.
 	RemoveMachine(ctx context.Context, id domain.RunnerID) error
@@ -57,6 +60,7 @@ func RunMachines(t *testing.T, fresh func(t *testing.T) MachineStore) {
 		{"links are ordered by generation", linkOrder},
 		{"only a joined, unrevoked machine links", linkRefused},
 		{"drain, disconnect, revoke and remove", rowActions},
+		{"resume puts a drained machine back in service", resumeMachine},
 		{"tasks on machines", tasksOn},
 	}
 	for _, c := range cases {
@@ -272,6 +276,23 @@ func rowActions(t *testing.T, s MachineStore) {
 	_, err := s.Machine(ctx, "m1")
 	wantErr(t, "a removed machine", err, domain.ErrNotFound)
 	wantErr(t, "removing an unknown machine", s.RemoveMachine(ctx, "m1"), domain.ErrNotFound)
+}
+
+func resumeMachine(t *testing.T, s MachineStore) {
+	ctx := context.Background()
+	joined(t, s, "m1", "host-a")
+	link(t, s, "r", 100)
+	must(t, s.DrainMachine(ctx, "m1", at(101)))
+	must(t, s.ResumeMachine(ctx, "m1"))
+	must(t, s.ResumeMachine(ctx, "m1"))
+	if m := machine(t, s, "m1"); !m.DrainingSince.IsZero() || m.State(at(102)) != domain.MachineLinked {
+		t.Errorf("resumed machine = %+v", m)
+	}
+	must(t, s.DrainMachine(ctx, "m1", at(110)))
+	if m := machine(t, s, "m1"); !m.DrainingSince.Equal(at(110)) {
+		t.Errorf("a drain after a resume must start a new drain, got %+v", m)
+	}
+	wantErr(t, "resuming an unknown machine", s.ResumeMachine(ctx, "m9"), domain.ErrNotFound)
 }
 
 func onMachine(id domain.TaskID, state domain.State, runner domain.RunnerID, n int64) domain.Task {
