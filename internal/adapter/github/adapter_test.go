@@ -10,8 +10,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/IniZio/moor/internal/adapter/github"
 	"github.com/IniZio/moor/internal/adapter/github/githubtest"
@@ -40,11 +42,11 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	fake := githubtest.NewForTest(t)
-	key, err := githubtest.WriteKey(t.TempDir())
+	key, err := githubtest.NewKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := github.New(github.Config{AppID: 17, KeyFile: key, WebhookSecret: []byte(secret), APIBase: fake.URL()})
+	a, err := github.New(github.Config{AppID: 17, Key: key, WebhookSecret: []byte(secret), APIBase: fake.URL()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,10 +270,42 @@ func wantBody(t *testing.T, body string) {
 }
 
 func TestAnAppWithOneMissingPartIsRefused(t *testing.T) {
-	if _, err := github.New(github.Config{AppID: 17, WebhookSecret: []byte("s")}); err == nil || !strings.Contains(err.Error(), "private key file") || !strings.Contains(err.Error(), "API base URL") {
+	if _, err := github.New(github.Config{AppID: 17, WebhookSecret: []byte("s")}); err == nil || !strings.Contains(err.Error(), "private key") || !strings.Contains(err.Error(), "API base URL") {
 		t.Errorf("got %v", err)
 	}
-	if (github.Config{}).Enabled() {
-		t.Error("an empty config is enabled")
+}
+
+func TestAnAppWithNoWebhookSecretRefusesEveryDelivery(t *testing.T) {
+	fake := githubtest.NewForTest(t)
+	key, err := githubtest.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := github.New(github.Config{AppID: 17, Key: key, APIBase: fake.URL()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &sink{}
+	if w := deliver(a.Hook(s), "pull_request", "d-1", prPayload("opened", nil), ""); w.Code != http.StatusServiceUnavailable || len(s.got) != 0 {
+		t.Fatalf("an unsigned delivery answered %d and reached the sink %d times", w.Code, len(s.got))
+	}
+}
+
+func TestATaskTokenIsLimitedToItsRepository(t *testing.T) {
+	r := newRig(t)
+	token, expires, err := r.adapter.TaskToken(context.Background(), "example-org/shop-web")
+	if err != nil || token != "fake-token-4242" || time.Until(expires) < 50*time.Minute {
+		t.Fatalf("token %q expires %v: %v", token, expires, err)
+	}
+	got := r.fake.TokenRequests()
+	want := []githubtest.TokenRequest{{
+		Installation: "4242", Repositories: []string{"shop-web"},
+		Permissions: map[string]string{"contents": "write", "pull_requests": "write", "issues": "write"},
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("token requests %+v, want %+v", got, want)
+	}
+	if _, _, err := r.adapter.TaskToken(context.Background(), "shop-web"); err == nil {
+		t.Error("a repository with no owner got a token")
 	}
 }

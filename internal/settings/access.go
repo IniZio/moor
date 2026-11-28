@@ -2,46 +2,99 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// Policy is what the proxy of kind enforces now, read from the newest version. portal is the rule that lets
-// the desk reach the portal.
-func (s *Service) Policy(ctx context.Context, kind domain.ProxyKind, portal domain.AllowRule) (domain.Policy, error) {
+// ErrNoApp is a call that needs the GitHub App when the settings hold none with its private key set.
+var ErrNoApp = errors.New("the settings hold no GitHub App with its private key set")
+
+// current is the newest version, parsed.
+func (s *Service) current(ctx context.Context) (domain.SettingsVersion, Parsed, error) {
 	cur, err := s.Current(ctx)
 	if err != nil {
-		return domain.Policy{}, err
+		return cur, Parsed{}, err
 	}
 	parsed, err := s.parser.Parse(cur.Text)
 	if err != nil {
-		return domain.Policy{}, fmt.Errorf("read settings v%d: %w", cur.N, err)
+		return cur, Parsed{}, fmt.Errorf("read settings v%d: %w", cur.N, err)
 	}
-	return parsed.Settings.PolicyFor(kind, cur.N, portal), nil
+	return cur, parsed, nil
 }
 
-// Value opens the stored value of the named connection, only when the newest version gives that connection to
-// the proxy of kind and its value is set.
-func (s *Service) Value(ctx context.Context, kind domain.ProxyKind, name string) (string, error) {
-	p, err := s.Policy(ctx, kind, domain.AllowRule{})
+// Policy is what the proxy of kind enforces now for a task on repo, read from the newest version. portal is the
+// rule that lets the desk reach the portal.
+func (s *Service) Policy(ctx context.Context, kind domain.ProxyKind, portal domain.Rule, repo domain.Repo) (domain.Policy, error) {
+	cur, parsed, err := s.current(ctx)
 	if err != nil {
-		return "", err
+		return domain.Policy{}, err
 	}
-	i := slices.IndexFunc(p.Connections, func(c domain.Connection) bool { return c.Name == name })
-	if i < 0 || p.Connections[i].Secret != domain.SecretSet {
-		return "", fmt.Errorf("connection %q on the %s proxy: %w", name, kind, domain.ErrNotFound)
-	}
-	sealed, err := s.store.Secret(ctx, name)
+	return parsed.Settings.PolicyFor(kind, cur.N, portal, repo), nil
+}
+
+// Value is what the named credential adds for a task on repo, only when the newest version gives it to the proxy
+// of kind: its stored value, or for a GitHub App a token minted for the task's repository.
+func (s *Service) Value(ctx context.Context, kind domain.ProxyKind, repo domain.Repo, name string) (domain.CredentialValue, error) {
+	cur, parsed, err := s.current(ctx)
 	if err != nil {
-		return "", fmt.Errorf("value of %q: %w", name, err)
+		return domain.CredentialValue{}, err
+	}
+	if !parsed.Settings.PolicyFor(kind, cur.N, domain.Rule{}, repo).Gives(name) {
+		return domain.CredentialValue{}, fmt.Errorf("credential %q on the %s proxy: %w", name, kind, domain.ErrNotFound)
+	}
+	c, _ := parsed.Settings.Credential(name)
+	if c.App == nil {
+		v, err := s.open(ctx, domain.SecretKey(name, domain.FieldValue))
+		return domain.CredentialValue{Value: string(v)}, err
+	}
+	keys, err := s.appKeys(ctx, c)
+	if err != nil {
+		return domain.CredentialValue{}, err
+	}
+	v, err := s.minter.Mint(ctx, keys, repo)
+	if err != nil {
+		return domain.CredentialValue{}, fmt.Errorf("mint a token of %q for %s: %w", name, repo, err)
+	}
+	return v, nil
+}
+
+// GitHubApp is the newest version's GitHub App with its secrets open, for the hook and the answers.
+func (s *Service) GitHubApp(ctx context.Context) (domain.AppKeys, error) {
+	_, parsed, err := s.current(ctx)
+	if err != nil {
+		return domain.AppKeys{}, err
+	}
+	c, ok := parsed.Settings.GitHubApp()
+	if !ok || !c.Set() {
+		return domain.AppKeys{}, ErrNoApp
+	}
+	return s.appKeys(ctx, c)
+}
+
+func (s *Service) appKeys(ctx context.Context, c domain.Credential) (domain.AppKeys, error) {
+	keys := domain.AppKeys{AppID: c.App.AppID, APIURL: c.App.APIURL}
+	var err error
+	if keys.PrivateKey, err = s.open(ctx, domain.SecretKey(c.Name, domain.FieldPrivateKey)); err != nil {
+		return domain.AppKeys{}, err
+	}
+	if c.App.WebhookSecret == domain.SecretSet {
+		keys.WebhookSecret, err = s.open(ctx, domain.SecretKey(c.Name, domain.FieldWebhookSecret))
+	}
+	return keys, err
+}
+
+func (s *Service) open(ctx context.Context, key string) ([]byte, error) {
+	sealed, err := s.store.Secret(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("secret %q: %w", key, err)
 	}
 	plain, err := s.sealer.Open(sealed.Ciphertext, sealed.KeyID)
 	if err != nil {
-		return "", fmt.Errorf("open the value of %q: %w", name, err)
+		return nil, fmt.Errorf("open the secret %q: %w", key, err)
 	}
-	return string(plain), nil
+	return plain, nil
 }
 
 // RecordBlocked stores a request a proxy refused, counting a repeat on the row it already has.
@@ -65,8 +118,8 @@ func (s *Service) BlockedRequests(ctx context.Context, task domain.TaskID) ([]do
 	return out, nil
 }
 
-// Allow appends the blocked request's rule to the allow list as a new version, noting the request, and marks
-// it allowed. A line of the same text already there is answered instead of a new one.
+// Allow adds the blocked request's entry to its rule, or a rule for its host, as a new version noting the
+// request, and marks it allowed. An entry already there is answered instead of a new one.
 func (s *Service) Allow(ctx context.Context, task domain.TaskID, id domain.BlockedID, by string) (domain.AllowedLine, error) {
 	b, err := s.blocked(ctx, task, id)
 	if err != nil {
@@ -79,9 +132,9 @@ func (s *Service) Allow(ctx context.Context, task domain.TaskID, id domain.Block
 	if err != nil {
 		return domain.AllowedLine{}, err
 	}
-	text, line, err := s.parser.AppendAllow(cur.Text, b.Rule().String())
+	text, line, err := s.parser.AllowEntry(cur.Text, b.Rule, b.Entry, domain.HostPort{Host: domain.HostPattern(b.Host), Port: b.Port})
 	if err != nil {
-		return domain.AllowedLine{}, fmt.Errorf("append %s: %w", b.Request(), err)
+		return domain.AllowedLine{}, fmt.Errorf("allow %s: %w", b.Request(), err)
 	}
 	note := fmt.Sprintf("Allow on blocked request %s of task #%s", b.Request(), task)
 	saved, err := s.Save(ctx, domain.SettingsSave{Base: cur.N, Text: text, Note: note, By: by})

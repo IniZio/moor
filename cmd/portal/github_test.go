@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/IniZio/moor/internal/adapter/github"
 	"github.com/IniZio/moor/internal/adapter/github/githubtest"
 	"github.com/IniZio/moor/internal/adapter/secretbox"
 	"github.com/IniZio/moor/internal/adapter/store/pgtest"
@@ -53,7 +52,7 @@ type hookRig struct {
 func newHookRig(t *testing.T, files map[string]string) *hookRig {
 	t.Helper()
 	fake := githubtest.NewForTest(t)
-	key, err := githubtest.WriteKey(t.TempDir())
+	key, err := githubtest.NewKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +64,6 @@ func newHookRig(t *testing.T, files map[string]string) *hookRig {
 	cfg := config{
 		listen: "127.0.0.1:0", database: dsn, userHeader: userHeader, orgName: "example-org", secretKey: secret,
 		homeDir: writeHome(t, files), publicURL: "https://portal.example.test",
-		github: github.Config{AppID: 17, KeyFile: key, WebhookSecret: []byte(hookSecret), APIBase: fake.URL()},
 	}
 	p, err := assemble(context.Background(), cfg)
 	if err != nil {
@@ -75,7 +73,7 @@ func newHookRig(t *testing.T, files map[string]string) *hookRig {
 	t.Cleanup(closeOnce)
 	a := &app{t: t, handler: p.handler, dsn: dsn, key: secret, close: closeOnce}
 	r := &hookRig{app: a, fake: fake, portal: p}
-	r.withRepos()
+	r.do(put("Mia", 0, appDoc(fake.URL(), key))).has(t, http.StatusOK)
 	r.fake.AddPullRequest(githubtest.PullRequest{Repo: "example-org/shop-web", Number: 90, Title: "Add search to the shop", Author: "ana", SHA: "5f0e2b19c4d7", Branch: "search"})
 	return r
 }
@@ -238,9 +236,24 @@ func TestOtherEventsAndSpecsThatDoNotListTheActionStartNothing(t *testing.T) {
 	}
 }
 
-func TestWithoutAGitHubAppThePortalServesNoHook(t *testing.T) {
+func TestWithoutAGitHubAppTheHookRefusesEveryDelivery(t *testing.T) {
 	a := newApp(t)
-	a.do(signed("pull_request", "d-1", "{}", hookSecret)).has(t, http.StatusNotFound)
+	a.do(signed("pull_request", "d-1", "{}", hookSecret)).has(t, http.StatusServiceUnavailable, "no GitHub App")
+}
+
+// appDoc is the settings with the App typed in: its key and webhook secret, which the save seals.
+func appDoc(api string, key []byte) string {
+	indented := "        " + strings.ReplaceAll(strings.TrimSpace(string(key)), "\n", "\n        ")
+	return "repositories:\n  - example-org/shop-web\ncredentials:\n  github:\n    github_app:\n      app_id: 17\n" +
+		"      private_key: |\n" + indented + "\n      webhook_secret: " + hookSecret + "\n      api_url: " + api + "/\n"
+}
+
+func TestTheAppMovesWithTheSettings(t *testing.T) {
+	r := newHookRig(t, defaultHome())
+	r.do(signed("ping", "d-1", "{}", hookSecret)).has(t, http.StatusAccepted)
+	cur := r.current()
+	r.do(put("Mia", cur.Version, "repositories:\n  - example-org/shop-web\n")).has(t, http.StatusOK)
+	r.do(signed("ping", "d-2", "{}", hookSecret)).has(t, http.StatusServiceUnavailable)
 }
 
 // writes counts the comments the fake GitHub was asked to create and to edit.

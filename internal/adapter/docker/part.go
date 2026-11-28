@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -71,7 +72,14 @@ func (d *Docker) trustArgs(l layout, ca string) []string {
 
 func (d *Docker) boxArgs(l layout) []string {
 	n := func(what string) string { return d.name(l.spec.Key.Task, what) }
-	return append(d.trustArgs(l, volBoxCA),
+	var env, names []string
+	for _, v := range l.spec.BoxEnv {
+		env, names = append(env, "-e", v.Name+"="+v.Value), append(names, v.Name)
+	}
+	if len(names) > 0 {
+		env = append(env, "-e", "BOX_ENV="+strings.Join(names, " "))
+	}
+	return append(append(d.trustArgs(l, volBoxCA), env...),
 		"--hostname", n(string(Box)), "--network", n(netInner), "--ip", l.innerIP(10), "--init",
 		"--device", "/dev/kvm", "--device", "/dev/net/tun",
 		"--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined", "--security-opt", "systempaths=unconfined",

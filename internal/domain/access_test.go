@@ -1,123 +1,102 @@
 package domain_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/IniZio/moor/internal/domain"
 )
 
-func rule(t *testing.T, s string) domain.AllowRule {
-	t.Helper()
-	r, err := domain.ParseAllowRule(s)
-	if err != nil {
-		t.Fatal(err)
+func TestTheBoxProxyGetsTheRulesAndTheDeskProxyTheModelRules(t *testing.T) {
+	inject := domain.HeaderInject{Name: "x-api-key", Form: "{secret}"}
+	s := domain.Settings{
+		Credentials: []domain.Credential{{Name: "anthropic", Value: domain.SecretSet}, {Name: "staging", Value: domain.SecretNotSet}},
+		Rules: []domain.Rule{
+			{Name: "model", Hosts: []domain.HostPort{{Host: "api.anthropic.com", Port: 443}}, Credential: "anthropic", Inject: inject, Allow: domain.Access{Any: true}},
+			{Name: "staging", Hosts: []domain.HostPort{{Host: "api.example.com", Port: 443}}, Credential: "staging", Inject: inject, Allow: domain.Access{Any: true}},
+		},
 	}
-	return r
-}
-
-func TestAPolicyPassesOnlyAListedHostPortAndMethod(t *testing.T) {
-	p := domain.Policy{Allow: []domain.AllowRule{rule(t, "api.example.com:443 GET POST"), rule(t, "*.cdn.example.com:443 GET")}}
-	cases := []struct {
-		host   string
-		port   int
-		method domain.Method
-		reason domain.DenyReason
-	}{
-		{"api.example.com", 443, "GET", ""},
-		{"API.example.com", 443, "POST", ""},
-		{"a.b.cdn.example.com", 443, "GET", ""},
-		{"api.example.com", 443, "DELETE", domain.DenyMethod},
-		{"api.example.com", 80, "GET", domain.DenyHost},
-		{"cdn.example.com", 443, "GET", domain.DenyHost},
-		{"other.example.com", 443, "GET", domain.DenyHost},
-		{"*.cdn.example.com", 443, "GET", domain.DenyHost},
-	}
-	for _, c := range cases {
-		reason, ok := p.Check(c.host, c.port, c.method)
-		if reason != c.reason || ok != (c.reason == "") {
-			t.Errorf("%s:%d %s: got %q %v, want %q", c.host, c.port, c.method, reason, ok, c.reason)
-		}
-	}
-	if !p.Tunnel("api.example.com", 443) || p.Tunnel("api.example.com", 80) || p.Tunnel("other.example.com", 443) {
-		t.Error("a tunnel follows the host and port of the rules")
-	}
-	if _, ok := (domain.Policy{}).Check("api.example.com", 443, "GET"); ok {
-		t.Error("an empty policy passed a request")
-	}
-}
-
-func TestTheBoxProxyGetsTheRulesAndTheDeskProxyTheModelConnections(t *testing.T) {
-	model := domain.Connection{Name: "Model key", Hosts: []domain.HostPattern{"api.anthropic.com"}, Add: domain.HeaderAdd{Name: "x-api-key", Template: "{value}"}, Secret: domain.SecretSet}
-	staging := domain.Connection{Name: "Staging key", Hosts: []domain.HostPattern{"api.example.com"}, Add: domain.PlaceholderAdd{Token: "STAGING_KEY"}, Secret: domain.SecretSet}
-	s := domain.Settings{Allow: []domain.AllowRule{rule(t, "api.example.com:443 GET")}, Connections: []domain.Connection{model, staging}}
-	portal := domain.AnyMethod("portal.example.com", 443)
-
-	boxGetsRules(t, s.PolicyFor(domain.BoxProxy, 7, portal))
-	deskGetsModel(t, s.PolicyFor(domain.DeskProxy, 7, portal))
-}
-
-func boxGetsRules(t *testing.T, box domain.Policy) {
-	t.Helper()
-	if box.Version != 7 || len(box.Connections) != 1 || box.Connections[0].Name != "Staging key" {
+	portal := domain.AnyRequest("portal", "portal.example.com", 443)
+	repo := domain.Repo{Host: "github.com", Path: "example-org/shop-web"}
+	box := s.PolicyFor(domain.BoxProxy, 7, portal, repo)
+	if box.Version != 7 || box.Repo != repo || len(box.Rules) != 1 || box.Rules[0].Name != "staging" || box.Gives("staging") || box.Gives("anthropic") {
 		t.Fatalf("box policy %+v", box)
 	}
-	if _, ok := box.Check("api.anthropic.com", 443, "POST"); ok {
-		t.Error("the Box reaches the model host")
-	}
-	if _, ok := box.Check("portal.example.com", 443, "GET"); ok {
-		t.Error("the Box reaches the portal")
+	desk := s.PolicyFor(domain.DeskProxy, 7, portal, repo)
+	if len(desk.Rules) != 2 || desk.Rules[0].Name != "portal" || desk.Rules[1].Name != "model" || !desk.Gives("anthropic") {
+		t.Fatalf("desk policy %+v", desk)
 	}
 }
 
-func deskGetsModel(t *testing.T, desk domain.Policy) {
-	t.Helper()
-	if len(desk.Connections) != 1 || desk.Connections[0].Name != "Model key" {
-		t.Fatalf("desk connections %+v", desk.Connections)
+func TestABoxVariableIsAFakeTokenOrTextWithTheRepository(t *testing.T) {
+	r := domain.Rule{Name: "github-api", Credential: "github"}
+	repo := domain.Repo{Host: "github.com", Path: "example-org/shop-web"}
+	if got := r.BoxValue(domain.EnvVar{Name: "GH_TOKEN", Value: "placeholder"}, repo); got != "moor-placeholder-github-api" {
+		t.Errorf("placeholder: %q", got)
 	}
-	for _, host := range []string{"api.anthropic.com", "portal.example.com"} {
-		if _, ok := desk.Check(host, 443, "POST"); !ok {
-			t.Errorf("the desk cannot reach %s", host)
+	if got := r.BoxValue(domain.EnvVar{Name: "GH_REPO", Value: "{repo}"}, repo); got != "example-org/shop-web" {
+		t.Errorf("repo: %q", got)
+	}
+}
+
+func TestSuggestTemplatesTheRepositoryAndNeverAQuery(t *testing.T) {
+	repo := domain.Repo{Host: "github.com", Path: "example-org/shop-web"}
+	cases := map[string]string{
+		"/repos/example-org/shop-web/issues/3": "DELETE /repos/{repo}/issues/3",
+		"/repos/Example-Org/Shop-Web/pulls":    "DELETE /repos/{repo}/pulls",
+		"/example-org/shop-web.git/info/refs":  "DELETE /{repo}.git/info/refs",
+		"/x":                                   "DELETE /x",
+		"/a/*":                                 "",
+		"/a/{b}":                               "",
+		"/a/../b":                              "",
+	}
+	for path, want := range cases {
+		if got := domain.Suggest("DELETE", path, repo); got != want {
+			t.Errorf("%s: got %q, want %q", path, got, want)
 		}
 	}
-	if _, ok := desk.Check("api.example.com", 443, "GET"); ok {
-		t.Error("the desk reaches a host of the Box's allow rules")
-	}
-	if c, ok := desk.ConnectionFor("API.anthropic.com"); !ok || c.Name != "Model key" {
-		t.Errorf("connection for the model host: %+v %v", c, ok)
-	}
 }
 
-func TestABlockedBoxRequestTurnsIntoOneAllowLine(t *testing.T) {
-	b := domain.BlockedRequest{Proxy: domain.BoxProxy, Host: "fonts.example.com", Port: 443, Method: "GET"}
-	if b.Request() != "fonts.example.com:443 GET" || !b.Allowable() {
-		t.Fatalf("%q allowable %v", b.Request(), b.Allowable())
+func TestABlockedReportMustBeOneAProxyCouldMake(t *testing.T) {
+	good := domain.BlockedHit{
+		Proxy: domain.BoxProxy, Host: "api.github.com", Port: 443, Method: "POST", Path: "/graphql", Rule: "github-api",
+		Reason: domain.DenyMerge, Detail: "merging is not allowed from a task (mutation mergePullRequest)",
 	}
-	b.Proxy = domain.DeskProxy
-	if b.Allowable() {
-		t.Error("a desk request is allowable")
-	}
-	odd := domain.BlockedRequest{Proxy: domain.BoxProxy, Host: "x.example.com", Port: 443, Method: "PROPFIND"}
-	if odd.Allowable() {
-		t.Error("a method no rule can name is allowable")
-	}
-}
-
-func TestABlockedReportIsCheckedBeforeItIsStored(t *testing.T) {
-	good := domain.BlockedHit{Task: "1", Proxy: domain.BoxProxy, Host: "api.example.com", Port: 443, Method: "GET", Reason: domain.DenyHost}
 	if err := good.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for name, mut := range map[string]func(*domain.BlockedHit){
-		"wildcard": func(h *domain.BlockedHit) { h.Host = "*.example.com" },
-		"proxy":    func(h *domain.BlockedHit) { h.Proxy = "other" },
-		"port":     func(h *domain.BlockedHit) { h.Port = 0 },
-		"reason":   func(h *domain.BlockedHit) { h.Reason = "because" },
-		"method":   func(h *domain.BlockedHit) { h.Method = "get" },
-	} {
+	tunnel := domain.BlockedHit{Proxy: domain.BoxProxy, Host: "later.example", Port: 443, Method: domain.TunnelMethod, Entry: domain.AnyText, Reason: domain.DenyHost}
+	if err := tunnel.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bad := []func(*domain.BlockedHit){
+		func(h *domain.BlockedHit) { h.Host = "*.example.com" },
+		func(h *domain.BlockedHit) { h.Reason = "because" },
+		func(h *domain.BlockedHit) { h.Method = "get" },
+		func(h *domain.BlockedHit) { h.Path = "x" },
+		func(h *domain.BlockedHit) { h.Entry = "GET x" },
+		func(h *domain.BlockedHit) { h.Rule = "Not A Name" },
+		func(h *domain.BlockedHit) { h.Detail = "a\nb" },
+	}
+	for i, change := range bad {
 		h := good
-		mut(&h)
-		if h.Validate() == nil {
-			t.Errorf("%s: a bad report passed", name)
+		change(&h)
+		if err := h.Validate(); !errors.Is(err, domain.ErrBadSettings) {
+			t.Errorf("change %d: err = %v", i, err)
+		}
+	}
+}
+
+func TestOnlyABoxRequestTheRulesRefusedCanBeAllowed(t *testing.T) {
+	row := domain.BlockedRequest{Proxy: domain.BoxProxy, Host: "later.example", Port: 80, Method: "GET", Path: "/x", Entry: "GET /x", Reason: domain.DenyHost}
+	if !row.Allowable() || row.Request() != "later.example:80 GET /x" {
+		t.Fatalf("%+v: allowable %v, request %q", row, row.Allowable(), row.Request())
+	}
+	merge, desk, none := row, row, row
+	merge.Reason, desk.Proxy, none.Entry = domain.DenyMerge, domain.DeskProxy, ""
+	for _, r := range []domain.BlockedRequest{merge, desk, none} {
+		if r.Allowable() {
+			t.Errorf("%+v is allowable", r)
 		}
 	}
 }

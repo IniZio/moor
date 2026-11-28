@@ -17,12 +17,15 @@ import (
 const goodDoc = `# example-org settings
 repositories:
   - example-org/shop-web
-allow:
-  - api.example.com:443 GET
-connections:
-  - name: shop staging API
+rules:
+  shop-staging:
     hosts: [api.example.com]
-    add: header Authorization "Bearer {value}"
+    credential: shop-staging
+    inject: {header: Authorization, form: "Bearer {secret}"}
+    allow:
+      - "GET /**"
+credentials:
+  shop-staging:
     value: not set
 `
 
@@ -78,7 +81,7 @@ func TestASavedDocumentIsReadBackWithItsVersionAndHistory(t *testing.T) {
 	if c.Version != 1 || !strings.Contains(c.Text, "# example-org settings") || !strings.Contains(c.Text, "value: not set") {
 		t.Fatalf("current = %+v", c)
 	}
-	a.do(put("Ken", 1, strings.Replace(c.Text, "- api.example.com:443 GET", "- api.example.com:443 GET POST", 1))).has(t, http.StatusOK, `"version":2`)
+	a.do(put("Ken", 1, strings.Replace(c.Text, `- "GET /**"`, `- "GET|POST /**"`, 1))).has(t, http.StatusOK, `"version":2`)
 	var versions []struct {
 		Version int    `json:"version"`
 		SavedBy string `json:"saved_by"`
@@ -93,7 +96,7 @@ func TestASavedDocumentIsReadBackWithItsVersionAndHistory(t *testing.T) {
 		t.Errorf("versions = %+v", versions)
 	}
 	added, removed := diffLines(versions[0].Diff)
-	if len(added) != 1 || !strings.Contains(added[0], "GET POST") || len(removed) != 1 || strings.Contains(removed[0], "POST") {
+	if len(added) != 1 || !strings.Contains(added[0], "GET|POST") || len(removed) != 1 || strings.Contains(removed[0], "POST") {
 		t.Errorf("diff of v2: +%q -%q", added, removed)
 	}
 }
@@ -133,12 +136,12 @@ func TestASaveFromAnOldVersionIsRefused(t *testing.T) {
 
 func TestAnInvalidDocumentGetsItsLineErrorsAndSavesNothing(t *testing.T) {
 	a := newApp(t)
-	bad := strings.Replace(goodDoc, "- api.example.com:443 GET", "- api.example.com GET", 1)
+	bad := strings.Replace(goodDoc, "hosts: [api.example.com]", "hosts: [api_example.com]", 1)
 	r := a.do(put("Mia", 0, bad))
-	r.has(t, http.StatusUnprocessableEntity, `"line":5`, "allow rule")
+	r.has(t, http.StatusUnprocessableEntity, `"line":6`, "host")
 	r.lacks(t, "bad settings:")
 	h := a.do(putForm("Mia", "0", bad))
-	h.has(t, http.StatusUnprocessableEntity, "Not saved. Fix the lines marked in red.", `data-lines="5"`, "<b>Line 5</b>", `hx-swap-oob`)
+	h.has(t, http.StatusUnprocessableEntity, "Not saved. Fix the lines marked in red.", `data-lines="6"`, "<b>Line 6</b>", `hx-swap-oob`)
 	if h.header.Get("HX-Reswap") != "none" {
 		t.Errorf("a refused save must leave the editor as it is, HX-Reswap = %q", h.header.Get("HX-Reswap"))
 	}
@@ -151,10 +154,10 @@ func TestAnInvalidDocumentGetsItsLineErrorsAndSavesNothing(t *testing.T) {
 
 func TestTheLiveCheckListsTheLinesWithoutSaving(t *testing.T) {
 	a := newApp(t)
-	bad := strings.Replace(goodDoc, "- api.example.com:443 GET", "- api.example.com GET", 1)
+	bad := strings.Replace(goodDoc, "hosts: [api.example.com]", "hosts: [api_example.com]", 1)
 	form := url.Values{"base": {"0"}, "text": {bad}}
 	r := a.do(hx(req{method: http.MethodPost, path: "/api/settings/check", person: "Mia", form: form}))
-	r.has(t, http.StatusOK, `id="errs"`, `data-lines="5"`, "<b>Line 5</b>")
+	r.has(t, http.StatusOK, `id="errs"`, `data-lines="6"`, "<b>Line 6</b>")
 	ok := a.do(hx(req{method: http.MethodPost, path: "/api/settings/check", person: "Mia", form: url.Values{"base": {"0"}, "text": {goodDoc}}}))
 	ok.has(t, http.StatusOK, `id="errs"`)
 	ok.lacks(t, "<b>Line")
@@ -167,7 +170,7 @@ func TestATypedValueIsSealedApartAndNeverComesBack(t *testing.T) {
 	a := newApp(t)
 	typed := strings.Replace(goodDoc, "value: not set", "value: "+typedSecret, 1)
 	r := a.do(put("Mia", 0, typed))
-	r.has(t, http.StatusOK, `"replaced":["shop staging API"]`)
+	r.has(t, http.StatusOK, `"replaced":["shop-staging/value"]`)
 	r.lacks(t, typedSecret)
 	for _, path := range []string{"/api/settings", "/api/settings/versions", "/settings"} {
 		a.do(get("Mia", path)).lacks(t, typedSecret)
@@ -180,11 +183,11 @@ func TestATypedValueIsSealedApartAndNeverComesBack(t *testing.T) {
 		hx(get("Mia", path))
 		a.do(hx(get("Mia", path))).lacks(t, typedSecret)
 	}
-	a.do(get("Mia", "/api/settings/versions")).has(t, http.StatusOK, "replaced the value of shop staging API")
-	a.requireSealed("shop staging API", typedSecret)
+	a.do(get("Mia", "/api/settings/versions")).has(t, http.StatusOK, "replaced the value of shop-staging/value")
+	a.requireSealed("shop-staging/value", typedSecret)
 }
 
-func (a *app) requireSealed(connection, want string) {
+func (a *app) requireSealed(key, want string) {
 	a.t.Helper()
 	ctx := context.Background()
 	db, err := store.Open(ctx, a.dsn)
@@ -192,9 +195,9 @@ func (a *app) requireSealed(connection, want string) {
 		a.t.Fatal(err)
 	}
 	defer db.Close()
-	sec, err := db.Secret(ctx, connection)
+	sec, err := db.Secret(ctx, key)
 	if err != nil {
-		a.t.Fatalf("secret of %q: %v", connection, err)
+		a.t.Fatalf("secret of %q: %v", key, err)
 	}
 	if strings.Contains(string(sec.Ciphertext), want) {
 		a.t.Error("the stored value is not encrypted")
@@ -218,24 +221,30 @@ func TestARefusedSaveDoesNotEchoATypedValueAndKeepsTheOldOne(t *testing.T) {
 		a.do(r).has(t, http.StatusUnprocessableEntity)
 		a.do(r).lacks(t, other)
 	}
-	a.requireSealed("shop staging API", typedSecret)
+	a.requireSealed("shop-staging/value", typedSecret)
 }
 
-func TestASetValueKeepsItsSecretAndADeletedConnectionDropsIt(t *testing.T) {
+func TestASetValueKeepsItsSecretAndADeletedCredentialDropsIt(t *testing.T) {
 	a := newApp(t)
 	a.do(put("Mia", 0, strings.Replace(goodDoc, "value: not set", "value: "+typedSecret, 1))).has(t, http.StatusOK)
 	set := a.current().Text
-	a.do(put("Mia", 1, strings.Replace(set, "- api.example.com:443 GET", "- api.example.com:443 GET POST", 1))).has(t, http.StatusOK, `"version":2`)
-	a.requireSealed("shop staging API", typedSecret)
+	a.do(put("Mia", 1, strings.Replace(set, `- "GET /**"`, `- "GET|POST /**"`, 1))).has(t, http.StatusOK, `"version":2`)
+	a.requireSealed("shop-staging/value", typedSecret)
 	a.do(put("Mia", 2, "repositories: []\n")).has(t, http.StatusOK, `"version":3`)
 	db, err := store.Open(context.Background(), a.dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Secret(context.Background(), "shop staging API"); err == nil || !strings.Contains(err.Error(), domain.ErrNotFound.Error()) {
-		t.Errorf("a deleted connection kept its secret: %v", err)
+	if _, err := db.Secret(context.Background(), "shop-staging/value"); err == nil || !strings.Contains(err.Error(), domain.ErrNotFound.Error()) {
+		t.Errorf("a deleted credential kept its secret: %v", err)
 	}
+}
+
+func TestTheOldKeysAreRefusedWithTheNewOnesNamed(t *testing.T) {
+	a := newApp(t)
+	r := a.do(put("Mia", 0, "repositories: []\nallow:\n  - api.example.com:443 GET\n"))
+	r.has(t, http.StatusUnprocessableEntity, `"line":2`, "rules")
 }
 
 func TestTheSettingsPageAndItsFragments(t *testing.T) {
@@ -243,15 +252,15 @@ func TestTheSettingsPageAndItsFragments(t *testing.T) {
 	page := a.do(get("Mia", "/settings"))
 	page.has(t, http.StatusOK, "One document for example-org. Everyone can read and edit it.", "# Settings. Everyone", `name="base" value="0"`, `id="historybtn"`, `class="cm-host"`)
 	saved := a.do(putForm("Mia", "0", typedDocForPage()))
-	saved.has(t, http.StatusOK, "Saved v1. The new value of shop staging API is stored; it shows as set. Running tasks get it at their next request.", `id="editorbox"`, `name="base" value="1"`)
+	saved.has(t, http.StatusOK, "Saved v1. The new value of shop-staging/value is stored; it shows as set. Running tasks get it at their next request.", `id="editorbox"`, `name="base" value="1"`)
 	saved.lacks(t, typedSecret)
 	if saved.header.Get("HX-Trigger") != "settings-saved" {
 		t.Errorf("a save must tell an open History to refresh, HX-Trigger = %q", saved.header.Get("HX-Trigger"))
 	}
 	list := a.do(hx(get("Mia", "/api/settings/versions")))
-	list.has(t, http.StatusOK, `id="history"`, `hx-get="/api/settings/versions/1"`, "replaced the value of shop staging API", "Mia")
+	list.has(t, http.StatusOK, `id="history"`, `hx-get="/api/settings/versions/1"`, "replaced the value of shop-staging/value", "Mia")
 	diff := a.do(hx(get("Mia", "/api/settings/versions/1")))
-	diff.has(t, http.StatusOK, "saved by Mia, ", ", replaced the value of shop staging API</span>", "Back to editing", `<div class="add">+ repositories:</div>`, `aria-pressed="true"`)
+	diff.has(t, http.StatusOK, "saved by Mia, ", ", replaced the value of shop-staging/value</span>", "Back to editing", `<div class="add">+ repositories:</div>`, `aria-pressed="true"`)
 	diff.lacks(t, typedSecret)
 	a.do(get("Mia", "/api/settings/versions/9")).has(t, http.StatusNotFound)
 	a.do(get("Mia", "/api/settings/versions/x")).has(t, http.StatusNotFound)

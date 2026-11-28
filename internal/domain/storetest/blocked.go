@@ -29,7 +29,10 @@ func RunBlocked(t *testing.T, fresh func(t *testing.T) BlockedStore) {
 var blockedAt = time.Date(2026, 11, 28, 10, 0, 0, 0, time.UTC)
 
 func blockedHit(task domain.TaskID, proxy domain.ProxyKind, host string, method domain.Method, at time.Time) domain.BlockedHit {
-	return domain.BlockedHit{Task: task, Proxy: proxy, Host: host, Port: 443, Method: method, Reason: domain.DenyHost, At: at}
+	return domain.BlockedHit{
+		Task: task, Proxy: proxy, Host: host, Port: 443, Method: method, Path: "/css", Rule: "fonts", Entry: string(method) + " /css",
+		Reason: domain.DenyRequest, Detail: "", At: at,
+	}
 }
 
 func record(t *testing.T, s BlockedStore, hits ...domain.BlockedHit) {
@@ -50,12 +53,20 @@ func blockedCounts(t *testing.T, s BlockedStore) {
 		blockedHit("1", domain.DeskProxy, "fonts.example.com", "GET", later),
 		blockedHit("2", domain.BoxProxy, "fonts.example.com", "GET", later),
 	)
+	other := blockedHit("1", domain.BoxProxy, "fonts.example.com", "GET", later)
+	other.Path, other.Entry = "/js", "GET /js"
+	merge := blockedHit("1", domain.BoxProxy, "fonts.example.com", "GET", later)
+	merge.Reason, merge.Entry, merge.Detail = domain.DenyMerge, "", "merging is not allowed from a task"
+	record(t, s, other, merge)
 	got, err := s.BlockedRequests(context.Background(), "1")
-	if err != nil || len(got) != 3 {
+	if err != nil || len(got) != 5 {
 		t.Fatalf("task 1 has %d rows: %+v %v", len(got), got, err)
 	}
+	if got[4].Detail != merge.Detail || got[4].Reason != domain.DenyMerge || got[3].Path != "/js" {
+		t.Fatalf("the path and detail rows are %+v and %+v", got[3], got[4])
+	}
 	first := got[0]
-	if first.Request() != "fonts.example.com:443 GET" || first.Proxy != domain.BoxProxy || first.Count != 2 ||
+	if first.Request() != "fonts.example.com GET /css" || first.Rule != "fonts" || first.Entry != "GET /css" || first.Proxy != domain.BoxProxy || first.Count != 2 ||
 		!first.FirstAt.Equal(blockedAt) || !first.LastAt.Equal(later) || first.Decision != domain.Undecided {
 		t.Fatalf("the repeated row is %+v", first)
 	}

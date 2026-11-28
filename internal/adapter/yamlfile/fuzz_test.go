@@ -98,7 +98,7 @@ func TestRenderNeverHoldsAGeneratedSecret(t *testing.T) {
 		if style == "%q" {
 			value = fmt.Sprintf("%q", secret)
 		}
-		in := yml("# note", "connections:", "  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value: "+value, "  - name: D", "    hosts: [b.example]", "    add: placeholder U", "    value: set")
+		in := yml("# note", "credentials:", "  c:", "    value: "+value, "  d:", "    value: set")
 		doc, secrets, err := yamlfile.ParseSettings(in)
 		if err != nil || len(secrets) != 1 || !strings.HasPrefix(secrets[0].Value, secret) {
 			t.Fatalf("%q: %v %v", in, err, secrets)

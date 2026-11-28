@@ -24,15 +24,16 @@ func (m *Memory) RecordBlocked(_ context.Context, h domain.BlockedHit) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, b := range m.blocked {
-		if b.Task == h.Task && b.Proxy == h.Proxy && b.Host == h.Host && b.Port == h.Port && b.Method == h.Method {
+		same := b.Task == h.Task && b.Proxy == h.Proxy && b.Host == h.Host && b.Port == h.Port && b.Method == h.Method
+		if same && b.Path == h.Path && b.Detail == h.Detail {
 			m.blocked[i].Count++
-			m.blocked[i].LastAt, m.blocked[i].Reason = h.At.UTC(), h.Reason
+			m.blocked[i].LastAt, m.blocked[i].Reason, m.blocked[i].Rule, m.blocked[i].Entry = h.At.UTC(), h.Reason, h.Rule, h.Entry
 			return nil
 		}
 	}
 	m.blocked = append(m.blocked, domain.BlockedRequest{
-		ID: domain.BlockedID(len(m.blocked) + 1), Task: h.Task, Proxy: h.Proxy, Host: h.Host, Port: h.Port,
-		Method: h.Method, Reason: h.Reason, Count: 1, FirstAt: h.At.UTC(), LastAt: h.At.UTC(),
+		ID: domain.BlockedID(len(m.blocked) + 1), Task: h.Task, Proxy: h.Proxy, Host: h.Host, Port: h.Port, Method: h.Method,
+		Path: h.Path, Rule: h.Rule, Entry: h.Entry, Reason: h.Reason, Detail: h.Detail, Count: 1, FirstAt: h.At.UTC(), LastAt: h.At.UTC(),
 	})
 	return nil
 }
@@ -102,7 +103,7 @@ func (m *Memory) SaveSettings(_ context.Context, w domain.SettingsWrite) (domain
 	for _, s := range w.Secrets {
 		s.Ciphertext = slices.Clone(s.Ciphertext)
 		s.UpdatedAt = s.UpdatedAt.UTC()
-		m.secrets[s.Connection] = s
+		m.secrets[s.Key] = s
 	}
 	return v, nil
 }

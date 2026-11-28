@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ type proxyAPI struct {
 	tokens tokens
 	svc    *settings.Service
 	db     *store.Store
-	portal domain.AllowRule
+	portal domain.Rule
 }
 
 func newProxyAPI(cfg config, svc *settings.Service, db *store.Store) proxyAPI {
@@ -69,10 +70,10 @@ func newProxyAPI(cfg config, svc *settings.Service, db *store.Store) proxyAPI {
 }
 
 // portalRule lets the desk reach the portal at its public address.
-func portalRule(public string) domain.AllowRule {
+func portalRule(public string) domain.Rule {
 	u, err := url.Parse(public)
 	if err != nil || u.Hostname() == "" {
-		return domain.AllowRule{}
+		return domain.Rule{}
 	}
 	port, err := strconv.Atoi(u.Port())
 	if err != nil {
@@ -81,44 +82,45 @@ func portalRule(public string) domain.AllowRule {
 			port = 80
 		}
 	}
-	return domain.AnyMethod(domain.HostPattern(strings.ToLower(u.Hostname())), port)
+	return domain.AnyRequest("portal", domain.HostPattern(strings.ToLower(u.Hostname())), port)
 }
 
-func (a proxyAPI) kind(ctx context.Context, task domain.TaskID, token string) (domain.ProxyKind, error) {
+// kind says which proxy of the running task the token is, and the task's repository.
+func (a proxyAPI) kind(ctx context.Context, task domain.TaskID, token string) (domain.ProxyKind, domain.Repo, error) {
 	kind, ok := a.tokens.verify(task, token)
 	if !ok {
-		return "", domain.ErrBadToken
+		return "", domain.Repo{}, domain.ErrBadToken
 	}
 	t, err := a.db.Load(ctx, task)
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return "", domain.ErrBadToken
+		return "", domain.Repo{}, domain.ErrBadToken
 	case err != nil:
-		return "", fmt.Errorf("task %s: %w", task, err)
+		return "", domain.Repo{}, fmt.Errorf("task %s: %w", task, err)
 	case !t.State.Live():
-		return "", fmt.Errorf("task %s is %s: %w", task, t.State, domain.ErrBadToken)
+		return "", domain.Repo{}, fmt.Errorf("task %s is %s: %w", task, t.State, domain.ErrBadToken)
 	}
-	return kind, nil
+	return kind, t.Repo, nil
 }
 
 func (a proxyAPI) Policy(ctx context.Context, task domain.TaskID, token string) (domain.Policy, error) {
-	kind, err := a.kind(ctx, task, token)
+	kind, repo, err := a.kind(ctx, task, token)
 	if err != nil {
 		return domain.Policy{}, err
 	}
-	return a.svc.Policy(ctx, kind, a.portal) //nolint:wrapcheck // the web branches on the service's own errors
+	return a.svc.Policy(ctx, kind, a.portal, repo) //nolint:wrapcheck // the web branches on the service's own errors
 }
 
-func (a proxyAPI) Value(ctx context.Context, task domain.TaskID, token, connection string) (string, error) {
-	kind, err := a.kind(ctx, task, token)
+func (a proxyAPI) Value(ctx context.Context, task domain.TaskID, token, credential string) (domain.CredentialValue, error) {
+	kind, repo, err := a.kind(ctx, task, token)
 	if err != nil {
-		return "", err
+		return domain.CredentialValue{}, err
 	}
-	return a.svc.Value(ctx, kind, connection) //nolint:wrapcheck // the web branches on the service's own errors
+	return a.svc.Value(ctx, kind, repo, credential) //nolint:wrapcheck // the web branches on the service's own errors
 }
 
 func (a proxyAPI) Blocked(ctx context.Context, task domain.TaskID, token string, h domain.BlockedHit) error {
-	kind, err := a.kind(ctx, task, token)
+	kind, _, err := a.kind(ctx, task, token)
 	if err != nil {
 		return err
 	}
@@ -126,9 +128,28 @@ func (a proxyAPI) Blocked(ctx context.Context, task domain.TaskID, token string,
 	return a.svc.RecordBlocked(ctx, h) //nolint:wrapcheck // the web branches on the service's own errors
 }
 
-// AppendAllow lets the settings service add an allow line through the yamlfile adapter.
-func (yamlParser) AppendAllow(text, rule string) (string, int, error) {
-	out, line, err := yamlfile.AppendAllow([]byte(text), rule)
+// boxEnv reads the variables the newest settings set in a task's Box: each rule of the Box egress proxy's policy
+// gives its box_env, a placeholder as its fake token and {repo} as the task's repository. A failed read sets none.
+func boxEnv(svc *settings.Service, log *slog.Logger) func(context.Context, domain.Task) []wire.EnvVar {
+	return func(ctx context.Context, t domain.Task) []wire.EnvVar {
+		p, err := svc.Policy(ctx, domain.BoxProxy, domain.Rule{}, t.Repo)
+		if err != nil {
+			log.Warn("box env", "task", t.ID, "err", err)
+			return nil
+		}
+		var out []wire.EnvVar
+		for _, r := range p.Rules {
+			for _, v := range r.BoxEnv {
+				out = append(out, wire.EnvVar{Name: v.Name, Value: r.BoxValue(v, t.Repo)})
+			}
+		}
+		return out
+	}
+}
+
+// AllowEntry lets the settings service add a blocked request's entry through the yamlfile adapter.
+func (yamlParser) AllowEntry(text, rule, entry string, host domain.HostPort) (string, int, error) {
+	out, line, err := yamlfile.AllowEntry([]byte(text), yamlfile.AllowRequest{Rule: rule, Entry: entry, Host: host})
 	if err != nil {
 		return "", 0, asProblems(err)
 	}

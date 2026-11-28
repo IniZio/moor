@@ -19,9 +19,9 @@ type SettingsVersion struct {
 	SavedAt time.Time
 }
 
-// SealedSecret is a connection's secret value, encrypted. KeyID names the key that sealed it.
+// SealedSecret is a credential's secret, encrypted, under its key from SecretKey. KeyID names the key that sealed it.
 type SealedSecret struct {
-	Connection string
+	Key        string
 	Ciphertext []byte
 	KeyID      string
 	UpdatedAt  time.Time
@@ -30,8 +30,8 @@ type SealedSecret struct {
 // SettingsWrite is one atomic save: the document as version Base+1 and the secrets it carried.
 //
 // Base is the version the writer loaded, zero when none exists. The store refuses any other base with
-// ErrStaleSettings. Keep names the connections in Text. A stored secret of any other connection is dropped,
-// so a deleted connection leaves no usable value. Secrets of kept connections not listed in Secrets stay.
+// ErrStaleSettings. Keep names the secrets Text says are set. Any other stored secret is dropped, so a deleted
+// credential, or one set to not set, leaves no usable value. Kept secrets not listed in Secrets stay.
 type SettingsWrite struct {
 	Base    int
 	Text    string
@@ -77,7 +77,7 @@ type SettingsSave struct {
 }
 
 // SettingsSaved is what a save did. Unchanged means the document and its values matched the newest version,
-// so no version was made. Replaced names the connections whose value was typed.
+// so no version was made. Replaced names the secrets, credential/field, whose value was typed.
 type SettingsSaved struct {
 	Version   SettingsVersion
 	Unchanged bool

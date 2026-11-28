@@ -23,7 +23,19 @@ type Sink interface {
 // Hook serves POST /hooks/github. A delivery whose signature does not match the webhook secret is refused with
 // 401. Any event but a pull request is accepted and set aside. The answer is 202, and a failure to store the
 // delivery is 500 so that GitHub can send it again.
+// With no webhook secret every delivery is refused with 503, since none could be checked.
 func (a *Adapter) Hook(sink Sink) http.Handler {
+	h := a.hook(sink)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(a.secret) == 0 {
+			http.Error(w, "the GitHub App's webhook_secret is not set in settings", http.StatusServiceUnavailable)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (a *Adapter) hook(sink Sink) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxPayload)
 		payload, err := github.ValidatePayload(r, a.secret)

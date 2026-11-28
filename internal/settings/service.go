@@ -10,23 +10,17 @@ import (
 )
 
 // InitialText is what the editor shows until the first save.
-const InitialText = `# Settings. Everyone in the organisation can read and edit this document.
-# repositories: where tasks run, and what agents may clone.
-# A value shows only as set or not set. Type a new one and save to replace it.
-repositories: []
-allow: []
-connections: []
-`
 
 type Service struct {
 	store  Store
 	parser Parser
 	sealer Sealer
 	clock  Clock
+	minter Minter
 }
 
-func New(store Store, parser Parser, sealer Sealer, clock Clock) *Service {
-	return &Service{store: store, parser: parser, sealer: sealer, clock: clock}
+func New(store Store, parser Parser, sealer Sealer, clock Clock, minter Minter) *Service {
+	return &Service{store: store, parser: parser, sealer: sealer, clock: clock, minter: minter}
 }
 
 // Current is the newest version, or version 0 with InitialText before the first save.
@@ -86,14 +80,14 @@ func (s *Service) Save(ctx context.Context, in domain.SettingsSave) (domain.Sett
 	}
 	replaced := make([]string, len(parsed.Secrets))
 	for i, sec := range parsed.Secrets {
-		replaced[i] = sec.Connection
+		replaced[i] = sec.Key
 	}
 	note := in.Note
 	if note == "" && len(replaced) > 0 {
 		note = "replaced the value of " + strings.Join(replaced, ", ")
 	}
 	v, err := s.store.SaveSettings(ctx, domain.SettingsWrite{
-		Base: in.Base, Text: parsed.Text, Note: note, By: in.By, At: s.clock.Now(), Keep: parsed.Connections, Secrets: sealed,
+		Base: in.Base, Text: parsed.Text, Note: note, By: in.By, At: s.clock.Now(), Keep: parsed.Settings.SecretKeys(), Secrets: sealed,
 	})
 	if err != nil {
 		return domain.SettingsSaved{}, s.staleOrErr(ctx, err)
@@ -107,9 +101,9 @@ func (s *Service) seal(secrets []domain.NewSecret) ([]domain.SealedSecret, error
 	for _, sec := range secrets {
 		ciphertext, keyID, err := s.sealer.Seal([]byte(sec.Value))
 		if err != nil {
-			return nil, fmt.Errorf("seal the value of %q: %w", sec.Connection, err)
+			return nil, fmt.Errorf("seal the secret %q: %w", sec.Key, err)
 		}
-		out = append(out, domain.SealedSecret{Connection: sec.Connection, Ciphertext: ciphertext, KeyID: keyID, UpdatedAt: now})
+		out = append(out, domain.SealedSecret{Key: sec.Key, Ciphertext: ciphertext, KeyID: keyID, UpdatedAt: now})
 	}
 	return out, nil
 }

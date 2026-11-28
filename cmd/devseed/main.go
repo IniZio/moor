@@ -28,14 +28,19 @@ func main() {
 	line := flag.String("line", "Five of five flows passed.", "the one line of the result published with -publish")
 	var app github.Config
 	flag.Int64Var(&app.AppID, "github-app-id", envInt("PORTAL_GITHUB_APP_ID"), "GitHub App id for -publish (PORTAL_GITHUB_APP_ID)")
-	flag.StringVar(&app.KeyFile, "github-private-key-file", os.Getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "the App's private key file for -publish (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
+	keyFile := flag.String("github-private-key-file", os.Getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "the App's private key file for -publish (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
 	flag.StringVar(&app.APIBase, "github-api-url", os.Getenv("PORTAL_GITHUB_API_URL"), "GitHub's API address for -publish (PORTAL_GITHUB_API_URL)")
 	flag.Parse()
 	app.WebhookSecret = []byte(os.Getenv("PORTAL_GITHUB_WEBHOOK_SECRET"))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	var err error
+	if *keyFile != "" {
+		app.Key, err = os.ReadFile(*keyFile)
+	}
 	switch {
+	case err != nil:
+		err = fmt.Errorf("the App's private key: %w", err)
 	case *publish != "":
 		err = publishTask(ctx, *dsn, app, *publish, *line, *resultURL)
 	case *playName != "":

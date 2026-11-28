@@ -126,7 +126,7 @@ func staleSettings(t *testing.T, s SettingsStore) {
 }
 
 func sealed(connection, cipher string, n int64) domain.SealedSecret {
-	return domain.SealedSecret{Connection: connection, Ciphertext: []byte(cipher), KeyID: "k1", UpdatedAt: at(n)}
+	return domain.SealedSecret{Key: connection, Ciphertext: []byte(cipher), KeyID: "k1", UpdatedAt: at(n)}
 }
 
 func staleSettingsKeepsSecrets(t *testing.T, s SettingsStore) {

@@ -12,7 +12,7 @@ type Store interface {
 	LatestSettings(ctx context.Context) (domain.SettingsVersion, error)
 	SettingsVersions(ctx context.Context) ([]domain.SettingsVersion, error)
 	SaveSettings(ctx context.Context, w domain.SettingsWrite) (domain.SettingsVersion, error)
-	Secret(ctx context.Context, connection string) (domain.SealedSecret, error)
+	Secret(ctx context.Context, key string) (domain.SealedSecret, error)
 	// RecordBlocked adds a row for a new proxy, host, port and method of the task, or counts one more on it.
 	RecordBlocked(ctx context.Context, h domain.BlockedHit) error
 	BlockedRequests(ctx context.Context, task domain.TaskID) ([]domain.BlockedRequest, error)
@@ -25,16 +25,21 @@ type Store interface {
 type Parsed struct {
 	Text         string
 	Repositories []domain.Repo
-	Connections  []string
 	Secrets      []domain.NewSecret
 	Settings     domain.Settings
 }
 
 // Parser checks a document as typed. It returns an *domain.InvalidSettingsError for a document with problems.
-// AppendAllow adds an allow line to a stored document and says which line holds it.
+// AllowEntry adds a blocked request's entry to a stored document, under its rule or in a new rule for host, and
+// says which line holds it.
 type Parser interface {
 	Parse(text string) (Parsed, error)
-	AppendAllow(text, rule string) (string, int, error)
+	AllowEntry(text, rule, entry string, host domain.HostPort) (string, int, error)
+}
+
+// Minter mints the token a GitHub App credential adds for a task: an installation token limited to repo.
+type Minter interface {
+	Mint(ctx context.Context, app domain.AppKeys, repo domain.Repo) (domain.CredentialValue, error)
 }
 
 // Sealer encrypts a secret value for storage and opens it again for the proxy that adds it.

@@ -47,7 +47,7 @@ func blockedOf(list []domain.BlockedRequest) blockedView {
 		case b.Decision == domain.Dismissed:
 			row.State = "Dismissed"
 		case !b.Allowable():
-			row.State = "Needs a connection"
+			row.State = notAllowable(b)
 			open++
 		default:
 			row.CanAllow = true
@@ -64,6 +64,20 @@ func blockedOf(list []domain.BlockedRequest) blockedView {
 		v.Title = strconv.Itoa(open) + " blocked requests"
 	}
 	return v
+}
+
+// notAllowable says why a row has no Allow: a merge never passes, a GraphQL mutation goes on the rule's list,
+// and anything else needs a rule a person writes in settings.
+func notAllowable(b domain.BlockedRequest) string {
+	if text, ok := notAllowableText[b.Reason]; ok {
+		return text
+	}
+	return "Needs a rule in settings"
+}
+
+var notAllowableText = map[domain.DenyReason]string{
+	domain.DenyMerge:   "Merging is never allowed",
+	domain.DenyGraphQL: "Edit graphql_mutations in settings",
 }
 
 // blockedList reads the task's blocked requests for a page. A failed read draws the page without them.
@@ -83,6 +97,9 @@ type jsonBlocked struct {
 	Proxy    string    `json:"proxy"`
 	Request  string    `json:"request"`
 	Reason   string    `json:"reason"`
+	Detail   string    `json:"detail,omitempty"`
+	Rule     string    `json:"rule,omitempty"`
+	Entry    string    `json:"entry,omitempty"`
 	Count    int       `json:"count"`
 	LastAt   time.Time `json:"last_at"`
 	Decision string    `json:"decision"`
@@ -91,7 +108,7 @@ type jsonBlocked struct {
 func jsonBlockedOf(list []domain.BlockedRequest) []jsonBlocked {
 	out := make([]jsonBlocked, len(list))
 	for i, b := range list {
-		out[i] = jsonBlocked{ID: int64(b.ID), Proxy: string(b.Proxy), Request: b.Request(), Reason: string(b.Reason), Count: b.Count, LastAt: b.LastAt, Decision: string(b.Decision)}
+		out[i] = jsonBlocked{ID: int64(b.ID), Proxy: string(b.Proxy), Request: b.Request(), Reason: string(b.Reason), Detail: b.Detail, Rule: b.Rule, Entry: b.Entry, Count: b.Count, LastAt: b.LastAt, Decision: string(b.Decision)}
 	}
 	return out
 }
@@ -150,7 +167,7 @@ func blockedError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrNotFound):
 		http.NotFound(w, r)
 	case errors.Is(err, domain.ErrRefused):
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "A desk request needs a connection, not an allow line."})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "This request cannot be allowed from here: it needs a rule written in settings, or it merges."})
 	case errors.Is(err, domain.ErrStaleSettings):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "Settings changed while saving. Choose Allow again."})
 	default:

@@ -16,25 +16,20 @@ const Source = "github"
 
 const apiTimeout = 30 * time.Second
 
-// Config is the GitHub App the portal acts as. Nothing here has a default: the API base URL is an address of
-// the operator's choosing, such as https://api.github.com/, and the others are the App's own secrets.
+// Config is the GitHub App the portal acts as, as the settings' github_app credential holds it. Key is the PEM
+// of the App's private key. Without WebhookSecret the hook refuses every delivery.
 type Config struct {
 	AppID         int64
-	KeyFile       string
+	Key           []byte
 	WebhookSecret []byte
 	APIBase       string
-}
-
-// Enabled is true when any part is set, which makes every part required.
-func (c Config) Enabled() bool {
-	return c.AppID != 0 || c.KeyFile != "" || len(c.WebhookSecret) > 0 || c.APIBase != ""
 }
 
 // Check says which part is missing.
 func (c Config) Check() error {
 	var missing []string
 	for name, ok := range map[string]bool{
-		"app id": c.AppID != 0, "private key file": c.KeyFile != "", "webhook secret": len(c.WebhookSecret) > 0, "API base URL": c.APIBase != "",
+		"app id": c.AppID != 0, "private key": len(c.Key) > 0, "API base URL": c.APIBase != "",
 	} {
 		if !ok {
 			missing = append(missing, name)
@@ -61,7 +56,7 @@ func New(cfg Config) (*Adapter, error) {
 	if err := cfg.Check(); err != nil {
 		return nil, err
 	}
-	atr, err := ghinstallation.NewAppsTransportKeyFromFile(http.DefaultTransport, cfg.AppID, cfg.KeyFile)
+	atr, err := ghinstallation.NewAppsTransport(http.DefaultTransport, cfg.AppID, cfg.Key)
 	if err != nil {
 		return nil, fmt.Errorf("github app key: %w", err)
 	}

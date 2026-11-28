@@ -17,8 +17,10 @@ import (
 
 const settingsDoc = `repositories:
   - example-org/shop-web
-allow:
-  - registry.npmjs.org:443 GET
+rules:
+  npm:
+    hosts: [registry.npmjs.org]
+    allow: "*"
 `
 
 var joinLine = regexp.MustCompile(`^runner join -portal (\S+) -id (\S+) -token (\S+) -key runner\.key$`)

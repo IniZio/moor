@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ErrBadToken is a proxy call whose token is not the task's, or whose task no longer runs.
@@ -25,93 +26,83 @@ func (k ProxyKind) Valid() bool { return k == BoxProxy || k == DeskProxy }
 type DenyReason string
 
 const (
-	DenyHost   DenyReason = "host_not_allowed"
-	DenyMethod DenyReason = "method_not_allowed"
+	DenyHost DenyReason = "host_not_allowed"
+	// DenyRequest is a host a rule covers, with a method and path none of its entries allows.
+	DenyRequest DenyReason = "request_not_allowed"
+	// DenyAsk is a request an ask entry holds until a person allows it.
+	DenyAsk DenyReason = "needs_approval"
+	// DenyGraphQL is a GraphQL request the judge refused: not one operation, or a mutation off the rule's list.
+	DenyGraphQL DenyReason = "graphql_not_allowed"
+	// DenyMerge is a request that would merge a pull request, which no rule can allow.
+	DenyMerge DenyReason = "merge_not_allowed"
 )
 
-// allMethods is every method an allow rule may name, in the order a rule prints them.
-var allMethods = []Method{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+var denyReasons = []DenyReason{DenyHost, DenyRequest, DenyAsk, DenyGraphQL, DenyMerge}
 
-// modelHosts are the API hosts of model vendors. A connection that names one of them is a model
-// connection: only the desk proxy adds it, so its value never passes through the Box egress proxy.
-var modelHosts = []HostPattern{"api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"}
-
-// Model is true when the connection adds its secret on a model vendor's API host.
-func (c Connection) Model() bool {
-	return slices.ContainsFunc(c.Hosts, func(h HostPattern) bool { return slices.Contains(modelHosts, h) })
-}
-
-// Matches is true when the request host is the pattern's host, or under its suffix.
-func (p HostPattern) Matches(host string) bool {
-	host = strings.ToLower(host)
-	return host != "" && !strings.HasPrefix(host, "*") && p.Covers(HostPattern(host))
-}
-
-// Policy is what one proxy of a task enforces, read from one settings version: the allow rules and the
-// connections it adds, without their values.
+// Policy is what one proxy of a task enforces, read from one settings version: the rules, which credentials
+// of theirs are set, and the task's repository, which {repo} stands for.
 type Policy struct {
-	Version     int
-	Allow       []AllowRule
-	Connections []Connection
+	Version int
+	Repo    Repo
+	Rules   []Rule
+	Set     map[string]bool
 }
 
-// Check passes a request when an allow rule names its host, port and method. It fails closed.
-func (p Policy) Check(host string, port int, m Method) (DenyReason, bool) {
-	reason := DenyHost
-	for _, r := range p.Allow {
-		if r.Port != port || !r.Host.Matches(host) {
+// Gives is true when a rule of the policy adds the credential and the credential is set.
+func (p Policy) Gives(credential string) bool {
+	return p.Set[credential] && slices.ContainsFunc(p.Rules, func(r Rule) bool { return r.Credential == credential })
+}
+
+// PolicyFor is what the proxy of kind enforces under these settings, saved as version, for a task on repo. The
+// Box egress proxy takes every rule but the model ones. The desk proxy takes the portal, which portal names,
+// and the model rules.
+func (s Settings) PolicyFor(kind ProxyKind, version int, portal Rule, repo Repo) Policy {
+	p := Policy{Version: version, Repo: repo, Set: map[string]bool{}}
+	if kind == DeskProxy {
+		p.Rules = append(p.Rules, portal)
+	}
+	for _, r := range s.Rules {
+		if r.Model() != (kind == DeskProxy) {
 			continue
 		}
-		if slices.Contains(r.Methods, m) {
-			return "", true
-		}
-		reason = DenyMethod
-	}
-	return reason, false
-}
-
-// Tunnel passes a tunnel to host and port when an allow rule names both, whatever its methods: the
-// methods inside a tunnel the proxy does not intercept cannot be seen.
-func (p Policy) Tunnel(host string, port int) bool {
-	return slices.ContainsFunc(p.Allow, func(r AllowRule) bool { return r.Port == port && r.Host.Matches(host) })
-}
-
-// ConnectionFor is the connection that adds its secret on host, the first one that names it.
-func (p Policy) ConnectionFor(host string) (Connection, bool) {
-	for _, c := range p.Connections {
-		if slices.ContainsFunc(c.Hosts, func(h HostPattern) bool { return h.Matches(host) }) {
-			return c, true
-		}
-	}
-	return Connection{}, false
-}
-
-// PolicyFor is what the proxy of kind enforces under these settings, saved as version. The Box egress
-// proxy takes the allow rules and every connection but the model ones. The desk proxy takes the fixed
-// list: the portal, which portal names, and the API hosts of the model connections on port 443.
-func (s Settings) PolicyFor(kind ProxyKind, version int, portal AllowRule) Policy {
-	p := Policy{Version: version}
-	for _, c := range s.Connections {
-		if c.Model() == (kind == DeskProxy) {
-			p.Connections = append(p.Connections, c)
-		}
-	}
-	if kind == BoxProxy {
-		p.Allow = s.Allow
-		return p
-	}
-	p.Allow = []AllowRule{portal}
-	for _, c := range p.Connections {
-		for _, h := range c.Hosts {
-			p.Allow = append(p.Allow, AllowRule{Host: h, Port: 443, Methods: allMethods})
+		p.Rules = append(p.Rules, r)
+		if c, ok := s.Credential(r.Credential); ok && c.Set() {
+			p.Set[c.Name] = true
 		}
 	}
 	return p
 }
 
-// AnyMethod is a rule on host and port that takes every method.
-func AnyMethod(host HostPattern, port int) AllowRule {
-	return AllowRule{Host: host, Port: port, Methods: allMethods}
+// AnyRequest is a rule that lets every request to host and port through.
+func AnyRequest(name string, host HostPattern, port int) Rule {
+	return Rule{Name: name, Hosts: []HostPort{{Host: host, Port: port}}, Allow: Access{Any: true}}
+}
+
+// Suggest is the entry that would allow method on path for a task on repo: the path with {repo} where the
+// repository appears. It is empty when no entry can say it, such as a path holding glob characters.
+func Suggest(method Method, path string, repo Repo) string {
+	segs := strings.Split(path, "/")
+	want := strings.ToLower(string(repo.Path))
+	for i := 0; want != "" && i+1 < len(segs); i++ {
+		name, git := strings.CutSuffix(segs[i+1], ".git")
+		if strings.ToLower(segs[i]+"/"+name) != want {
+			continue
+		}
+		mark := RepoMark
+		if git {
+			mark += ".git"
+		}
+		segs = append(append(segs[:i:i], mark), segs[i+2:]...)
+		break
+	}
+	text := string(method) + " " + strings.Join(segs, "/")
+	if len(text) > 300 || strings.ContainsAny(path, "*{}") {
+		return ""
+	}
+	if _, err := ParseEntry(text); err != nil {
+		return ""
+	}
+	return text
 }
 
 // Decision is what a person did with a blocked request. Undecided is none yet.
@@ -125,14 +116,23 @@ const (
 
 type BlockedID int64
 
-// BlockedHit is one request a proxy refused, as the proxy reports it.
+// TunnelMethod is the method of a refused tunnel, whose requests the proxy never saw.
+const TunnelMethod Method = "CONNECT"
+
+// BlockedHit is one request a proxy refused, as the proxy reports it. Path has no query. Rule is the rule that
+// covers the host, if any, and Entry what Allow would add to it: an entry, * for a refused tunnel, or nothing
+// when no entry can allow it. Detail says more, naming GraphQL fields at most, never a value.
 type BlockedHit struct {
 	Task   TaskID
 	Proxy  ProxyKind
 	Host   string
 	Port   int
 	Method Method
+	Path   string
+	Rule   string
+	Entry  string
 	Reason DenyReason
+	Detail string
 	At     time.Time
 }
 
@@ -144,16 +144,28 @@ func (h BlockedHit) Validate() error {
 		return fmt.Errorf("%w: blocked host %q", ErrBadSettings, h.Host)
 	case !h.Proxy.Valid() || h.Port < 1 || h.Port > 65535:
 		return fmt.Errorf("%w: blocked request on proxy %q port %d", ErrBadSettings, h.Proxy, h.Port)
-	case h.Reason != DenyHost && h.Reason != DenyMethod:
+	case !slices.Contains(denyReasons, h.Reason):
 		return fmt.Errorf("%w: deny reason %q", ErrBadSettings, h.Reason)
-	case len(h.Method) == 0 || len(h.Method) > 16 || strings.ToUpper(string(h.Method)) != string(h.Method):
+	case !knownMethods[h.Method] && h.Method != TunnelMethod:
 		return fmt.Errorf("%w: method %q", ErrBadSettings, h.Method)
+	case len(h.Path) > 512 || (h.Path != "" && !strings.HasPrefix(h.Path, "/")) || strings.ContainsFunc(h.Path+h.Detail, unicode.IsControl):
+		return fmt.Errorf("%w: blocked path or detail", ErrBadSettings)
+	case len(h.Detail) > 300 || (h.Rule != "" && !nameText.MatchString(h.Rule)) || !entryOK(h.Entry):
+		return fmt.Errorf("%w: blocked rule, entry or detail", ErrBadSettings)
 	}
 	return nil
 }
 
-// BlockedRequest is a refused request recorded on its task, one row per proxy, host, port and method,
-// with how many times it was refused.
+func entryOK(e string) bool {
+	if e == "" || e == AnyText {
+		return true
+	}
+	_, err := ParseEntry(e)
+	return err == nil
+}
+
+// BlockedRequest is a refused request recorded on its task, one row per proxy, host, port, method, path and
+// detail, with how many times it was refused.
 type BlockedRequest struct {
 	ID        BlockedID
 	Task      TaskID
@@ -161,7 +173,11 @@ type BlockedRequest struct {
 	Host      string
 	Port      int
 	Method    Method
+	Path      string
+	Rule      string
+	Entry     string
 	Reason    DenyReason
+	Detail    string
 	Count     int
 	FirstAt   time.Time
 	LastAt    time.Time
@@ -170,22 +186,23 @@ type BlockedRequest struct {
 	DecidedAt time.Time
 }
 
-// Request is the row as a person reads it, such as fonts.example.com:443 GET.
-func (b BlockedRequest) Request() string { return b.Rule().String() }
-
-// Rule is the allow line that would let the request through.
-func (b BlockedRequest) Rule() AllowRule {
-	return AllowRule{Host: HostPattern(b.Host), Port: b.Port, Methods: []Method{b.Method}}
+// Request is the row as a person reads it, such as fonts.example.com:443 GET /css.
+func (b BlockedRequest) Request() string {
+	text := HostPort{Host: HostPattern(b.Host), Port: b.Port}.String() + " " + string(b.Method)
+	if b.Path != "" {
+		text += " " + b.Path
+	}
+	return text
 }
 
-// Allowable is true when Allow can turn the row into an allow line: a Box egress request with a method
-// an allow rule may name. A blocked desk request is fixed by a connection instead.
+// Allowable is true when Allow can turn the row into an entry: a Box egress request refused by the rules, with
+// an entry to add. A blocked desk request is fixed by a rule a person writes, and a merge never.
 func (b BlockedRequest) Allowable() bool {
-	return b.Proxy == BoxProxy && knownMethods[b.Method]
+	return b.Proxy == BoxProxy && b.Entry != "" && (b.Reason == DenyHost || b.Reason == DenyRequest || b.Reason == DenyAsk)
 }
 
-// AllowedLine is what Allow did: the line of the settings document that now holds the rule, and the
-// version it was saved in.
+// AllowedLine is what Allow did: the line of the settings document that now holds the entry, and the version it
+// was saved in.
 type AllowedLine struct {
 	Line    int
 	Version int

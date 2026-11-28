@@ -14,15 +14,16 @@ import (
 	"github.com/IniZio/moor/internal/settings/settingstest"
 )
 
-// stubParser reads a document as lines. A line "bad" is a problem on that line, and a line "secret NAME VALUE"
-// is a typed value that the parsed text shows as "NAME: set".
+// stubParser reads a document as lines. A line "bad" is a problem on that line, a line "secret NAME VALUE" is a
+// typed value of the credential NAME that the parsed text shows as "NAME: set", "cred NAME STATE" is a credential,
+// "app NAME STATE" a GitHub App credential, and "rule NAME HOST CRED" a rule that adds CRED and allows any request
+// to HOST, with - for no credential. An underscore in STATE stands for a space.
 type stubParser struct{}
 
 func (stubParser) Parse(text string) (settings.Parsed, error) {
 	var p settings.Parsed
 	var bad []domain.SettingsProblem
 	var kept []string
-	var access error
 	for i, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
 		f := strings.Fields(line)
 		switch {
@@ -35,12 +36,15 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 			}
 			p.Repositories = append(p.Repositories, repo)
 			kept = append(kept, line)
+		case len(f) == 3 && f[0] == "secretkey":
+			p.Secrets = append(p.Secrets, domain.NewSecret{Key: f[1], Value: f[2]})
+			kept = append(kept, f[1]+": set")
 		case len(f) == 3 && f[0] == "secret":
-			p.Secrets = append(p.Secrets, domain.NewSecret{Connection: f[1], Value: f[2]})
-			p.Connections = append(p.Connections, f[1])
+			p.Secrets = append(p.Secrets, domain.NewSecret{Key: domain.SecretKey(f[1], domain.FieldValue), Value: f[2]})
+			p.Settings.Credentials = append(p.Settings.Credentials, domain.Credential{Name: f[1], Value: domain.SecretSet})
 			kept = append(kept, f[1]+": set")
 		default:
-			access = errors.Join(access, stubAccess(&p, f))
+			stubAccess(&p, f)
 			kept = append(kept, line)
 		}
 	}
@@ -48,41 +52,49 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 		return settings.Parsed{}, &domain.InvalidSettingsError{Problems: bad}
 	}
 	p.Text = strings.Join(kept, "\n") + "\n"
-	return p, access
+	return p, nil
 }
 
-// stubAccess reads "allow RULE" as an allow rule and "conn NAME HOST STATE" as a placeholder connection,
-// with an underscore for a space in STATE.
-func stubAccess(p *settings.Parsed, f []string) error {
-	if len(f) < 2 || (f[0] != "allow" && f[0] != "conn") {
-		return nil
+func stubAccess(p *settings.Parsed, f []string) {
+	state := func(s string) domain.SecretState { return domain.SecretState(strings.ReplaceAll(s, "_", " ")) }
+	switch {
+	case len(f) == 3 && f[0] == "cred":
+		p.Settings.Credentials = append(p.Settings.Credentials, domain.Credential{Name: f[1], Value: state(f[2])})
+	case len(f) == 3 && f[0] == "app":
+		app := &domain.GitHubApp{AppID: 7, PrivateKey: state(f[2]), WebhookSecret: domain.SecretNotSet}
+		p.Settings.Credentials = append(p.Settings.Credentials, domain.Credential{Name: f[1], App: app})
+	case len(f) == 4 && f[0] == "rule":
+		r := domain.Rule{Name: f[1], Hosts: []domain.HostPort{{Host: domain.HostPattern(f[2]), Port: 443}}, Allow: domain.Access{Any: true}}
+		if f[3] != "-" {
+			r.Credential, r.Inject = f[3], domain.HeaderInject{Name: "X-Key", Form: domain.SecretMark}
+		}
+		p.Settings.Rules = append(p.Settings.Rules, r)
 	}
-	if f[0] == "conn" && len(f) == 4 {
-		p.Settings.Connections = append(p.Settings.Connections, domain.Connection{
-			Name: f[1], Hosts: []domain.HostPattern{domain.HostPattern(f[2])}, Add: domain.PlaceholderAdd{Token: f[1]},
-			Secret: domain.SecretState(strings.ReplaceAll(f[3], "_", " ")),
-		})
-		p.Connections = append(p.Connections, f[1])
-		return nil
-	}
-	r, err := domain.ParseAllowRule(strings.Join(f[1:], " "))
-	if err != nil {
-		return fmt.Errorf("stub %v: %w", f, err)
-	}
-	p.Settings.Allow = append(p.Settings.Allow, r)
-	return nil
 }
 
-// AppendAllow adds an "allow RULE" line at the end, or answers the line that already says it.
-func (stubParser) AppendAllow(text, rule string) (string, int, error) {
+// AllowEntry adds an "entry RULE-OR-HOST ENTRY" line at the end, or answers the line that already says it.
+func (stubParser) AllowEntry(text, rule, entry string, host domain.HostPort) (string, int, error) {
+	where := rule
+	if where == "" {
+		where = host.String()
+	}
+	want := "entry " + where + " " + entry
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	for i, l := range lines {
-		if l == "allow "+rule {
+		if l == want {
 			return text, i + 1, nil
 		}
 	}
-	lines = append(lines, "allow "+rule)
+	lines = append(lines, want)
 	return strings.Join(lines, "\n") + "\n", len(lines), nil
+}
+
+// minter mints a token named after the repository, and keeps what it was asked.
+type minter struct{ asked []string }
+
+func (m *minter) Mint(_ context.Context, app domain.AppKeys, repo domain.Repo) (domain.CredentialValue, error) {
+	m.asked = append(m.asked, fmt.Sprintf("app %d key %s for %s", app.AppID, app.PrivateKey, repo.Path))
+	return domain.CredentialValue{Value: "minted-" + string(repo.Path), Expires: time.Unix(1_700_003_600, 0)}, nil
 }
 
 type reversingSealer struct{ fail bool }
@@ -107,15 +119,17 @@ type clock struct{ now time.Time }
 func (c *clock) Now() time.Time { return c.now }
 
 type fixture struct {
-	svc   *settings.Service
-	store *settingstest.Memory
-	clock *clock
+	svc    *settings.Service
+	store  *settingstest.Memory
+	clock  *clock
+	minter *minter
 }
 
 func newFixture(sealer reversingSealer) fixture {
 	store := settingstest.NewMemory()
 	c := &clock{now: time.Unix(1_700_000_000, 0).UTC()}
-	return fixture{svc: settings.New(store, stubParser{}, sealer, c), store: store, clock: c}
+	m := &minter{}
+	return fixture{svc: settings.New(store, stubParser{}, sealer, c, m), store: store, clock: c, minter: m}
 }
 
 func (f fixture) save(t *testing.T, base int, text string) domain.SettingsSaved {
@@ -186,7 +200,7 @@ func TestAnInvalidDocumentIsRefusedWithItsLinesAndStoresNothing(t *testing.T) {
 	if _, err := f.store.LatestSettings(context.Background()); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("a refused document made a version: %v", err)
 	}
-	if _, err := f.store.Secret(context.Background(), "api"); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := f.store.Secret(context.Background(), "api/value"); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("a refused document stored a secret: %v", err)
 	}
 	if got := f.svc.Check("bad\n"); len(got) != 1 || got[0].Line != 1 {
@@ -200,7 +214,7 @@ func TestAnInvalidDocumentIsRefusedWithItsLinesAndStoresNothing(t *testing.T) {
 func TestATypedValueIsSealedApartAndNeverInTheStoredDocumentOrNote(t *testing.T) {
 	f := newFixture(reversingSealer{})
 	got := f.save(t, 0, "secret api hunter2\nsecret docs s3cret\n")
-	if !reflect.DeepEqual(got.Replaced, []string{"api", "docs"}) || got.Version.Note != "replaced the value of api, docs" {
+	if !reflect.DeepEqual(got.Replaced, []string{"api/value", "docs/value"}) || got.Version.Note != "replaced the value of api/value, docs/value" {
 		t.Errorf("saved %+v", got)
 	}
 	for _, text := range []string{got.Version.Text, got.Version.Note} {
@@ -208,7 +222,7 @@ func TestATypedValueIsSealedApartAndNeverInTheStoredDocumentOrNote(t *testing.T)
 			t.Errorf("a value leaked into %q", text)
 		}
 	}
-	sec, err := f.store.Secret(context.Background(), "api")
+	sec, err := f.store.Secret(context.Background(), "api/value")
 	if err != nil || string(sec.Ciphertext) != "HUNTER2" || sec.KeyID != "k1" || !sec.UpdatedAt.Equal(f.clock.now) {
 		t.Errorf("stored secret = %+v, %v", sec, err)
 	}
@@ -249,7 +263,7 @@ func TestASaveDropsTheSecretOfARemovedConnection(t *testing.T) {
 	f := newFixture(reversingSealer{})
 	f.save(t, 0, "secret api x\n")
 	f.save(t, 1, "plain\n")
-	if _, err := f.store.Secret(context.Background(), "api"); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := f.store.Secret(context.Background(), "api/value"); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("a removed connection kept its secret: %v", err)
 	}
 }

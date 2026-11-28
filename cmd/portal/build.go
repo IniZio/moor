@@ -52,25 +52,22 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		db.Close()
 		return nil, fmt.Errorf("secret key: %w", err)
 	}
-	hub, err := newGitHub(cfg)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	svc := settings.New(db, yamlParser{}, box, systemClock{})
-	taskCfg := withKeep(taskConfig(hub), cfg)
+	hub := &githubApp{}
+	svc := settings.New(db, yamlParser{}, box, systemClock{}, hub)
+	hub.svc = svc
+	taskCfg := withKeep(taskConfig(), cfg)
 	tasks := task.New(db, systemClock{}, taskCfg)
 	rn := newRunners(ctx, cfg, db, tasks, svc)
 	specs := specSource(cfg.homeDir)
 	events := inbound.New(inbound.Deps{
-		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: hub.links(),
+		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: links{hub},
 		Clock: systemClock{}, Config: taskCfg, Stop: rn.control.Stop,
 	})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins, InternalSecret: cfg.internalSecret},
 		web.Deps{
 			Settings: svc, Specs: specs, Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
-			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping, Run: events, Events: hub.readers(),
+			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping, Run: events, Events: readers(),
 			Proxies: newProxyAPI(cfg, svc, db), Blocked: svc,
 			Results: newResults(cfg, db, hub.answers(db, tasks)),
 		},
@@ -110,9 +107,6 @@ func (yamlParser) Parse(text string) (settings.Parsed, error) {
 	out.Settings = doc.Settings()
 	if out.Text == "{}\n" {
 		out.Text = text
-	}
-	for _, c := range doc.Settings().Connections {
-		out.Connections = append(out.Connections, c.Name)
 	}
 	return out, nil
 }

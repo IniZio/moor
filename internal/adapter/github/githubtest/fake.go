@@ -44,6 +44,13 @@ type Comment struct {
 // Call is one request the fake served.
 type Call struct{ Method, Path string }
 
+// TokenRequest is what one request for an installation token asked for.
+type TokenRequest struct {
+	Installation string
+	Repositories []string          `json:"repositories"`
+	Permissions  map[string]string `json:"permissions"`
+}
+
 // Fake is the fake GitHub. Make it with New, and give the adapter URL().
 type Fake struct {
 	srv *httptest.Server
@@ -52,6 +59,7 @@ type Fake struct {
 	prs         map[string]PullRequest
 	comments    []Comment
 	calls       []Call
+	tokens      []TokenRequest
 	permissions map[string]string
 	failPosts   int
 	nextID      int64
@@ -134,7 +142,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/_fake/calls":
 		reply(w, http.StatusOK, f.calls)
 	case r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "app" && parts[3] == "access_tokens":
-		reply(w, http.StatusCreated, map[string]any{"token": "fake-token-" + parts[2], "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+		f.token(w, r, parts[2])
 	case r.Method == http.MethodGet && len(parts) == 4 && parts[0] == "repos" && parts[3] == "installation":
 		reply(w, http.StatusOK, map[string]any{"id": 4242})
 	case len(parts) >= 3 && parts[0] == "repos":
@@ -142,6 +150,25 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// TokenRequests lists the installation token requests, oldest first.
+func (f *Fake) TokenRequests() []TokenRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]TokenRequest(nil), f.tokens...)
+}
+
+func (f *Fake) token(w http.ResponseWriter, r *http.Request, installation string) {
+	req := TokenRequest{Installation: installation}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			reply(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+			return
+		}
+	}
+	f.tokens = append(f.tokens, req)
+	reply(w, http.StatusCreated, map[string]any{"token": "fake-token-" + installation, "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
 }
 
 func (f *Fake) repoRoute(w http.ResponseWriter, r *http.Request, repo string, rest []string) {
@@ -239,13 +266,21 @@ func reply(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// WriteKey makes a throwaway RSA key in dir and returns the path of its PEM file. It is for the fake only.
-func WriteKey(dir string) (string, error) {
+// NewKey makes the PEM of a throwaway RSA key. It is for the fake only.
+func NewKey() ([]byte, error) {
 	k, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return "", fmt.Errorf("generate a key: %w", err)
+		return nil, fmt.Errorf("generate a key: %w", err)
 	}
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
+	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}), nil
+}
+
+// WriteKey makes a throwaway RSA key in dir and returns the path of its PEM file. It is for the fake only.
+func WriteKey(dir string) (string, error) {
+	pemBytes, err := NewKey()
+	if err != nil {
+		return "", err
+	}
 	path := filepath.Join(dir, "app-key.pem")
 	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
 		return "", fmt.Errorf("write the key: %w", err)

@@ -62,7 +62,7 @@ func publishTask(ctx context.Context, dsn string, app github.Config, idText, lin
 	cfg := task.Config{Answerable: map[domain.EventSource]bool{github.Source: true}}
 	svc := task.New(db, clock{}, cfg)
 	posters := map[domain.EventSource]answer.Poster{}
-	if app.Enabled() {
+	if app.AppID != 0 {
 		a, err := github.New(app)
 		if err != nil {
 			return fmt.Errorf("github app: %w", err)

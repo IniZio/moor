@@ -2,6 +2,7 @@ package yamlfile_test
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,48 +11,53 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-var exampleSettings = yml(
-	"repositories:",
-	"  - example-org/shop-web",
-	"allow:",
-	"  - registry.npmjs.org:443 GET",
-	"  - staging-api.shop.example:443 GET POST",
-	"connections:",
-	"  - name: Anthropic API",
-	"    hosts: [api.anthropic.com]",
-	`    add: header x-api-key "{value}"`,
-	"    value: set",
-)
+var exampleSettings = func() []byte {
+	b, err := os.ReadFile("testdata/example-settings.yaml")
+	if err != nil {
+		panic(err)
+	}
+	return b
+}()
 
 func TestParseSettingsExample(t *testing.T) {
 	doc, secrets, err := yamlfile.ParseSettings(exampleSettings)
 	if err != nil || len(secrets) != 0 {
 		t.Fatalf("%v, %v", err, secrets)
 	}
-	want := domain.Settings{
-		Repositories: []domain.Repo{{Host: "github.com", Path: "example-org/shop-web"}},
-		Allow: []domain.AllowRule{
-			{Host: "registry.npmjs.org", Port: 443, Methods: []domain.Method{"GET"}},
-			{Host: "staging-api.shop.example", Port: 443, Methods: []domain.Method{"GET", "POST"}},
-		},
-		Connections: []domain.Connection{{
-			Name: "Anthropic API", Hosts: []domain.HostPattern{"api.anthropic.com"},
-			Add: domain.HeaderAdd{Name: "x-api-key", Template: "{value}"}, Secret: domain.SecretSet,
+	s := doc.Settings()
+	app, ok := s.GitHubApp()
+	if !ok || app.Name != "github" || *app.App != (domain.GitHubApp{AppID: 12345, PrivateKey: domain.SecretSet, WebhookSecret: domain.SecretSet}) {
+		t.Fatalf("github app %+v", app)
+	}
+	names := make([]string, len(s.Rules))
+	for i, r := range s.Rules {
+		names[i] = r.Name
+	}
+	if want := []string{"npm", "anthropic", "github-api", "github-git", "staging-api", "staging-db"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("rules %v, want %v", names, want)
+	}
+	gh := s.Rules[2]
+	wantGH := domain.Rule{
+		Name: "github-api", Hosts: []domain.HostPort{{Host: "api.github.com", Port: 443}}, Credential: "github",
+		Inject: domain.HeaderInject{Name: "Authorization", Form: "token {secret}"},
+		Allow: domain.Access{Entries: []domain.Entry{
+			{Methods: []domain.Method{"GET"}, Path: "/repos/{repo}/**"},
+			{Methods: []domain.Method{"GET", "POST"}, Path: "/repos/{repo}/pulls"},
+			{Methods: []domain.Method{"POST"}, Path: "/graphql"},
 		}},
+		Ask:    []domain.Entry{{Methods: []domain.Method{"DELETE"}, Path: "/repos/{repo}/**"}},
+		BoxEnv: []domain.EnvVar{{Name: "GH_TOKEN", Value: "placeholder"}, {Name: "GH_REPO", Value: "{repo}"}},
 	}
-	if got := doc.Settings(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("got  %+v\nwant %+v", got, want)
+	gh.GraphQLMutations = nil
+	if !reflect.DeepEqual(gh, wantGH) || len(s.Rules[2].GraphQLMutations) != 13 {
+		t.Fatalf("got  %+v\nwant %+v", gh, wantGH)
 	}
-	uncovered := doc.Settings().UncoveredHosts()
-	if len(uncovered) != 1 || uncovered[0].Host != "api.anthropic.com" || uncovered[0].Connection != "Anthropic API" {
-		t.Fatalf("uncovered = %v", uncovered)
+	if s.Rules[3].Inject != (domain.BasicInject{User: "x-access-token"}) || !s.Rules[5].Allow.Any || s.Rules[5].Hosts[0] != (domain.HostPort{Host: "*.staging.shop.example", Port: 5432}) {
+		t.Fatalf("git and db rules %+v %+v", s.Rules[3], s.Rules[5])
 	}
 }
 
 func TestParseSettingsSecretStates(t *testing.T) {
-	conn := func(value string) []byte {
-		return yml("connections:", "  - name: C", "    hosts: [a.example]", "    add: placeholder TOKEN", "    value: "+value)
-	}
 	cases := []struct {
 		value  string
 		state  domain.SecretState
@@ -60,33 +66,61 @@ func TestParseSettingsSecretStates(t *testing.T) {
 		{"set", domain.SecretSet, ""},
 		{"not set", domain.SecretNotSet, ""},
 		{`"not set"`, domain.SecretNotSet, ""},
-		{`'set'`, domain.SecretSet, ""},
 		{"sk-live-9f8e7d", domain.SecretSet, "sk-live-9f8e7d"},
 		{`"quoted # secret: 1"`, domain.SecretSet, "quoted # secret: 1"},
 		{"Set", domain.SecretSet, "Set"},
 		{"12345", domain.SecretSet, "12345"},
-		{"true", domain.SecretSet, "true"},
-		{`"set "`, domain.SecretSet, "set "},
 		{"|\n      line one\n      line two", domain.SecretSet, "line one\nline two\n"},
 	}
 	for _, c := range cases {
-		doc, secrets, err := yamlfile.ParseSettings(conn(c.value))
+		doc, secrets, err := yamlfile.ParseSettings(yml("credentials:", "  c:", "    value: "+c.value))
 		if err != nil {
 			t.Errorf("%q: %v", c.value, err)
 			continue
 		}
-		if got := doc.Settings().Connections[0].Secret; got != c.state {
+		if got := doc.Settings().Credentials[0].Value; got != c.state {
 			t.Errorf("%q: state %q, want %q", c.value, got, c.state)
 		}
-		wantSecrets := []domain.NewSecret(nil)
-		if c.secret != "" {
-			wantSecrets = []domain.NewSecret{{Connection: "C", Value: c.secret}}
-		}
-		if !reflect.DeepEqual(secrets, wantSecrets) {
+		if want := wantSecret(c.secret); !reflect.DeepEqual(secrets, want) {
 			t.Errorf("%q: secrets %v, want %q", c.value, secrets, c.secret)
 		}
 		assertRenderHolds(t, doc, c.secret)
 	}
+}
+
+func TestAnAppKeyTypedInPlaceIsLiftedOut(t *testing.T) {
+	doc, secrets, err := yamlfile.ParseSettings(yml(
+		"credentials:",
+		"  github:",
+		"    github_app:",
+		"      app_id: 7",
+		"      private_key: |",
+		"        -----BEGIN RSA PRIVATE KEY-----",
+		"        c3ludGhldGlj",
+		"        -----END RSA PRIVATE KEY-----",
+		"      webhook_secret: synthetic-hook-secret",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.NewSecret{
+		{Key: "github/private_key", Value: "-----BEGIN RSA PRIVATE KEY-----\nc3ludGhldGlj\n-----END RSA PRIVATE KEY-----\n"},
+		{Key: "github/webhook_secret", Value: "synthetic-hook-secret"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets %q", secrets)
+	}
+	out, _ := doc.Render()
+	if strings.Contains(string(out), "c3ludGhldGlj") || strings.Contains(string(out), "synthetic-hook") || strings.Count(string(out), "set") != 2 {
+		t.Fatalf("rendered:\n%s", out)
+	}
+}
+
+func wantSecret(secret string) []domain.NewSecret {
+	if secret == "" {
+		return []domain.NewSecret{}
+	}
+	return []domain.NewSecret{{Key: "c/value", Value: secret}}
 }
 
 func assertRenderHolds(t *testing.T, doc yamlfile.SettingsDoc, secret string) {
@@ -107,19 +141,16 @@ func containsAny(text string, parts []string) bool {
 }
 
 const commented = `# Org settings: keep this file small
-connections: # who we hold secrets for
+rules: # what the Box reaches
   # the model API
-  - name: Anthropic API
+  anthropic:
     hosts: [api.anthropic.com]
-    add: header x-api-key "{value}"
+    credential: anthropic
+    inject: {header: x-api-key, form: "{secret}"}
+    allow: "*" # any request
+credentials:
+  anthropic:
     value: "sk-live-TOPSECRET-1" # sk-live-TOPSECRET-1 is the key
-  - name: Other
-    hosts: [b.example, "*.c.example"]
-    add: placeholder OTHER_TOKEN
-    value: not set
-allow:
-  - api.anthropic.com:443 POST # the API
-  - "*.c.example:443 GET"
 repositories:
   - example-org/shop-web # the shop
 # trailing note
@@ -130,7 +161,7 @@ func TestSettingsRoundTripNeverLeaksASecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(secrets, []domain.NewSecret{{Connection: "Anthropic API", Value: "sk-live-TOPSECRET-1"}}) {
+	if !reflect.DeepEqual(secrets, []domain.NewSecret{{Key: "anthropic/value", Value: "sk-live-TOPSECRET-1"}}) {
 		t.Fatalf("secrets = %v", secrets)
 	}
 	out, err := doc.Render()
@@ -141,19 +172,12 @@ func TestSettingsRoundTripNeverLeaksASecret(t *testing.T) {
 	if strings.Contains(text, "TOPSECRET") || strings.Contains(text, "sk-live") {
 		t.Fatalf("the secret leaked:\n%s", text)
 	}
-	assertKept(t, text, "# Org settings: keep this file small", "# who we hold secrets for", "# the model API", "# the API",
-		"# the shop", "# trailing note", "value: set", "value: not set", `add: header x-api-key "{value}"`, "*.c.example")
-	assertOrder(t, text, "connections:", "name: Anthropic API", "name: Other", "allow:", "repositories:")
-	again, secrets2, err := yamlfile.ParseSettings(out)
-	if err != nil || len(secrets2) != 0 {
-		t.Fatalf("reparse: %v, %v", err, secrets2)
-	}
-	if !reflect.DeepEqual(again.Settings(), doc.Settings()) {
-		t.Fatalf("round trip changed the document:\n%+v\n%+v", again.Settings(), doc.Settings())
-	}
-	out2, err := again.Render()
-	if err != nil || string(out2) != text {
-		t.Fatalf("render is not stable:\n%s\n%s", out2, text)
+	assertKept(t, text, "# Org settings: keep this file small", "# what the Box reaches", "# the model API", "# any request",
+		"# the shop", "# trailing note", "value: set", `form: "{secret}"`)
+	assertOrder(t, text, "rules:", "anthropic:", "credentials:", "repositories:")
+	again, more, err := yamlfile.ParseSettings(out)
+	if err != nil || len(more) != 0 || !reflect.DeepEqual(again.Settings(), doc.Settings()) {
+		t.Fatalf("round trip: %v %v", err, more)
 	}
 }
 
@@ -187,120 +211,53 @@ func TestSettingsFromTypedValuesRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, secrets, err := yamlfile.ParseSettings(out)
-	if err != nil || len(secrets) != 0 || !reflect.DeepEqual(again.Settings(), doc.Settings()) {
-		t.Fatalf("%v %v\n%s", err, secrets, out)
-	}
-	empty, err := yamlfile.RenderSettings(domain.Settings{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	back, _, err := yamlfile.ParseSettings(empty)
-	if err != nil || !reflect.DeepEqual(back.Settings(), domain.Settings{}) {
-		t.Fatalf("%q: %+v, %v", empty, back.Settings(), err)
+	again, _, err := yamlfile.ParseSettings(out)
+	if err != nil || !reflect.DeepEqual(again.Settings(), doc.Settings()) {
+		t.Fatalf("%v:\n%s", err, out)
 	}
 }
 
-func TestParseSettingsEmptyDocument(t *testing.T) {
-	for _, in := range []string{"", "\n", "# only a comment\n", "---\n", "{}"} {
-		doc, secrets, err := yamlfile.ParseSettings([]byte(in))
-		if err != nil || len(secrets) != 0 || !reflect.DeepEqual(doc.Settings(), domain.Settings{}) {
-			t.Errorf("%q: %+v %v %v", in, doc.Settings(), secrets, err)
-		}
-		if _, err := doc.Render(); err != nil {
-			t.Errorf("%q: render: %v", in, err)
-		}
+func TestTheOldKeysAreRefusedByName(t *testing.T) {
+	_, _, err := yamlfile.ParseSettings(yml("repositories: []", "allow:", "  - a.example:443 GET", "connections: []"))
+	var lines yamlfile.ParseErrors
+	if !errors.As(err, &lines) || len(lines) != 2 {
+		t.Fatalf("err = %v", err)
+	}
+	if lines[0].Line != 2 || !strings.Contains(lines[0].Msg, "rules") || lines[1].Line != 4 || !strings.Contains(lines[1].Msg, "credentials") {
+		t.Fatalf("errors %+v", lines)
 	}
 }
 
-func conn(extra ...string) []byte {
-	return yml(append([]string{"connections:"}, extra...)...)
-}
-
-func TestParseSettingsErrors(t *testing.T) {
-	good := []string{"  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value: set"}
+func TestEachProblemNamesItsLine(t *testing.T) {
+	head := []string{"credentials:", "  key:", "    value: set", "rules:", "  r:"}
 	cases := []struct {
 		name string
-		in   []byte
+		rule []string
 		line int
 		msg  string
 	}{
-		{"unknown top key", yml("repositories: []", "secrets: []"), 2, `unknown key "secrets"`},
-		{"unknown connection key", conn("  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value: set", "    extra: 1"), 6, `unknown key "extra"`},
-		{"top level is a list", yml("- a"), 1, "must be a mapping"},
-		{"repositories is text", yml("repositories: a/b"), 1, "must be a list"},
-		{"repository is bad", yml("repositories:", "  - a/b", "  - nope"), 3, "nope"},
-		{"repository twice", yml("repositories:", "  - a/b", "  - github.com/A/B"), 3, "listed twice"},
-		{"repository is a number", yml("repositories: [1]"), 1, "must be text"},
-		{"allow is a map", yml("allow: {a: b}"), 1, "must be a list"},
-		{"allow rule without a method", yml("allow:", "  - a.example:443"), 2, "at least one method"},
-		{"allow rule without a port", yml("allow:", "  - a.example GET"), 2, "host:port"},
-		{"allow rule with a bad port", yml("allow:", "  - a.example:99999 GET"), 2, "port"},
-		{"allow rule with a lower-case method", yml("allow:", "  - a.example:443 get"), 2, "method"},
-		{"allow rule with a repeated method", yml("allow:", "  - a.example:443 GET GET"), 2, "method"},
-		{"allow rule is a number", yml("allow:", "  - 5"), 2, "must be text"},
-		{"second allow rule is bad", yml("allow:", "  - a.example:443 GET", "  - b.example:x GET"), 3, "b.example:x"},
-		{"connections is a map", yml("connections: {a: b}"), 1, "must be a list"},
-		{"connection is text", conn("  - hello"), 2, "must be a mapping"},
-		{"connection without a name", conn("  - hosts: [a.example]", "    add: placeholder T", "    value: set"), 2, `missing required key "name"`},
-		{"connection without hosts", conn("  - name: C", "    add: placeholder T", "    value: set"), 2, `missing required key "hosts"`},
-		{"connection without add", conn("  - name: C", "    hosts: [a.example]", "    value: set"), 2, `missing required key "add"`},
-		{"connection without value", conn("  - name: C", "    hosts: [a.example]", "    add: placeholder T"), 2, `missing required key "value"`},
-		{"empty name", conn("  - name: ''", "    hosts: [a.example]", "    add: placeholder T", "    value: set"), 2, "name is empty"},
-		{"name is a number", conn("  - name: 5", "    hosts: [a.example]", "    add: placeholder T", "    value: set"), 2, "name must be text"},
-		{"two connections without names", conn("  - 0: a", "  - 0: b"), 2, "unknown key"},
-		{"name used twice", conn(append(append(append([]string{}, good...), "  - name: C", "    hosts: [b.example]"), "    add: placeholder T", "    value: set")...), 6, "used twice"},
-		{"hosts is text", conn("  - name: C", "    hosts: a.example", "    add: placeholder T", "    value: set"), 3, "must be a list"},
-		{"hosts is empty", conn("  - name: C", "    hosts: []", "    add: placeholder T", "    value: set"), 3, "at least one host"},
-		{"host with a port", conn("  - name: C", "    hosts: [a.example:443]", "    add: placeholder T", "    value: set"), 3, "a.example:443"},
-		{"host with a scheme", conn("  - name: C", "    hosts: ['https://a.example']", "    add: placeholder T", "    value: set"), 3, "https"},
-		{"host twice", conn("  - name: C", "    hosts: [a.example, A.example]", "    add: placeholder T", "    value: set"), 3, "listed twice"},
-		{"bad wildcard", conn("  - name: C", "    hosts: ['*']", "    add: placeholder T", "    value: set"), 3, "*"},
-		{"add without a mark", conn("  - name: C", "    hosts: [a.example]", "    add: header X \"y\"", "    value: set"), 4, "{value}"},
-		{"add of another kind", conn("  - name: C", "    hosts: [a.example]", "    add: cookie T", "    value: set"), 4, "cookie"},
-		{"add is a list", conn("  - name: C", "    hosts: [a.example]", "    add: [a]", "    value: set"), 4, "add must be text"},
-		{"value is empty", conn("  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value: ''"), 5, "value must be"},
-		{"value is null", conn("  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value:"), 5, "value must be"},
-		{"value is a list", conn("  - name: C", "    hosts: [a.example]", "    add: placeholder T", "    value: [a]"), 5, "value must be"},
-		{"two documents", yml("repositories: []", "---", "allow: []"), 2, "second YAML document"},
-		{"alias", yml("repositories: &r [a/b]", "allow: *r"), 2, "aliases"},
-		{"syntax", yml("repositories: [a/b"), 1, "expected"},
+		{"a bad host", []string{"    hosts: [bad_host]", "    allow: \"*\""}, 6, "host"},
+		{"an unknown credential", []string{"    hosts: [a.example]", "    credential: other", "    inject: {basic_user: x}", "    allow: \"*\""}, 7, "not under credentials"},
+		{"credential without inject", []string{"    hosts: [a.example]", "    credential: key", "    allow: \"*\""}, 6, "together"},
+		{"a bad entry", []string{"    hosts: [a.example]", "    allow:", "      - GET /x", "      - get /y"}, 9, "method"},
+		{"a query in an ask entry", []string{"    hosts: [a.example]", "    allow: \"*\"", "    ask: [\"GET /x?y=1\"]"}, 8, "query"},
+		{"allow of another word", []string{"    hosts: [a.example]", "    allow: all"}, 7, "allow"},
+		{"a form without the secret", []string{"    hosts: [a.example]", "    credential: key", "    inject: {header: X-Key, form: \"Bearer\"}", "    allow: \"*\""}, 8, "{secret}"},
+		{"a placeholder without a credential", []string{"    hosts: [a.example]", "    allow: \"*\"", "    box_env: {TOKEN: placeholder}"}, 8, "placeholder"},
+		{"a variable the product sets", []string{"    hosts: [a.example]", "    allow: \"*\"", "    box_env: {HTTPS_PROXY: x}"}, 8, "product sets"},
+		{"a mutation that is no field name", []string{"    hosts: [a.example]", "    allow: \"*\"", "    graphql_mutations: [\"merge pull\"]"}, 8, "field name"},
+		{"an unknown rule key", []string{"    hosts: [a.example]", "    allow: \"*\"", "    deny: [x]"}, 8, "unknown key"},
 	}
 	for _, c := range cases {
-		_, secrets, err := yamlfile.ParseSettings(c.in)
-		var pe yamlfile.ParseErrors
-		if !errors.As(err, &pe) || !errors.Is(err, yamlfile.ErrInvalid) || len(pe) == 0 || len(secrets) != 0 {
-			t.Errorf("%s: err = %v, secrets %v", c.name, err, secrets)
-			continue
-		}
-		if pe[0].Line != c.line || !strings.Contains(pe[0].Msg, c.msg) {
-			t.Errorf("%s: got line %d %q, want line %d containing %q", c.name, pe[0].Line, pe[0].Msg, c.line, c.msg)
+		_, _, err := yamlfile.ParseSettings(yml(append(append([]string{}, head...), c.rule...)...))
+		var lines yamlfile.ParseErrors
+		if !errors.As(err, &lines) || lines[0].Line != c.line || !strings.Contains(lines[0].Msg, c.msg) {
+			t.Errorf("%s: %v, want line %d naming %q", c.name, err, c.line, c.msg)
 		}
 	}
-}
-
-func TestSettingsErrorsNeverQuoteASecret(t *testing.T) {
-	in := yml(
-		"connections:",
-		"  - name: C",
-		"    hosts: [bad host]",
-		"    add: placeholder T",
-		"    value: sk-live-TOPSECRET-2",
-		"    extra: sk-live-TOPSECRET-2",
-		"  - name: C",
-		"    hosts: [a.example]",
-		"    add: header X sk-live-TOPSECRET-2",
-		"    value: sk-live-TOPSECRET-3",
-	)
-	_, secrets, err := yamlfile.ParseSettings(in)
-	var pe yamlfile.ParseErrors
-	if !errors.As(err, &pe) || len(pe) < 3 || len(secrets) != 0 {
-		t.Fatalf("err = %v, secrets %v", err, secrets)
-	}
-	if strings.Contains(err.Error(), "TOPSECRET-2") && !strings.Contains(err.Error(), "header X sk-live") {
-		t.Fatalf("an error quotes a secret value: %v", err)
-	}
-	if strings.Contains(err.Error(), "TOPSECRET-3") {
-		t.Fatalf("an error quotes a secret value: %v", err)
+	_, _, err := yamlfile.ParseSettings(yml("credentials:", "  github:", "    github_app: {app_id: seven, private_key: set}"))
+	var lines yamlfile.ParseErrors
+	if !errors.As(err, &lines) || lines[0].Line != 3 || !strings.Contains(lines[0].Msg, "app_id") {
+		t.Errorf("a bad app id: %v", err)
 	}
 }

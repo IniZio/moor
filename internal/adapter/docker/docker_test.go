@@ -48,13 +48,12 @@ func fakePortal(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := make([]string, len(boxAllow))
-	for i, h := range boxAllow {
-		lines[i] = h + ":443 GET HEAD POST"
+	rule := func(hosts ...string) []any {
+		return []any{map[string]any{"name": "registry", "hosts": hosts, "allow": []string{"*"}}}
 	}
 	policies := map[string]any{
-		"Bearer box.t":  map[string]any{"version": 1, "allow": lines, "connections": []any{}},
-		"Bearer desk.t": map[string]any{"version": 1, "allow": []string{"registry.npmjs.org:443 GET"}, "connections": []any{}},
+		"Bearer box.t":  map[string]any{"version": 1, "rules": rule(boxAllow...)},
+		"Bearer desk.t": map[string]any{"version": 1, "rules": rule("registry.npmjs.org")},
 	}
 	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := policies[r.Header.Get("Authorization")]

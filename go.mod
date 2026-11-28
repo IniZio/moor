@@ -5,6 +5,7 @@ go 1.26.11
 require (
 	github.com/a-h/templ v0.3.1118
 	github.com/aymanbagabas/go-udiff v0.4.2
+	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
@@ -17,6 +18,7 @@ require (
 	github.com/pressly/goose/v3 v3.30.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/tmaxmax/go-sse v0.12.0
+	github.com/vektah/gqlparser/v2 v2.5.64
 	go.yaml.in/yaml/v3 v3.0.6
 )
 

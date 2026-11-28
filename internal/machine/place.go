@@ -57,7 +57,11 @@ func (h *holding) launch(ctx context.Context, t domain.Task) {
 // is a part that did not start. One cut short by the link is left as it is: the task stays starting
 // and the next tick sends the same fence again, which the runner joins.
 func (h *holding) start(ctx context.Context, t domain.Task) {
-	err := call(ctx, h.link, wire.KindTaskStart, startOf(t, h.c.cfg.Access(t)), nil)
+	s := startOf(t, h.c.cfg.Access(t))
+	if h.c.cfg.BoxEnv != nil {
+		s.BoxEnv = h.c.cfg.BoxEnv(ctx, t)
+	}
+	err := call(ctx, h.link, wire.KindTaskStart, s, nil)
 	var we *wire.Error
 	switch {
 	case err == nil:

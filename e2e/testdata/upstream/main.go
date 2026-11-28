@@ -1,5 +1,6 @@
 // Command upstream is the fake upstream of the access test: it answers ok on port 80, and on port 443 with a
-// certificate no one trusts. It logs each request's host and the X-Api-Key it carried, for the test to count.
+// certificate no one trusts. It logs each request's host, the X-Api-Key and Authorization it carried, its method and
+// its path, for the test to count.
 package main
 
 import (
@@ -17,7 +18,7 @@ import (
 
 func main() {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("request host=%s key=%s", r.Host, r.Header.Get("X-Api-Key"))
+		log.Printf("request host=%s key=%s auth=%s method=%s path=%s", r.Host, r.Header.Get("X-Api-Key"), r.Header.Get("Authorization"), r.Method, r.URL.Path)
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	go func() { log.Fatal((&http.Server{Addr: ":80", Handler: h, ReadHeaderTimeout: 5 * time.Second}).ListenAndServe()) }()

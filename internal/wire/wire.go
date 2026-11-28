@@ -157,6 +157,7 @@ type TaskStart struct {
 	BudgetSeconds int64           `json:"budget"`
 	ModelToken    string          `json:"model_token"`
 	Proxies       ProxyAccess     `json:"proxies"`
+	BoxEnv        []EnvVar        `json:"box_env,omitempty"`
 	SecretRules   json.RawMessage `json:"secret_rules"`
 }
 

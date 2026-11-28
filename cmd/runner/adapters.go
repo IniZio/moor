@@ -59,6 +59,9 @@ func keyOf(f wire.Fence) docker.Key {
 
 func (h host) Up(ctx context.Context, b runner.Box) error {
 	spec := docker.Spec{Key: keyOf(b.Fence), Portal: b.Proxies.Portal, BoxToken: b.Proxies.BoxToken, DeskToken: b.Proxies.DeskToken, TaskToken: b.Proxies.TaskToken}
+	for _, v := range b.Env {
+		spec.BoxEnv = append(spec.BoxEnv, domain.EnvVar{Name: v.Name, Value: v.Value})
+	}
 	if err := h.d.Up(ctx, spec); err != nil {
 		return fmt.Errorf("up: %w", err)
 	}

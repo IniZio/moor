@@ -11,26 +11,27 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// RecordBlocked inserts the row or counts one more on the row of the same task, proxy, host, port and method.
-// A decision already made stays.
+// RecordBlocked inserts the row or counts one more on the row of the same task, proxy, host, port, method, path
+// and detail. A decision already made stays.
 func (s *Store) RecordBlocked(ctx context.Context, h domain.BlockedHit) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO blocked_requests (task_id, proxy, host, port, method, reason, first_at, last_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-		ON CONFLICT (task_id, proxy, host, port, method)
-		DO UPDATE SET count = blocked_requests.count + 1, last_at = EXCLUDED.last_at, reason = EXCLUDED.reason`,
-		string(h.Task), string(h.Proxy), h.Host, h.Port, string(h.Method), string(h.Reason), h.At.UTC())
+	_, err := s.pool.Exec(ctx, `INSERT INTO blocked_requests (task_id, proxy, host, port, method, path, rule, entry, reason, detail, first_at, last_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+		ON CONFLICT (task_id, proxy, host, port, method, path, detail)
+		DO UPDATE SET count = blocked_requests.count + 1, last_at = EXCLUDED.last_at, reason = EXCLUDED.reason,
+			rule = EXCLUDED.rule, entry = EXCLUDED.entry`,
+		string(h.Task), string(h.Proxy), h.Host, h.Port, string(h.Method), h.Path, h.Rule, h.Entry, string(h.Reason), h.Detail, h.At.UTC())
 	if err != nil {
 		return fmt.Errorf("record blocked request: %w", err)
 	}
 	return nil
 }
 
-const selectBlocked = "SELECT id, task_id, proxy, host, port, method, reason, count, first_at, last_at, decision, decided_by, decided_at FROM blocked_requests "
+const selectBlocked = "SELECT id, task_id, proxy, host, port, method, path, rule, entry, reason, detail, count, first_at, last_at, decision, decided_by, decided_at FROM blocked_requests "
 
 func scanBlocked(row pgx.Row) (domain.BlockedRequest, error) {
 	var b domain.BlockedRequest
 	var decided *time.Time
-	err := row.Scan(&b.ID, &b.Task, &b.Proxy, &b.Host, &b.Port, &b.Method, &b.Reason, &b.Count, &b.FirstAt, &b.LastAt, &b.Decision, &b.DecidedBy, &decided)
+	err := row.Scan(&b.ID, &b.Task, &b.Proxy, &b.Host, &b.Port, &b.Method, &b.Path, &b.Rule, &b.Entry, &b.Reason, &b.Detail, &b.Count, &b.FirstAt, &b.LastAt, &b.Decision, &b.DecidedBy, &decided)
 	if err != nil {
 		return domain.BlockedRequest{}, fmt.Errorf("read blocked request: %w", err)
 	}

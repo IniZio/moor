@@ -26,6 +26,7 @@ type Part struct {
 type Box struct {
 	Fence   wire.Fence
 	Proxies wire.ProxyAccess
+	Env     []wire.EnvVar
 }
 
 // Host starts, finds and removes the containers of tasks. Up and Down converge, so a repeat is

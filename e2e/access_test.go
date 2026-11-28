@@ -17,19 +17,36 @@ import (
 	"github.com/IniZio/moor/internal/task"
 )
 
-// apiKey is the synthetic value of the test's connection. It is never printed: checks count it.
-const apiKey = "synthetic-key-4e1f0c9a7d"
+// apiKey and ghKey are the synthetic values of the test's credentials. They are never printed: checks count them.
+const (
+	apiKey = "synthetic-key-4e1f0c9a7d"
+	ghKey  = "synthetic-gh-0b7c55e1a2"
+)
 
+// accessDoc reaches GitHub's API on port 80, so the fake upstream answers it in plain HTTP. Its allow lists the
+// REST merge, which the proxy refuses whatever the rules say.
 const accessDoc = `repositories:
   - example-org/shop-web
-allow:
-  - shop-api.test:80 GET
-  - secure-api.test:443 GET
-connections:
-  - name: Shop API key
-    hosts: [shop-api.test, secure-api.test]
-    add: header X-Api-Key "{value}"
-    value: ` + apiKey + "\n"
+credentials:
+  shop:
+    value: ` + apiKey + `
+  github:
+    value: ` + ghKey + `
+rules:
+  shop:
+    hosts: ["shop-api.test:80", secure-api.test]
+    credential: shop
+    inject: {header: X-Api-Key, form: "{secret}"}
+    allow: ["GET /hello", "GET /"]
+    ask: ["DELETE /items/*"]
+  github-api:
+    hosts: ["api.github.com:80"]
+    credential: github
+    inject: {header: Authorization, form: "token {secret}"}
+    allow: ["POST /graphql", "GET /repos/{repo}/**", "PUT /repos/{repo}/pulls/*/merge"]
+    graphql_mutations: [createPullRequest]
+    box_env: {GH_TOKEN: placeholder, GH_REPO: "{repo}"}
+`
 
 // gatewayAddr is a free address on the Docker bridge's gateway, which a task's proxies reach from their
 // egress network, so they can read the policy from a portal on this host.
@@ -67,7 +84,7 @@ func upstream(t *testing.T, dir, prefix string, id domain.TaskID) string {
 	t.Cleanup(func() { _, _ = runCmd("docker", "rm", "-f", name) })
 	mustRun(t, "docker", "network", "disconnect", "none", name)
 	mustRun(t, "docker", "network", "connect", "--alias", "shop-api.test", "--alias", "secure-api.test", "--alias", "later-api.test",
-		prefix+"-"+string(id)+"-egress", name)
+		"--alias", "api.github.com", prefix+"-"+string(id)+"-egress", name)
 	return name
 }
 
@@ -118,8 +135,11 @@ func TestTheBoxReachesOnlyWhatThePolicyAllowsAndNeverHoldsAValue(t *testing.T) {
 		t.Fatalf("Box egress proxy log:\n%s\ncurl:\n%s", out, inBox(t, box, "curl -sv http://shop-api.test/hello 2>&1 | grep -v -i x-api-key"))
 	}
 	t.Run("an intercepted host is trusted in the Box", func(t *testing.T) { intercepted(t, box) })
+	t.Run("a path the rule does not list is refused", func(t *testing.T) { pathRefused(t, box) })
+	t.Run("an ask entry is blocked, then allowed live", func(t *testing.T) { askedThenAllowed(t, pt, box, id) })
 	t.Run("an unlisted host is refused and allowed without a restart", func(t *testing.T) { refusedThenAllowed(t, pt, box, id) })
-	t.Run("the Box holds no trace of the value", func(t *testing.T) { noTrace(t, box) })
+	t.Run("a pull request passes and a merge never does", func(t *testing.T) { mergeRefused(t, pt, box, up, id) })
+	t.Run("the Box holds no trace of any value", func(t *testing.T) { noTrace(t, box) })
 	t.Run("the Box cannot open the desk proxy", func(t *testing.T) { deskProxyClosed(t, box, prefix+"-"+string(id)+"-deskproxy") })
 
 	mustRun(t, "docker", "rm", "-f", up)
@@ -148,40 +168,120 @@ func intercepted(t *testing.T, box string) {
 	}
 }
 
+type blockedRow struct {
+	ID       int64  `json:"id"`
+	Request  string `json:"request"`
+	Reason   string `json:"reason"`
+	Detail   string `json:"detail"`
+	Decision string `json:"decision"`
+}
+
+// blockedRow waits for the task's blocked request that reads as request.
+func waitBlocked(t *testing.T, pt *portal, id domain.TaskID, request string) blockedRow {
+	t.Helper()
+	var snap struct {
+		Blocked []blockedRow `json:"blocked_requests"`
+	}
+	var row blockedRow
+	eventually(t, 30*time.Second, "the blocked request "+request+" on the task", func() bool {
+		pt.call(t, "GET", "/api/tasks/"+string(id), nil, &snap)
+		for _, b := range snap.Blocked {
+			if b.Request == request {
+				row = b
+				return true
+			}
+		}
+		return false
+	})
+	return row
+}
+
+// allowLive chooses Allow on the row and waits for the next attempt of line in the Box to answer 200.
+func allowLive(t *testing.T, pt *portal, box string, id domain.TaskID, row blockedRow, line string) {
+	t.Helper()
+	var allowed struct{ Line int }
+	pt.call(t, "POST", "/api/tasks/"+string(id)+"/blocked/"+strconv.FormatInt(row.ID, 10), map[string]string{"action": "allow"}, &allowed)
+	at := time.Now()
+	eventually(t, 10*time.Second, "the next attempt passing", func() bool { return inBox(t, box, line) == "200" })
+	t.Logf("Allow on %s added line %d; the next request passed %s later, with no restart", row.Request, allowed.Line, time.Since(at).Round(10*time.Millisecond))
+}
+
+func pathRefused(t *testing.T, box string) {
+	out := inBox(t, box, `curl -s -D - http://shop-api.test/other`)
+	if !strings.Contains(out, " 403 ") || !strings.Contains(strings.ToLower(out), "x-deny-reason: request_not_allowed") {
+		t.Fatalf("an unlisted path answered:\n%s", out)
+	}
+}
+
+func askedThenAllowed(t *testing.T, pt *portal, box string, id domain.TaskID) {
+	line := `curl -s -o /dev/null -w '%{http_code}' -X DELETE http://shop-api.test/items/3`
+	out := inBox(t, box, `curl -s -D - -X DELETE http://shop-api.test/items/3`)
+	if !strings.Contains(out, " 403 ") || !strings.Contains(strings.ToLower(out), "x-deny-reason: needs_approval") {
+		t.Fatalf("an ask entry answered:\n%s", out)
+	}
+	allowLive(t, pt, box, id, waitBlocked(t, pt, id, "shop-api.test:80 DELETE /items/3"), line)
+}
+
 func refusedThenAllowed(t *testing.T, pt *portal, box string, id domain.TaskID) {
 	out := inBox(t, box, `curl -s -D - http://later-api.test/x`)
 	if !strings.Contains(out, " 403 ") || !strings.Contains(strings.ToLower(out), "x-deny-reason: host_not_allowed") || !strings.Contains(out, "GET later-api.test:80") {
 		t.Fatalf("the unlisted host answered:\n%s", out)
 	}
-	var snap struct {
-		Blocked []struct {
-			ID      int64  `json:"id"`
-			Request string `json:"request"`
-			Count   int    `json:"count"`
-		} `json:"blocked_requests"`
-	}
-	eventually(t, 30*time.Second, "the blocked request on the task", func() bool {
-		pt.call(t, "GET", "/api/tasks/"+string(id), nil, &snap)
-		return len(snap.Blocked) == 1 && snap.Blocked[0].Request == "later-api.test:80 GET"
-	})
-	var allowed struct{ Line int }
-	pt.call(t, "POST", "/api/tasks/"+string(id)+"/blocked/"+strconv.FormatInt(snap.Blocked[0].ID, 10), map[string]string{"action": "allow"}, &allowed)
-	at := time.Now()
-	eventually(t, 10*time.Second, "the next attempt passing", func() bool {
-		return inBox(t, box, `curl -s -o /dev/null -w '%{http_code}' http://later-api.test/x`) == "200"
-	})
-	t.Logf("Allow added line %d; the next request passed %s later, with no restart", allowed.Line, time.Since(at).Round(10*time.Millisecond))
+	allowLive(t, pt, box, id, waitBlocked(t, pt, id, "later-api.test:80 GET /x"), `curl -s -o /dev/null -w '%{http_code}' http://later-api.test/x`)
 }
 
-// noTrace counts the value in the Box's environment, its processes and its files. The value goes to grep on
+// graphQL posts a GraphQL document from the Box with gh's token, the placeholder its environment holds.
+func graphQL(t *testing.T, box, query string) string {
+	t.Helper()
+	body := strconv.Quote(query)
+	return inBox(t, box, `curl -s -D - -X POST -H "Authorization: token $GH_TOKEN" -H 'Content-Type: application/json' `+
+		`--data '{"query":`+body+`,"variables":{}}' http://api.github.com/graphql`)
+}
+
+// pullRequestPasses sends createPullRequest with the Box's placeholder token, and the upstream gets the value.
+func pullRequestPasses(t *testing.T, box, up string) {
+	t.Helper()
+	if env := inBox(t, box, `echo "$GH_TOKEN $GH_REPO"`); env != "moor-placeholder-github-api example-org/shop-web" {
+		t.Fatalf("the Box's gh variables are %q", env)
+	}
+	if out := graphQL(t, box, `mutation PullRequestCreate { createPullRequest(input: {}) { clientMutationId } }`); !strings.Contains(out, " 200 ") {
+		t.Fatalf("createPullRequest answered:\n%s", out)
+	}
+	if n := strings.Count(mustRun(t, "docker", "logs", up), "auth=token "+ghKey+" method=POST path=/graphql"); n != 1 {
+		t.Fatalf("the upstream saw the GitHub value on %d GraphQL requests, want 1", n)
+	}
+}
+
+func mergeRefused(t *testing.T, pt *portal, box, up string, id domain.TaskID) {
+	pullRequestPasses(t, box, up)
+	merge := graphQL(t, box, `mutation PullRequestCreate { createPullRequest: mergePullRequest(input: {}) { clientMutationId } }`)
+	rest := inBox(t, box, `curl -s -D - -X PUT -H "Authorization: token $GH_TOKEN" http://api.github.com/repos/example-org/shop-web/pulls/1/merge`)
+	for name, out := range map[string]string{"the merge mutation": merge, "the REST merge": rest} {
+		if !strings.Contains(out, " 403 ") || !strings.Contains(strings.ToLower(out), "x-deny-reason: merge_not_allowed") || !strings.Contains(out, "merging is not allowed from a task") {
+			t.Fatalf("%s answered:\n%s", name, out)
+		}
+	}
+	if !strings.Contains(merge, "mergePullRequest") {
+		t.Fatalf("the merge refusal does not name the field:\n%s", merge)
+	}
+	row := waitBlocked(t, pt, id, "api.github.com:80 POST /graphql")
+	if row.Reason != "merge_not_allowed" || !strings.Contains(row.Detail, "mergePullRequest") {
+		t.Fatalf("the merge's blocked request is %+v", row)
+	}
+	if n := strings.Count(mustRun(t, "docker", "logs", up), "path=/repos/example-org/shop-web/pulls/1/merge"); n != 0 {
+		t.Fatalf("the REST merge reached the upstream %d times", n)
+	}
+}
+
+// noTrace counts the values in the Box's environment, its processes and its files. The values go to grep on
 // stdin, so the search leaves no trace of its own.
 func noTrace(t *testing.T, box string) {
 	seen := inBox(t, box, `env; ps -eo args; cat /proc/[0-9]*/environ 2>/dev/null | tr '\0' '\n'`)
-	if n := strings.Count(seen, apiKey); n != 0 || !strings.Contains(seen, "HTTPS_PROXY") {
-		t.Fatalf("the value shows %d times in the Box's environment and processes", n)
+	if n := strings.Count(seen, apiKey) + strings.Count(seen, ghKey); n != 0 || !strings.Contains(seen, "HTTPS_PROXY") || !strings.Contains(seen, "GH_TOKEN=moor-placeholder") {
+		t.Fatalf("the values show %d times in the Box's environment and processes", n)
 	}
 	cmd := exec.Command("docker", "exec", "-i", "-u", "0", box, "grep", "-rlsF", "-D", "skip", "-f", "-", "/", "--exclude-dir=proc", "--exclude-dir=sys", "--exclude-dir=dev")
-	cmd.Stdin = strings.NewReader(apiKey + "\n")
+	cmd.Stdin = strings.NewReader(apiKey + "\n" + ghKey + "\n")
 	out, err := cmd.CombinedOutput()
 	if files := strings.Fields(string(out)); len(files) != 0 {
 		t.Fatalf("%d files in the Box hold the value: %v", len(files), files)

@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/wire"
@@ -49,77 +51,105 @@ func (p *Proxy) Refresh(ctx context.Context) error {
 		return err
 	}
 	if old := p.policy.Swap(&pol); old == nil || old.Version != pol.Version {
-		p.cfg.Log.Info("policy", "version", pol.Version, "allow", len(pol.Allow), "connections", len(pol.Connections))
+		p.cfg.Log.Info("policy", "version", pol.Version, "rules", len(pol.Rules))
 	}
 	return nil
 }
 
 // policyOf reads the portal's answer with the settings document's own parsers.
 func policyOf(w wire.Policy) (domain.Policy, error) {
-	p := domain.Policy{Version: w.Version}
-	for _, line := range w.Allow {
-		r, err := domain.ParseAllowRule(line)
+	p := domain.Policy{Version: w.Version, Repo: domain.Repo{Host: domain.RepoHost(w.Repo.Host), Path: domain.RepoPath(w.Repo.Path)}, Set: map[string]bool{}}
+	for _, wr := range w.Rules {
+		r, err := ruleOf(wr)
 		if err != nil {
-			return domain.Policy{}, fmt.Errorf("policy v%d: %w", w.Version, err)
+			return domain.Policy{}, fmt.Errorf("policy v%d rule %q: %w", w.Version, wr.Name, err)
 		}
-		p.Allow = append(p.Allow, r)
-	}
-	for _, c := range w.Connections {
-		conn, err := connectionOf(c)
-		if err != nil {
-			return domain.Policy{}, fmt.Errorf("policy v%d: %w", w.Version, err)
+		p.Rules = append(p.Rules, r)
+		if wr.Set && wr.Credential != "" {
+			p.Set[wr.Credential] = true
 		}
-		p.Connections = append(p.Connections, conn)
 	}
 	return p, nil
 }
 
-func connectionOf(c wire.PolicyConnection) (domain.Connection, error) {
-	add, err := domain.ParseAddRule(c.Add)
-	if err != nil {
-		return domain.Connection{}, fmt.Errorf("connection %q: %w", c.Name, err)
-	}
-	conn := domain.Connection{Name: c.Name, Add: add, Secret: domain.SecretNotSet}
-	if c.Set {
-		conn.Secret = domain.SecretSet
-	}
-	for _, h := range c.Hosts {
-		hp, err := domain.ParseHostPattern(h)
+func ruleOf(w wire.PolicyRule) (domain.Rule, error) {
+	r := domain.Rule{Name: w.Name, Credential: w.Credential, GraphQLMutations: w.GraphQLMutations}
+	for _, h := range w.Hosts {
+		hp, err := domain.ParseHostPort(h)
 		if err != nil {
-			return domain.Connection{}, fmt.Errorf("connection %q: %w", c.Name, err)
+			return domain.Rule{}, fmt.Errorf("host: %w", err)
 		}
-		conn.Hosts = append(conn.Hosts, hp)
+		r.Hosts = append(r.Hosts, hp)
 	}
-	return conn, nil
+	var err error
+	if len(w.Allow) == 1 && w.Allow[0] == domain.AnyText {
+		r.Allow.Any = true
+	} else if r.Allow.Entries, err = entriesOf(w.Allow); err != nil {
+		return domain.Rule{}, err
+	}
+	if r.Ask, err = entriesOf(w.Ask); err != nil {
+		return domain.Rule{}, err
+	}
+	if w.Inject != nil && w.Inject.BasicUser != "" {
+		r.Inject = domain.BasicInject{User: w.Inject.BasicUser}
+	} else if w.Inject != nil {
+		r.Inject = domain.HeaderInject{Name: w.Inject.Header, Form: w.Inject.Form}
+	}
+	return r, nil
 }
 
-// value is the connection's value under policy version, read from the portal when the proxy holds none
-// read under that version.
+func entriesOf(lines []string) ([]domain.Entry, error) {
+	out := make([]domain.Entry, 0, len(lines))
+	for _, l := range lines {
+		e, err := domain.ParseEntry(l)
+		if err != nil {
+			return nil, fmt.Errorf("entry: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// value is what the credential adds under policy version, read from the portal when the proxy holds none read
+// under that version, or holds a token about to expire.
 func (p *Proxy) value(ctx context.Context, version int, name string) (string, error) {
 	p.mu.Lock()
 	c, ok := p.values[name]
 	p.mu.Unlock()
-	if ok && c.version == version {
-		return c.value, nil
+	fresh := c.value.Expires.IsZero() || time.Until(c.value.Expires) > time.Minute
+	if ok && c.version == version && fresh {
+		return c.value.Value, nil
 	}
 	var out wire.ValueReply
-	if err := p.call(ctx, http.MethodPost, "/internal/connections/value", wire.ValueRequest{Task: p.cfg.Task, Connection: name}, &out); err != nil {
+	if err := p.call(ctx, http.MethodPost, "/internal/credentials/value", wire.ValueRequest{Task: p.cfg.Task, Credential: name}, &out); err != nil {
 		return "", err
 	}
 	p.mu.Lock()
-	p.values[name] = cached{version: version, value: out.Value}
+	p.values[name] = cached{version: version, value: domain.CredentialValue{Value: out.Value, Expires: out.Expires}}
 	p.mu.Unlock()
 	return out.Value, nil
 }
 
-// report tells the portal about a refused request. It runs beside the refusal, which never waits for it.
-func (p *Proxy) report(host string, port int, method domain.Method, reason domain.DenyReason) {
+// report tells the portal about a refused request. It runs beside the refusal, which never waits for it. The
+// path goes without its query, and the detail names GraphQL fields at most.
+func (p *Proxy) report(host string, port int, method domain.Method, path string, v verdict) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	in := wire.BlockedReport{Task: p.cfg.Task, Host: host, Port: port, Method: string(method), Reason: string(reason)}
+	in := wire.BlockedReport{
+		Task: p.cfg.Task, Host: host, Port: port, Method: string(method), Path: reportPath(path),
+		Rule: v.rule, Entry: v.entry, Reason: string(v.reason), Detail: v.detail,
+	}
 	if err := p.call(ctx, http.MethodPost, "/internal/blocked", in, nil); err != nil {
 		p.cfg.Log.Warn("report blocked request", "host", host, "err", err)
 	}
+}
+
+// reportPath is the path as a blocked request keeps it: at most 512 bytes, with no control character.
+func reportPath(path string) string {
+	if len(path) > 512 || strings.ContainsFunc(path, unicode.IsControl) {
+		return ""
+	}
+	return path
 }
 
 func (p *Proxy) call(ctx context.Context, method, path string, body, out any) error {

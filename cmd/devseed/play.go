@@ -47,7 +47,7 @@ func setUp() []step {
 		{wait: 2, do: slotTaken},
 		{wait: 2, do: note(domain.PhaseDesk, "build-1")},
 		{wait: 2, do: note(domain.PhaseBox, "box:dev")},
-		{wait: 1, do: note(domain.PhaseSettings, "v1, 3 allow rules, 2 connections")},
+		{wait: 1, do: note(domain.PhaseSettings, "v1, 6 rules, 3 credentials")},
 		{wait: 1, do: note(domain.PhaseCheckout, "main at 5f0e2b1")},
 		{wait: 1, do: note(domain.PhasePrompt, "")},
 		{wait: 0, do: partsUp},
