@@ -46,15 +46,29 @@ func (h *holding) keepOrStop(ctx context.Context, f wire.Fence) error {
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("load task %s: %w", f.Task, err)
 	}
-	v := verdictOf(t, err == nil && t.Runner == h.id, h.c.cfg.Clock.Now())
+	now := h.c.cfg.Clock.Now()
+	v := verdictOf(t, err == nil && t.Runner == h.id, now)
 	if v == keep {
-		return nil
+		return h.timeLimit(ctx, t, now)
 	}
 	if v == release {
 		return h.release(ctx, f)
 	}
 	h.log.Info("stopping a task the portal no longer wants", "task", f.Task, "run", f.Run)
 	return call(ctx, h.link, wire.KindTaskStop, wire.TaskStop{Fence: f}, nil)
+}
+
+// timeLimit fails a running task whose deadline has passed. Its containers stay for the keep window, as a failed
+// task's do. A task the service will not fail, such as one a publish ended meanwhile, is left as it is.
+func (h *holding) timeLimit(ctx context.Context, t domain.Task, now time.Time) error {
+	if t.State != domain.Running || t.Deadline.IsZero() || now.Before(t.Deadline) {
+		return nil
+	}
+	if _, err := h.c.cfg.Tasks.TimeLimit(ctx, t.ID); err != nil && !errors.Is(err, domain.ErrRefused) {
+		return fmt.Errorf("fail %s at its time limit: %w", t.ID, err)
+	}
+	h.log.Info("failed a task at its time limit", "task", t.ID)
+	return nil
 }
 
 // release records that the keep window ended and tells the runner to remove the task's containers. A

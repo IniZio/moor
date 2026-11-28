@@ -31,6 +31,8 @@ type Store interface {
 type Tasks interface {
 	Report(ctx context.Context, id domain.TaskID, r task.Report) (task.Outcome, error)
 	MachineRevoked(ctx context.Context, id domain.TaskID) (task.Outcome, error)
+	// TimeLimit fails a running task whose deadline has passed. Before the deadline it changes nothing.
+	TimeLimit(ctx context.Context, id domain.TaskID) (task.Outcome, error)
 	// Released records that the keep window of a done or failed task ended. It is refused while the window runs.
 	Released(ctx context.Context, id domain.TaskID) (task.Outcome, error)
 	ReviewTurn(ctx context.Context, id domain.TaskID) (task.Outcome, error)

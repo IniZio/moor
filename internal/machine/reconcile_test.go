@@ -14,7 +14,11 @@ import (
 	"github.com/IniZio/moor/internal/wire"
 )
 
-const window = 24 * time.Hour
+// window is the keep window, and limit a time limit no keep test runs into while its task runs.
+const (
+	window = 24 * time.Hour
+	limit  = 3 * window
+)
 
 // readStore is the machine's Store as far as reconcile reads it: the tasks in memory, none placed.
 type readStore struct {
@@ -88,7 +92,7 @@ func newKeepRig(t *testing.T) *keepRig {
 	t.Helper()
 	mem := tasktest.NewMemory()
 	clock := tasktest.NewClock(time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC))
-	svc := task.New(mem, clock, task.Config{TimeLimit: time.Hour, KeepWindow: window})
+	svc := task.New(mem, clock, task.Config{TimeLimit: limit, KeepWindow: window})
 	l := &fakeLink{}
 	c := NewControl(ControlConfig{Store: readStore{mem: mem}, Tasks: svc, Clock: clock, Log: slog.New(slog.DiscardHandler)})
 	return &keepRig{t: t, mem: mem, clock: clock, svc: svc, link: l, h: &holding{c: c, id: "r1", link: l, log: c.cfg.Log, starting: map[domain.TaskID]bool{}}}
@@ -191,6 +195,30 @@ func TestAFailedTaskIsKeptForTheWindowToo(t *testing.T) {
 	k.reconcile()
 	if len(k.link.rels) != 1 || k.rows("t1") != 1 {
 		t.Fatalf("released %v with %d rows", k.link.rels, k.rows("t1"))
+	}
+}
+
+func TestARunningTaskFailsAtItsTimeLimitAndKeepsItsContainersForTheWindow(t *testing.T) {
+	k := newKeepRig(t)
+	k.taskOn("t1")
+	k.clock.Advance(limit - time.Second)
+	k.reconcile()
+	if got, _ := k.mem.Load(context.Background(), "t1"); got.State != domain.Running {
+		t.Fatalf("before the limit the task is %s", got.State)
+	}
+	k.clock.Advance(time.Second)
+	k.reconcile()
+	got, _ := k.mem.Load(context.Background(), "t1")
+	if got.State != domain.Failed || got.Failure != "time limit reached" {
+		t.Fatalf("at the limit the task is %s with %q", got.State, got.Failure)
+	}
+	if k.link.count(wire.KindTaskStop) != 0 || len(k.link.rels) != 0 {
+		t.Fatal("a task that failed at its limit lost its containers inside the keep window")
+	}
+	k.clock.Advance(window)
+	k.reconcile()
+	if len(k.link.rels) != 1 {
+		t.Fatalf("released %v after the window", k.link.rels)
 	}
 }
 

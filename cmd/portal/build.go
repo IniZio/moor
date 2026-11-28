@@ -59,7 +59,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		db.Close()
 		return nil, err
 	}
-	taskCfg := withKeep(taskConfig(), cfg)
+	taskCfg := withOperations(taskConfig(), cfg)
 	tasks := task.New(db, systemClock{}, taskCfg)
 	rn := newRunners(ctx, cfg, db, tasks, svc)
 	specs := specSource(cfg.homeDir)

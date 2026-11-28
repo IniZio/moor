@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/task"
 )
 
@@ -30,8 +31,30 @@ func TestAKeepWindowThatIsNotAPositiveDurationIsRefused(t *testing.T) {
 	}
 }
 
-func TestTheTaskServiceGetsTheKeepWindow(t *testing.T) {
-	if got := withKeep(task.Config{TimeLimit: time.Minute}, config{keepWindow: time.Hour}); got.KeepWindow != time.Hour || got.TimeLimit != time.Minute {
+func TestTheTaskServiceGetsTheKeepWindowAndTheTimeLimit(t *testing.T) {
+	in := task.Config{Answerable: map[domain.EventSource]bool{"github": true}}
+	got := withOperations(in, config{keepWindow: time.Hour, timeLimit: time.Minute})
+	if got.KeepWindow != time.Hour || got.TimeLimit != time.Minute || !got.Answerable["github"] {
 		t.Fatalf("task config = %+v", got)
+	}
+}
+
+func TestTheTimeLimitDefaultsToFourHoursAndTakesAFlagOrItsVariable(t *testing.T) {
+	c, err := parseConfig(nil, env(goodEnv()))
+	if err != nil || c.timeLimit != 4*time.Hour {
+		t.Fatalf("default time limit = %v, %v", c.timeLimit, err)
+	}
+	e := goodEnv()
+	e["PORTAL_TIME_LIMIT"] = "90m"
+	if c, err = parseConfig(nil, env(e)); err != nil || c.timeLimit != 90*time.Minute {
+		t.Fatalf("time limit from the variable = %v, %v", c.timeLimit, err)
+	}
+	if c, err = parseConfig([]string{"-time-limit", "30s"}, env(e)); err != nil || c.timeLimit != 30*time.Second {
+		t.Fatalf("time limit from the flag = %v, %v", c.timeLimit, err)
+	}
+	for _, bad := range []string{"0", "-1h", "soon"} {
+		if _, err := parseConfig([]string{"-time-limit", bad}, env(goodEnv())); err == nil {
+			t.Errorf("time limit %q was accepted", bad)
+		}
 	}
 }

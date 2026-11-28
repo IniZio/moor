@@ -24,6 +24,8 @@ type config struct {
 	linkTick       time.Duration
 	// keepWindow is how long a done or failed task keeps its containers, so a person can reopen or look.
 	keepWindow time.Duration
+	// timeLimit is how long a task may run before it fails.
+	timeLimit time.Duration
 	// runnerArgs is what the join command carries after its own flags, such as the image flags of the runner.
 	runnerArgs     string
 	trustedOrigins []string
@@ -45,7 +47,7 @@ The GitHub App, its private key and its webhook secret are a github_app credenti
 // because which header the sign-in proxy sets is the operator's to say.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
 	var c config
-	var origins, keep string
+	var origins, keep, limit string
 	var err error
 	fs := flag.NewFlagSet("portal", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -60,10 +62,11 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&c.runnerArgs, "runner-args", getenv("PORTAL_RUNNER_ARGS"), "flags the join command ends with, such as the runner's image flags (PORTAL_RUNNER_ARGS)")
 	fs.StringVar(&keep, "keep-window", orDefault(getenv("PORTAL_KEEP_WINDOW"), defaultKeepWindow), "how long a done or failed task keeps its containers, such as 24h (PORTAL_KEEP_WINDOW)")
 	c.bindStorage(fs, getenv)
+	fs.StringVar(&limit, "time-limit", orDefault(getenv("PORTAL_TIME_LIMIT"), defaultTimeLimit), "how long a task may run before it fails, such as 4h (PORTAL_TIME_LIMIT)")
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
-	if err = c.readOperations(keep); err != nil {
+	if err = c.readOperations(keep, limit); err != nil {
 		return config{}, err
 	}
 	if err = c.checkStorage(); err != nil {
@@ -99,14 +102,21 @@ func splitList(text string) []string {
 // does not fill with the containers of finished tasks. The spec leaves the length open.
 const defaultKeepWindow = "24h"
 
-// readOperations reads what the operator sets about running tasks and machines: the keep window and the
-// runner args, which must stay one line because a person pastes the join command into a shell.
-func (c *config) readOperations(keep string) error {
+// defaultTimeLimit is four hours: room for an evidence run that builds and drives an app, short enough that a stuck
+// session frees its machine the same working day. The spec fixes a limit but not its length.
+const defaultTimeLimit = "4h"
+
+// readOperations reads what the operator sets about running tasks and machines: the keep window, the time limit and
+// the runner args, which must stay one line because a person pastes the join command into a shell.
+func (c *config) readOperations(keep, limit string) error {
 	d, err := time.ParseDuration(keep)
 	if err != nil || d <= 0 {
 		return errors.New("keep-window must be a duration above zero, such as 24h")
 	}
 	c.keepWindow = d
+	if c.timeLimit, err = time.ParseDuration(limit); err != nil || c.timeLimit <= 0 {
+		return errors.New("time-limit must be a duration above zero, such as 4h")
+	}
 	if strings.ContainsAny(c.runnerArgs, "\r\n") {
 		return errors.New("runner-args must be on one line")
 	}
