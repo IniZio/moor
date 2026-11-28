@@ -1,0 +1,9 @@
+{
+ "proxies": {
+  "default": {
+   "httpProxy": "__HPROXY__",
+   "httpsProxy": "__PROXY__",
+   "noProxy": "localhost,127.0.0.1,::1,host.docker.internal,.local,.internal"
+  }
+ }
+}

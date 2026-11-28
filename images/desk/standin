@@ -1,0 +1,12 @@
+#!/bin/bash.real
+until [ -f /desk/go ]; do sleep 0.5; done
+out=/desk/standin.out
+run() {
+  r=$(bash -c "$2" 2>&1)
+  printf '%s rc=%s %s\n' "$1" "$?" "$r" >> "$out.tmp"
+}
+rm -f "$out.tmp"
+run write 'echo standin > /workspace/standin.txt && id -u'
+run allowed 'curl -s -o /dev/null -w "%{http_code}" https://registry.npmjs.org/'
+run blocked 'curl -s -o /dev/null -w "%{http_connect}" https://example.com/'
+mv "$out.tmp" "$out"

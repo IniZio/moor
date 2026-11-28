@@ -1,0 +1,15 @@
+#!/usr/bin/bash.real
+if [ -n "$BOX_SSH" ]; then
+  for a in "$@"; do [ "$a" = -c ] && c=1; done
+  if [ -n "$c" ]; then
+    line=${@: -1}
+    printf '%s START %s\n' "$(date +%T)" "${line:0:2000}" >> /desk/log/wrapper.log
+    b=$(printf '%s' "$line" | base64 -w0)
+    ssh -q -T -p 2222 -i /keys/id -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$BOX_SSH" \
+      "mkdir -p /tmp/sh; f=\$(mktemp /tmp/sh/c.XXXXXX); echo $b | base64 -d > \$f; cd $(printf %q "$PWD") 2>/dev/null || cd /workspace; exec bash \$f"
+    rc=$?
+    printf '%s END rc=%s\n' "$(date +%T)" "$rc" >> /desk/log/wrapper.log
+    exit $rc
+  fi
+fi
+exec /usr/bin/bash.real "$@"

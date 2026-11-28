@@ -1,0 +1,3 @@
+#!/bin/bash.real
+export BOX_SSH
+exec standin
