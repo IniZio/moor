@@ -100,7 +100,7 @@ func probe(p Part) []string {
 	case Box:
 		return []string{"docker", "--host", "unix:///run/user/1000/docker.sock", "version"}
 	case Desk:
-		return []string{"hc", "get", "task"}
+		return []string{"hc", "server", "status"}
 	}
 	return nil
 }

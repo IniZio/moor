@@ -176,6 +176,7 @@ func boxCannotReachDeskProxy(t *testing.T, d *Docker, task domain.TaskID) {
 
 func standIn(t *testing.T, d *Docker, task domain.TaskID) {
 	desk := d.name(task, string(Desk))
+	sh(t, "docker", "exec", desk, "hc", "run", "--bg", "--name", "task", "--no-parent", "--cwd", "/workspace", "harness")
 	sh(t, "docker", "exec", desk, "touch", "/desk/go")
 	got := waitFile(t, desk, "/desk/standin.out")
 	lines := strings.Split(got, "\n")
