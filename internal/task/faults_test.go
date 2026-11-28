@@ -107,13 +107,13 @@ func TestCreateRacingOnTheSameKeyFindsTheWinner(t *testing.T) {
 func TestStorageErrorsPass(t *testing.T) {
 	h, fs := faulty(t)
 	fs.failAt = 1
-	if _, err := h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "t1", Project: h.proj, Prompt: "p", By: "ann"}); !errors.Is(err, errBoom) {
+	if _, err := h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "t1", Repo: h.repo, Prompt: "p", By: "ann"}); !errors.Is(err, errBoom) {
 		t.Fatalf("err = %v", err)
 	}
 	if len(h.mem.Tasks()) != 0 {
 		t.Error("a failed save left a task")
 	}
-	if _, err := h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "t1", Project: h.proj, Prompt: "p", By: "ann"}); err != nil {
+	if _, err := h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "t1", Repo: h.repo, Prompt: "p", By: "ann"}); err != nil {
 		t.Fatalf("the retry after the failure: %v", err)
 	}
 }

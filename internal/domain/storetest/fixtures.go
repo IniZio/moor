@@ -12,14 +12,16 @@ import (
 
 func at(n int64) time.Time { return time.Unix(1_700_000_000+n, 123456000).UTC() }
 
+var shop = domain.Repo{Host: "forge.example", Path: "acme/shop"}
+
 func evented(id domain.TaskID, rev domain.Revision) domain.Task {
 	sp := &domain.Spec{Name: "review", File: "specs/review.yaml"}
 	ev := &domain.Event{Source: "forge", Group: "g", Rev: rev, Context: []byte(`{"n":1}`)}
-	return domain.Task{ID: id, Project: "shop", Prompt: "p", Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
+	return domain.Task{ID: id, Repo: shop, Prompt: "p", Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
 }
 
 func person(id domain.TaskID) domain.Task {
-	return domain.Task{ID: id, Project: "shop", Prompt: "p", State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
+	return domain.Task{ID: id, Repo: shop, Prompt: "p", State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
 }
 
 func full(id domain.TaskID) domain.Task {
@@ -27,8 +29,7 @@ func full(id domain.TaskID) domain.Task {
 	t.StartedBy, t.TokenOwner = "ann", "bob"
 	t.ReviewPrompt = "check the page"
 	t.State, t.Runner, t.Run, t.Gen, t.LastSeq = domain.Running, "m1", 2, 3, 2
-	t.Pins = map[domain.Dir]domain.Commit{"api": "abc", "web": "def"}
-	t.Refs = map[domain.Dir]string{"api": "main"}
+	t.Commit, t.Ref = "abc", "main"
 	t.Deadline, t.KeepUntil, t.EndedAt, t.Failure = at(10), at(20), at(30), "boom"
 	return t
 }
@@ -80,7 +81,7 @@ func wantErr(t *testing.T, what string, err, want error) {
 	}
 }
 
-// sameTask compares times by instant and treats an empty map as a missing one, which is all a
+// sameTask compares times by instant and treats an empty context as a missing one, which is all a
 // database can keep apart.
 func sameTask(t *testing.T, what string, got, want domain.Task) {
 	t.Helper()
@@ -102,12 +103,6 @@ func sameTask(t *testing.T, what string, got, want domain.Task) {
 
 func plain(t domain.Task) domain.Task {
 	t.Deadline, t.KeepUntil, t.CreatedAt, t.EndedAt = time.Time{}, time.Time{}, time.Time{}, time.Time{}
-	if len(t.Pins) == 0 {
-		t.Pins = nil
-	}
-	if len(t.Refs) == 0 {
-		t.Refs = nil
-	}
 	if t.Event != nil {
 		ev := *t.Event
 		if len(ev.Context) == 0 {

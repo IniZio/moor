@@ -55,9 +55,11 @@ type Concurrency struct {
 }
 
 // TaskSpec is what a task spec file says. Prompt is a template, which is not rendered here, and an
-// empty ReviewPrompt means no review step.
+// empty ReviewPrompt means no review step. Repositories narrows the repositories whose events apply,
+// and empty means every allowed repository.
 type TaskSpec struct {
 	Name         SpecName
+	Repositories []Repo
 	On           On
 	Concurrency  Concurrency
 	Prompt       string
@@ -65,7 +67,8 @@ type TaskSpec struct {
 }
 
 // Validate refuses a spec that could not start a task: it needs a file-safe name, at least one
-// way to start, a prompt, known and distinct pull request types, and a five-field cron.
+// way to start, a prompt, whole and distinct repositories, known and distinct pull request types,
+// and a five-field cron.
 func (s TaskSpec) Validate() error {
 	switch {
 	case !specNamePattern.MatchString(string(s.Name)):
@@ -75,10 +78,24 @@ func (s TaskSpec) Validate() error {
 	case strings.TrimSpace(s.Prompt) == "":
 		return fmt.Errorf("%w: %s has no prompt", ErrBadTaskSpec, s.Name)
 	}
+	if err := s.validateRepositories(); err != nil {
+		return err
+	}
 	if err := s.On.PullRequest.validate(s.Name); err != nil {
 		return err
 	}
 	return s.On.Schedule.validate(s.Name)
+}
+
+func (s TaskSpec) validateRepositories() error {
+	seen := make(map[Repo]bool, len(s.Repositories))
+	for _, r := range s.Repositories {
+		if !r.Complete() || seen[r] {
+			return fmt.Errorf("%w: %s has an incomplete or repeated repository %q", ErrBadTaskSpec, s.Name, r)
+		}
+		seen[r] = true
+	}
+	return nil
 }
 
 func (p *PullRequestOn) validate(name SpecName) error {

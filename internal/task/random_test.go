@@ -21,7 +21,7 @@ const (
 type fuzz struct {
 	*harness
 	rng      *rand.Rand
-	other    domain.Project
+	other    domain.Repo
 	previous map[domain.TaskID]domain.State
 }
 
@@ -55,20 +55,20 @@ func (f *fuzz) step() func() error {
 
 func (f *fuzz) start() func() error {
 	n := f.pick(10)
-	project := f.proj
+	repo := f.repo
 	if f.pick(3) == 0 {
-		project = f.other
+		repo = f.other
 	}
 	review := ""
 	if f.pick(2) == 0 {
 		review = "check it"
 	}
 	if n < 3 {
-		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Project: project, Prompt: "p", ReviewPrompt: review, By: "ann"}
+		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Repo: repo, Prompt: "p", ReviewPrompt: review, By: "ann"}
 		return func() error { return errOf(f.svc.StartByPerson(f.ctx(), in)) }
 	}
 	in := f.evIn(domain.TaskID(fmt.Sprintf("g%d", f.pick(60))), fmt.Sprintf("pr%d", f.pick(2)), fmt.Sprintf("rev%d", f.pick(4)))
-	in.Project, in.ReviewPrompt = project, review
+	in.Repo, in.ReviewPrompt = repo, review
 	if f.pick(3) == 0 {
 		in.Event.Source = quiet
 	}
@@ -137,12 +137,7 @@ func TestRandomSequences(t *testing.T) {
 }
 
 func runSeed(t *testing.T, seed uint64) {
-	f := &fuzz{harness: newHarness(t), rng: rand.New(rand.NewPCG(seed, 7)), previous: make(map[domain.TaskID]domain.State)}
-	other, err := domain.NewProject("blog", f.proj.Entries())
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.other = other
+	f := &fuzz{harness: newHarness(t), rng: rand.New(rand.NewPCG(seed, 7)), other: blog, previous: make(map[domain.TaskID]domain.State)}
 	for i := range stepCount {
 		if call := f.step(); call != nil {
 			f.exercise(t, i, call)
@@ -175,7 +170,7 @@ func (f *fuzz) invariants(t *testing.T, i int) {
 	for _, tk := range f.mem.Tasks() {
 		f.checkTask(t, i, tk)
 		if tk.Event != nil && *tk.Spec == spec && tk.State.Live() {
-			live[domain.TaskKey{Project: tk.Project, Spec: tk.Spec.Name, Source: tk.Event.Source, Group: tk.Event.Group}]++
+			live[domain.TaskKey{Repo: tk.Repo, Spec: tk.Spec.Name, Source: tk.Event.Source, Group: tk.Event.Group}]++
 		}
 	}
 	for key, n := range live {

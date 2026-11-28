@@ -51,7 +51,7 @@ func missing(t *testing.T, s Subject) {
 	ctx := context.Background()
 	_, err := s.Store.Load(ctx, "nope")
 	wantErr(t, "load", err, domain.ErrNotFound)
-	_, err = s.Store.ByKey(ctx, domain.TaskKey{Project: "shop", Spec: "review", Source: "forge", Group: "g", Rev: "nope"})
+	_, err = s.Store.ByKey(ctx, domain.TaskKey{Repo: shop, Spec: "review", Source: "forge", Group: "g", Rev: "nope"})
 	wantErr(t, "by key", err, domain.ErrNotFound)
 	_, err = s.Store.Save(ctx, domain.TaskWrite{Task: person("nope")})
 	wantErr(t, "save", err, domain.ErrNotFound)
@@ -69,8 +69,11 @@ func duplicates(t *testing.T, s Subject) {
 		wantErr(t, name, err, domain.ErrExists)
 	}
 	other := evented("t3", "r1")
-	other.Project = "blog"
+	other.Repo.Path = "blog"
 	create(t, s, other)
+	otherHost := evented("t5", "r1")
+	otherHost.Repo.Host = "other.example"
+	create(t, s, otherHost)
 	otherSpec := evented("t4", "r1")
 	otherSpec.Spec = &domain.Spec{Name: "nightly", File: "specs/nightly.yaml"}
 	create(t, s, otherSpec)
@@ -198,12 +201,13 @@ func liveInGroup(t *testing.T, s Subject) {
 	mk("b", "r2", 1, domain.Running, nil)
 	mk("c", "r3", 3, domain.Done, nil)
 	mk("d", "r4", 4, domain.Delivering, func(x *domain.Task) { x.Event.Group = "other" })
-	mk("e", "r5", 5, domain.Waiting, func(x *domain.Task) { x.Project = "blog" })
+	mk("e", "r5", 5, domain.Waiting, func(x *domain.Task) { x.Repo.Path = "blog" })
 	mk("f", "r6", 6, domain.Waiting, func(x *domain.Task) { x.Event.Source = "other" })
 	mk("g", "r7", 7, domain.Superseded, nil)
 	mk("i", "r8", 8, domain.Waiting, func(x *domain.Task) { x.Spec.Name = "nightly" })
+	mk("j", "r9", 9, domain.Waiting, func(x *domain.Task) { x.Repo.Host = "other.example" })
 	create(t, s, person("h"))
-	got, err := s.Store.LiveInGroup(context.Background(), "shop", "review", "forge", "g")
+	got, err := s.Store.LiveInGroup(context.Background(), shop, "review", "forge", "g")
 	if err != nil || len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
 		t.Errorf("live = %+v, %v, want b then a", got, err)
 	}
@@ -212,11 +216,10 @@ func liveInGroup(t *testing.T, s Subject) {
 func copies(t *testing.T, s Subject) {
 	create(t, s, full("t1"))
 	got := load(t, s, "t1")
-	got.Pins["api"] = "changed"
 	got.Event.Context[0] = 'X'
 	got.Spec.File = "changed"
 	again := load(t, s, "t1")
-	if again.Pins["api"] != "abc" || again.Event.Context[0] != '{' || again.Spec.File != "specs/review.yaml" {
+	if again.Event.Context[0] != '{' || again.Spec.File != "specs/review.yaml" {
 		t.Errorf("a caller changed the stored task: %+v", again)
 	}
 }

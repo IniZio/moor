@@ -126,13 +126,6 @@ type Repo struct {
 	Path string `json:"path"`
 }
 
-type EntryCommit struct {
-	Repo   Repo   `json:"repo"`
-	Dir    string `json:"dir"`
-	Commit string `json:"commit"`
-	Setup  string `json:"setup,omitempty"`
-}
-
 // Event is the integration event that started a task. Its parts are opaque to the link.
 type Event struct {
 	Source  string          `json:"source"`
@@ -149,7 +142,9 @@ type Spec struct {
 
 type TaskStart struct {
 	Fence
-	Entries       []EntryCommit   `json:"entries"`
+	Repo          Repo            `json:"repo"`
+	Commit        string          `json:"commit"`
+	Setup         string          `json:"setup,omitempty"`
 	Prompt        string          `json:"prompt"`
 	ReviewPrompt  string          `json:"review_prompt,omitempty"`
 	Skills        []string        `json:"skills"`
@@ -206,9 +201,10 @@ type TermAttach struct {
 }
 
 type WarmBuild struct {
-	Project       string        `json:"project"`
-	InputHash     string        `json:"input_hash"`
-	Entries       []EntryCommit `json:"entries"`
-	HomeCommit    string        `json:"home_commit"`
-	BudgetSeconds int64         `json:"budget"`
+	Repo          Repo   `json:"repo"`
+	Commit        string `json:"commit"`
+	Setup         string `json:"setup,omitempty"`
+	InputHash     string `json:"input_hash"`
+	HomeCommit    string `json:"home_commit"`
+	BudgetSeconds int64  `json:"budget"`
 }

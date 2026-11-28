@@ -9,7 +9,8 @@ import (
 
 func fullSpec() domain.TaskSpec {
 	return domain.TaskSpec{
-		Name: "pr-evidence",
+		Name:         "pr-evidence",
+		Repositories: []domain.Repo{{Host: "forge.example", Path: "acme/app"}, {Host: "forge.example", Path: "acme/api"}},
 		On: domain.On{
 			PullRequest:      &domain.PullRequestOn{Types: []domain.PullRequestType{domain.PROpened, domain.PRSynchronize}},
 			Schedule:         &domain.ScheduleOn{Cron: "0 9 * * 1"},
@@ -46,6 +47,11 @@ func TestTaskSpecValidate(t *testing.T) {
 		"empty type":       func(s *domain.TaskSpec) { s.On.PullRequest.Types = []domain.PullRequestType{""} },
 		"repeated type": func(s *domain.TaskSpec) {
 			s.On.PullRequest.Types = []domain.PullRequestType{domain.PROpened, domain.PROpened}
+		},
+		"repository without a host": func(s *domain.TaskSpec) { s.Repositories = []domain.Repo{{Path: "acme/app"}} },
+		"repository without a path": func(s *domain.TaskSpec) { s.Repositories = []domain.Repo{{Host: "forge.example"}} },
+		"repeated repository": func(s *domain.TaskSpec) {
+			s.Repositories = []domain.Repo{{Host: "forge.example", Path: "acme/app"}, {Host: "forge.example", Path: "acme/app"}}
 		},
 		"cron of four": func(s *domain.TaskSpec) { s.On.Schedule.Cron = "0 9 * *" },
 		"cron of six":  func(s *domain.TaskSpec) { s.On.Schedule.Cron = "0 0 9 * * 1" },

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"maps"
 	"slices"
 	"sync"
 
@@ -49,12 +48,12 @@ func (m *Memory) ByKey(_ context.Context, key domain.TaskKey) (domain.Task, erro
 	return domain.Task{}, fmt.Errorf("key %v: %w", key, domain.ErrNotFound)
 }
 
-func (m *Memory) LiveInGroup(_ context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
+func (m *Memory) LiveInGroup(_ context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var live []domain.Task
 	for _, t := range m.tasks {
-		if k, ok := t.Key(); ok && k.Project == project && k.Spec == spec && k.Source == source && k.Group == group && t.State.Live() {
+		if k, ok := t.Key(); ok && k.Repo == repo && k.Spec == spec && k.Source == source && k.Group == group && t.State.Live() {
 			live = append(live, clone(t))
 		}
 	}
@@ -176,8 +175,6 @@ func checkEvents(w domain.TaskWrite, lastSeq int64) error {
 }
 
 func clone(t domain.Task) domain.Task {
-	t.Pins = maps.Clone(t.Pins)
-	t.Refs = maps.Clone(t.Refs)
 	if t.Spec != nil {
 		sp := *t.Spec
 		t.Spec = &sp

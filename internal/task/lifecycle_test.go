@@ -115,7 +115,7 @@ func TestNoLimitsWhenConfiguredZero(t *testing.T) {
 	h := newHarness(t)
 	svc := task.New(h.mem, h.clock, task.Config{})
 	person := h.id("zero")
-	if _, err := svc.StartByPerson(h.ctx(), task.StartInput{ID: person, Project: h.proj, Prompt: "p", By: "ann"}); err != nil {
+	if _, err := svc.StartByPerson(h.ctx(), task.StartInput{ID: person, Repo: h.repo, Prompt: "p", By: "ann"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range []task.Report{{Kind: task.SlotTaken, Runner: "r1"}, {Kind: task.PartsUp, Run: 1}} {

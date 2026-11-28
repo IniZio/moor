@@ -57,7 +57,7 @@ func loadTask(ctx context.Context, q querier, id domain.TaskID) (domain.Task, er
 }
 
 func (s *Store) ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error) {
-	row := s.pool.QueryRow(ctx, selectByKey, string(key.Project), string(key.Spec), string(key.Source), string(key.Group), string(key.Rev))
+	row := s.pool.QueryRow(ctx, selectByKey, string(key.Repo.Host), string(key.Repo.Path), string(key.Spec), string(key.Source), string(key.Group), string(key.Rev))
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Task{}, fmt.Errorf("key %v: %w", key, domain.ErrNotFound)
@@ -65,10 +65,10 @@ func (s *Store) ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, err
 	return t, err
 }
 
-func (s *Store) LiveInGroup(ctx context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
-	rows, err := s.pool.Query(ctx, selectLive, string(project), string(spec), string(source), string(group), liveStates())
+func (s *Store) LiveInGroup(ctx context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
+	rows, err := s.pool.Query(ctx, selectLive, string(repo.Host), string(repo.Path), string(spec), string(source), string(group), liveStates())
 	if err != nil {
-		return nil, fmt.Errorf("live tasks of %s %s %s %s: %w", project, spec, source, group, err)
+		return nil, fmt.Errorf("live tasks of %s %s %s %s: %w", repo, spec, source, group, err)
 	}
 	defer rows.Close()
 	var live []domain.Task
@@ -80,19 +80,19 @@ func (s *Store) LiveInGroup(ctx context.Context, project domain.ProjectName, spe
 		live = append(live, t)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("live tasks of %s %s %s %s: %w", project, spec, source, group, err)
+		return nil, fmt.Errorf("live tasks of %s %s %s %s: %w", repo, spec, source, group, err)
 	}
 	return live, nil
 }
 
 // Both reads end on the columns of the unique event key, so they walk its index.
 const (
-	selectKeyed = "WHERE project = $1 AND spec_name = $2 AND event_source = $3 AND event_group = $4"
+	selectKeyed = "WHERE repo_host = $1 AND repo_path = $2 AND spec_name = $3 AND event_source = $4 AND event_group = $5"
 )
 
 var (
-	selectByKey = selectTask + selectKeyed + " AND event_rev = $5"
-	selectLive  = selectTask + selectKeyed + " AND state = ANY($5) ORDER BY created_at, id"
+	selectByKey = selectTask + selectKeyed + " AND event_rev = $6"
+	selectLive  = selectTask + selectKeyed + " AND state = ANY($6) ORDER BY created_at, id"
 )
 
 func liveStates() []string {

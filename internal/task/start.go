@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/IniZio/moor/internal/domain"
 )
@@ -13,10 +12,10 @@ import (
 // retried request names the same task. A task with no review prompt ends on its first publish.
 type StartInput struct {
 	ID           domain.TaskID
-	Project      domain.Project
+	Repo         domain.Repo
 	Prompt       string
 	ReviewPrompt string
-	Refs         map[domain.Dir]string
+	Ref          string
 	By           domain.Person
 }
 
@@ -30,32 +29,16 @@ func (s *Service) StartByPerson(ctx context.Context, in StartInput) (Outcome, er
 }
 
 func personTask(in StartInput) (domain.Task, error) {
-	if in.ID == "" || in.By == "" || in.Project.Name() == "" {
-		return domain.Task{}, fmt.Errorf("%w: a task needs an id, a person and a project", ErrBadInput)
+	if in.ID == "" || in.By == "" || !in.Repo.Complete() {
+		return domain.Task{}, fmt.Errorf("%w: a task needs an id, a person and a repository", ErrBadInput)
 	}
 	if in.Prompt == "" {
 		return domain.Task{}, fmt.Errorf("%w: no prompt", ErrBadInput)
 	}
-	if err := checkRefs(in.Project, in.Refs); err != nil {
-		return domain.Task{}, err
-	}
 	return domain.Task{
-		ID: in.ID, Project: in.Project.Name(), Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
-		StartedBy: string(in.By), Refs: maps.Clone(in.Refs), State: domain.Waiting,
+		ID: in.ID, Repo: in.Repo, Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
+		StartedBy: string(in.By), Ref: in.Ref, State: domain.Waiting,
 	}, nil
-}
-
-func checkRefs(p domain.Project, refs map[domain.Dir]string) error {
-	dirs := make(map[domain.Dir]bool)
-	for _, e := range p.Entries() {
-		dirs[e.Dir] = true
-	}
-	for dir, ref := range refs {
-		if !dirs[dir] || ref == "" {
-			return fmt.Errorf("%w: no entry %q or an empty ref in project %s", ErrBadInput, dir, p.Name())
-		}
-	}
-	return nil
 }
 
 // Retry starts a new task with a failed plain-prompt task's inputs and records the link on it.
@@ -69,8 +52,8 @@ func (s *Service) Retry(ctx context.Context, newID, oldID domain.TaskID) (Outcom
 		return Outcome{}, fmt.Errorf("task %s: %w: retry needs a failed plain-prompt task and a new id", oldID, domain.ErrRefused)
 	}
 	t := domain.Task{
-		ID: newID, Project: old.Project, Prompt: old.Prompt, ReviewPrompt: old.ReviewPrompt,
-		StartedBy: old.StartedBy, Refs: maps.Clone(old.Refs), State: domain.Waiting,
+		ID: newID, Repo: old.Repo, Prompt: old.Prompt, ReviewPrompt: old.ReviewPrompt,
+		StartedBy: old.StartedBy, Ref: old.Ref, State: domain.Waiting,
 	}
 	rows := []row{createdRow("retry of " + string(oldID)), {domain.KindNote, domain.NoteData{Text: "retry of " + string(oldID)}}}
 	return s.create(ctx, t, rows)

@@ -18,6 +18,8 @@ const (
 )
 
 var (
+	app     = domain.Repo{Host: "forge.example", Path: "acme/app"}
+	blog    = domain.Repo{Host: "forge.example", Path: "acme/blog"}
 	spec    = domain.Spec{Name: "pr-evidence", File: "specs/pr-evidence.yaml"}
 	nightly = domain.Spec{Name: "nightly", File: "specs/nightly.yaml"}
 )
@@ -30,7 +32,7 @@ type harness struct {
 	mem   *tasktest.Memory
 	clock *tasktest.Clock
 	svc   *task.Service
-	proj  domain.Project
+	repo  domain.Repo
 	n     int
 }
 
@@ -42,17 +44,12 @@ func newHarness(t *testing.T) *harness {
 // newHarnessOn builds a harness whose service reads and writes through wrap(mem), when given.
 func newHarnessOn(t *testing.T, mem *tasktest.Memory, wrap func(task.Store) task.Store) *harness {
 	t.Helper()
-	entry := domain.Entry{Repo: domain.Repo{Host: "forge.example", Path: "acme/app"}, Ref: "main", Dir: "app"}
-	proj, err := domain.NewProject("shop", []domain.Entry{entry})
-	if err != nil {
-		t.Fatal(err)
-	}
 	clock := tasktest.NewClock(time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC))
 	var store task.Store = mem
 	if wrap != nil {
 		store = wrap(mem)
 	}
-	return &harness{t: t, mem: mem, clock: clock, svc: task.New(store, clock, cfg), proj: proj}
+	return &harness{t: t, mem: mem, clock: clock, svc: task.New(store, clock, cfg), repo: app}
 }
 
 func (h *harness) id(prefix string) domain.TaskID {
@@ -72,7 +69,7 @@ func (h *harness) ok(out task.Outcome, err error) task.Outcome {
 
 func (h *harness) person() domain.TaskID {
 	id := h.id("person")
-	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: id, Project: h.proj, Prompt: "look at it", By: "ann"}))
+	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: id, Repo: h.repo, Prompt: "look at it", By: "ann"}))
 	return id
 }
 
@@ -83,7 +80,7 @@ func (h *harness) evIn(id domain.TaskID, group, rev string) task.EventInput {
 
 func (h *harness) evInFrom(id domain.TaskID, from domain.EventSource, group, rev string) task.EventInput {
 	ev := domain.Event{Source: from, Group: domain.EventGroup(group), Rev: domain.Revision(rev), Context: []byte(`{"pr":7}`)}
-	return task.EventInput{ID: id, Project: h.proj, Spec: spec, Event: ev, Prompt: "show it", CancelInProgress: true}
+	return task.EventInput{ID: id, Repo: h.repo, Spec: spec, Event: ev, Prompt: "show it", CancelInProgress: true}
 }
 
 func (h *harness) newerIn(id, old domain.TaskID, rev string) task.EventInput {
@@ -101,7 +98,7 @@ func (h *harness) start(flow domain.Flow, review string) domain.TaskID {
 	h.t.Helper()
 	if flow == domain.Plain {
 		id := h.id("person")
-		h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: id, Project: h.proj, Prompt: "look at it", ReviewPrompt: review, By: "ann"}))
+		h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: id, Repo: h.repo, Prompt: "look at it", ReviewPrompt: review, By: "ann"}))
 		return id
 	}
 	from := source

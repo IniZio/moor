@@ -1,7 +1,7 @@
 # moor (fresh)
 
 This branch is a fresh start of moor in Go. A team gives a coding agent a
-prompt on a project and gets back a result page. The spec lives outside this
+prompt on a repository and gets back a result page. The spec lives outside this
 repository for now.
 
 This first commit is the scaffold only. It holds the package layout, the

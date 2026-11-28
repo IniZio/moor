@@ -15,9 +15,7 @@ import (
 
 var fence = wire.Fence{Task: "t1", Run: 2, Gen: 3}
 
-var entries = []wire.EntryCommit{{
-	Repo: wire.Repo{Host: "forge.example", Path: "acme/app"}, Dir: "app", Commit: "abc", Setup: "make setup",
-}}
+var repo = wire.Repo{Host: "forge.example", Path: "acme/app"}
 
 var messages = []struct {
 	name   string
@@ -36,13 +34,13 @@ var messages = []struct {
 	{"runner.status reply", &wire.RunnerStatusReply{Build: "b1", Proto: 1, Slots: 4, Tasks: 1}, "build proto slots tasks"},
 	{"runner.report", &wire.RunnerReport{DiskFree: 10, MemFree: 20, SlotsFree: 3}, "disk_free mem_free slots_free"},
 	{"task.start", &wire.TaskStart{
-		Fence: fence, Entries: entries, Prompt: "show it", ReviewPrompt: "check it", Skills: []string{"drive"},
+		Fence: fence, Repo: repo, Commit: "abc", Setup: "make setup", Prompt: "show it", ReviewPrompt: "check it", Skills: []string{"drive"},
 		Spec:      &wire.Spec{Name: "pr-evidence", File: "specs/pr-evidence.yaml"},
 		Event:     &wire.Event{Source: "forge", Group: "acme/app#7", Rev: "abc", Context: json.RawMessage(`{"n":7}`)},
 		Harness:   "claude",
 		WarmState: "w1", BudgetSeconds: 3600, ModelToken: "tok", AllowHosts: []string{"example.com"},
 		SecretRules: json.RawMessage(`[{"host":"example.com"}]`),
-	}, "allow_hosts budget entries event gen harness model_token prompt review_prompt run secret_rules skills spec task warm_state"},
+	}, "allow_hosts budget commit event gen harness model_token prompt repo review_prompt run secret_rules setup skills spec task warm_state"},
 	{"task.watch", &wire.TaskWatch{}, ""},
 	{"task.watch line", &wire.TaskWatchLine{Fence: fence, Part: "box", State: "up", Code: 0}, "code gen part run state task"},
 	{"box.recreate", &wire.BoxRecreate{Fence: fence, HomeCommit: "h1", WarmState: "w1"}, "gen home_commit run task warm_state"},
@@ -51,7 +49,7 @@ var messages = []struct {
 	{"task.list", &wire.TaskList{}, ""},
 	{"task.list reply", &wire.TaskListReply{Tasks: []wire.ListedTask{{Fence: fence, Containers: []string{"desk"}}}}, "tasks"},
 	{"term.attach", &wire.TermAttach{Task: "t1", Mode: "steer", Cols: 80, Rows: 24, History: 1000}, "cols history mode rows task"},
-	{"warm.build", &wire.WarmBuild{Project: "app", InputHash: "i1", Entries: entries, HomeCommit: "h1", BudgetSeconds: 900}, "budget entries home_commit input_hash project"},
+	{"warm.build", &wire.WarmBuild{Repo: repo, Commit: "abc", Setup: "make setup", InputHash: "i1", HomeCommit: "h1", BudgetSeconds: 900}, "budget commit home_commit input_hash repo setup"},
 }
 
 func TestMessagesRoundTrip(t *testing.T) {

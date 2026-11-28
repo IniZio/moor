@@ -75,15 +75,11 @@ func TestSupersedeLeavesOthersAlone(t *testing.T) {
 	h := newHarness(t)
 	other := h.ev("acme/app#1", "rev-1")
 	h.ev("acme/app#2", "rev-1")
-	otherProject, err := domain.NewProject("blog", h.proj.Entries())
-	if err != nil {
-		t.Fatal(err)
-	}
 	in := h.evIn("blog-task", "acme/app#1", "rev-2")
-	in.Project = otherProject
+	in.Repo = blog
 	h.ok(h.svc.StartByEvent(h.ctx(), in))
 	if got := h.get(other).State; got != domain.Waiting {
-		t.Errorf("a task of another group or project was superseded: %s", got)
+		t.Errorf("a task of another group or repository was superseded: %s", got)
 	}
 }
 

@@ -12,9 +12,9 @@ import (
 )
 
 var taskColumns = []string{
-	"id", "project", "prompt", "review_prompt", "started_by",
+	"id", "repo_host", "repo_path", "prompt", "review_prompt", "started_by",
 	"spec_name", "spec_file", "event_source", "event_group", "event_rev", "event_context",
-	"state", "version", "pins", "refs", "runner_id", "run", "gen", "last_seq",
+	"state", "version", "commit", "ref", "runner_id", "run", "gen", "last_seq",
 	"deadline", "keep_until", "failure", "token_owner", "created_at", "ended_at",
 }
 
@@ -41,7 +41,7 @@ func assignments(cols []string) string {
 	return strings.Join(parts, ", ")
 }
 
-// taskArgs lists t's values in taskColumns order. Zero times, empty maps and empty bytes are NULL.
+// taskArgs lists t's values in taskColumns order. Zero times and empty bytes are NULL.
 func taskArgs(t domain.Task, version int64) ([]any, error) {
 	state, err := t.State.MarshalText()
 	if err != nil {
@@ -50,9 +50,9 @@ func taskArgs(t domain.Task, version int64) ([]any, error) {
 	specName, specFile := specArgs(t.Spec)
 	source, group, rev, context := eventArgs(t.Event)
 	return []any{
-		string(t.ID), string(t.Project), t.Prompt, t.ReviewPrompt, t.StartedBy,
+		string(t.ID), string(t.Repo.Host), string(t.Repo.Path), t.Prompt, t.ReviewPrompt, t.StartedBy,
 		specName, specFile, source, group, rev, context,
-		string(state), version, mapOrNil(t.Pins), mapOrNil(t.Refs), string(t.Runner), t.Run, t.Gen, t.LastSeq,
+		string(state), version, string(t.Commit), t.Ref, string(t.Runner), t.Run, t.Gen, t.LastSeq,
 		timeOrNil(t.Deadline), timeOrNil(t.KeepUntil), t.Failure, string(t.TokenOwner), t.CreatedAt, timeOrNil(t.EndedAt),
 	}, nil
 }
@@ -80,13 +80,6 @@ func nilIfEmpty(b []byte) []byte {
 	return b
 }
 
-func mapOrNil[K ~string, V any](m map[K]V) any {
-	if len(m) == 0 {
-		return nil
-	}
-	return m
-}
-
 func timeOrNil(t time.Time) any {
 	if t.IsZero() {
 		return nil
@@ -103,8 +96,8 @@ func scanTask(row pgx.Row) (domain.Task, error) {
 		state                        string
 		deadline, keepUntil, endedAt *time.Time
 	)
-	err := row.Scan(&t.ID, &t.Project, &t.Prompt, &t.ReviewPrompt, &t.StartedBy, &specName, &specFile, &source, &group, &rev, &context,
-		&state, &t.Version, &t.Pins, &t.Refs, &t.Runner, &t.Run, &t.Gen, &t.LastSeq,
+	err := row.Scan(&t.ID, &t.Repo.Host, &t.Repo.Path, &t.Prompt, &t.ReviewPrompt, &t.StartedBy, &specName, &specFile, &source, &group, &rev, &context,
+		&state, &t.Version, &t.Commit, &t.Ref, &t.Runner, &t.Run, &t.Gen, &t.LastSeq,
 		&deadline, &keepUntil, &t.Failure, &t.TokenOwner, &t.CreatedAt, &endedAt)
 	if err != nil {
 		return domain.Task{}, fmt.Errorf("scan task: %w", err)

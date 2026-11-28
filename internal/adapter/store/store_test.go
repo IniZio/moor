@@ -20,7 +20,7 @@ func TestPostgresPassesTheStoreContract(t *testing.T) {
 func newTask(id string, rev domain.Revision) domain.Task {
 	sp := &domain.Spec{Name: "review", File: "specs/review.yaml"}
 	ev := &domain.Event{Source: "forge", Group: "g", Rev: rev}
-	return domain.Task{ID: domain.TaskID(id), Project: "shop", Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1, CreatedAt: time.Unix(1, 0)}
+	return domain.Task{ID: domain.TaskID(id), Repo: domain.Repo{Host: "forge.example", Path: "acme/shop"}, Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1, CreatedAt: time.Unix(1, 0)}
 }
 
 func row(id domain.TaskID, seq int64) domain.EventRow {
@@ -233,8 +233,8 @@ func TestOpeningTwiceAppliesMigrationsOnce(t *testing.T) {
 
 func TestTheTableKeepsSpecAndEventWhole(t *testing.T) {
 	s := freshStore(t)
-	insert := "INSERT INTO tasks (id, project, prompt, state, version, created_at, spec_name, spec_file, event_source, event_group, event_rev) " +
-		"VALUES ($1, 'p', '', 'waiting', 1, now(), $2, $3, $4, $5, $6)"
+	insert := "INSERT INTO tasks (id, repo_host, repo_path, prompt, state, version, created_at, spec_name, spec_file, event_source, event_group, event_rev) " +
+		"VALUES ($1, 'h', 'p', '', 'waiting', 1, now(), $2, $3, $4, $5, $6)"
 	refused := map[string][]any{
 		"a spec name without a file": {"review", nil, nil, nil, nil},
 		"a spec file without a name": {nil, "f.yaml", nil, nil, nil},

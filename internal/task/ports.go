@@ -13,8 +13,8 @@ type Store interface {
 	// Load and ByKey return domain.ErrNotFound for no row.
 	Load(ctx context.Context, id domain.TaskID) (domain.Task, error)
 	ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error)
-	// LiveInGroup lists the live tasks of one project, spec, event source and event group, oldest first.
-	LiveInGroup(ctx context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
+	// LiveInGroup lists the live tasks of one repository, spec, event source and event group, oldest first.
+	LiveInGroup(ctx context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
 	// Versions lists a task's result versions in order.
 	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
 	// Save applies w in one transaction. It returns the task as stored, with its version bumped.

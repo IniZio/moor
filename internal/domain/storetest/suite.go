@@ -14,7 +14,7 @@ import (
 type Store interface {
 	Load(ctx context.Context, id domain.TaskID) (domain.Task, error)
 	ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error)
-	LiveInGroup(ctx context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
+	LiveInGroup(ctx context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
 	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
 	Save(ctx context.Context, w domain.TaskWrite) (domain.Task, error)
 }

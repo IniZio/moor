@@ -1,17 +1,18 @@
 package domain_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/IniZio/moor/internal/domain"
 )
 
+var app = domain.Repo{Host: "forge.example", Path: "acme/app"}
+
 var answerable = map[domain.EventSource]bool{"forge": true}
 
 func evented(spec domain.SpecName, source domain.EventSource) domain.Task {
 	return domain.Task{
-		Project: "app", Spec: &domain.Spec{Name: spec, File: "specs/" + string(spec) + ".yaml"},
+		Repo: app, Spec: &domain.Spec{Name: spec, File: "specs/" + string(spec) + ".yaml"},
 		Event: &domain.Event{Source: source, Group: "acme/app#7", Rev: "abc", Context: []byte(`{"n":7}`)},
 	}
 }
@@ -28,7 +29,7 @@ func TestTaskKey(t *testing.T) {
 	if !ok || other == k1 || other.Spec != "nightly" {
 		t.Errorf("two specs on one event share the key %v and %v", k1, other)
 	}
-	if _, ok := (domain.Task{ID: "t3", Project: "app"}).Key(); ok {
+	if _, ok := (domain.Task{ID: "t3", Repo: app}).Key(); ok {
 		t.Error("a plain-prompt task has a key")
 	}
 	noSpec := evented("review", "forge")
@@ -76,35 +77,26 @@ func TestAnswers(t *testing.T) {
 	}
 }
 
-func TestNewProject(t *testing.T) {
-	repo := domain.Repo{Host: "forge.example", Path: "acme/app"}
-	app := domain.Entry{Repo: repo, Ref: "main", Dir: "app", Setup: "make setup"}
-	api := domain.Entry{Repo: domain.Repo{Host: "forge.example", Path: "acme/api"}, Ref: "main", Dir: "api"}
-	p, err := domain.NewProject("shop", []domain.Entry{app, api})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := p.Entries(); len(got) != 2 || got[0] != app || got[1] != api || p.Name() != "shop" {
-		t.Errorf("project = %v %v", p.Name(), got)
-	}
-	bad := map[string][]domain.Entry{
-		"no entries":   nil,
-		"dir twice":    {app, app},
-		"absolute dir": {{Repo: repo, Ref: "main", Dir: "/app"}},
-		"escaping dir": {{Repo: repo, Ref: "main", Dir: "../app"}},
-		"unclean dir":  {{Repo: repo, Ref: "main", Dir: "a//b"}},
-		"no repo":      {{Ref: "main", Dir: "app"}},
-		"no host":      {{Repo: domain.Repo{Path: "acme/app"}, Ref: "main", Dir: "app"}},
-		"no path":      {{Repo: domain.Repo{Host: "forge.example"}, Ref: "main", Dir: "app"}},
-		"no ref":       {{Repo: repo, Dir: "app"}},
-		"empty dir":    {{Repo: repo, Ref: "main"}},
-	}
-	for name, entries := range bad {
-		if _, err := domain.NewProject("shop", entries); !errors.Is(err, domain.ErrBadProject) {
-			t.Errorf("%s: err = %v", name, err)
+func TestKeyHoldsTheWholeRepository(t *testing.T) {
+	first := evented("review", "forge")
+	k1, _ := first.Key()
+	for name, mutate := range map[string]func(*domain.Task){
+		"other host": func(x *domain.Task) { x.Repo.Host = "other.example" },
+		"other path": func(x *domain.Task) { x.Repo.Path = "acme/api" },
+	} {
+		other := evented("review", "forge")
+		mutate(&other)
+		if k2, _ := other.Key(); k2 == k1 {
+			t.Errorf("%s: shares the key %v", name, k1)
 		}
 	}
-	if _, err := domain.NewProject("", []domain.Entry{app}); !errors.Is(err, domain.ErrBadProject) {
-		t.Errorf("no name: err = %v", err)
+}
+
+func TestRepoComplete(t *testing.T) {
+	if !app.Complete() || (domain.Repo{Host: "forge.example"}).Complete() || (domain.Repo{Path: "acme/app"}).Complete() {
+		t.Error("Complete must need both the host and the path")
+	}
+	if got := app.String(); got != "forge.example/acme/app" {
+		t.Errorf("String = %q", got)
 	}
 }

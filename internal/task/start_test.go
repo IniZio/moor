@@ -12,12 +12,11 @@ import (
 func TestStartByPerson(t *testing.T) {
 	h := newHarness(t)
 	in := task.StartInput{
-		ID: "t1", Project: h.proj, Prompt: "look at it", By: "ann",
-		Refs: map[domain.Dir]string{"app": "feature"},
+		ID: "t1", Repo: h.repo, Prompt: "look at it", By: "ann", Ref: "feature",
 	}
 	out := h.ok(h.svc.StartByPerson(h.ctx(), in))
 	got := out.Task
-	if got.State != domain.Waiting || got.StartedBy != "ann" || got.Project != "shop" || got.Version != 1 || got.LastSeq != 1 || got.Refs["app"] != "feature" {
+	if got.State != domain.Waiting || got.StartedBy != "ann" || got.Repo != app || got.Version != 1 || got.LastSeq != 1 || got.Ref != "feature" {
 		t.Fatalf("task = %+v", got)
 	}
 	if rows := out.Events; len(rows) != 1 || rows[0].Kind != domain.KindState || rows[0].Seq != 1 || rows[0].Task != "t1" {
@@ -47,7 +46,7 @@ func TestPersonMayStartManyTasks(t *testing.T) {
 
 func TestStartByPersonKeepsTheReviewPrompt(t *testing.T) {
 	h := newHarness(t)
-	in := task.StartInput{ID: "t1", Project: h.proj, Prompt: "p", ReviewPrompt: "check it", By: "ann"}
+	in := task.StartInput{ID: "t1", Repo: h.repo, Prompt: "p", ReviewPrompt: "check it", By: "ann"}
 	got := h.ok(h.svc.StartByPerson(h.ctx(), in)).Task
 	if got.ReviewPrompt != "check it" || got.Spec != nil || got.Event != nil || got.Flow(cfg.Answerable) != domain.Plain {
 		t.Errorf("task = %+v", got)
@@ -64,14 +63,13 @@ func TestStartByPersonKeepsTheReviewPrompt(t *testing.T) {
 
 func TestStartByPersonRefusesBadInput(t *testing.T) {
 	h := newHarness(t)
-	ok := task.StartInput{ID: "t1", Project: h.proj, Prompt: "p", By: "ann"}
+	ok := task.StartInput{ID: "t1", Repo: h.repo, Prompt: "p", By: "ann"}
 	bad := map[string]func(*task.StartInput){
-		"no id":       func(in *task.StartInput) { in.ID = "" },
-		"no person":   func(in *task.StartInput) { in.By = "" },
-		"no project":  func(in *task.StartInput) { in.Project = domain.Project{} },
-		"no prompt":   func(in *task.StartInput) { in.Prompt = "" },
-		"unknown dir": func(in *task.StartInput) { in.Refs = map[domain.Dir]string{"nope": "main"} },
-		"empty ref":   func(in *task.StartInput) { in.Refs = map[domain.Dir]string{"app": ""} },
+		"no id":     func(in *task.StartInput) { in.ID = "" },
+		"no person": func(in *task.StartInput) { in.By = "" },
+		"no host":   func(in *task.StartInput) { in.Repo.Host = "" },
+		"no path":   func(in *task.StartInput) { in.Repo.Path = "" },
+		"no prompt": func(in *task.StartInput) { in.Prompt = "" },
 	}
 	for name, mutate := range bad {
 		in := ok
@@ -144,15 +142,11 @@ func TestPersonRunningASpecStartsATaskWithSpecAndEvent(t *testing.T) {
 	}
 }
 
-func TestSameKeyInTwoProjectsStartsTwoTasks(t *testing.T) {
+func TestSameKeyInTwoRepositoriesStartsTwoTasks(t *testing.T) {
 	h := newHarness(t)
-	other, err := domain.NewProject("blog", h.proj.Entries())
-	if err != nil {
-		t.Fatal(err)
-	}
 	h.ok(h.svc.StartByEvent(h.ctx(), h.evIn("t1", "acme/app#7", "abc")))
 	in := h.evIn("t2", "acme/app#7", "abc")
-	in.Project = other
+	in.Repo = blog
 	h.ok(h.svc.StartByEvent(h.ctx(), in))
 	for _, id := range []domain.TaskID{"t1", "t2"} {
 		if got := h.get(id); got.State != domain.Waiting {
@@ -211,7 +205,7 @@ func TestRetry(t *testing.T) {
 
 func TestRetryKeepsTheReviewPrompt(t *testing.T) {
 	h := newHarness(t)
-	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "old", Project: h.proj, Prompt: "p", ReviewPrompt: "check it", By: "ann"}))
+	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: "old", Repo: h.repo, Prompt: "p", ReviewPrompt: "check it", By: "ann"}))
 	h.slot("old")
 	h.ok(h.report("old", task.Report{Kind: task.PartFailed}))
 	got := h.ok(h.svc.Retry(h.ctx(), "again", "old")).Task

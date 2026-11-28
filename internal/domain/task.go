@@ -7,11 +7,9 @@ import (
 
 type (
 	TaskID      string
-	ProjectName string
 	SkillName   string
 	Person      string
 	Commit      string
-	Dir         string
 	RunnerID    string
 	RepoHost    string
 	RepoPath    string
@@ -25,6 +23,11 @@ type Repo struct {
 	Host RepoHost
 	Path RepoPath
 }
+
+// Complete is true when both the host and the path are set.
+func (r Repo) Complete() bool { return r.Host != "" && r.Path != "" }
+
+func (r Repo) String() string { return string(r.Host) + "/" + string(r.Path) }
 
 // Event is the integration event that started a task. Group and Context are opaque to the core.
 type Event struct {
@@ -41,9 +44,9 @@ type Spec struct {
 }
 
 type Task struct {
-	ID      TaskID
-	Project ProjectName
-	Prompt  string
+	ID     TaskID
+	Repo   Repo
+	Prompt string
 	// ReviewPrompt is sent after the first publish. Empty means the task has no review step.
 	ReviewPrompt string
 	StartedBy    string
@@ -52,9 +55,9 @@ type Task struct {
 	Event   *Event
 	State   State
 	Version int64
-	Pins    map[Dir]Commit
-	// Refs are the refs a person named for entries, by dir. Pins hold what they resolved to.
-	Refs      map[Dir]string
+	// Ref is the ref a person named. Commit is what it resolved to, empty until it is.
+	Ref       string
+	Commit    Commit
 	Runner    RunnerID
 	Run       int64
 	Gen       int64
@@ -85,16 +88,16 @@ func (t Task) Flow(answerable map[EventSource]bool) Flow {
 
 // TaskKey is unique among tasks an event started, and each spec that hears an event has its own.
 type TaskKey struct {
-	Project ProjectName
-	Spec    SpecName
-	Source  EventSource
-	Group   EventGroup
-	Rev     Revision
+	Repo   Repo
+	Spec   SpecName
+	Source EventSource
+	Group  EventGroup
+	Rev    Revision
 }
 
 func (t Task) Key() (TaskKey, bool) {
 	if t.Event == nil || t.Spec == nil {
 		return TaskKey{}, false
 	}
-	return TaskKey{Project: t.Project, Spec: t.Spec.Name, Source: t.Event.Source, Group: t.Event.Group, Rev: t.Event.Rev}, true
+	return TaskKey{Repo: t.Repo, Spec: t.Spec.Name, Source: t.Event.Source, Group: t.Event.Group, Rev: t.Event.Rev}, true
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/IniZio/moor/internal/domain"
@@ -15,7 +14,7 @@ import (
 // who ran the spec by hand. CancelInProgress is the spec's setting: only then does a newer event supersede.
 type EventInput struct {
 	ID               domain.TaskID
-	Project          domain.Project
+	Repo             domain.Repo
 	Spec             domain.Spec
 	Event            domain.Event
 	Prompt           string
@@ -43,8 +42,8 @@ func (s *Service) StartByEvent(ctx context.Context, in EventInput) (Outcome, err
 
 func eventTask(in EventInput) (domain.Task, error) {
 	ev, sp := in.Event, in.Spec
-	if in.ID == "" || in.Project.Name() == "" || sp.Name == "" || sp.File == "" || ev.Source == "" || ev.Group == "" || ev.Rev == "" {
-		return domain.Task{}, fmt.Errorf("%w: an event task needs an id, a project, a spec name and file, a source, a group and a rev", ErrBadInput)
+	if in.ID == "" || !in.Repo.Complete() || sp.Name == "" || sp.File == "" || ev.Source == "" || ev.Group == "" || ev.Rev == "" {
+		return domain.Task{}, fmt.Errorf("%w: an event task needs an id, a repository, a spec name and file, a source, a group and a rev", ErrBadInput)
 	}
 	ev.Context = bytes.Clone(ev.Context)
 	startedBy := "event:" + string(ev.Source)
@@ -52,7 +51,7 @@ func eventTask(in EventInput) (domain.Task, error) {
 		startedBy = string(in.By)
 	}
 	return domain.Task{
-		ID: in.ID, Project: in.Project.Name(), Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
+		ID: in.ID, Repo: in.Repo, Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
 		StartedBy: startedBy, Spec: &sp, Event: &ev, TokenOwner: in.TokenOwner, State: domain.Waiting,
 	}, nil
 }
@@ -95,7 +94,7 @@ func (s *Service) createdAfterLive(ctx context.Context, t domain.Task, now time.
 }
 
 func (s *Service) groupOf(ctx context.Context, t domain.Task) ([]domain.Task, error) {
-	live, err := s.store.LiveInGroup(ctx, t.Project, t.Spec.Name, t.Event.Source, t.Event.Group)
+	live, err := s.store.LiveInGroup(ctx, t.Repo, t.Spec.Name, t.Event.Source, t.Event.Group)
 	if err != nil {
 		return nil, fmt.Errorf("list live tasks of %s: %w", t.Event.Group, err)
 	}
@@ -134,8 +133,8 @@ func supersede(rev domain.Revision) decide {
 }
 
 func sameInputs(a, b domain.Task) bool {
-	return a.Project == b.Project && a.Prompt == b.Prompt && a.ReviewPrompt == b.ReviewPrompt &&
-		a.StartedBy == b.StartedBy && a.TokenOwner == b.TokenOwner && maps.Equal(a.Refs, b.Refs) &&
+	return a.Repo == b.Repo && a.Prompt == b.Prompt && a.ReviewPrompt == b.ReviewPrompt &&
+		a.StartedBy == b.StartedBy && a.TokenOwner == b.TokenOwner && a.Ref == b.Ref &&
 		sameSpec(a.Spec, b.Spec) && sameEvent(a.Event, b.Event)
 }
 

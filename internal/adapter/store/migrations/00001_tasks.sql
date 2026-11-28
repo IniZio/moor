@@ -1,9 +1,10 @@
 -- +goose Up
--- A spec and an event are each set whole, an event needs a spec, and the key holds per project and spec.
+-- A spec and an event are each set whole, an event needs a spec, and the key holds per repository and spec.
 -- Context and event data are json, not jsonb, because the core never reads them and must get the bytes back.
 CREATE TABLE tasks (
     id text PRIMARY KEY,
-    project text NOT NULL,
+    repo_host text NOT NULL,
+    repo_path text NOT NULL,
     prompt text NOT NULL,
     review_prompt text NOT NULL DEFAULT '',
     started_by text NOT NULL DEFAULT '',
@@ -16,8 +17,8 @@ CREATE TABLE tasks (
     state text NOT NULL CHECK (state IN
         ('waiting', 'starting', 'running', 'delivering', 'done', 'failed', 'superseded', 'cancelled')),
     version bigint NOT NULL CHECK (version > 0),
-    pins jsonb,
-    refs jsonb,
+    commit text NOT NULL DEFAULT '',
+    ref text NOT NULL DEFAULT '',
     runner_id text NOT NULL DEFAULT '',
     run bigint NOT NULL DEFAULT 0,
     gen bigint NOT NULL DEFAULT 0,
@@ -34,7 +35,7 @@ CREATE TABLE tasks (
     CONSTRAINT tasks_event_has_spec CHECK (event_source IS NULL OR spec_name IS NOT NULL)
 );
 
-CREATE UNIQUE INDEX tasks_event_key ON tasks (project, spec_name, event_source, event_group, event_rev)
+CREATE UNIQUE INDEX tasks_event_key ON tasks (repo_host, repo_path, spec_name, event_source, event_group, event_rev)
     WHERE event_source IS NOT NULL;
 
 CREATE TABLE task_events (
