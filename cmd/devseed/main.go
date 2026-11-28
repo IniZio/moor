@@ -8,19 +8,59 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/IniZio/moor/internal/adapter/store"
 	"github.com/IniZio/moor/internal/domain"
+	"github.com/IniZio/moor/internal/task"
 )
 
 func main() {
 	dsn := flag.String("database-url", os.Getenv("PORTAL_DATABASE_URL"), "Postgres URL (PORTAL_DATABASE_URL)")
+	playName := flag.String("play", "", "start one task and play it over time instead of seeding: run, hold, fail or review")
+	pace := flag.Duration("pace", 2*time.Second, "how long one wait of a played script lasts")
+	resultURL := flag.String("result-url", "https://results.example/page", "address a played task publishes as its result page")
+	repo := flag.String("repo", "example-org/shop-web", "repository of a played task, which Settings must allow for its page to be useful")
 	flag.Parse()
-	if err := run(context.Background(), *dsn, time.Now().UTC()); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	var err error
+	if *playName != "" {
+		err = playOne(ctx, *dsn, *playName, *repo, *pace, *resultURL)
+	} else {
+		err = run(ctx, *dsn, time.Now().UTC())
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "devseed:", err)
 		os.Exit(1)
 	}
+}
+
+// playOne starts a task and plays a script on it, printing the task's number first so a caller can open its page.
+func playOne(ctx context.Context, dsn, name, repoText string, pace time.Duration, resultURL string) error {
+	repo, err := domain.ParseRepo(repoText)
+	if err != nil {
+		return fmt.Errorf("repository: %w", err)
+	}
+	db, err := store.Open(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("open the database: %w", err)
+	}
+	defer db.Close()
+	id, err := db.NextTaskID(ctx)
+	if err != nil {
+		return fmt.Errorf("task number: %w", err)
+	}
+	p := &player{
+		svc:   task.New(db, clock{}, task.Config{Answerable: map[domain.EventSource]bool{"github": true}}),
+		store: db, id: id, repo: repo, pace: pace, resultURL: resultURL, runner: "build-1",
+	}
+	if err := p.start(ctx, name, "Mia", "Add a wishlist button to the product page and keep it after sign-in"); err != nil {
+		return err
+	}
+	fmt.Println(id)
+	return p.play(ctx, name)
 }
 
 type seed struct {

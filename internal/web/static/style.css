@@ -126,6 +126,7 @@ a.trow:hover { background: var(--hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ic.running circle { animation: none; } }
 
+#run { display: flex; flex-direction: column; gap: 12px; }
 .rhead { display: flex; flex-direction: column; gap: 4px; padding-bottom: 4px; }
 .rhead h1 { font-size: 19px; }
 .rrepo { padding-left: 24px; }
