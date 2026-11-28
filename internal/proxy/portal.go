@@ -50,10 +50,25 @@ func (p *Proxy) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if old := p.policy.Swap(&pol); old == nil || old.Version != pol.Version {
-		p.cfg.Log.Info("policy", "version", pol.Version, "rules", len(pol.Rules))
-	}
+	p.keepNewest(&pol)
 	return nil
+}
+
+// keepNewest stores pol unless the proxy holds a newer version: a read that began before another one and landed
+// after it must not put an older policy back.
+func (p *Proxy) keepNewest(pol *domain.Policy) {
+	for {
+		old := p.policy.Load()
+		if old != nil && old.Version > pol.Version {
+			return
+		}
+		if p.policy.CompareAndSwap(old, pol) {
+			if old == nil || old.Version != pol.Version {
+				p.cfg.Log.Info("policy", "version", pol.Version, "rules", len(pol.Rules))
+			}
+			return
+		}
+	}
 }
 
 // policyOf reads the portal's answer with the settings document's own parsers.
