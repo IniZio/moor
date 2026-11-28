@@ -14,6 +14,19 @@ make setup   # installs the pinned golangci-lint and govulncheck
 make ci      # audit, lint, lint self-test, tests
 ```
 
+## Portal pages
+
+Pages are `a-h/templ` templates in `internal/web`. `make generate` rewrites the generated Go files, and
+`make ci` fails when one is stale.
+
+The editor, htmx and the fonts are committed under `internal/web/static` and embedded in the binary, so
+nothing loads from outside at run time. `make assets` rebuilds them with esbuild, from the lock file in
+`assets`. It needs Node and `npm`. `make ci` does not.
+
+Run the portal with `PORTAL_DATABASE_URL`, `PORTAL_SECRET_KEY` (base64 of 32 bytes) and `PORTAL_USER_HEADER`.
+The last one names the request header that the sign-in proxy sets to the person.
+A request without that header gets 401.
+
 ## Structure rules
 
 `.golangci.yml` holds every rule:

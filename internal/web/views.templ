@@ -1,0 +1,232 @@
+package web
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/IniZio/moor/internal/domain"
+)
+
+const htmxConfig = `{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}`
+
+type page struct {
+	Person string
+	Org    string
+}
+
+func (p page) initial() string {
+	for _, r := range p.Person {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
+}
+
+func (p page) blurb() string {
+	if p.Org == "" {
+		return "One document for your organisation. Everyone can read and edit it."
+	}
+	return "One document for " + p.Org + ". Everyone can read and edit it."
+}
+
+func oobAttrs(oob bool) templ.Attributes {
+	if oob {
+		return templ.Attributes{"hx-swap-oob": "true"}
+	}
+	return nil
+}
+
+func savedBy(e domain.SettingsEntry) string {
+	s := "saved by " + e.SavedBy + ", " + when(e.SavedAt)
+	if e.Note != "" {
+		s += ", " + e.Note
+	}
+	return s
+}
+
+func when(t time.Time) string { return t.UTC().Format("Jan 2, 15:04") }
+
+func lineList(problems []domain.SettingsProblem) string {
+	var lines []string
+	for _, p := range problems {
+		if p.Line > 0 {
+			lines = append(lines, strconv.Itoa(p.Line))
+		}
+	}
+	return strings.Join(lines, ",")
+}
+
+templ layout(p page, title, nav string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="htmx-config" content={ htmxConfig }/>
+			<title>{ title }</title>
+			<link rel="icon" href="data:,"/>
+			<link rel="stylesheet" href="/static/style.css"/>
+			<script src="/static/htmx.min.js"></script>
+			<script src="/static/editor.js" defer></script>
+		</head>
+		<body>
+			<header class="top">
+				<nav>
+					<a href="/tasks" aria-current?={ nav == "tasks" }>Tasks</a>
+					<a href="/settings" aria-current?={ nav == "settings" }>Settings</a>
+					<a href="/machines" aria-current?={ nav == "machines" }>Machines</a>
+				</nav>
+				<span class="grow"></span>
+				<span class="me" title={ p.Person }>{ p.initial() }</span>
+			</header>
+			<main id="main">
+				{ children... }
+			</main>
+			@toast("", false)
+		</body>
+	</html>
+}
+
+templ placeholderPage(p page, title, nav string) {
+	@layout(p, title, nav) {
+		<div class="phead"><h1>{ title }</h1></div>
+		<p class="muted empty">Nothing here yet.</p>
+	}
+}
+
+templ toast(msg string, oob bool) {
+	<div id="toast" class="toast" role="status" { oobAttrs(oob)... }>{ msg }</div>
+}
+
+templ errsList(problems []domain.SettingsProblem, oob bool) {
+	<div id="errs" class="errs" role="alert" data-lines={ lineList(problems) } { oobAttrs(oob)... }>
+		for _, p := range problems {
+			<span>
+				if p.Line > 0 {
+					<b>Line { strconv.Itoa(p.Line) }</b>
+				}
+				{ p.Message }
+			</span>
+		}
+	</div>
+}
+
+templ editorBox(text string, base int, problems []domain.SettingsProblem) {
+	<div id="editorbox" class="col">
+		<input type="hidden" name="base" value={ strconv.Itoa(base) }/>
+		<textarea
+			id="doc"
+			name="text"
+			hidden
+			hx-post="/api/settings/check"
+			hx-trigger="input changed delay:400ms"
+			hx-target="#errs"
+			hx-swap="outerHTML"
+		>{ text }</textarea>
+		<div class="cm-host" role="group" aria-label="Settings document"></div>
+		@errsList(problems, false)
+	</div>
+}
+
+templ settingsPage(p page, cur domain.SettingsVersion) {
+	@layout(p, "Settings", "settings") {
+		<div class="phead">
+			<h1>Settings</h1>
+			<span class="muted">{ p.blurb() }</span>
+			<span class="grow"></span>
+			<button
+				id="historybtn"
+				class="btn"
+				type="button"
+				hx-get="/api/settings/versions"
+				hx-target="#history"
+				hx-swap="outerHTML"
+				hx-on::before-request="const h = document.getElementById('history'); if (h.firstElementChild) { h.replaceChildren(); document.getElementById('diffpane').replaceChildren(); event.preventDefault(); }"
+			>History</button>
+			<button
+				class="btn primary"
+				type="submit"
+				form="settings-form"
+				hx-on:click="const d = document.getElementById('diffpane'); if (d.firstElementChild) { d.replaceChildren(); event.preventDefault(); }"
+			>Save</button>
+		</div>
+		<div class="edwrap">
+			<div class="col">
+				<form id="settings-form" hx-put="/api/settings" hx-target="#editorbox" hx-swap="outerHTML">
+					@editorBox(cur.Text, cur.N, nil)
+				</form>
+				<div id="diffpane"></div>
+			</div>
+			@historyAside(nil, 0, false)
+		</div>
+	}
+}
+
+templ historyAside(entries []domain.SettingsEntry, selected int, oob bool) {
+	<aside id="history" aria-label="Saved versions" { oobAttrs(oob)... }>
+		if len(entries) > 0 {
+			<div class="hist" hx-get="/api/settings/versions" hx-trigger="settings-saved from:body" hx-target="#history" hx-swap="outerHTML">
+				for _, e := range entries {
+					<button
+						type="button"
+						hx-get={ fmt.Sprintf("/api/settings/versions/%d", e.N) }
+						hx-target="#diffpane"
+						hx-swap="innerHTML"
+						aria-pressed={ strconv.FormatBool(e.N == selected) }
+					>
+						<span class="mono faint">v{ strconv.Itoa(e.N) }</span>
+						<span>
+							{ e.SavedBy }
+							if e.Note != "" {
+								<br/>
+								<span class="faint">{ e.Note }</span>
+							}
+						</span>
+						<span class="faint num">{ when(e.SavedAt) }</span>
+					</button>
+				}
+			</div>
+		}
+	</aside>
+}
+
+templ diffPane(e domain.SettingsEntry) {
+	<div class="row diffhead">
+		<b>v{ strconv.Itoa(e.N) }</b>
+		<span class="muted">{ savedBy(e) }</span>
+		<span class="grow"></span>
+		<button class="lnk" type="button" hx-on:click="document.getElementById('diffpane').replaceChildren()">Back to editing</button>
+	</div>
+	<div class="diff" role="group" aria-label={ fmt.Sprintf("Changes in v%d", e.N) }>
+		for _, l := range e.Diff {
+			switch l.Kind {
+				case domain.DiffAdded:
+					<div class="add">+ { l.Text }</div>
+				case domain.DiffRemoved:
+					<div class="del">- { l.Text }</div>
+				default:
+					<div>{ "  " + l.Text }</div>
+			}
+		}
+	</div>
+}
+
+templ savedResponse(text string, base int, msg string) {
+	@editorBox(text, base, nil)
+	@toast(msg, true)
+}
+
+templ refusedResponse(problems []domain.SettingsProblem, msg string) {
+	@errsList(problems, true)
+	@toast(msg, true)
+}
+
+templ toastResponse(msg string) {
+	@toast(msg, true)
+}
+
+templ diffResponse(e domain.SettingsEntry, entries []domain.SettingsEntry) {
+	@diffPane(e)
+	@historyAside(entries, e.N, true)
+}

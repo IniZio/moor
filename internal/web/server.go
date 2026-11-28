@@ -1,0 +1,99 @@
+package web
+
+import (
+	"context"
+	"embed"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/IniZio/moor/internal/domain"
+)
+
+//go:embed static
+var staticFiles embed.FS
+
+// Config holds what an operator sets. UserHeader names the request header that carries the signed-in person.
+type Config struct {
+	UserHeader     string
+	OrgName        string
+	TrustedOrigins []string
+}
+
+// SettingsService is what the settings screen needs.
+type SettingsService interface {
+	Current(ctx context.Context) (domain.SettingsVersion, error)
+	Check(text string) []domain.SettingsProblem
+	Save(ctx context.Context, in domain.SettingsSave) (domain.SettingsSaved, error)
+	History(ctx context.Context) ([]domain.SettingsEntry, error)
+}
+
+// Deps are the parts the server calls. Ready reports whether the database answers.
+type Deps struct {
+	Settings SettingsService
+	Ready    func(ctx context.Context) error
+}
+
+type server struct {
+	cfg  Config
+	deps Deps
+}
+
+// New builds the portal's handler. Every route but the health checks and the static files needs a person.
+func New(cfg Config, deps Deps) (http.Handler, error) {
+	if cfg.UserHeader == "" {
+		return nil, errors.New("web: the name of the user header is not set")
+	}
+	guard := http.NewCrossOriginProtection()
+	for _, origin := range cfg.TrustedOrigins {
+		if err := guard.AddTrustedOrigin(origin); err != nil {
+			return nil, fmt.Errorf("web: trusted origin %q: %w", origin, err)
+		}
+	}
+	static, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		return nil, fmt.Errorf("web: static files: %w", err)
+	}
+	s := &server{cfg: cfg, deps: deps}
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID, middleware.Logger, middleware.Recoverer)
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
+	r.Get("/readyz", s.readyz)
+	r.Handle("/static/*", http.StripPrefix("/static/", cached(http.FileServerFS(static))))
+	r.Group(func(r chi.Router) {
+		r.Use(guard.Handler, s.person)
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
+		r.Get("/tasks", s.placeholder("Tasks", "tasks"))
+		r.Get("/machines", s.placeholder("Machines", "machines"))
+		r.Get("/settings", s.settingsPage)
+		r.Get("/api/me", s.me)
+		r.Get("/api/settings", s.getSettings)
+		r.Put("/api/settings", s.putSettings)
+		r.Post("/api/settings/check", s.checkSettings)
+		r.Get("/api/settings/versions", s.versions)
+		r.Get("/api/settings/versions/{n}", s.version)
+	})
+	return r, nil
+}
+
+func cached(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *server) readyz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.deps.Ready(ctx); err != nil {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+		return
+	}
+	_, _ = w.Write([]byte("ok\n"))
+}

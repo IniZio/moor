@@ -38,6 +38,14 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 
 func (s *Store) Close() { s.pool.Close() }
 
+// Ping reports whether the database answers.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping store: %w", err)
+	}
+	return nil
+}
+
 // querier is what a pool and a transaction share.
 type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)

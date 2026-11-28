@@ -34,7 +34,7 @@ fi
 
 cd "$root"
 status=0
-go test -race -count=1 -v ./internal/adapter/store/... >"$log" 2>&1 || status=$?
+go test -race -count=1 -v ./internal/adapter/store/... ./cmd/portal/... >"$log" 2>&1 || status=$?
 grep -E '^(=== RUN|--- (FAIL|SKIP)|FAIL|ok|panic)|_test.go:[0-9]+:' "$log" | grep -v '^=== RUN' | tail -n 40 || true
 [ "$status" -eq 0 ] || exit "$status"
 if grep -q -- '--- SKIP' "$log"; then
