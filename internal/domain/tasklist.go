@@ -67,6 +67,11 @@ type TaskFilter struct {
 	Limit int
 }
 
+// Narrowed is true when f narrows a list beyond its scope, which is its Spec and FromPrompt.
+func (f TaskFilter) Narrowed() bool {
+	return f.Repo.Complete() || f.StartedBy != "" || f.ByEvent || f.Group != ""
+}
+
 // TaskListing is a task in a list. ReplacedBy names the task that took over a superseded one.
 type TaskListing struct {
 	Task       Task

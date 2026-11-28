@@ -42,6 +42,8 @@ type Deps struct {
 	Start    TaskStarter
 	Tasks    TaskReader
 	Ready    func(ctx context.Context) error
+	// Now is the clock the ages and durations read, and is time.Now when left nil.
+	Now func() time.Time
 }
 
 type server struct {
@@ -73,7 +75,8 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 	r.Group(func(r chi.Router) {
 		r.Use(guard.Handler, s.person)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
-		r.Get("/tasks", s.placeholder("Tasks", "tasks"))
+		r.Get("/tasks", s.tasksPage)
+		r.Get("/tasks/{id}", s.runPage)
 		r.Get("/machines", s.placeholder("Machines", "machines"))
 		r.Get("/settings", s.settingsPage)
 		r.Get("/api/me", s.me)

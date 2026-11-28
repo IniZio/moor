@@ -1,0 +1,221 @@
+package web
+
+import (
+	"net/url"
+
+	"github.com/IniZio/moor/internal/domain"
+)
+
+func specHref(key string) templ.SafeURL {
+	return templ.URL("/tasks?" + url.Values{"spec": {key}}.Encode())
+}
+
+func promptHref() templ.SafeURL { return templ.URL("/tasks?from=prompt") }
+
+templ stateIcon(g domain.StateGroup) {
+	<svg class={ "ic " + string(g) } viewBox="0 0 16 16" aria-label={ string(g) } role="img">
+		<circle cx="8" cy="8" r="7"></circle>
+		switch g {
+			case domain.GroupDone:
+				<path d="M4.5 8.2l2.2 2.2 4.8-4.8"></path>
+			case domain.GroupFailed:
+				<path d="M5.5 5.5l5 5m0-5l-5 5"></path>
+			case domain.GroupCancelled:
+				<path d="M5 11l6-6"></path>
+		}
+	</svg>
+}
+
+templ sideList(v tasksView) {
+	<nav class="side" aria-label="Task specs">
+		<a href="/tasks" aria-current?={ v.Spec == nil && v.SpecName == "" && !v.Prompt }><b>All tasks</b></a>
+		<h3>Task specs</h3>
+		for _, e := range v.Specs {
+			<a href={ specHref(e.keyOf()) } aria-current?={ v.Filter.Spec == domain.SpecName(e.keyOf()) }>{ e.keyOf() }</a>
+		}
+		<hr/>
+		<a href={ promptHref() } aria-current?={ v.Prompt }>From a prompt</a>
+	</nav>
+}
+
+templ taskBox(repos []domain.Repo, oob bool) {
+	<form id="newtask" class="newtask" aria-label="New task" hx-post="/api/tasks" hx-swap="none" { oobAttrs(oob)... }>
+		<textarea name="prompt" rows="2" placeholder="What should the agent do?" aria-label="What should the agent do?"></textarea>
+		<div class="row">
+			if len(repos) == 0 {
+				<span class="muted">Add a repository under repositories in Settings first.</span>
+			} else {
+				<select name="repository" aria-label="Repository">
+					for _, r := range repos {
+						<option value={ r.String() }>{ string(r.Path) }</option>
+					}
+				</select>
+			}
+			<span class="grow"></span>
+			<button class="btn primary" type="submit">Start task</button>
+		</div>
+	</form>
+}
+
+templ specHead(v tasksView) {
+	switch {
+		case v.Spec != nil && v.Spec.Name == "":
+			<div class="phead"><h1>{ v.Spec.File }</h1></div>
+			<div class="banner bad" role="alert"><span>{ v.Spec.Problem }</span></div>
+		case v.Spec != nil:
+			<div class="phead"><h1>{ v.Spec.Name }</h1><span class="lnk">{ v.Spec.File }</span></div>
+			if v.Spec.Problem != "" {
+				<div class="banner bad" role="alert"><span>{ v.Spec.Problem }</span></div>
+			}
+			<div class="banner">
+				<span>{ startsText(v.Spec.Spec) }</span>
+				<span class="grow"></span>
+				if v.Spec.Spec.On.WorkflowDispatch != nil {
+					<button class="btn" type="button" disabled>Run ▾</button>
+				}
+			</div>
+		default:
+			<div class="phead"><h1>{ v.SpecName }</h1></div>
+			<div class="banner"><span>This spec is not in the team's home any more.</span></div>
+	}
+}
+
+templ heading(v tasksView) {
+	switch {
+		case v.Prompt:
+			<div class="phead"><h1>From a prompt</h1><span class="muted">Tasks people started by typing a prompt.</span></div>
+		case v.Filter.Spec != "":
+			@specHead(v)
+		default:
+			<div class="phead"><h1>All tasks</h1></div>
+			@taskBox(v.Repos, false)
+	}
+}
+
+templ peopleOptions(v tasksView, oob bool) {
+	<select id="startedby" name="started_by" aria-label="Started by" { oobAttrs(oob)... }>
+		<option value="">Started by</option>
+		for _, p := range v.People {
+			<option value={ p } selected?={ v.filterBy() == p }>{ p }</option>
+		}
+		<option value={ domain.EventStarterPrefix } selected?={ v.Filter.ByEvent }>An event</option>
+	</select>
+}
+
+templ peopleSigInput(v tasksView, oob bool) {
+	<input type="hidden" id="peoplesig" name="people" value={ v.peopleSig() } { oobAttrs(oob)... }/>
+}
+
+templ filterBar(v tasksView) {
+	<form
+		id="filters"
+		class="lhead"
+		hx-get="/api/tasks"
+		hx-trigger="change, every 5s, task-started from:body"
+		hx-target="#rows"
+		hx-swap="innerHTML"
+	>
+		<input type="hidden" name="spec" value={ string(v.Filter.Spec) }/>
+		<input type="hidden" name="from" value={ fromValue(v.Filter) }/>
+		@peopleSigInput(v, false)
+		@countLine(v.List.Count, false)
+		<span class="grow"></span>
+		<select name="repository" aria-label="Repository">
+			<option value="">Repository</option>
+			for _, r := range v.Repos {
+				<option value={ r.String() } selected?={ v.filterRepo() == r.String() }>{ string(r.Path) }</option>
+			}
+		</select>
+		@peopleOptions(v, false)
+		<select name="state" aria-label="State">
+			<option value="">State</option>
+			for _, g := range domain.StateGroups {
+				<option value={ string(g) } selected?={ v.Filter.Group == g }>{ string(g) }</option>
+			}
+		</select>
+	</form>
+}
+
+func fromValue(f domain.TaskFilter) string {
+	if f.FromPrompt {
+		return "prompt"
+	}
+	return ""
+}
+
+templ countLine(count string, oob bool) {
+	<b id="count" { oobAttrs(oob)... }>{ count }</b>
+}
+
+templ taskRows(l listView) {
+	if len(l.Rows) == 0 {
+		<p class="empty muted">{ l.Empty }</p>
+	}
+	for _, r := range l.Rows {
+		<a class="trow" href={ templ.URL(r.Href) }>
+			@stateIcon(r.Group)
+			<span class="tt">
+				<span class="cut ttl">{ r.Title }</span>
+				<span class="cut muted">
+					if r.Spec != "" {
+						<b>{ r.Spec }</b>
+					}
+					{ r.Tail }
+				</span>
+			</span>
+			<span class="proj cut">{ r.Repo }</span>
+			<span class="when num"><span>{ r.Age }</span><span class="faint">{ r.Duration }</span></span>
+		</a>
+	}
+}
+
+templ tasksPage(v tasksView) {
+	@layout(v.Page, "Tasks", "tasks") {
+		<div class="twocol">
+			@sideList(v)
+			<div class="col">
+				@heading(v)
+				if v.Spec == nil || v.Spec.Name != "" {
+					<div class="box">
+						@filterBar(v)
+						<div id="rows">
+							@taskRows(v.List)
+						</div>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ listResponse(v tasksView, withPeople bool) {
+	@taskRows(v.List)
+	@countLine(v.List.Count, true)
+	if withPeople {
+		@peopleOptions(v, true)
+		@peopleSigInput(v, true)
+	}
+}
+
+templ startedResponse(msg string, repos []domain.Repo) {
+	@taskBox(repos, true)
+	@toast(msg, true)
+}
+
+templ runPage(p page, r rowView) {
+	@layout(p, "Task #" + r.ID, "tasks") {
+		<div class="rhead">
+			if r.Spec != "" {
+				<a class="lnk" href={ specHref(r.Spec) }>← { r.Spec }</a>
+			} else {
+				<a class="lnk" href={ promptHref() }>← From a prompt</a>
+			}
+			<div class="row">
+				@stateIcon(r.Group)
+				<h1>{ r.Title } <span class="faint">#{ r.ID }</span></h1>
+			</div>
+			<p class="muted mono rrepo">{ r.Repo }</p>
+		</div>
+		<p class="muted empty">The run page is not built yet.</p>
+	}
+}

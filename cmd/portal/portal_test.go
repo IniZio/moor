@@ -137,7 +137,7 @@ func TestTabsPlaceholdersAndRedirect(t *testing.T) {
 	if r := a.do(get("Mia", "/")); r.code != http.StatusFound || r.header.Get("Location") != "/tasks" {
 		t.Errorf("/ gave %d to %q", r.code, r.header.Get("Location"))
 	}
-	for path, current := range map[string]string{"/tasks": "Tasks", "/machines": "Machines"} {
+	for path, current := range map[string]string{"/machines": "Machines"} {
 		r := a.do(get("Mia", path))
 		r.has(t, http.StatusOK, "Nothing here yet.", "Tasks</a>", "Settings</a>", "Machines</a>", `<span class="me" title="Mia">M</span>`)
 		if !strings.Contains(r.body, "aria-current href=\"/"+strings.ToLower(current)+"\"") && !strings.Contains(r.body, "href=\"/"+strings.ToLower(current)+"\" aria-current") {

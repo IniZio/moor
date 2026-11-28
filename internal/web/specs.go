@@ -24,6 +24,14 @@ type specEntry struct {
 	Problem string
 }
 
+// keyOf picks the entry in the left list: the spec's name, or the file when the file holds no spec.
+func (e specEntry) keyOf() string {
+	if e.Name != "" {
+		return e.Name
+	}
+	return e.File
+}
+
 func (s *server) specEntries(ctx context.Context, allowed []domain.Repo) ([]specEntry, error) {
 	files, err := s.deps.Specs.TaskSpecs(ctx)
 	if err != nil {

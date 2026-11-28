@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -107,6 +108,10 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if isHTMX(r) {
+		s.listFragment(w, r, f)
+		return
+	}
 	list, err := s.deps.Tasks.ListTasks(r.Context(), f)
 	if err != nil {
 		serverError(w, r, err)
@@ -188,9 +193,28 @@ func (s *server) startTask(w http.ResponseWriter, r *http.Request) {
 		serverError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"task": jsonTaskOf(domain.TaskListing{Task: out.Task})})
+	if !isHTMX(r) {
+		writeJSON(w, http.StatusCreated, map[string]any{"task": jsonTaskOf(domain.TaskListing{Task: out.Task})})
+		return
+	}
+	w.Header().Set("HX-Trigger", "task-started")
+	render(w, r, http.StatusOK, startedResponse(fmt.Sprintf("Started task #%s on %s.", out.Task.ID, repo.Path), s.allowedRepos(r)))
 }
 
-func refuseStart(w http.ResponseWriter, _ *http.Request, msg string) {
-	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": msg})
+// allowedRepos lists the repositories for a fresh task box, and none when settings cannot be read.
+func (s *server) allowedRepos(r *http.Request) []domain.Repo {
+	repos, err := s.deps.Settings.Allowed(r.Context())
+	if err != nil {
+		log.Printf("allowed repositories: %v", err)
+	}
+	return repos
+}
+
+func refuseStart(w http.ResponseWriter, r *http.Request, msg string) {
+	if !isHTMX(r) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": msg})
+		return
+	}
+	w.Header().Set("HX-Reswap", "none")
+	render(w, r, http.StatusUnprocessableEntity, toastResponse(msg))
 }
