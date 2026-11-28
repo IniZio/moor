@@ -96,6 +96,10 @@ func loadTask(ctx context.Context, q querier, id domain.TaskID) (domain.Task, er
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Task{}, fmt.Errorf("task %s: %w", id, domain.ErrNotFound)
 	}
+	if err != nil || t.Spec == nil {
+		return t, err
+	}
+	t.HomeCommit, err = newestHomeCommit(ctx, q, id)
 	return t, err
 }
 

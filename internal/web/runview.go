@@ -70,9 +70,18 @@ type runView struct {
 	Blocked blockedView
 	HasSpec bool
 	SpecRef string
-	LastSeq int64
+	// AtCommit is the short home commit the spec was read at, after the spec's name, and is empty without one.
+	AtCommit string
+	LastSeq  int64
 	// Subject names what an event is about, such as "pull request #90", and is empty without an event.
 	Subject string
+}
+
+func atCommit(c domain.Commit) string {
+	if c == "" {
+		return ""
+	}
+	return " at " + c.Short()
 }
 
 func repoLine(v runView) string {
@@ -115,6 +124,7 @@ func buildRun(t domain.Task, rows []domain.EventRow, now time.Time) runView {
 	}
 	if t.Spec != nil {
 		v.SpecRef = t.Spec.File
+		v.AtCommit = atCommit(t.HomeCommit)
 	}
 	if n := len(rows); n > 0 {
 		v.LastSeq = rows[n-1].Seq

@@ -16,6 +16,7 @@ type EventInput struct {
 	ID               domain.TaskID
 	Repo             domain.Repo
 	Spec             domain.Spec
+	HomeCommit       domain.Commit
 	Event            domain.Event
 	Ref              string
 	Commit           domain.Commit
@@ -54,7 +55,7 @@ func eventTask(in EventInput) (domain.Task, error) {
 	}
 	return domain.Task{
 		ID: in.ID, Repo: in.Repo, Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
-		StartedBy: startedBy, Spec: &sp, Event: &ev, TokenOwner: in.TokenOwner, State: domain.Waiting,
+		StartedBy: startedBy, Spec: &sp, HomeCommit: in.HomeCommit, Event: &ev, TokenOwner: in.TokenOwner, State: domain.Waiting,
 		Ref: in.Ref, Commit: in.Commit,
 	}, nil
 }

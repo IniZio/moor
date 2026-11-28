@@ -42,6 +42,9 @@ func save(ctx context.Context, tx pgx.Tx, w domain.TaskWrite) (domain.Task, erro
 	if err := writeEvents(ctx, tx, w.Events); err != nil {
 		return domain.Task{}, err
 	}
+	if err := writeHomeCommit(ctx, tx, w); err != nil {
+		return domain.Task{}, err
+	}
 	if w.Result != nil {
 		if err := writeResult(ctx, tx, w.Task.ID, *w.Result, w.Page); err != nil {
 			return domain.Task{}, err

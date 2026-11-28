@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -54,4 +55,30 @@ func TestAPushWebhookRefreshesThePortalsHomeWithAReadTokenForThatRepository(t *t
 	if len(fake.TokenRequests()) == 0 {
 		t.Fatal("no token was minted")
 	}
+}
+
+func TestATaskStartedFromAFetchedSpecRecordsTheHomeCommitAndTheRunPageShowsIt(t *testing.T) {
+	fake := githubtest.NewForTest(t)
+	key, err := githubtest.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := githometest.New(t, homePath, "fake-token-4242")
+	commit, err := git.Commit("main", map[string]string{"tasks/pr-evidence.yaml": evidenceSpec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(t, func(c *config) {
+		c.home = homeConfig{repo: homeRepoName, every: 20 * time.Millisecond, gitBase: git.URL()}
+	})
+	a.do(put("Mia", 0, appDoc(fake.URL(), key))).has(t, http.StatusOK)
+	eventually(t, "the spec", func() bool { return strings.Contains(a.do(get("Mia", "/api/task-specs")).body, `"name":"PR evidence"`) })
+
+	a.do(signed("pull_request", "d-1", prBody("opened", "5f0e2b19c4d7", "example-org/shop-web"), hookSecret)).has(t, http.StatusAccepted)
+	_, db := a.tasks()
+	got, err := db.Load(context.Background(), "1")
+	if err != nil || got.Spec == nil || string(got.HomeCommit) != commit {
+		t.Fatalf("task %+v, %v; want home commit %s", got, err, commit)
+	}
+	a.do(get("Mia", "/tasks/1")).has(t, http.StatusOK, "PR evidence at "+got.HomeCommit.Short())
 }

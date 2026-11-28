@@ -52,7 +52,7 @@ templ runBody(v runView, part string) {
 templ runHead(v runView) {
 	<div class="rhead">
 		if v.Row.Spec != "" {
-			<a class="lnk" href={ specHref(v.Row.Spec) }>← { v.Row.Spec }</a>
+			<a class="lnk" href={ specHref(v.Row.Spec) }>← { v.Row.Spec }{ v.AtCommit }</a>
 		} else {
 			<a class="lnk" href={ promptHref() }>← From a prompt</a>
 		}

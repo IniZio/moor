@@ -151,7 +151,7 @@ func (s *Service) start(ctx context.Context, tx Tx, in domain.Inbound, matched [
 
 func eventInput(id domain.TaskID, occ *domain.Occurrence, f domain.SpecFile, p domain.Prompts, by domain.Person) task.EventInput {
 	return task.EventInput{
-		ID: id, Repo: occ.Incoming.Repo, Spec: domain.Spec{Name: f.Spec.Name, File: f.File}, Event: occ.Event, Ref: occ.Ref, Commit: occ.Commit,
+		ID: id, Repo: occ.Incoming.Repo, Spec: domain.Spec{Name: f.Spec.Name, File: f.File}, HomeCommit: f.Commit, Event: occ.Event, Ref: occ.Ref, Commit: occ.Commit,
 		Prompt: p.Prompt, ReviewPrompt: p.ReviewPrompt, By: by, TokenOwner: by, CancelInProgress: f.Spec.Concurrency.CancelInProgress,
 	}
 }

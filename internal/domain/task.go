@@ -51,10 +51,12 @@ type Task struct {
 	ReviewPrompt string
 	StartedBy    string
 	// Spec and Event are nil on a plain-prompt task. A person who runs a spec by hand starts a task with both.
-	Spec    *Spec
-	Event   *Event
-	State   State
-	Version int64
+	Spec  *Spec
+	Event *Event
+	// HomeCommit is the team's home commit the task's spec was read at, empty when the home has none.
+	HomeCommit Commit
+	State      State
+	Version    int64
 	// Ref and Commit are what the task checks out, from its event: the ref fetched first and the commit. Both are
 	// empty on a task that checks out its repository's default branch.
 	Ref       string
