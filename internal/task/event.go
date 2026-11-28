@@ -46,7 +46,7 @@ func eventTask(in EventInput) (domain.Task, error) {
 		return domain.Task{}, fmt.Errorf("%w: an event task needs an id, a repository, a spec name and file, a source, a group and a rev", ErrBadInput)
 	}
 	ev.Context = bytes.Clone(ev.Context)
-	startedBy := "event:" + string(ev.Source)
+	startedBy := domain.EventStarterPrefix + string(ev.Source)
 	if in.By != "" {
 		startedBy = string(in.By)
 	}

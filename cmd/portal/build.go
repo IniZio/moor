@@ -14,6 +14,7 @@ import (
 	"github.com/IniZio/moor/internal/adapter/yamlfile"
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/settings"
+	"github.com/IniZio/moor/internal/task"
 	"github.com/IniZio/moor/internal/web"
 )
 
@@ -36,7 +37,7 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins},
-		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Ready: db.Ping},
+		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: task.New(db, systemClock{}, task.Config{}), Tasks: db, Ready: db.Ping},
 	)
 	if err != nil {
 		db.Close()

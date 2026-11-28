@@ -39,6 +39,8 @@ type SettingsService interface {
 type Deps struct {
 	Settings SettingsService
 	Specs    SpecSource
+	Start    TaskStarter
+	Tasks    TaskReader
 	Ready    func(ctx context.Context) error
 }
 
@@ -76,6 +78,8 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Get("/settings", s.settingsPage)
 		r.Get("/api/me", s.me)
 		r.Get("/api/task-specs", s.taskSpecs)
+		r.Get("/api/tasks", s.listTasks)
+		r.Post("/api/tasks", s.startTask)
 		r.Get("/api/settings", s.getSettings)
 		r.Put("/api/settings", s.putSettings)
 		r.Post("/api/settings/check", s.checkSettings)

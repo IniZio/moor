@@ -87,7 +87,10 @@ func timeOrNil(t time.Time) any {
 	return t
 }
 
-func scanTask(row pgx.Row) (domain.Task, error) {
+func scanTask(row pgx.Row) (domain.Task, error) { return scanTaskWith(row) }
+
+// scanTaskWith scans the task columns, then the extra destinations for the columns a query adds after them.
+func scanTaskWith(row pgx.Row, extra ...any) (domain.Task, error) {
 	var (
 		t                            domain.Task
 		specName, specFile           *string
@@ -96,9 +99,12 @@ func scanTask(row pgx.Row) (domain.Task, error) {
 		state                        string
 		deadline, keepUntil, endedAt *time.Time
 	)
-	err := row.Scan(&t.ID, &t.Repo.Host, &t.Repo.Path, &t.Prompt, &t.ReviewPrompt, &t.StartedBy, &specName, &specFile, &source, &group, &rev, &context,
+	dest := []any{
+		&t.ID, &t.Repo.Host, &t.Repo.Path, &t.Prompt, &t.ReviewPrompt, &t.StartedBy, &specName, &specFile, &source, &group, &rev, &context,
 		&state, &t.Version, &t.Commit, &t.Ref, &t.Runner, &t.Run, &t.Gen, &t.LastSeq,
-		&deadline, &keepUntil, &t.Failure, &t.TokenOwner, &t.CreatedAt, &endedAt)
+		&deadline, &keepUntil, &t.Failure, &t.TokenOwner, &t.CreatedAt, &endedAt,
+	}
+	err := row.Scan(append(dest, extra...)...)
 	if err != nil {
 		return domain.Task{}, fmt.Errorf("scan task: %w", err)
 	}
