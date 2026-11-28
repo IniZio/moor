@@ -27,13 +27,28 @@ func roundTrip(t *testing.T, s Subject) {
 	sameEvents(t, "events", events(t, s, "t1"), eventsFrom("t1", 1, 2))
 }
 
-func freePrompt(t *testing.T, s Subject) {
-	a, b := create(t, s, free("a")), create(t, s, free("b"))
-	if a.Trigger != nil || b.Trigger != nil || a.Flow() != domain.FreePrompt {
-		t.Errorf("a free-prompt task came back with a trigger: %+v", a.Trigger)
+func personStarted(t *testing.T, s Subject) {
+	a, b := create(t, s, person("a")), create(t, s, person("b"))
+	if a.Trigger != nil || b.Trigger != nil || a.Flow() != (domain.Flow{}) {
+		t.Errorf("a person-started task came back with a trigger: %+v", a.Trigger)
 	}
 	if _, ok := load(t, s, "a").Key(); ok {
-		t.Error("a free-prompt task has a key")
+		t.Error("a person-started task has no key")
+	}
+}
+
+func personFields(t *testing.T, s Subject) {
+	in := person("t1")
+	in.ReviewPrompt, in.Reply = "check it", domain.ReplyTarget{Source: "forge", Ref: "acme/app#7"}
+	in.Version = create(t, s, in).Version
+	got := load(t, s, "t1")
+	sameTask(t, "loaded", got, in)
+	if got.Trigger != nil || got.Flow() != (domain.Flow{Replies: true}) {
+		t.Errorf("flow = %s, trigger %+v", got.Flow(), got.Trigger)
+	}
+	none := create(t, s, person("t2"))
+	if none.ReviewPrompt != "" || none.Reply.Set() {
+		t.Errorf("a task with neither came back with %q and %+v", none.ReviewPrompt, none.Reply)
 	}
 }
 
@@ -43,7 +58,7 @@ func missing(t *testing.T, s Subject) {
 	wantErr(t, "load", err, domain.ErrNotFound)
 	_, err = s.Store.ByKey(ctx, domain.TaskKey{Project: "shop", Source: "forge", Group: "g", Rev: "nope"})
 	wantErr(t, "by key", err, domain.ErrNotFound)
-	_, err = s.Store.Save(ctx, domain.TaskWrite{Task: free("nope")})
+	_, err = s.Store.Save(ctx, domain.TaskWrite{Task: person("nope")})
 	wantErr(t, "save", err, domain.ErrNotFound)
 	if v, err := s.Store.Versions(ctx, "nope"); err != nil || len(v) != 0 {
 		t.Errorf("versions of no task = %v, %v", v, err)
@@ -71,7 +86,7 @@ func duplicates(t *testing.T, s Subject) {
 
 func staleVersion(t *testing.T, s Subject) {
 	ctx := context.Background()
-	first := create(t, s, free("t1"))
+	first := create(t, s, person("t1"))
 	next := first
 	next.State, next.LastSeq = domain.Starting, 2
 	if _, err := s.Store.Save(ctx, domain.TaskWrite{Task: next, Events: eventsFrom("t1", 2, 2)}); err != nil {
@@ -90,7 +105,7 @@ func staleVersion(t *testing.T, s Subject) {
 }
 
 func versionBumps(t *testing.T, s Subject) {
-	cur := create(t, s, free("t1"))
+	cur := create(t, s, person("t1"))
 	for want := int64(2); want <= 4; want++ {
 		saved, err := s.Store.Save(context.Background(), domain.TaskWrite{Task: cur})
 		if err != nil || saved.Version != want {
@@ -102,7 +117,7 @@ func versionBumps(t *testing.T, s Subject) {
 
 func badEvents(t *testing.T, s Subject) {
 	ctx := context.Background()
-	cur := create(t, s, free("t1"))
+	cur := create(t, s, person("t1"))
 	gap, short, foreign := cur, cur, cur
 	gap.LastSeq, short.LastSeq, foreign.LastSeq = 3, 5, 2
 	other := event("t9", 2)
@@ -125,7 +140,7 @@ func badEvents(t *testing.T, s Subject) {
 
 func resultVersions(t *testing.T, s Subject) {
 	ctx := context.Background()
-	cur := create(t, s, free("t1"))
+	cur := create(t, s, person("t1"))
 	for n := 1; n <= 3; n++ {
 		r := domain.ResultVersion{N: n, EntryURL: "u", Line: "l", Digest: string(rune('a' + n)), PublishedAt: at(int64(n))}
 		saved, err := s.Store.Save(ctx, domain.TaskWrite{Task: cur, Result: &r})
@@ -150,7 +165,7 @@ func resultVersions(t *testing.T, s Subject) {
 
 func refusedResultUndoesWrite(t *testing.T, s Subject) {
 	ctx := context.Background()
-	cur := create(t, s, free("t1"))
+	cur := create(t, s, person("t1"))
 	first := domain.ResultVersion{N: 1, Digest: "d"}
 	cur, err := s.Store.Save(ctx, domain.TaskWrite{Task: cur, Result: &first})
 	if err != nil {
@@ -188,7 +203,7 @@ func liveInGroup(t *testing.T, s Subject) {
 	mk("e", "r5", 5, domain.Waiting, func(x *domain.Task) { x.Project = "blog" })
 	mk("f", "r6", 6, domain.Waiting, func(x *domain.Task) { x.Trigger.Source = "other" })
 	mk("g", "r7", 7, domain.Superseded, nil)
-	create(t, s, free("h"))
+	create(t, s, person("h"))
 	got, err := s.Store.LiveInGroup(context.Background(), "shop", "forge", "g")
 	if err != nil || len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
 		t.Errorf("live = %+v, %v, want b then a", got, err)

@@ -16,12 +16,43 @@ func TestTaskKey(t *testing.T) {
 	if !ok1 || !ok2 || k1 != k2 {
 		t.Fatalf("keys %v %v, %v %v", k1, ok1, k2, ok2)
 	}
-	if first.Flow() != domain.Triggered {
+	if first.Flow() != (domain.Flow{Triggered: true}) {
 		t.Errorf("flow = %s", first.Flow())
 	}
-	free := domain.Task{ID: "t3", Project: "app"}
-	if _, ok := free.Key(); ok || free.Flow() != domain.FreePrompt {
-		t.Errorf("free-prompt task has a key or flow %s", free.Flow())
+	person := domain.Task{ID: "t3", Project: "app"}
+	if _, ok := person.Key(); ok || person.Flow() != (domain.Flow{}) {
+		t.Errorf("person-started task has a key or flow %s", person.Flow())
+	}
+}
+
+func TestFlowReadsTriggerAndReplyTarget(t *testing.T) {
+	reply := domain.ReplyTarget{Source: "forge", Ref: "acme/app#7"}
+	cases := map[string]struct {
+		task domain.Task
+		want domain.Flow
+	}{
+		"person, no reply":  {domain.Task{}, domain.Flow{}},
+		"person, reply":     {domain.Task{Reply: reply}, domain.Flow{Replies: true}},
+		"trigger, no reply": {domain.Task{Trigger: &domain.Trigger{}}, domain.Flow{Triggered: true}},
+		"trigger, reply":    {domain.Task{Trigger: &domain.Trigger{}, Reply: reply}, domain.Flow{Triggered: true, Replies: true}},
+	}
+	for name, c := range cases {
+		if got := c.task.Flow(); got != c.want {
+			t.Errorf("%s: flow = %s, want %s", name, got, c.want)
+		}
+	}
+}
+
+func TestReplyTargetCheck(t *testing.T) {
+	for _, ok := range []domain.ReplyTarget{{}, {Source: "forge", Ref: "acme/app#7"}} {
+		if err := ok.Check(); err != nil {
+			t.Errorf("%+v: %v", ok, err)
+		}
+	}
+	for _, bad := range []domain.ReplyTarget{{Source: "forge"}, {Ref: "acme/app#7"}} {
+		if err := bad.Check(); !errors.Is(err, domain.ErrBadReply) {
+			t.Errorf("%+v: err = %v", bad, err)
+		}
 	}
 }
 

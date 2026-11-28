@@ -14,17 +14,18 @@ func at(n int64) time.Time { return time.Unix(1_700_000_000+n, 123456000).UTC() 
 
 // triggered is a waiting task a trigger started, with one event's worth of last_seq.
 func triggered(id domain.TaskID, rev domain.Revision) domain.Task {
-	tr := &domain.Trigger{Source: "forge", Group: "g", Rev: rev, Context: []byte(`{"n":1}`)}
+	tr := &domain.Trigger{Name: "review", Source: "forge", Group: "g", Rev: rev, Context: []byte(`{"n":1}`)}
 	return domain.Task{ID: id, Project: "shop", Prompt: "p", Trigger: tr, State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
 }
 
-func free(id domain.TaskID) domain.Task {
+func person(id domain.TaskID) domain.Task {
 	return domain.Task{ID: id, Project: "shop", Prompt: "p", State: domain.Waiting, LastSeq: 1, CreatedAt: at(1)}
 }
 
 func full(id domain.TaskID) domain.Task {
 	t := triggered(id, "r1")
-	t.Kind, t.StartedBy, t.TokenOwner = "review", "ann", "bob"
+	t.StartedBy, t.TokenOwner = "ann", "bob"
+	t.ReviewPrompt, t.Reply = "check the page", domain.ReplyTarget{Source: "forge", Ref: "acme/app#7"}
 	t.State, t.Runner, t.Run, t.Gen, t.LastSeq = domain.Running, "m1", 2, 3, 2
 	t.Pins = map[domain.Dir]domain.Commit{"api": "abc", "web": "def"}
 	t.Refs = map[domain.Dir]string{"api": "main"}

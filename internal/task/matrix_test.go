@@ -10,14 +10,14 @@ import (
 )
 
 // opCase is one operation with its expected result from each state, in the order of allStates, once
-// for a free-prompt task and once for a triggered one. "x" is a state the flow cannot reach, and
-// "-" a refusal. "=" is a repeat that changes nothing and "~" a change that keeps the state.
+// for a person-started task with no reply target and once for a trigger-started one with a reply
+// target. "x" is a state the flow cannot reach, and "-" a refusal. "=" is a repeat that changes nothing and "~" a change that keeps the state.
 type opCase struct {
-	name string
-	run  func(*harness, domain.TaskID) error
-	free string
-	trig string
-	pre  func(*harness)
+	name   string
+	run    func(*harness, domain.TaskID) error
+	person string
+	trig   string
+	pre    func(*harness)
 }
 
 func rep(kind task.ReportKind, gen int64) func(*harness, domain.TaskID) error {
@@ -35,45 +35,45 @@ func viaService(call func(*task.Service, *harness, domain.TaskID) (task.Outcome,
 var opCases = []opCase{
 	{
 		name: "slot taken", run: rep(task.SlotTaken, 0),
-		free: "starting = = x = = x =", trig: "starting = = = = = = =",
+		person: "starting = = x = = x =", trig: "starting = = = = = = =",
 	},
 	{
 		name: "parts up", run: rep(task.PartsUp, 0),
-		free: "- running = x = - x -", trig: "- running = = = - - -",
+		person: "- running = x = - x -", trig: "- running = = = - - -",
 	},
 	{
 		name: "part failed", run: rep(task.PartFailed, 0),
-		free: "- failed - x - = x -", trig: "- failed - - - = - -",
+		person: "- failed - x - = x -", trig: "- failed - - - = - -",
 	},
 	{
 		name: "harness exited", run: rep(task.HarnessExited, 0),
-		free: "- - failed x = = x =", trig: "- - failed = = = = =",
+		person: "- - failed x = = x =", trig: "- - failed = = = = =",
 	},
 	{
 		name: "box recreated", run: rep(task.BoxRecreated, 1),
-		free: "- - ~ x - - x -", trig: "- - ~ - - - - -",
+		person: "- - ~ x - - x -", trig: "- - ~ - - - - -",
 	},
 	{name: "publish", run: viaService(func(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, error) {
 		return wrapped(s.Publish(h.ctx(), id, task.PublishInput{Line: "ok", EntryURL: "https://pages.example/x", Digest: "dx"}))
-	}), free: "- - done x - - x -", trig: "- - delivering - - - - -"},
+	}), person: "- - done x - - x -", trig: "- - delivering - - - - -"},
 	{name: "delivered", run: viaService(func(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, error) {
 		return wrapped(s.Delivered(h.ctx(), id, task.DeliveredInput{Target: "pr", ExternalID: "c1", Version: 1}))
-	}), free: "- - - x - - x -", trig: "- - - done = - - -"},
+	}), person: "- - - x - - x -", trig: "- - - done = - - -"},
 	{
 		name: "end", run: viaService(svcEnd),
-		free: "- - done x = - x -", trig: "- - - - - - - -",
+		person: "- - done x = - x -", trig: "- - - - - - - -",
 	},
 	{
 		name: "cancel", run: viaService(svcCancel),
-		free: "cancelled cancelled cancelled x - - x =", trig: "cancelled cancelled cancelled cancelled - - - =",
+		person: "cancelled cancelled cancelled x - - x =", trig: "cancelled cancelled cancelled cancelled - - - =",
 	},
 	{
 		name: "time limit", run: viaService(svcTimeLimit), pre: func(h *harness) { h.advance(2 * cfg.TimeLimit) },
-		free: "- - failed x - = x -", trig: "- - failed - - = - -",
+		person: "- - failed x - = x -", trig: "- - failed - - = - -",
 	},
 	{
 		name: "steer", run: viaService(svcSteer),
-		free: "- - = x running - x -", trig: "- - = - running - - -",
+		person: "- - = x running - x -", trig: "- - = - running - - -",
 	},
 	{
 		name: "newer rev", run: newerRev,
@@ -99,20 +99,20 @@ func svcSteer(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, erro
 
 func newerRev(h *harness, id domain.TaskID) error {
 	g := h.get(id).Trigger.Group
-	return errOf(h.svc.StartByTrigger(h.ctx(), h.trigIn("newer-"+id, string(g), "rev-newer", plain)))
+	return errOf(h.svc.StartByTrigger(h.ctx(), h.trigIn("newer-"+id, string(g), "rev-newer")))
 }
 
 func TestEveryOperationFromEveryState(t *testing.T) {
 	for _, oc := range opCases {
-		for _, flow := range []domain.Flow{domain.FreePrompt, domain.Triggered} {
+		for _, flow := range []domain.Flow{personFlow, triggerFlow} {
 			runCase(t, oc, flow)
 		}
 	}
 }
 
 func runCase(t *testing.T, oc opCase, flow domain.Flow) {
-	want := oc.free
-	if flow == domain.Triggered {
+	want := oc.person
+	if flow.Triggered {
 		want = oc.trig
 	}
 	tokens := strings.Fields(want)

@@ -11,13 +11,16 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// TriggerInput starts a task for a recipe's trigger. ID is only used when the key is new.
+// TriggerInput starts a task for a trigger's event. ID is only used when the key is new. Prompt is
+// already rendered, and Reply is where the trigger says the result goes, empty for nowhere.
 type TriggerInput struct {
-	ID         domain.TaskID
-	Project    domain.Project
-	Recipe     domain.Recipe
-	Trigger    domain.Trigger
-	TokenOwner domain.Person
+	ID           domain.TaskID
+	Project      domain.Project
+	Prompt       string
+	ReviewPrompt string
+	Reply        domain.ReplyTarget
+	Trigger      domain.Trigger
+	TokenOwner   domain.Person
 }
 
 // StartByTrigger makes a waiting task, then supersedes the older live tasks of its group. The same
@@ -38,15 +41,15 @@ func (s *Service) StartByTrigger(ctx context.Context, in TriggerInput) (Outcome,
 
 func triggerTask(in TriggerInput) (domain.Task, error) {
 	tr := in.Trigger
-	if in.ID == "" || in.Project.Name() == "" || tr.Source == "" || tr.Group == "" || tr.Rev == "" {
-		return domain.Task{}, fmt.Errorf("%w: a trigger task needs an id, a project, a source, a group and a rev", ErrBadInput)
+	if in.ID == "" || in.Project.Name() == "" || tr.Name == "" || tr.Source == "" || tr.Group == "" || tr.Rev == "" {
+		return domain.Task{}, fmt.Errorf("%w: a trigger task needs an id, a project, a name, a source, a group and a rev", ErrBadInput)
 	}
-	if in.Recipe.Name == "" || in.Recipe.Source != tr.Source {
-		return domain.Task{}, fmt.Errorf("%w: recipe %q is not started by source %q", ErrBadInput, in.Recipe.Name, tr.Source)
+	if err := in.Reply.Check(); err != nil {
+		return domain.Task{}, fmt.Errorf("%w: %w", ErrBadInput, err)
 	}
 	tr.Context = bytes.Clone(tr.Context)
 	return domain.Task{
-		ID: in.ID, Project: in.Project.Name(), Prompt: in.Recipe.Prompt, Kind: in.Recipe.Name,
+		ID: in.ID, Project: in.Project.Name(), Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt, Reply: in.Reply,
 		StartedBy: "trigger:" + string(tr.Source), Trigger: &tr, TokenOwner: in.TokenOwner, State: domain.Waiting,
 	}, nil
 }
@@ -125,13 +128,13 @@ func supersede(rev domain.Revision) decide {
 }
 
 func sameInputs(a, b domain.Task) bool {
-	return a.Project == b.Project && a.Prompt == b.Prompt && a.Kind == b.Kind && a.StartedBy == b.StartedBy &&
-		a.TokenOwner == b.TokenOwner && maps.Equal(a.Refs, b.Refs) && sameTrigger(a.Trigger, b.Trigger)
+	return a.Project == b.Project && a.Prompt == b.Prompt && a.ReviewPrompt == b.ReviewPrompt && a.Reply == b.Reply &&
+		a.StartedBy == b.StartedBy && a.TokenOwner == b.TokenOwner && maps.Equal(a.Refs, b.Refs) && sameTrigger(a.Trigger, b.Trigger)
 }
 
 func sameTrigger(a, b *domain.Trigger) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return a.Source == b.Source && a.Group == b.Group && a.Rev == b.Rev && bytes.Equal(a.Context, b.Context)
+	return a.Name == b.Name && a.Source == b.Source && a.Group == b.Group && a.Rev == b.Rev && bytes.Equal(a.Context, b.Context)
 }

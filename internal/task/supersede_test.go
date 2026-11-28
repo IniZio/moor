@@ -9,14 +9,14 @@ import (
 
 func newerRevOf(h *harness, old domain.TaskID, rev string) task.Outcome {
 	g := h.get(old).Trigger.Group
-	return h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn(h.id("newer"), string(g), rev, plain)))
+	return h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn(h.id("newer"), string(g), rev)))
 }
 
 func TestNewerRevSupersedesLiveTasks(t *testing.T) {
 	for _, state := range []domain.State{domain.Waiting, domain.Starting, domain.Running, domain.Delivering} {
 		t.Run(state.String(), func(t *testing.T) {
 			h := newHarness(t)
-			old := h.reach(domain.Triggered, state)
+			old := h.reach(triggerFlow, state)
 			out := newerRevOf(h, old, "rev-2")
 			checkSuperseded(h, old, out)
 			if got, want := hasStop(out.Effects, old), state != domain.Waiting; got != want {
@@ -51,7 +51,7 @@ func hasStop(fx []task.Effect, id domain.TaskID) bool {
 
 func TestSupersedeKeepsDeliveringVersionReadable(t *testing.T) {
 	h := newHarness(t)
-	old := h.reach(domain.Triggered, domain.Delivering)
+	old := h.reach(triggerFlow, domain.Delivering)
 	newerRevOf(h, old, "rev-2")
 	versions, _ := h.mem.Versions(h.ctx(), old)
 	if len(versions) != 1 {
@@ -66,7 +66,7 @@ func TestSupersedeKeepsDeliveringVersionReadable(t *testing.T) {
 func TestSupersedeLeavesOthersAlone(t *testing.T) {
 	for _, state := range []domain.State{domain.Done, domain.Failed, domain.Cancelled} {
 		h := newHarness(t)
-		old := h.reach(domain.Triggered, state)
+		old := h.reach(triggerFlow, state)
 		out := newerRevOf(h, old, "rev-2")
 		if got := h.get(old).State; got != state || len(out.Effects) != 0 || len(out.Events) != 1 {
 			t.Errorf("%s: old task now %s, effects %v, events %d", state, got, out.Effects, len(out.Events))
@@ -74,13 +74,13 @@ func TestSupersedeLeavesOthersAlone(t *testing.T) {
 	}
 
 	h := newHarness(t)
-	other := h.trig("acme/app#1", "rev-1", plain)
-	h.trig("acme/app#2", "rev-1", plain)
+	other := h.trig("acme/app#1", "rev-1")
+	h.trig("acme/app#2", "rev-1")
 	otherProject, err := domain.NewProject("blog", h.proj.Entries())
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := h.trigIn("blog-task", "acme/app#1", "rev-2", plain)
+	in := h.trigIn("blog-task", "acme/app#1", "rev-2")
 	in.Project = otherProject
 	h.ok(h.svc.StartByTrigger(h.ctx(), in))
 	if got := h.get(other).State; got != domain.Waiting {
@@ -88,21 +88,21 @@ func TestSupersedeLeavesOthersAlone(t *testing.T) {
 	}
 }
 
-func TestFreePromptTasksAreNeverSuperseded(t *testing.T) {
+func TestPersonStartedTasksAreNeverSuperseded(t *testing.T) {
 	h := newHarness(t)
-	free := h.reach(domain.FreePrompt, domain.Running)
-	h.trig("acme/app#1", "rev-1", plain)
-	h.trig("acme/app#1", "rev-2", plain)
-	if got := h.get(free).State; got != domain.Running {
-		t.Errorf("free-prompt task = %s", got)
+	person := h.reach(personFlow, domain.Running)
+	h.trig("acme/app#1", "rev-1")
+	h.trig("acme/app#1", "rev-2")
+	if got := h.get(person).State; got != domain.Running {
+		t.Errorf("person-started task = %s", got)
 	}
 }
 
 func TestOlderRevRedeliveredAfterNewerStartsNothing(t *testing.T) {
 	h := newHarness(t)
-	first := h.trig("acme/app#1", "rev-1", plain)
-	second := h.trig("acme/app#1", "rev-2", plain)
-	out := h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn("late", "acme/app#1", "rev-1", plain)))
+	first := h.trig("acme/app#1", "rev-1")
+	second := h.trig("acme/app#1", "rev-2")
+	out := h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn("late", "acme/app#1", "rev-1")))
 	if out.Task.ID != first || len(out.Events) != 0 {
 		t.Fatalf("redelivery returned %s with %d events", out.Task.ID, len(out.Events))
 	}
@@ -113,9 +113,9 @@ func TestOlderRevRedeliveredAfterNewerStartsNothing(t *testing.T) {
 
 func TestSupersedeSurvivesACrashBetweenTheWrites(t *testing.T) {
 	h, fs := faulty(t)
-	old := h.reach(domain.Triggered, domain.Running)
+	old := h.reach(triggerFlow, domain.Running)
 	g := string(h.get(old).Trigger.Group)
-	in := h.trigIn("newer", g, "rev-2", plain)
+	in := h.trigIn("newer", g, "rev-2")
 
 	fs.failAt = fs.saves + 2
 	if _, err := h.svc.StartByTrigger(h.ctx(), in); err == nil {

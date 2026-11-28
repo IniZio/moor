@@ -17,7 +17,9 @@ var (
 		domain.Published, domain.Delivered, domain.PersonEnded, domain.SessionEnded,
 		domain.TimeLimit, domain.Steered, domain.NewerRev, domain.Cancel,
 	}
-	allFlows = []domain.Flow{domain.FreePrompt, domain.Triggered}
+	allFlows = []domain.Flow{
+		{}, {Replies: true}, {Triggered: true}, {Triggered: true, Replies: true},
+	}
 )
 
 type edge struct {
@@ -27,13 +29,7 @@ type edge struct {
 }
 
 func allowedEdges() map[edge]domain.State {
-	free, trig := domain.FreePrompt, domain.Triggered
-	allowed := map[edge]domain.State{
-		{trig, domain.Running, domain.Published}:    domain.Delivering,
-		{trig, domain.Delivering, domain.Delivered}: domain.Done,
-		{free, domain.Running, domain.Published}:    domain.Done,
-		{free, domain.Running, domain.PersonEnded}:  domain.Done,
-	}
+	allowed := make(map[edge]domain.State)
 	for _, f := range allFlows {
 		allowed[edge{f, domain.Waiting, domain.SlotFree}] = domain.Starting
 		allowed[edge{f, domain.Starting, domain.PartsUp}] = domain.Running
@@ -42,14 +38,31 @@ func allowedEdges() map[edge]domain.State {
 		allowed[edge{f, domain.Done, domain.Steered}] = domain.Running
 		allowed[edge{f, domain.Running, domain.SessionEnded}] = domain.Failed
 		allowed[edge{f, domain.Running, domain.TimeLimit}] = domain.Failed
-	}
-	for _, s := range []domain.State{domain.Waiting, domain.Starting, domain.Running, domain.Delivering} {
-		allowed[edge{trig, s, domain.NewerRev}] = domain.Superseded
-		for _, f := range allFlows {
-			allowed[edge{f, s, domain.Cancel}] = domain.Cancelled
-		}
+		addPublishEdges(allowed, f)
+		addEndEdges(allowed, f)
 	}
 	return allowed
+}
+
+func addPublishEdges(allowed map[edge]domain.State, f domain.Flow) {
+	if f.Replies {
+		allowed[edge{f, domain.Running, domain.Published}] = domain.Delivering
+		allowed[edge{f, domain.Delivering, domain.Delivered}] = domain.Done
+		return
+	}
+	allowed[edge{f, domain.Running, domain.Published}] = domain.Done
+}
+
+func addEndEdges(allowed map[edge]domain.State, f domain.Flow) {
+	if !f.Triggered {
+		allowed[edge{f, domain.Running, domain.PersonEnded}] = domain.Done
+	}
+	for _, s := range []domain.State{domain.Waiting, domain.Starting, domain.Running, domain.Delivering} {
+		allowed[edge{f, s, domain.Cancel}] = domain.Cancelled
+		if f.Triggered {
+			allowed[edge{f, s, domain.NewerRev}] = domain.Superseded
+		}
+	}
 }
 
 func TestNextCoversEveryEdge(t *testing.T) {
@@ -93,11 +106,8 @@ func checkEdge(t *testing.T, allowed map[edge]domain.State, e edge) (refused boo
 }
 
 func TestNextRefusesStatesOutsideTheEnum(t *testing.T) {
-	if _, err := domain.Next(domain.FreePrompt, domain.State(0), domain.SlotFree); !errors.Is(err, domain.ErrRefused) {
+	if _, err := domain.Next(domain.Flow{}, domain.State(0), domain.SlotFree); !errors.Is(err, domain.ErrRefused) {
 		t.Fatalf("zero state: err = %v", err)
-	}
-	if _, err := domain.Next(domain.Flow(0), domain.Waiting, domain.SlotFree); !errors.Is(err, domain.ErrRefused) {
-		t.Fatalf("zero flow: err = %v", err)
 	}
 }
 

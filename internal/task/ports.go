@@ -25,9 +25,6 @@ type Clock interface {
 	Now() time.Time
 }
 
-// RecipeLookup finds a recipe by the name a task records as its kind.
-type RecipeLookup func(domain.RecipeName) (domain.Recipe, bool)
-
 // Config holds the fixed product limits. A zero duration means no limit.
 type Config struct {
 	TimeLimit  time.Duration
@@ -42,7 +39,7 @@ type EffectKind uint8
 const (
 	// StopJob asks the runner to remove the task's desk, Box and proxy.
 	StopJob EffectKind = iota + 1
-	// SendReviewTurn asks the session to run the recipe's review turn.
+	// SendReviewTurn asks the session to send the task's review prompt.
 	SendReviewTurn
 	// Deliver asks the bridge to create or edit the task's delivery for Version.
 	Deliver

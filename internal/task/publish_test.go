@@ -3,6 +3,7 @@ package task_test
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/IniZio/moor/internal/domain"
@@ -24,22 +25,32 @@ func wantEffect(t *testing.T, out task.Outcome, kind task.EffectKind, version in
 	}
 }
 
-func TestFreePromptPublishEnds(t *testing.T) {
-	h := newHarness(t)
-	id := h.reach(domain.FreePrompt, domain.Running)
-	out := h.publish(id, "d1")
-	got := h.get(id)
-	if got.State != domain.Done || len(out.Effects) != 0 || got.KeepUntil != h.clock.Now().Add(cfg.KeepWindow) || got.EndedAt.IsZero() {
-		t.Fatalf("task = %+v, effects %v", got, out.Effects)
-	}
-	if k := kinds(out.Events); len(k) != 2 || k[0] != domain.KindPublished || k[1] != domain.KindState {
-		t.Errorf("events = %v", k)
+func TestPublishWithoutAReplyTargetEnds(t *testing.T) {
+	for _, flow := range []domain.Flow{personFlow, triggerSilent} {
+		t.Run(flow.String(), func(t *testing.T) {
+			h := newHarness(t)
+			id := h.reach(flow, domain.Running)
+			out := h.publish(id, "d1")
+			got := h.get(id)
+			if got.State != domain.Done || len(out.Effects) != 0 || got.KeepUntil != h.clock.Now().Add(cfg.KeepWindow) || got.EndedAt.IsZero() {
+				t.Fatalf("task = %+v, effects %v", got, out.Effects)
+			}
+			if k := kinds(out.Events); len(k) != 2 || k[0] != domain.KindPublished || k[1] != domain.KindState {
+				t.Errorf("events = %v", k)
+			}
+		})
 	}
 }
 
-func TestTriggeredPublishDeliversThenDelivered(t *testing.T) {
+func TestPublishWithAReplyTargetDeliversThenDelivered(t *testing.T) {
+	for _, flow := range []domain.Flow{personReplies, triggerFlow} {
+		t.Run(flow.String(), func(t *testing.T) { deliverThenDone(t, flow) })
+	}
+}
+
+func deliverThenDone(t *testing.T, flow domain.Flow) {
 	h := newHarness(t)
-	id := h.reach(domain.Triggered, domain.Running)
+	id := h.reach(flow, domain.Running)
 	out := h.publish(id, "d1")
 	wantEffect(t, out, task.Deliver, 1)
 	if h.get(id).State != domain.Delivering {
@@ -57,7 +68,7 @@ func TestTriggeredPublishDeliversThenDelivered(t *testing.T) {
 
 func TestSameDigestTwiceIsOneVersion(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(domain.Triggered, domain.Running)
+	id := h.reach(triggerFlow, domain.Running)
 	h.publish(id, "d1")
 	before := len(h.mem.Events(id))
 	again := h.publish(id, "d1")
@@ -70,7 +81,7 @@ func TestSameDigestTwiceIsOneVersion(t *testing.T) {
 
 func TestPublishRefusals(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(domain.Triggered, domain.Running)
+	id := h.reach(triggerFlow, domain.Running)
 	for name, in := range map[string]task.PublishInput{
 		"no digest": {Line: "l", EntryURL: "u"},
 		"no url":    {Line: "l", Digest: "d"},
@@ -88,9 +99,9 @@ func TestPublishRefusals(t *testing.T) {
 	}
 }
 
-func TestReviewTurnPath(t *testing.T) {
+func TestReviewPromptPath(t *testing.T) {
 	h := newHarness(t)
-	id := h.trig("acme/app#7", "rev-1", review)
+	id := h.start(triggerFlow, "check it")
 	h.running(id)
 
 	first := h.publish(id, "d1")
@@ -120,26 +131,67 @@ func TestReviewTurnPath(t *testing.T) {
 	wantEffect(t, third, task.Deliver, 3)
 }
 
-func TestReviewTurnOnlyForTriggerRecipeThatAsksForIt(t *testing.T) {
-	h := newHarness(t)
-	plainID := h.trig("acme/app#7", "rev-1", plain)
-	h.running(plainID)
-	if out := h.publish(plainID, "d1"); fxKinds(out.Effects)[0] != task.Deliver {
-		t.Errorf("a recipe without a review turn: effects %v", fxKinds(out.Effects))
+func TestReviewPromptOnAnyKindOfTask(t *testing.T) {
+	cases := []struct {
+		flow     domain.Flow
+		accepted domain.State
+	}{
+		{personFlow, domain.Done},
+		{personReplies, domain.Delivering},
+		{triggerSilent, domain.Done},
+		{triggerFlow, domain.Delivering},
 	}
+	for _, c := range cases {
+		t.Run(c.flow.String(), func(t *testing.T) {
+			h := newHarness(t)
+			id := h.start(c.flow, "check it")
+			h.running(id)
+			wantEffect(t, h.publish(id, "d1"), task.SendReviewTurn, 1)
+			if got := h.get(id).State; got != domain.Running {
+				t.Fatalf("after the first publish: state %s", got)
+			}
+			second := h.publish(id, "d2")
+			if got := h.get(id).State; got != c.accepted || len(second.Effects) != btoi(c.accepted == domain.Delivering) {
+				t.Fatalf("after the second publish: state %s, effects %v", got, second.Effects)
+			}
+		})
+	}
+}
 
-	person := h.id("person")
-	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: person, Project: h.proj, By: "ann", Recipe: domain.Recipe{Name: review, Prompt: "p"}}))
-	h.running(person)
-	out := h.publish(person, "d1")
-	if h.get(person).State != domain.Done || len(out.Effects) != 0 {
-		t.Errorf("a person-started task with a review recipe: state %s, effects %v", h.get(person).State, out.Effects)
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func TestNoReviewStepWithoutAReviewPrompt(t *testing.T) {
+	for _, flow := range []domain.Flow{personFlow, personReplies, triggerSilent, triggerFlow} {
+		t.Run(flow.String(), func(t *testing.T) {
+			h := newHarness(t)
+			id := h.reach(flow, domain.Running)
+			out := h.publish(id, "d1")
+			if slices.Contains(fxKinds(out.Effects), task.SendReviewTurn) || h.get(id).State == domain.Running {
+				t.Fatalf("state %s, effects %v", h.get(id).State, fxKinds(out.Effects))
+			}
+		})
+	}
+}
+
+func TestDeliveredIsRefusedWithoutAReplyTarget(t *testing.T) {
+	for _, flow := range []domain.Flow{personFlow, triggerSilent} {
+		h := newHarness(t)
+		id := h.reach(flow, domain.Running)
+		h.publish(id, "d1")
+		if _, err := h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 1}); !refused(err) {
+			t.Errorf("%s: err = %v", flow, err)
+		}
 	}
 }
 
 func TestDeliveredRefusals(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(domain.Triggered, domain.Running)
+	id := h.reach(triggerFlow, domain.Running)
 	h.publish(id, "d1")
 	if _, err := h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 2}); !refused(err) {
 		t.Errorf("a delivery for a version that does not exist: err = %v", err)
@@ -151,7 +203,7 @@ func TestDeliveredRefusals(t *testing.T) {
 
 func TestDeliveringIsRetriedByPublishReplay(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(domain.Triggered, domain.Delivering)
+	id := h.reach(triggerFlow, domain.Delivering)
 	wantEffect(t, h.publish(id, "d1"), task.Deliver, 1)
 	h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 1}))
 	if out := h.publish(id, "d1"); len(out.Effects) != 0 {

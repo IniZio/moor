@@ -59,16 +59,19 @@ func (f *fuzz) start() func() error {
 	if f.pick(3) == 0 {
 		project = f.other
 	}
+	review, target := "", domain.ReplyTarget{}
+	if f.pick(2) == 0 {
+		review = "check it"
+	}
+	if f.pick(2) == 0 {
+		target = reply
+	}
 	if n < 3 {
-		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Project: project, Prompt: "p", By: "ann"}
+		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Project: project, Prompt: "p", ReviewPrompt: review, Reply: target, By: "ann"}
 		return func() error { return errOf(f.svc.StartByPerson(f.ctx(), in)) }
 	}
-	recipe := plain
-	if f.pick(2) == 0 {
-		recipe = review
-	}
-	in := f.trigIn(domain.TaskID(fmt.Sprintf("g%d", f.pick(60))), fmt.Sprintf("pr%d", f.pick(2)), fmt.Sprintf("rev%d", f.pick(4)), recipe)
-	in.Project = project
+	in := f.trigIn(domain.TaskID(fmt.Sprintf("g%d", f.pick(60))), fmt.Sprintf("pr%d", f.pick(2)), fmt.Sprintf("rev%d", f.pick(4)))
+	in.Project, in.ReviewPrompt, in.Reply = project, review, target
 	return func() error { return errOf(f.svc.StartByTrigger(f.ctx(), in)) }
 }
 
@@ -188,8 +191,8 @@ func (f *fuzz) checkTask(t *testing.T, i int, tk domain.Task) {
 		t.Fatalf("step %d: %s went %s to %s, which no event allows", i, tk.ID, prev, tk.State)
 	}
 	f.previous[tk.ID] = tk.State
-	if tk.Flow() == domain.FreePrompt && (tk.State == domain.Delivering || tk.State == domain.Superseded) {
-		t.Fatalf("step %d: free-prompt task %s is %s", i, tk.ID, tk.State)
+	if (tk.State == domain.Delivering && !tk.Reply.Set()) || (tk.State == domain.Superseded && tk.Trigger == nil) {
+		t.Fatalf("step %d: task %s with reply %+v and trigger %v is %s", i, tk.ID, tk.Reply, tk.Trigger, tk.State)
 	}
 	f.checkRows(t, i, tk)
 	f.checkVersions(t, i, tk)
@@ -218,8 +221,12 @@ func (f *fuzz) checkVersions(t *testing.T, i int, tk domain.Task) {
 		}
 		digests[v.Digest] = true
 	}
-	if (tk.State == domain.Delivering) && len(versions) == 0 {
-		t.Fatalf("step %d: %s delivers nothing", i, tk.ID)
+	wantVersions := 1
+	if tk.ReviewPrompt != "" {
+		wantVersions = 2
+	}
+	if tk.State == domain.Delivering && len(versions) < wantVersions {
+		t.Fatalf("step %d: %s delivers with %d versions, review prompt %q", i, tk.ID, len(versions), tk.ReviewPrompt)
 	}
 }
 

@@ -1,12 +1,15 @@
 -- +goose Up
--- A trigger is set when all three trigger columns are, and the key then holds once per project.
+-- A trigger is set when all four trigger columns are, and the key then holds once per project.
 -- Context and event data are json, not jsonb, because the core never reads them and must get the bytes back.
 CREATE TABLE tasks (
     id text PRIMARY KEY,
     project text NOT NULL,
     prompt text NOT NULL,
-    kind text NOT NULL DEFAULT '',
+    review_prompt text NOT NULL DEFAULT '',
+    reply_source text NOT NULL DEFAULT '',
+    reply_ref text NOT NULL DEFAULT '',
     started_by text NOT NULL DEFAULT '',
+    trigger_name text,
     trigger_source text,
     trigger_group text,
     trigger_rev text,
@@ -27,7 +30,9 @@ CREATE TABLE tasks (
     created_at timestamptz NOT NULL,
     ended_at timestamptz,
     CONSTRAINT tasks_trigger_whole CHECK (
-        (trigger_source IS NULL) = (trigger_group IS NULL) AND (trigger_source IS NULL) = (trigger_rev IS NULL))
+        (trigger_source IS NULL) = (trigger_name IS NULL) AND (trigger_source IS NULL) = (trigger_group IS NULL)
+        AND (trigger_source IS NULL) = (trigger_rev IS NULL)),
+    CONSTRAINT tasks_reply_whole CHECK ((reply_source = '') = (reply_ref = ''))
 );
 
 CREATE UNIQUE INDEX tasks_trigger_key ON tasks (project, trigger_source, trigger_group, trigger_rev)

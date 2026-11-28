@@ -23,7 +23,8 @@ type DeliveredInput struct {
 }
 
 // Publish records a result version. The same digest again is the same version, and reports the
-// effect that version still owes. A trigger recipe with a review turn does not deliver the first one.
+// effect that version still owes. A task with a review prompt does not accept the first version:
+// the result is accepted on the next publish.
 func (s *Service) Publish(ctx context.Context, id domain.TaskID, in PublishInput) (Outcome, error) {
 	if in.Digest == "" || in.EntryURL == "" {
 		return Outcome{}, fmt.Errorf("%w: a publish needs a digest and an entry url", ErrBadInput)
@@ -38,7 +39,7 @@ func (s *Service) Publish(ctx context.Context, id domain.TaskID, in PublishInput
 }
 
 func (e env) publish(t domain.Task, versions []domain.ResultVersion, in PublishInput) (decision, error) {
-	review := e.wantsReview(t) && len(versions) == 0
+	review := t.ReviewPrompt != "" && len(versions) == 0
 	if i := slices.IndexFunc(versions, func(v domain.ResultVersion) bool { return v.Digest == in.Digest }); i >= 0 {
 		return decision{task: t, effects: e.owed(t, versions[i], len(versions))}, nil
 	}
@@ -57,14 +58,6 @@ func (e env) publish(t domain.Task, versions []domain.ResultVersion, in PublishI
 	return decision{task: next, rows: append([]row{published}, rows...), result: &v, effects: e.owed(next, v, v.N)}, nil
 }
 
-func (e env) wantsReview(t domain.Task) bool {
-	if t.Flow() != domain.Triggered || e.recipes == nil {
-		return false
-	}
-	r, ok := e.recipes(t.Kind)
-	return ok && r.ReviewTurn
-}
-
 // owed derives the effect of version v from the state alone: a delivery while delivering, or the
 // review turn while the first version waits for it.
 func (e env) owed(t domain.Task, v domain.ResultVersion, latest int) []Effect {
@@ -75,7 +68,7 @@ func (e env) owed(t domain.Task, v domain.ResultVersion, latest int) []Effect {
 	switch {
 	case t.State == domain.Delivering:
 		fx.Kind = Deliver
-	case t.State == domain.Running && v.N == 1 && e.wantsReview(t):
+	case t.State == domain.Running && v.N == 1 && t.ReviewPrompt != "":
 		fx.Kind = SendReviewTurn
 	default:
 		return nil

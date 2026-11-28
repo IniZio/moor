@@ -20,27 +20,25 @@ var (
 const defaultAttempts = 5
 
 type Service struct {
-	store   Store
-	clock   Clock
-	recipes RecipeLookup
-	cfg     Config
+	store Store
+	clock Clock
+	cfg   Config
 }
 
-func New(store Store, clock Clock, recipes RecipeLookup, cfg Config) *Service {
+func New(store Store, clock Clock, cfg Config) *Service {
 	if cfg.Attempts <= 0 {
 		cfg.Attempts = defaultAttempts
 	}
-	return &Service{store: store, clock: clock, recipes: recipes, cfg: cfg}
+	return &Service{store: store, clock: clock, cfg: cfg}
 }
 
 // env is one attempt's view of time and limits. A decision is a pure function of a task and an env.
 type env struct {
-	now     time.Time
-	cfg     Config
-	recipes RecipeLookup
+	now time.Time
+	cfg Config
 }
 
-func (s *Service) env() env { return env{now: s.clock.Now(), cfg: s.cfg, recipes: s.recipes} }
+func (s *Service) env() env { return env{now: s.clock.Now(), cfg: s.cfg} }
 
 type row struct {
 	kind domain.EventKind

@@ -8,7 +8,6 @@ import (
 type (
 	TaskID        string
 	ProjectName   string
-	RecipeName    string
 	SkillName     string
 	Person        string
 	Commit        string
@@ -27,8 +26,9 @@ type Repo struct {
 	Path RepoPath
 }
 
-// Trigger is the integration event that started a task. Group and Context are opaque to the core.
+// Trigger is the integration event that started a task, and the definition that took it. Group and Context are opaque to the core.
 type Trigger struct {
+	Name    TriggerName
 	Source  TriggerSource
 	Group   TriggerGroup
 	Rev     Revision
@@ -39,13 +39,16 @@ type Task struct {
 	ID      TaskID
 	Project ProjectName
 	Prompt  string
-	// Kind is empty on a free-prompt task.
-	Kind      RecipeName
+	// ReviewPrompt is sent after the first publish. Empty means the task has no review step.
+	ReviewPrompt string
+	// Reply is where the result is posted. Empty means the task ends on the accepted publish.
+	Reply     ReplyTarget
 	StartedBy string
-	Trigger   *Trigger
-	State     State
-	Version   int64
-	Pins      map[Dir]Commit
+	// Trigger is nil on a task a person started.
+	Trigger *Trigger
+	State   State
+	Version int64
+	Pins    map[Dir]Commit
 	// Refs are the refs a person named for entries, by dir. Pins hold what they resolved to.
 	Refs      map[Dir]string
 	Runner    RunnerID
@@ -62,10 +65,7 @@ type Task struct {
 }
 
 func (t Task) Flow() Flow {
-	if t.Trigger == nil {
-		return FreePrompt
-	}
-	return Triggered
+	return Flow{Triggered: t.Trigger != nil, Replies: t.Reply.Set()}
 }
 
 // TaskKey is unique among tasks a trigger started, so a redelivered event starts nothing.

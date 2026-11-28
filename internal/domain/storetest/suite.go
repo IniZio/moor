@@ -34,7 +34,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Subject) {
 		run  func(*testing.T, Subject)
 	}{
 		{"round trip", roundTrip},
-		{"free prompt has no key", freePrompt},
+		{"person-started has no key", personStarted},
+		{"person-started review prompt and reply target", personFields},
 		{"missing rows", missing},
 		{"duplicate id and key", duplicates},
 		{"stale version", staleVersion},

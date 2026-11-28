@@ -1,4 +1,4 @@
-// Package domain holds tasks, projects, recipes and the task state machine. It does no input or output.
+// Package domain holds tasks, projects, trigger definitions and the task state machine. It does no input or output.
 package domain
 
 import (

@@ -12,7 +12,7 @@ func (s *Service) simple(ctx context.Context, id domain.TaskID, fn func(env, dom
 	return s.apply(ctx, id, func(_ context.Context, e env, t domain.Task) (decision, error) { return fn(e, t) })
 }
 
-// End is a person ending a free-prompt task. It ends as done, with or without a page.
+// End is a person ending a task a person started. It ends as done, with or without a page.
 func (s *Service) End(ctx context.Context, id domain.TaskID) (Outcome, error) {
 	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {
 		return e.run(t, op{event: domain.PersonEnded, settled: []domain.State{domain.Done}, reason: "ended by person"})

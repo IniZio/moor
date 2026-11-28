@@ -134,17 +134,25 @@ type EntryCommit struct {
 }
 
 type Trigger struct {
+	Name    string          `json:"name"`
 	Source  string          `json:"source"`
 	Group   string          `json:"group"`
 	Rev     string          `json:"rev"`
 	Context json.RawMessage `json:"context,omitempty"`
 }
 
+// ReplyTarget is where a task's result is posted. Both parts are opaque to the link.
+type ReplyTarget struct {
+	Source string `json:"source"`
+	Ref    string `json:"ref"`
+}
+
 type TaskStart struct {
 	Fence
 	Entries       []EntryCommit   `json:"entries"`
-	Kind          string          `json:"kind"`
 	Prompt        string          `json:"prompt"`
+	ReviewPrompt  string          `json:"review_prompt,omitempty"`
+	Reply         *ReplyTarget    `json:"reply,omitempty"`
 	Skills        []string        `json:"skills"`
 	Trigger       *Trigger        `json:"trigger,omitempty"`
 	Harness       string          `json:"harness"`

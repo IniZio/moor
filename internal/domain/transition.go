@@ -46,70 +46,70 @@ func (e Event) String() string {
 	return fmt.Sprintf("Event(%d)", uint8(e))
 }
 
-// Flow tells a free-prompt task from one a trigger started. Only the latter delivers and is superseded.
-type Flow uint8
-
-const (
-	FreePrompt Flow = iota + 1
-	Triggered
-)
+// Flow is what the state machine reads of a task. A task a trigger started can be superseded and
+// cannot be ended by a person. A task with a reply target is delivered before it is done.
+type Flow struct {
+	Triggered bool
+	Replies   bool
+}
 
 func (f Flow) String() string {
-	switch f {
-	case FreePrompt:
-		return "free prompt"
-	case Triggered:
-		return "triggered"
+	who := "person-started"
+	if f.Triggered {
+		who = "trigger-started"
 	}
-	return fmt.Sprintf("Flow(%d)", uint8(f))
+	if f.Replies {
+		return who + " replying"
+	}
+	return who
 }
 
 var ErrRefused = errors.New("transition refused")
 
 type rule struct {
-	from  State
-	on    Event
-	to    State
-	flows []Flow
+	from State
+	on   Event
+	to   State
+	when func(Flow) bool
 }
 
-var (
-	anyFlow   = []Flow{FreePrompt, Triggered}
-	triggered = []Flow{Triggered}
-	free      = []Flow{FreePrompt}
-)
+func always(Flow) bool         { return true }
+func byTrigger(f Flow) bool    { return f.Triggered }
+func byPerson(f Flow) bool     { return !f.Triggered }
+func withReply(f Flow) bool    { return f.Replies }
+func withoutReply(f Flow) bool { return !f.Replies }
 
 var rules = []rule{
-	{Waiting, SlotFree, Starting, anyFlow},
-	{Starting, PartsUp, Running, anyFlow},
-	{Starting, PartFailed, Failed, anyFlow},
-	{Running, BoxRecreated, Running, anyFlow},
-	{Running, Published, Delivering, triggered},
-	{Delivering, Delivered, Done, triggered},
-	{Running, Published, Done, free},
-	{Running, PersonEnded, Done, free},
-	{Done, Steered, Running, anyFlow},
-	{Running, SessionEnded, Failed, anyFlow},
-	{Running, TimeLimit, Failed, anyFlow},
-	{Waiting, NewerRev, Superseded, triggered},
-	{Starting, NewerRev, Superseded, triggered},
-	{Running, NewerRev, Superseded, triggered},
-	{Delivering, NewerRev, Superseded, triggered},
-	{Waiting, Cancel, Cancelled, anyFlow},
-	{Starting, Cancel, Cancelled, anyFlow},
-	{Running, Cancel, Cancelled, anyFlow},
-	{Delivering, Cancel, Cancelled, anyFlow},
+	{Waiting, SlotFree, Starting, always},
+	{Starting, PartsUp, Running, always},
+	{Starting, PartFailed, Failed, always},
+	{Running, BoxRecreated, Running, always},
+	{Running, Published, Delivering, withReply},
+	{Delivering, Delivered, Done, withReply},
+	{Running, Published, Done, withoutReply},
+	{Running, PersonEnded, Done, byPerson},
+	{Done, Steered, Running, always},
+	{Running, SessionEnded, Failed, always},
+	{Running, TimeLimit, Failed, always},
+	{Waiting, NewerRev, Superseded, byTrigger},
+	{Starting, NewerRev, Superseded, byTrigger},
+	{Running, NewerRev, Superseded, byTrigger},
+	{Delivering, NewerRev, Superseded, byTrigger},
+	{Waiting, Cancel, Cancelled, always},
+	{Starting, Cancel, Cancelled, always},
+	{Running, Cancel, Cancelled, always},
+	{Delivering, Cancel, Cancelled, always},
 }
 
 // Handles tells whether any rule gives the flow this event, whatever the state.
 func Handles(flow Flow, on Event) bool {
-	return slices.ContainsFunc(rules, func(r rule) bool { return r.on == on && slices.Contains(r.flows, flow) })
+	return slices.ContainsFunc(rules, func(r rule) bool { return r.on == on && r.when(flow) })
 }
 
 // Next gives the state a task in this flow moves to on an event. A refused event leaves the state as it was.
 func Next(flow Flow, from State, on Event) (State, error) {
 	for _, r := range rules {
-		if r.from == from && r.on == on && slices.Contains(r.flows, flow) {
+		if r.from == from && r.on == on && r.when(flow) {
 			return r.to, nil
 		}
 	}
