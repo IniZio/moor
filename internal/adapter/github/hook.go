@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-github/v88/github"
 
@@ -24,8 +25,16 @@ type Sink interface {
 // 401. Any event but a pull request is accepted and set aside. The answer is 202, and a failure to store the
 // delivery is 500 so that GitHub can send it again.
 // With no webhook secret every delivery is refused with 503, since none could be checked.
-func (a *Adapter) Hook(sink Sink) http.Handler {
-	h := a.hook(sink)
+func (a *Adapter) Hook(sink Sink) http.Handler { return a.HookFor(sink, nil) }
+
+// Pushes hears a push to a branch of a repository. It is told only of pushes whose signature checked out.
+type Pushes interface {
+	Pushed(repo domain.Repo, branch string)
+}
+
+// HookFor is Hook that also tells pushes about each push to a branch. With nil pushes a push is set aside.
+func (a *Adapter) HookFor(sink Sink, pushes Pushes) http.Handler {
+	h := a.hook(sink, pushes)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(a.secret) == 0 {
 			http.Error(w, "the GitHub App's webhook_secret is not set in settings", http.StatusServiceUnavailable)
@@ -35,7 +44,7 @@ func (a *Adapter) Hook(sink Sink) http.Handler {
 	})
 }
 
-func (a *Adapter) hook(sink Sink) http.Handler {
+func (a *Adapter) hook(sink Sink, pushes Pushes) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxPayload)
 		payload, err := github.ValidatePayload(r, a.secret)
@@ -48,8 +57,7 @@ func (a *Adapter) hook(sink Sink) http.Handler {
 			http.Error(w, "the delivery has no X-GitHub-Delivery id", http.StatusBadRequest)
 			return
 		}
-		if in.Event != "pull_request" {
-			accepted(w, domain.InboundResult{Outcome: "ignored: " + in.Event + " is not read"})
+		if setAside(w, in.Event, payload, pushes) {
 			return
 		}
 		if err := a.readHook(r.Context(), payload, &in); err != nil {
@@ -65,6 +73,38 @@ func (a *Adapter) hook(sink Sink) http.Handler {
 		}
 		accepted(w, res)
 	})
+}
+
+// setAside answers a delivery that is not a pull request, and says whether it did.
+func setAside(w http.ResponseWriter, event string, payload []byte, pushes Pushes) bool {
+	switch {
+	case event == "push" && pushes != nil:
+		accepted(w, readPush(payload, pushes))
+	case event != "pull_request":
+		accepted(w, domain.InboundResult{Outcome: "ignored: " + event + " is not read"})
+	default:
+		return false
+	}
+	return true
+}
+
+// readPush tells pushes of a push to a branch. A tag, a deleted branch or a payload that names no repository is set aside.
+func readPush(payload []byte, pushes Pushes) domain.InboundResult {
+	parsed, err := github.ParseWebHook("push", payload)
+	e, ok := parsed.(*github.PushEvent)
+	branch, isBranch := strings.CutPrefix(e.GetRef(), "refs/heads/")
+	switch {
+	case err != nil || !ok || e.GetRepo().GetFullName() == "":
+		return domain.InboundResult{Outcome: "ignored: a push with no repository"}
+	case !isBranch || e.GetDeleted():
+		return domain.InboundResult{Outcome: "ignored: a push that is not to a branch"}
+	}
+	repo, err := domain.ParseRepo(e.GetRepo().GetFullName())
+	if err != nil {
+		return domain.InboundResult{Outcome: "ignored: a push to " + e.GetRepo().GetFullName()}
+	}
+	pushes.Pushed(repo, branch)
+	return domain.InboundResult{Outcome: "push to " + repo.String() + " " + branch + " noted"}
 }
 
 func accepted(w http.ResponseWriter, res domain.InboundResult) {
