@@ -1,6 +1,4 @@
-package link
-
-import "github.com/IniZio/moor/internal/wire"
+package wire
 
 // Verdict is what a slot does with a launch aimed at its task.
 type Verdict uint8
@@ -12,14 +10,14 @@ const (
 )
 
 // Newer reports whether a aims at a later box generation than b, or at a later run of the same one.
-func Newer(a, b wire.Fence) bool {
+func Newer(a, b Fence) bool {
 	return a.Gen > b.Gen || (a.Gen == b.Gen && a.Run > b.Run)
 }
 
 // Admit decides a launch k against the fence of the job running in the task's slot, nil when none
 // runs. An equal fence joins the running job, an older one is refused, a newer one replaces it. A
 // fence of another task is refused: a slot holds one task.
-func Admit(running *wire.Fence, k wire.Fence) Verdict {
+func Admit(running *Fence, k Fence) Verdict {
 	switch {
 	case running == nil:
 		return Start
