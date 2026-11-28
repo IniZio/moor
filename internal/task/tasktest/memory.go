@@ -79,7 +79,10 @@ func (m *Memory) Save(_ context.Context, w domain.TaskWrite) (domain.Task, error
 	m.tasks[t.ID] = t
 	m.events[t.ID] = append(m.events[t.ID], w.Events...)
 	if w.Result != nil {
-		m.versions[t.ID] = append(m.versions[t.ID], *w.Result)
+		// A row always belongs to the task being saved, as in the database.
+		v := *w.Result
+		v.Task = t.ID
+		m.versions[t.ID] = append(m.versions[t.ID], v)
 	}
 	return clone(t), nil
 }
