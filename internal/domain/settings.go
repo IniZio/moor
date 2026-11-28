@@ -124,6 +124,16 @@ func ParseAllowRule(s string) (AllowRule, error) {
 	return AllowRule{Host: host, Port: port, Methods: methods}, nil
 }
 
+func digits(s string) (int, bool) {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
 func cutLast(s, sep string) (string, string, bool) {
 	i := strings.LastIndex(s, sep)
 	if i < 0 {

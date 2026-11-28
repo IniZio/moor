@@ -125,6 +125,7 @@ linters:
           allow:
             - $gostd
             - go.yaml.in/yaml/v3
+            - github.com/robfig/cron/v3
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/adapter/yamlfile
         adapter-secretbox:

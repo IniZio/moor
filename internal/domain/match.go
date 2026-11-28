@@ -56,6 +56,8 @@ func (p *PullRequestOn) hears(typ PullRequestType) bool {
 	return slices.Contains(p.Types, typ)
 }
 
+func normalizeCron(expr string) string { return strings.Join(strings.Fields(expr), " ") }
+
 // ValidateSpecSet refuses two specs with the same name, which it compares without case.
 func ValidateSpecSet(specs []TaskSpec) error {
 	seen := make(map[string]SpecName, len(specs))

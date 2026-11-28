@@ -66,7 +66,7 @@ type PullRequestOn struct {
 	Types []PullRequestType
 }
 
-// ScheduleOn starts a task on a cron schedule of five fields.
+// ScheduleOn starts a task on a cron schedule. Reading the cron is the file adapter's job, since the domain does no parsing of it.
 type ScheduleOn struct {
 	Cron string
 }
@@ -110,8 +110,8 @@ type TaskSpec struct {
 }
 
 // Validate refuses a spec that could not start a task: it needs a one-line name, at least one way to
-// start, a prompt, whole and distinct repositories, known and distinct pull request types, five-field
-// crons that can fire, distinct inputs, and prompts whose expressions are supported.
+// start, a prompt, whole and distinct repositories, known and distinct pull request types, distinct
+// inputs, and prompts whose expressions are supported. A cron is checked where the file is read.
 func (s TaskSpec) Validate() error {
 	if _, err := ParseSpecName(string(s.Name)); err != nil {
 		return err
@@ -154,11 +154,6 @@ func (s TaskSpec) validatePrompts() error {
 func (o On) validate() error {
 	if err := o.PullRequest.validate(); err != nil {
 		return err
-	}
-	for _, sc := range o.Schedule {
-		if err := CheckCron(sc.Cron); err != nil {
-			return err
-		}
 	}
 	return o.WorkflowDispatch.validate()
 }

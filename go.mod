@@ -9,6 +9,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pressly/goose/v3 v3.30.2
+	github.com/robfig/cron/v3 v3.0.1
 	go.yaml.in/yaml/v3 v3.0.6
 )
 

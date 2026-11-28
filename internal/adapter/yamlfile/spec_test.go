@@ -139,7 +139,7 @@ var specErrorCases = []errorCase{
 	{"on is text", "name: a\non: push\nprompt: p\n", 2, "on must be a mapping"},
 	{"on is a list", "name: a\non: [push]\nprompt: p\n", 2, "on must be a mapping"},
 	{"cron with too few fields", "name: a\non:\n  schedule:\n    - cron: '* * * *'\nprompt: p\n", 4, "cron"},
-	{"cron out of range", "name: a\non:\n  schedule:\n    - cron: '61 * * * *'\nprompt: p\n", 4, "minute"},
+	{"cron out of range", "name: a\non:\n  schedule:\n    - cron: '61 * * * *'\nprompt: p\n", 4, "above maximum"},
 	{"cron is a number", "name: a\non:\n  schedule:\n    - cron: 5\nprompt: p\n", 4, "cron must be text"},
 	{"second cron is bad", "name: a\non:\n  schedule:\n    - cron: '* * * * *'\n    - cron: nope\nprompt: p\n", 5, "cron"},
 	{"schedule entry without cron", "name: a\non:\n  schedule:\n    - {}\nprompt: p\n", 4, `missing required key "cron"`},

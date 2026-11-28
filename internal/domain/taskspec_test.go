@@ -56,10 +56,6 @@ func TestTaskSpecValidate(t *testing.T) {
 		"repeated repository": func(s *domain.TaskSpec) {
 			s.Repositories = []domain.Repo{{Host: "forge.example", Path: "acme/app"}, {Host: "forge.example", Path: "acme/app"}}
 		},
-		"cron of four":      func(s *domain.TaskSpec) { s.On.Schedule[0].Cron = "0 9 * *" },
-		"cron of six":       func(s *domain.TaskSpec) { s.On.Schedule[0].Cron = "0 0 9 * * 1" },
-		"empty cron":        func(s *domain.TaskSpec) { s.On.Schedule[0].Cron = "" },
-		"cron out of range": func(s *domain.TaskSpec) { s.On.Schedule[0].Cron = "60 9 * * 1" },
 		"repeated input": func(s *domain.TaskSpec) {
 			s.On.WorkflowDispatch.Inputs = []domain.Input{{Name: "env"}, {Name: "env"}}
 		},

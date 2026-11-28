@@ -150,7 +150,7 @@ func (w *walker) schedule(n *yaml.Node) []domain.ScheduleOn {
 		if !ok {
 			continue
 		}
-		if err := domain.CheckCron(text); err != nil {
+		if err := checkCron(text); err != nil {
 			w.fail(o.vals["cron"], "%v", err)
 			continue
 		}
