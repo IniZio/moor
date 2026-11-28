@@ -16,6 +16,8 @@ import (
 // Store keeps tasks in Postgres. Any number of replicas may share one database.
 type Store struct {
 	pool *pgxpool.Pool
+	// db is what the methods read and write through: the pool, or the transaction of an InTx.
+	db executor
 }
 
 // Open connects to the database named by dsn and applies the pending migrations.
@@ -33,7 +35,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		pool.Close()
 		return nil, err
 	}
-	return &Store{pool: pool}, nil
+	return &Store{pool: pool, db: pool}, nil
 }
 
 func (s *Store) Close() { s.pool.Close() }
@@ -52,8 +54,24 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// executor is a querier that also writes and can begin a transaction, which on a transaction is a savepoint.
+type executor interface {
+	querier
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// InTx runs fn on a store whose reads and writes all belong to one transaction. The transaction commits when fn
+// returns nil and rolls back on any error. The store fn gets must not be used after fn returns, or closed.
+func (s *Store) InTx(ctx context.Context, fn func(tx *Store) error) error {
+	if err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error { return fn(&Store{db: tx}) }); err != nil {
+		return fmt.Errorf("transaction: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Load(ctx context.Context, id domain.TaskID) (domain.Task, error) {
-	return loadTask(ctx, s.pool, id)
+	return loadTask(ctx, s.db, id)
 }
 
 func loadTask(ctx context.Context, q querier, id domain.TaskID) (domain.Task, error) {
@@ -65,7 +83,7 @@ func loadTask(ctx context.Context, q querier, id domain.TaskID) (domain.Task, er
 }
 
 func (s *Store) ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error) {
-	row := s.pool.QueryRow(ctx, selectByKey, string(key.Repo.Host), string(key.Repo.Path), string(key.Spec), string(key.Source), string(key.Group), string(key.Rev))
+	row := s.db.QueryRow(ctx, selectByKey, string(key.Repo.Host), string(key.Repo.Path), string(key.Spec), string(key.Source), string(key.Group), string(key.Rev))
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Task{}, fmt.Errorf("key %v: %w", key, domain.ErrNotFound)
@@ -74,7 +92,7 @@ func (s *Store) ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, err
 }
 
 func (s *Store) LiveInGroup(ctx context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
-	rows, err := s.pool.Query(ctx, selectLive, string(repo.Host), string(repo.Path), string(spec), string(source), string(group), liveStates())
+	rows, err := s.db.Query(ctx, selectLive, string(repo.Host), string(repo.Path), string(spec), string(source), string(group), liveStates())
 	if err != nil {
 		return nil, fmt.Errorf("live tasks of %s %s %s %s: %w", repo, spec, source, group, err)
 	}
@@ -114,7 +132,7 @@ func liveStates() []string {
 }
 
 func (s *Store) Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error) {
-	rows, err := s.pool.Query(ctx, "SELECT version, entry_url, line, digest, published_at FROM result_versions WHERE task_id = $1 ORDER BY version", string(id))
+	rows, err := s.db.Query(ctx, "SELECT version, entry_url, line, digest, published_at FROM result_versions WHERE task_id = $1 ORDER BY version", string(id))
 	if err != nil {
 		return nil, fmt.Errorf("versions of %s: %w", id, err)
 	}

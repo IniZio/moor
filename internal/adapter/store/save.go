@@ -14,7 +14,7 @@ import (
 // commit, so two writers of one task take turns and the second finds a newer version.
 func (s *Store) Save(ctx context.Context, w domain.TaskWrite) (domain.Task, error) {
 	var saved domain.Task
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var err error
 		saved, err = save(ctx, tx, w)
 		return err

@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/IniZio/moor/internal/adapter/github"
 	"github.com/IniZio/moor/internal/adapter/secretbox"
 )
 
@@ -24,19 +26,24 @@ type config struct {
 	linkTick       time.Duration
 	trustedOrigins []string
 	secretKey      []byte
+	// github is the GitHub App. With none of it set the portal serves no /hooks/github.
+	github github.Config
 }
 
 const usage = `portal [flags]
 
 Each flag has an environment variable. PORTAL_SECRET_KEY has no flag: it is the base64 of a 32-byte key.
 PORTAL_INTERNAL_SECRET has no flag either: every replica gets the same one, and with -internal-url it
-lets a terminal hop to the replica that holds a machine's link.`
+lets a terminal hop to the replica that holds a machine's link.
+
+PORTAL_GITHUB_WEBHOOK_SECRET has no flag: it is the secret that signs GitHub's deliveries. It and the three
+github flags go together, none has a default, and with none of them the portal serves no /hooks/github.`
 
 // parseConfig reads flags, each defaulting to its environment variable. The user header has no default,
 // because which header the sign-in proxy sets is the operator's to say.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
 	var c config
-	var origins string
+	var origins, appID string
 	fs := flag.NewFlagSet("portal", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&c.listen, "listen", orDefault(getenv("PORTAL_LISTEN"), "127.0.0.1:8080"), "address to listen on (PORTAL_LISTEN)")
@@ -47,6 +54,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&c.internalURL, "internal-url", getenv("PORTAL_INTERNAL_URL"), "address other portal replicas reach this one at, such as http://10.0.0.5:8080 (PORTAL_INTERNAL_URL); without it no terminal hops here")
 	fs.StringVar(&c.orgName, "org-name", getenv("PORTAL_ORG_NAME"), "organisation name shown on Settings (PORTAL_ORG_NAME)")
 	fs.StringVar(&origins, "trusted-origins", getenv("PORTAL_TRUSTED_ORIGINS"), "comma-separated origins allowed to post when the proxy rewrites the host (PORTAL_TRUSTED_ORIGINS)")
+	fs.StringVar(&appID, "github-app-id", getenv("PORTAL_GITHUB_APP_ID"), "id of the GitHub App that answers pull requests (PORTAL_GITHUB_APP_ID)")
+	fs.StringVar(&c.github.KeyFile, "github-private-key-file", getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "file holding the GitHub App's private key (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
+	fs.StringVar(&c.github.APIBase, "github-api-url", getenv("PORTAL_GITHUB_API_URL"), "address of GitHub's API, such as https://api.github.com/ (PORTAL_GITHUB_API_URL)")
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
@@ -61,12 +71,34 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	}
 	c.secretKey = key
 	c.internalSecret = getenv("PORTAL_INTERNAL_SECRET")
+	if err := readGitHub(&c.github, appID, getenv("PORTAL_GITHUB_WEBHOOK_SECRET")); err != nil {
+		return config{}, err
+	}
 	for name, val := range map[string]string{"database-url": c.database, "user-header": c.userHeader} {
 		if val == "" {
 			return config{}, fmt.Errorf("%s is required, as a flag or its environment variable", name)
 		}
 	}
 	return c, nil
+}
+
+// readGitHub sets the App's id from its text and its webhook secret, and checks that the App is whole or not given at all.
+func readGitHub(c *github.Config, appID, webhookSecret string) error {
+	c.WebhookSecret = []byte(webhookSecret)
+	if appID != "" {
+		n, err := strconv.ParseInt(strings.TrimSpace(appID), 10, 64)
+		if err != nil || n <= 0 {
+			return errors.New("github-app-id must be the number of the GitHub App")
+		}
+		c.AppID = n
+	}
+	if !c.Enabled() {
+		return nil
+	}
+	if err := c.Check(); err != nil {
+		return fmt.Errorf("github app: %w", err)
+	}
+	return nil
 }
 
 func orDefault(v, fallback string) string {

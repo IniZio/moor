@@ -118,7 +118,7 @@ func (f *runFeed) sendPage(ctx context.Context, seq int64) error {
 		return fmt.Errorf("load task %s: %w", f.id, err)
 	}
 	var html strings.Builder
-	if err := runBody(buildRun(t, f.rows, f.s.now()), f.part).Render(ctx, &html); err != nil {
+	if err := runBody(f.s.run(t, f.rows), f.part).Render(ctx, &html); err != nil {
 		return fmt.Errorf("draw the run page: %w", err)
 	}
 	m := &sse.Message{Type: sse.Type("page")}

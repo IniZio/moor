@@ -69,7 +69,7 @@ func (s *server) listOf(r *http.Request, f domain.TaskFilter) (listView, error) 
 	}
 	v := listView{Count: countText(len(list.Items), list.More), Rows: make([]rowView, len(list.Items))}
 	for i, it := range list.Items {
-		v.Rows[i] = rowOf(it, s.now())
+		v.Rows[i] = s.rowFor(it)
 	}
 	v.Empty = "No tasks yet."
 	if f.Narrowed() {

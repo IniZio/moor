@@ -71,13 +71,29 @@ templ specHead(v tasksView) {
 				<span>{ startsText(v.Spec.Spec) }</span>
 				<span class="grow"></span>
 				if v.Spec.Spec.On.WorkflowDispatch != nil {
-					<button class="btn" type="button" disabled>Run ▾</button>
+					@runMenu(*v.Spec)
 				}
 			</div>
 		default:
 			<div class="phead"><h1>{ v.SpecName }</h1></div>
 			<div class="banner"><span>This spec is not in the team's home any more.</span></div>
 	}
+}
+
+templ runMenu(e specEntry) {
+	<details class="runmenu">
+		<summary class="btn">Run ▾</summary>
+		<form
+			class="runform"
+			hx-post={ runURL(e) }
+			hx-swap="none"
+			hx-on::after-request="if (event.detail.successful) { this.reset(); this.closest('details').open = false }"
+		>
+			<label class="faint" for="runinput">{ runLabel(e.Spec) }</label>
+			<input id="runinput" name="input" type="text" required placeholder={ runPlaceholder(e.Spec) } autocomplete="off"/>
+			<button class="btn primary" type="submit">Start</button>
+		</form>
+	</details>
 }
 
 templ heading(v tasksView) {

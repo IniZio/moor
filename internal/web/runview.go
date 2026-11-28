@@ -14,10 +14,12 @@ import (
 type factsView struct {
 	Started string
 	Detail  string
-	State   string
-	Dur     string
-	Ref     string
-	Commit  string
+	// DetailURL links Detail, which only an event's source gives.
+	DetailURL string
+	State     string
+	Dur       string
+	Ref       string
+	Commit    string
 }
 
 type failView struct {
@@ -68,6 +70,15 @@ type runView struct {
 	HasSpec bool
 	SpecRef string
 	LastSeq int64
+	// Subject names what an event is about, such as "pull request #90", and is empty without an event.
+	Subject string
+}
+
+func repoLine(v runView) string {
+	if v.Subject == "" {
+		return v.Row.Repo
+	}
+	return v.Row.Repo + ", " + v.Subject
 }
 
 // part finds the part a page shows, if the task has reached it.

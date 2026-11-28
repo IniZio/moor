@@ -38,7 +38,7 @@ func (s *server) runPage(w http.ResponseWriter, r *http.Request) {
 		s.taskError(w, r, err)
 		return
 	}
-	v := buildRun(t, rows, s.now())
+	v := s.run(t, rows)
 	v.Page = s.pageData(r)
 	render(w, r, http.StatusOK, runPage(v.Page, v, part))
 }
@@ -80,7 +80,7 @@ func (s *server) taskSnapshot(w http.ResponseWriter, r *http.Request) {
 		Events   []jsonRow           `json:"events"`
 		LastSeq  int64               `json:"last_seq"`
 	}{
-		Task:     jsonDetail{jsonTask: jsonTaskOf(domain.TaskListing{Task: t}), Prompt: t.Prompt, Failure: t.Failure, Commit: string(t.Commit), Runner: string(t.Runner), Run: t.Run, Gen: t.Gen},
+		Task:     jsonDetail{jsonTask: s.jsonTaskRead(domain.TaskListing{Task: t}), Prompt: t.Prompt, Failure: t.Failure, Commit: string(t.Commit), Runner: string(t.Runner), Run: t.Run, Gen: t.Gen},
 		Versions: resultVersionsOf(versions), Events: make([]jsonRow, len(rows)),
 	}
 	for i, row := range rows {

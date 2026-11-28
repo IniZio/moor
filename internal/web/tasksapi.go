@@ -124,7 +124,7 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]jsonTask, len(list.Items))
 	for i, it := range list.Items {
-		out[i] = jsonTaskOf(it)
+		out[i] = s.jsonTaskRead(it)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": out, "more": list.More})
 }

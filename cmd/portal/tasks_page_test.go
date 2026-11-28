@@ -119,7 +119,7 @@ func TestASpecShowsItsBannerAndOnlyItsTasks(t *testing.T) {
 	r := a.do(get("Mia", "/tasks?spec=PR+evidence"))
 	r.has(t, http.StatusOK, `<h1>PR evidence</h1>`, `tasks/pr-evidence.yaml`,
 		`Starts when a pull request is opened or updated on any repository in Settings. You can also start it by hand.`,
-		`<button class="btn" type="button" disabled>Run`, `<b>PR evidence</b> #6: github event`, `<b>PR evidence</b> #7: github event, replaced by #9`, `3 tasks`)
+		`<summary class="btn">Run`, `<b>PR evidence</b> #6: github event`, `<b>PR evidence</b> #7: github event, replaced by #9`, `3 tasks`)
 	r.lacks(t, `What should the agent do?`, `#1: started by Mia`, `Dependency check</b>`)
 	d := a.do(get("Mia", "/tasks?spec=Dependency+check"))
 	d.has(t, http.StatusOK, `on the schedule 0 6 * * 1, one task per repository.`, `#8: Run by Ken`, `1 task`)

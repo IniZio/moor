@@ -5,10 +5,12 @@ go 1.26.11
 require (
 	github.com/a-h/templ v0.3.1118
 	github.com/aymanbagabas/go-udiff v0.4.2
+	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/google/go-github/v88 v88.0.0
 	github.com/hashicorp/yamux v0.1.2
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pressly/goose/v3 v3.30.2
@@ -24,6 +26,8 @@ require (
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect

@@ -32,7 +32,7 @@ func scanMachine(row pgx.Row) (domain.Machine, error) {
 }
 
 func (s *Store) AddMachine(ctx context.Context, a domain.MachineAdd) error {
-	_, err := s.pool.Exec(ctx, "INSERT INTO machines (id, enrolled_by, join_hash, join_expires_at, created_at) VALUES ($1, $2, $3, $4, $5)",
+	_, err := s.db.Exec(ctx, "INSERT INTO machines (id, enrolled_by, join_hash, join_expires_at, created_at) VALUES ($1, $2, $3, $4, $5)",
 		string(a.ID), string(a.EnrolledBy), a.JoinHash, a.JoinExpiresAt, a.CreatedAt)
 	if err != nil {
 		return exists(err, fmt.Sprintf("add machine %s", a.ID))
@@ -43,7 +43,7 @@ func (s *Store) AddMachine(ctx context.Context, a domain.MachineAdd) error {
 // JoinMachine burns the token in the one statement that checks it, so of two joins with one token
 // exactly one finds it.
 func (s *Store) JoinMachine(ctx context.Context, j domain.MachineJoin) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE machines SET name = $3, pubkey = $4, join_hash = NULL, join_expires_at = NULL
+	tag, err := s.db.Exec(ctx, `UPDATE machines SET name = $3, pubkey = $4, join_hash = NULL, join_expires_at = NULL
 WHERE id = $1 AND join_hash = $2 AND join_expires_at > $5 AND revoked_at IS NULL`,
 		string(j.ID), j.JoinHash, j.Name, j.PubKey, j.At)
 	if err != nil {
@@ -56,7 +56,7 @@ WHERE id = $1 AND join_hash = $2 AND join_expires_at > $5 AND revoked_at IS NULL
 }
 
 func (s *Store) Machines(ctx context.Context) ([]domain.Machine, error) {
-	rows, err := s.pool.Query(ctx, selectMachine+"ORDER BY m.created_at, m.id")
+	rows, err := s.db.Query(ctx, selectMachine+"ORDER BY m.created_at, m.id")
 	if err != nil {
 		return nil, fmt.Errorf("list machines: %w", err)
 	}
@@ -68,7 +68,7 @@ func (s *Store) Machines(ctx context.Context) ([]domain.Machine, error) {
 }
 
 func (s *Store) Machine(ctx context.Context, id domain.RunnerID) (domain.Machine, error) {
-	m, err := scanMachine(s.pool.QueryRow(ctx, selectMachine+"WHERE m.id = $1", string(id)))
+	m, err := scanMachine(s.db.QueryRow(ctx, selectMachine+"WHERE m.id = $1", string(id)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Machine{}, fmt.Errorf("machine %s: %w", id, domain.ErrNotFound)
 	}
@@ -77,7 +77,7 @@ func (s *Store) Machine(ctx context.Context, id domain.RunnerID) (domain.Machine
 
 func (s *Store) Linked(ctx context.Context, id domain.RunnerID, build, holder string, at time.Time) (int64, error) {
 	var gen int64
-	err := s.pool.QueryRow(ctx, `UPDATE machines SET link_gen = link_gen + 1, build = $2, holder_addr = $3, heard_at = $4
+	err := s.db.QueryRow(ctx, `UPDATE machines SET link_gen = link_gen + 1, build = $2, holder_addr = $3, heard_at = $4
 WHERE id = $1 AND pubkey IS NOT NULL AND revoked_at IS NULL RETURNING link_gen`, string(id), build, holder, at).Scan(&gen)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -136,7 +136,7 @@ func (s *Store) action(ctx context.Context, id domain.RunnerID, what, sql string
 }
 
 func (s *Store) exec(ctx context.Context, what, sql string, args ...any) (int64, error) {
-	tag, err := s.pool.Exec(ctx, sql, args...)
+	tag, err := s.db.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", what, err)
 	}
@@ -144,7 +144,7 @@ func (s *Store) exec(ctx context.Context, what, sql string, args ...any) (int64,
 }
 
 func (s *Store) WaitingTasks(ctx context.Context, limit int) ([]domain.TaskID, error) {
-	rows, err := s.pool.Query(ctx, "SELECT id FROM tasks WHERE state = 'waiting' ORDER BY created_at, id LIMIT $1", limit)
+	rows, err := s.db.Query(ctx, "SELECT id FROM tasks WHERE state = 'waiting' ORDER BY created_at, id LIMIT $1", limit)
 	if err != nil {
 		return nil, fmt.Errorf("waiting tasks: %w", err)
 	}
@@ -156,7 +156,7 @@ func (s *Store) WaitingTasks(ctx context.Context, limit int) ([]domain.TaskID, e
 }
 
 func (s *Store) TasksOn(ctx context.Context, id domain.RunnerID) ([]domain.Task, error) {
-	rows, err := s.pool.Query(ctx, selectTask+"WHERE machine_id = $1 AND state IN "+onMachine+" ORDER BY created_at, id", string(id))
+	rows, err := s.db.Query(ctx, selectTask+"WHERE machine_id = $1 AND state IN "+onMachine+" ORDER BY created_at, id", string(id))
 	if err != nil {
 		return nil, fmt.Errorf("tasks on %s: %w", id, err)
 	}

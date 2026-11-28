@@ -73,6 +73,22 @@ linters:
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/task
             - github.com/IniZio/moor/internal/web
+        inbound:
+          files: ["**/internal/inbound/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/task
+            - github.com/IniZio/moor/internal/inbound
+        answer:
+          files: ["**/internal/answer/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/task
+            - github.com/IniZio/moor/internal/answer
         settings:
           files: ["**/internal/settings/**"]
           list-mode: lax

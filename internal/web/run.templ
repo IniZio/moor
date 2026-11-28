@@ -70,7 +70,7 @@ templ runHead(v runView) {
 				<button class="btn primary" type="button" hx-post={ actionURL(v, "retry") } hx-swap="none">Re-run</button>
 			}
 		</div>
-		<p class="muted mono rrepo">{ v.Row.Repo }</p>
+		<p class="muted mono rrepo">{ repoLine(v) }</p>
 	</div>
 }
 
@@ -93,9 +93,17 @@ templ runSide(v runView, part string) {
 	</nav>
 }
 
+templ factDetail(f factsView) {
+	if f.DetailURL != "" {
+		<a class="lnk" href={ templ.URL(f.DetailURL) } rel="noopener">{ f.Detail }</a>
+	} else {
+		{ f.Detail }
+	}
+}
+
 templ summaryPane(v runView) {
 	<div class="box facts">
-		<div><span class="faint">{ v.Facts.Started }</span><span>{ v.Facts.Detail }</span></div>
+		<div><span class="faint">{ v.Facts.Started }</span><span>@factDetail(v.Facts)</span></div>
 		<div><span class="faint">State</span><b>{ v.Facts.State }</b></div>
 		<div><span class="faint">Duration</span><b class="num">{ v.Facts.Dur }</b></div>
 		<div>

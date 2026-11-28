@@ -47,7 +47,10 @@ type Deps struct {
 	Tasks    TaskReader
 	Machines MachineService
 	Terms    Terminals
-	Ready    func(ctx context.Context) error
+	// Run starts a task spec by hand, and Events reads the events of tasks for their titles. Both may be left nil.
+	Run    SpecRunner
+	Events domain.EventReaders
+	Ready  func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
 }
@@ -91,6 +94,7 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Get("/settings", s.settingsPage)
 		r.Get("/api/me", s.me)
 		r.Get("/api/task-specs", s.taskSpecs)
+		r.Post("/api/task-specs/{name}/run", s.runSpec)
 		r.Get("/api/tasks", s.listTasks)
 		r.Post("/api/tasks", s.startTask)
 		r.Get("/api/tasks/events", s.taskListEvents)

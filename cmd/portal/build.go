@@ -12,7 +12,9 @@ import (
 	"github.com/IniZio/moor/internal/adapter/secretbox"
 	"github.com/IniZio/moor/internal/adapter/store"
 	"github.com/IniZio/moor/internal/adapter/yamlfile"
+	"github.com/IniZio/moor/internal/answer"
 	"github.com/IniZio/moor/internal/domain"
+	"github.com/IniZio/moor/internal/inbound"
 	"github.com/IniZio/moor/internal/settings"
 	"github.com/IniZio/moor/internal/task"
 	"github.com/IniZio/moor/internal/web"
@@ -22,33 +24,59 @@ type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now().UTC() }
 
-// build opens the store and wires the settings service into the web handler. cmd is the one place that
-// knows every adapter.
+// portal is the assembled product. Answers posts a published result back to its pull request. The route that
+// publishes a result calls it, and no such route is served yet.
+type portal struct {
+	handler http.Handler
+	answers *answer.Service
+	close   func()
+}
+
+// build assembles the portal and gives its handler and what closes it.
 func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
+	p, err := assemble(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return p.handler, p.close, nil
+}
+
+// assemble opens the store and wires the services into the web handler. cmd is the one place that knows every adapter.
+func assemble(ctx context.Context, cfg config) (*portal, error) {
 	db, err := store.Open(ctx, cfg.database)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open the database: %w", err)
+		return nil, fmt.Errorf("open the database: %w", err)
 	}
 	box, err := secretbox.New(cfg.secretKey)
 	if err != nil {
 		db.Close()
-		return nil, nil, fmt.Errorf("secret key: %w", err)
+		return nil, fmt.Errorf("secret key: %w", err)
+	}
+	hub, err := newGitHub(cfg)
+	if err != nil {
+		db.Close()
+		return nil, err
 	}
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
-	tasks := task.New(db, systemClock{}, task.Config{})
+	tasks := task.New(db, systemClock{}, taskConfig(hub))
 	rn := newRunners(ctx, cfg, db, tasks, svc)
+	specs := specSource(cfg.homeDir)
+	events := inbound.New(inbound.Deps{
+		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: hub.links(),
+		Clock: systemClock{}, Config: taskConfig(hub), Stop: rn.control.Stop,
+	})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins, InternalSecret: cfg.internalSecret},
 		web.Deps{
-			Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
-			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping,
+			Settings: svc, Specs: specs, Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
+			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping, Run: events, Events: hub.readers(),
 		},
 	)
 	if err != nil {
 		db.Close()
-		return nil, nil, fmt.Errorf("build the web handler: %w", err)
+		return nil, fmt.Errorf("build the web handler: %w", err)
 	}
-	return rn.mount(handler), func() { rn.close(); db.Close() }, nil
+	return &portal{handler: hub.mount(rn.mount(handler), events), answers: hub.answers(db, tasks), close: func() { rn.close(); db.Close() }}, nil
 }
 
 // noSpecs stands in for the team's home when none is configured.

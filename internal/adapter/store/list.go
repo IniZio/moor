@@ -66,7 +66,7 @@ func (s *Store) ListTasks(ctx context.Context, f domain.TaskFilter) (domain.Task
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
-	rows, err := s.pool.Query(ctx, listSQL, listArgs(f, limit)...)
+	rows, err := s.db.Query(ctx, listSQL, listArgs(f, limit)...)
 	if err != nil {
 		return domain.TaskList{}, fmt.Errorf("list tasks: %w", err)
 	}
@@ -96,7 +96,7 @@ func (s *Store) ListTasks(ctx context.Context, f domain.TaskFilter) (domain.Task
 // Starters lists the people who started tasks in the scope of f, which is its Spec and FromPrompt, sorted
 // without case. A task an event started with nobody running it by hand has no person.
 func (s *Store) Starters(ctx context.Context, f domain.TaskFilter) ([]string, error) {
-	rows, err := s.pool.Query(ctx, startersSQL, textOrNil(string(f.Spec)), f.FromPrompt, domain.EventStarterPrefix)
+	rows, err := s.db.Query(ctx, startersSQL, textOrNil(string(f.Spec)), f.FromPrompt, domain.EventStarterPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list starters: %w", err)
 	}
@@ -110,7 +110,7 @@ func (s *Store) Starters(ctx context.Context, f domain.TaskFilter) ([]string, er
 // NextTaskID gives the next task number. Numbers are never reused, but a number may go unused.
 func (s *Store) NextTaskID(ctx context.Context) (domain.TaskID, error) {
 	var n int64
-	if err := s.pool.QueryRow(ctx, "SELECT nextval('task_numbers')").Scan(&n); err != nil {
+	if err := s.db.QueryRow(ctx, "SELECT nextval('task_numbers')").Scan(&n); err != nil {
 		return "", fmt.Errorf("next task number: %w", err)
 	}
 	return domain.TaskID(fmt.Sprint(n)), nil

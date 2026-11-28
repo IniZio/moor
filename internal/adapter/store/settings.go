@@ -22,7 +22,7 @@ func scanSettings(row pgx.Row) (domain.SettingsVersion, error) {
 }
 
 func (s *Store) LatestSettings(ctx context.Context) (domain.SettingsVersion, error) {
-	v, err := scanSettings(s.pool.QueryRow(ctx, selectSettings+"ORDER BY version DESC LIMIT 1"))
+	v, err := scanSettings(s.db.QueryRow(ctx, selectSettings+"ORDER BY version DESC LIMIT 1"))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.SettingsVersion{}, fmt.Errorf("settings: %w", domain.ErrNotFound)
 	}
@@ -30,7 +30,7 @@ func (s *Store) LatestSettings(ctx context.Context) (domain.SettingsVersion, err
 }
 
 func (s *Store) SettingsVersions(ctx context.Context) ([]domain.SettingsVersion, error) {
-	rows, err := s.pool.Query(ctx, selectSettings+"ORDER BY version DESC")
+	rows, err := s.db.Query(ctx, selectSettings+"ORDER BY version DESC")
 	if err != nil {
 		return nil, fmt.Errorf("settings versions: %w", err)
 	}
@@ -53,7 +53,7 @@ func (s *Store) SettingsVersions(ctx context.Context) ([]domain.SettingsVersion,
 // insert the same version number, so the primary key lets one win and turns the other into ErrStaleSettings.
 func (s *Store) SaveSettings(ctx context.Context, w domain.SettingsWrite) (domain.SettingsVersion, error) {
 	var saved domain.SettingsVersion
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var newest int
 		if err := tx.QueryRow(ctx, "SELECT coalesce(max(version), 0) FROM settings_documents").Scan(&newest); err != nil {
 			return fmt.Errorf("newest settings version: %w", err)
@@ -96,7 +96,7 @@ func keepSecrets(ctx context.Context, tx pgx.Tx, w domain.SettingsWrite) error {
 
 func (s *Store) Secret(ctx context.Context, connection string) (domain.SealedSecret, error) {
 	sec := domain.SealedSecret{Connection: connection}
-	err := s.pool.QueryRow(ctx, "SELECT ciphertext, key_id, updated_at FROM secret_values WHERE connection = $1", connection).
+	err := s.db.QueryRow(ctx, "SELECT ciphertext, key_id, updated_at FROM secret_values WHERE connection = $1", connection).
 		Scan(&sec.Ciphertext, &sec.KeyID, &sec.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.SealedSecret{}, fmt.Errorf("secret of %q: %w", connection, domain.ErrNotFound)

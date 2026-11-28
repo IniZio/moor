@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -110,6 +111,23 @@ func pullRequestVerbs(types []domain.PullRequestType) string {
 	}
 	return strings.Join(verbs, " or ")
 }
+
+// runLabel names what a Run asks for: a pull request link for a spec with a pull request event, otherwise a repository.
+func runLabel(s domain.TaskSpec) string {
+	if s.On.PullRequest != nil {
+		return "Pull request link"
+	}
+	return "Repository"
+}
+
+func runPlaceholder(s domain.TaskSpec) string {
+	if s.On.PullRequest != nil {
+		return "https://github.com/example-org/shop-web/pull/91"
+	}
+	return "example-org/shop-web"
+}
+
+func runURL(e specEntry) string { return "/api/task-specs/" + url.PathEscape(e.Name) + "/run" }
 
 type jsonSpec struct {
 	File         string   `json:"file"`

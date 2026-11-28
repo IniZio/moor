@@ -13,7 +13,7 @@ import (
 // rows, or no such task, gives none. Rows commit with the task write that made them, in seq order, so a reader that
 // asks again from the last seq it saw misses nothing.
 func (s *Store) EventsAfter(ctx context.Context, id domain.TaskID, after int64, limit int) ([]domain.EventRow, error) {
-	rows, err := s.pool.Query(ctx, "SELECT seq, at, kind, data FROM task_events WHERE task_id = $1 AND seq > $2 ORDER BY seq LIMIT $3", string(id), after, limit)
+	rows, err := s.db.Query(ctx, "SELECT seq, at, kind, data FROM task_events WHERE task_id = $1 AND seq > $2 ORDER BY seq LIMIT $3", string(id), after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("events of %s after %d: %w", id, after, err)
 	}
@@ -35,7 +35,7 @@ func (s *Store) EventsAfter(ctx context.Context, id domain.TaskID, after int64, 
 // task's version only goes up and no task is deleted, so the count and the sum of versions only grow.
 func (s *Store) TaskStamp(ctx context.Context) (string, error) {
 	var stamp string
-	err := s.pool.QueryRow(ctx, "SELECT count(*)::text || '.' || COALESCE(sum(version), 0)::text FROM tasks").Scan(&stamp)
+	err := s.db.QueryRow(ctx, "SELECT count(*)::text || '.' || COALESCE(sum(version), 0)::text FROM tasks").Scan(&stamp)
 	if err != nil {
 		return "", fmt.Errorf("task stamp: %w", err)
 	}
