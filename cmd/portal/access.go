@@ -125,7 +125,7 @@ func (a proxyAPI) defaultBranch(ctx context.Context, task domain.TaskID, repo do
 	if err != nil || read {
 		return branch, err //nolint:wrapcheck // the store names the task
 	}
-	branch, err = a.hub.defaultBranch(ctx, repo)
+	branch, err = a.hub.DefaultBranch(ctx, repo)
 	if err != nil {
 		a.log.Warn("default branch", "task", task, "err", err)
 	}

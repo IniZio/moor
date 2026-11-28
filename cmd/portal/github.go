@@ -78,8 +78,8 @@ func (g *githubApp) Mint(ctx context.Context, keys domain.AppKeys, repo domain.R
 	return domain.CredentialValue{Value: token, Expires: expires}, nil
 }
 
-// defaultBranch reads the repository's default branch as the settings' App. It gives up after tokenTimeout.
-func (g *githubApp) defaultBranch(ctx context.Context, repo domain.Repo) (string, error) {
+// DefaultBranch reads the repository's default branch as the settings' App. It gives up after tokenTimeout.
+func (g *githubApp) DefaultBranch(ctx context.Context, repo domain.Repo) (string, error) {
 	if repo.Host != domain.DefaultRepoHost {
 		return "", fmt.Errorf("%s is not on GitHub", repo)
 	}
@@ -97,8 +97,10 @@ func taskConfig() task.Config {
 	return task.Config{Answerable: map[domain.EventSource]bool{github.Source: true}}
 }
 
-// readers reads the pull request events of tasks for the screens' titles, which needs no App.
-func readers() domain.EventReaders { return domain.EventReaders{github.Source: &github.Adapter{}} }
+// readers reads the events of tasks for the screens' titles: pull requests, which needs no App, and the portal's own.
+func readers() domain.EventReaders {
+	return domain.EventReaders{github.Source: &github.Adapter{}, inbound.Source: inbound.Reader{}}
+}
 
 // mount serves GitHub's webhook beside next, authenticated by its signature and by no person.
 func (g *githubApp) mount(next http.Handler, events *inbound.Service) http.Handler {

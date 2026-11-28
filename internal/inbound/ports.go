@@ -2,6 +2,7 @@ package inbound
 
 import (
 	"context"
+	"time"
 
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/task"
@@ -39,6 +40,17 @@ type Allowed interface {
 // that is not such a link.
 type Linker interface {
 	Occurrence(ctx context.Context, link string) (domain.Occurrence, error)
+}
+
+// Crons reads a spec's schedule entries: whether one fires in the minute that starts at minute, and that minute
+// in the entry's time zone.
+type Crons interface {
+	Fires(s domain.ScheduleOn, minute time.Time) (time.Time, bool)
+}
+
+// Branches reads a repository's default branch.
+type Branches interface {
+	DefaultBranch(ctx context.Context, repo domain.Repo) (string, error)
 }
 
 // Starter is the task service a Run starts its one task through, and the numbers it takes.

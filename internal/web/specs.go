@@ -44,15 +44,40 @@ func (s *server) specEntries(ctx context.Context, allowed []domain.Repo) ([]spec
 		if !f.Valid() {
 			continue
 		}
-		var missing []string
-		for _, r := range domain.RepositoriesNotAllowed(f.Spec, domain.Settings{Repositories: allowed}) {
-			missing = append(missing, string(r.Path))
-		}
-		if len(missing) > 0 {
-			out[i].Problem = strings.Join(missing, ", ") + " is not under repositories in Settings. Add it there first."
-		}
+		out[i].Problem = specWarning(f.Spec, allowed)
 	}
 	return out, nil
+}
+
+// specWarning says what in a spec that loaded keeps it from starting all it says: a repository Settings lacks, or a
+// schedule with no repositories to fire on.
+func specWarning(spec domain.TaskSpec, allowed []domain.Repo) string {
+	var missing []string
+	for _, r := range domain.RepositoriesNotAllowed(spec, domain.Settings{Repositories: allowed}) {
+		missing = append(missing, string(r.Path))
+	}
+	switch {
+	case len(missing) > 0:
+		return strings.Join(missing, ", ") + " is not under repositories in Settings. Add it there first."
+	case len(spec.On.Schedule) > 0 && len(spec.Repositories) == 0:
+		return "The schedule starts no task: list the repositories it runs on under repositories in the spec."
+	}
+	return ""
+}
+
+// runRepos lists the repositories a Run on a repository offers: the spec's own that Settings allows, or every
+// allowed one when the spec lists none.
+func runRepos(spec domain.TaskSpec, allowed []domain.Repo) []domain.Repo {
+	if len(spec.Repositories) == 0 {
+		return allowed
+	}
+	var out []domain.Repo
+	for _, r := range spec.Repositories {
+		if slices.Contains(allowed, r) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // startsText says when a spec starts a task, read from its on.
@@ -65,6 +90,9 @@ func startsText(s domain.TaskSpec) string {
 		crons := make([]string, len(s.On.Schedule))
 		for i, sc := range s.On.Schedule {
 			crons[i] = sc.Cron
+			if sc.Timezone != "" {
+				crons[i] += " in " + sc.Timezone
+			}
 		}
 		when = append(when, "on the schedule "+strings.Join(crons, " and ")+", one task per repository")
 	}

@@ -16,12 +16,15 @@ import (
 )
 
 // SpecRunner starts the tasks of a task spec by hand. Input is what the spec's events need: a pull request
-// link for a spec with a pull request event.
+// link for a spec with a pull request event, and a repository for any other.
 type SpecRunner interface {
 	Run(ctx context.Context, spec, input string, by domain.Person) (task.Outcome, error)
 }
 
-const msgBadLink = "Paste a pull request link, such as https://github.com/example-org/shop-web/pull/91."
+const (
+	msgBadLink = "Paste a pull request link, such as https://github.com/example-org/shop-web/pull/91."
+	msgBadRepo = "Pick a repository, such as example-org/shop-web."
+)
 
 // runRefusal words why a Run was refused, with the status that goes with it. It gives 0 for an error that is not a refusal.
 func runRefusal(err error) (string, int) {
@@ -29,6 +32,8 @@ func runRefusal(err error) (string, int) {
 	switch {
 	case errors.Is(err, domain.ErrBadLink):
 		return msgBadLink, http.StatusUnprocessableEntity
+	case errors.Is(err, domain.ErrBadRepo):
+		return msgBadRepo, http.StatusUnprocessableEntity
 	case errors.As(err, &denied):
 		return notAllowed(denied.Repo.Path), http.StatusUnprocessableEntity
 	case errors.Is(err, domain.ErrNoSpec):

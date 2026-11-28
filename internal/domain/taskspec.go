@@ -66,9 +66,11 @@ type PullRequestOn struct {
 	Types []PullRequestType
 }
 
-// ScheduleOn starts a task on a cron schedule. Reading the cron is the file adapter's job, since the domain does no parsing of it.
+// ScheduleOn starts a task on a cron schedule, read in Timezone, an IANA name, or in UTC when it is empty. Reading
+// the cron and the zone is the file adapter's job, since the domain does no parsing of them.
 type ScheduleOn struct {
-	Cron string
+	Cron     string
+	Timezone string
 }
 
 // Input is a run input in the shape GitHub Actions has. Nothing reads it yet.
@@ -99,7 +101,8 @@ type Concurrency struct {
 
 // TaskSpec is what a task spec file says. Prompt and ReviewPrompt are templates, filled by Fill, and an
 // empty ReviewPrompt means no review step. Repositories narrows the repositories whose events apply,
-// and empty means every allowed repository.
+// and empty means every allowed repository, except for a schedule: a schedule fires on the listed
+// repositories only, so without the list it fires nothing.
 type TaskSpec struct {
 	Name         SpecName
 	Repositories []Repo

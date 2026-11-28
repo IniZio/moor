@@ -3,6 +3,7 @@ package inbound
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -11,17 +12,21 @@ import (
 )
 
 // Deps are the parts the service calls. Stop tells the runners of the tasks a new event superseded, once the
-// transaction that made the new tasks has committed.
+// transaction that made the new tasks has committed. Crons reads schedules, and Branches the default branch a
+// schedule's or a Run's event names, which is left out of the event when Branches is nil or cannot read it.
 type Deps struct {
-	Store   Store
-	Numbers Numbers
-	Tasks   Starter
-	Specs   Specs
-	Allowed Allowed
-	Link    Linker
-	Clock   task.Clock
-	Config  task.Config
-	Stop    func(ctx context.Context, effects []task.Effect)
+	Store    Store
+	Numbers  Numbers
+	Tasks    Starter
+	Specs    Specs
+	Allowed  Allowed
+	Link     Linker
+	Crons    Crons
+	Branches Branches
+	Clock    task.Clock
+	Config   task.Config
+	Stop     func(ctx context.Context, effects []task.Effect)
+	Log      *slog.Logger
 }
 
 type Service struct{ d Deps }
@@ -29,6 +34,9 @@ type Service struct{ d Deps }
 func New(d Deps) *Service {
 	if d.Stop == nil {
 		d.Stop = func(context.Context, []task.Effect) {}
+	}
+	if d.Log == nil {
+		d.Log = slog.Default()
 	}
 	return &Service{d: d}
 }
@@ -38,11 +46,18 @@ func New(d Deps) *Service {
 // starts nothing, and a spec that cannot fill its prompt from the event is passed over, with the reason in the
 // delivery's outcome.
 func (s *Service) Receive(ctx context.Context, in domain.Inbound) (domain.InboundResult, error) {
+	return s.receiveFor(ctx, in, s.matching)
+}
+
+// matcher lists the specs that hear a delivery, or says why none does.
+type matcher func(ctx context.Context, in domain.Inbound) ([]domain.SpecFile, string, error)
+
+func (s *Service) receiveFor(ctx context.Context, in domain.Inbound, match matcher) (domain.InboundResult, error) {
 	var res domain.InboundResult
 	var effects []task.Effect
 	err := s.d.Store.InTx(ctx, func(tx Tx) error {
 		var err error
-		res, effects, err = s.receive(ctx, tx, in)
+		res, effects, err = s.receive(ctx, tx, in, match)
 		return err
 	})
 	if err != nil {
@@ -52,7 +67,7 @@ func (s *Service) Receive(ctx context.Context, in domain.Inbound) (domain.Inboun
 	return res, nil
 }
 
-func (s *Service) receive(ctx context.Context, tx Tx, in domain.Inbound) (domain.InboundResult, []task.Effect, error) {
+func (s *Service) receive(ctx context.Context, tx Tx, in domain.Inbound, match matcher) (domain.InboundResult, []task.Effect, error) {
 	first, err := tx.RecordInbound(ctx, s.stored(in))
 	if err != nil {
 		return domain.InboundResult{}, nil, fmt.Errorf("store the delivery: %w", err)
@@ -61,7 +76,7 @@ func (s *Service) receive(ctx context.Context, tx Tx, in domain.Inbound) (domain
 		res, err := s.seen(ctx, tx, in)
 		return res, nil, err
 	}
-	matched, outcome, err := s.matching(ctx, in)
+	matched, outcome, err := match(ctx, in)
 	if err != nil {
 		return domain.InboundResult{}, nil, err
 	}

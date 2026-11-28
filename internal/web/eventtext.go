@@ -24,6 +24,9 @@ func eventHow(t domain.Task, text domain.EventText) string {
 	case strings.HasPrefix(t.StartedBy, domain.EventStarterPrefix):
 		return text.Subject
 	}
+	if text.Subject == "" {
+		return "Run by " + t.StartedBy
+	}
 	return text.Subject + ", Run by " + t.StartedBy
 }
 

@@ -10,21 +10,20 @@ import (
 	"github.com/IniZio/moor/internal/task"
 )
 
-// Run starts the task of one spec for a link a person pasted, as the spec's webhook would have. It makes the same
-// event, with one difference that the spec states: the duplicate key does not apply, so a Run on a commit that a task
-// already covers starts another. The event's revision therefore also names the Run. It records the person as the
-// one who started it, and lets the task use their own model token.
+// Run starts the task of one spec by hand, as the spec's own event would have. For a spec with a pull request event
+// the input is a pull request link, and the task is the one its webhook would start. For any other spec it is a
+// repository, written host/owner/name or owner/name, and the event is the one a schedule makes, less the cron. The
+// spec states one difference: the duplicate key does not apply, so a Run on a commit that a task already covers
+// starts another. The event's revision therefore also names the Run. It records the person as the one who started
+// it, and lets the task use their own model token.
 func (s *Service) Run(ctx context.Context, spec, input string, by domain.Person) (task.Outcome, error) {
 	file, err := s.runnable(ctx, spec)
 	if err != nil {
 		return task.Outcome{}, err
 	}
-	if file.Spec.On.PullRequest == nil {
-		return task.Outcome{}, fmt.Errorf("%w: a Run on a repository", domain.ErrRunUnsupported)
-	}
-	occ, err := s.d.Link.Occurrence(ctx, strings.TrimSpace(input))
+	occ, err := s.runEvent(ctx, file, strings.TrimSpace(input))
 	if err != nil {
-		return task.Outcome{}, fmt.Errorf("read the link: %w", err)
+		return task.Outcome{}, err
 	}
 	if err := s.allowed(ctx, file.Spec, occ.Incoming.Repo); err != nil {
 		return task.Outcome{}, err
@@ -37,13 +36,37 @@ func (s *Service) Run(ctx context.Context, spec, input string, by domain.Person)
 	if err != nil {
 		return task.Outcome{}, fmt.Errorf("task number: %w", err)
 	}
-	occ.Event.Rev += domain.Revision("+run-" + string(id))
+	occ.Event.Rev = runRev(occ.Event.Rev, id)
 	out, err := s.d.Tasks.StartByEvent(ctx, eventInput(id, &occ, file, prompts, by))
 	if err != nil {
 		return task.Outcome{}, fmt.Errorf("start %s: %w", spec, err)
 	}
 	s.d.Stop(context.WithoutCancel(ctx), out.Effects)
 	return out, nil
+}
+
+// runEvent reads what a person gave Run into the event it stands for.
+func (s *Service) runEvent(ctx context.Context, file domain.SpecFile, input string) (domain.Occurrence, error) {
+	if file.Spec.On.PullRequest != nil {
+		occ, err := s.d.Link.Occurrence(ctx, input)
+		if err != nil {
+			return occ, fmt.Errorf("read the link: %w", err)
+		}
+		return occ, nil
+	}
+	repo, err := domain.ParseRepo(input)
+	if err != nil {
+		return domain.Occurrence{}, fmt.Errorf("read the repository: %w", err)
+	}
+	return s.repoEvent(ctx, file, repo, "", "")
+}
+
+// runRev is the revision of a Run: the event's own, such as the head commit, with the Run's task after it.
+func runRev(rev domain.Revision, id domain.TaskID) domain.Revision {
+	if rev == "" {
+		return domain.Revision("run-" + string(id))
+	}
+	return rev + domain.Revision("+run-"+string(id))
 }
 
 func (s *Service) runnable(ctx context.Context, name string) (domain.SpecFile, error) {

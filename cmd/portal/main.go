@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // a schedule's time zone is read where the image has no zone files
 )
 
 var version = "dev"

@@ -145,7 +145,7 @@ func (w *walker) schedule(n *yaml.Node) []domain.ScheduleOn {
 	}
 	var out []domain.ScheduleOn
 	for _, item := range items {
-		o := w.object(item, "a schedule entry", []string{"cron"})
+		o := w.object(item, "a schedule entry", []string{"cron", "timezone"})
 		text, ok := w.text(w.required(o, "cron"), "cron")
 		if !ok {
 			continue
@@ -154,9 +154,26 @@ func (w *walker) schedule(n *yaml.Node) []domain.ScheduleOn {
 			w.fail(o.vals["cron"], "%v", err)
 			continue
 		}
-		out = append(out, domain.ScheduleOn{Cron: text})
+		out = append(out, domain.ScheduleOn{Cron: text, Timezone: w.timezone(o)})
 	}
 	return out
+}
+
+// timezone reads a schedule entry's optional time zone, an IANA name such as Europe/London.
+func (w *walker) timezone(o *object) string {
+	n, ok := o.get("timezone")
+	if !ok {
+		return ""
+	}
+	text, ok := w.text(n, "timezone")
+	if !ok {
+		return ""
+	}
+	if err := checkZone(text); err != nil {
+		w.fail(n, "%v", err)
+		return ""
+	}
+	return text
 }
 
 func (w *walker) dispatch(n *yaml.Node) *domain.DispatchOn {

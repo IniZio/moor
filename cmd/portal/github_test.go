@@ -47,6 +47,7 @@ type hookRig struct {
 	*app
 	fake   *githubtest.Fake
 	portal *portal
+	cfg    config
 }
 
 func newHookRig(t *testing.T, files map[string]string) *hookRig {
@@ -72,7 +73,7 @@ func newHookRig(t *testing.T, files map[string]string) *hookRig {
 	closeOnce := sync.OnceFunc(p.close)
 	t.Cleanup(closeOnce)
 	a := &app{t: t, handler: p.handler, dsn: dsn, key: secret, close: closeOnce}
-	r := &hookRig{app: a, fake: fake, portal: p}
+	r := &hookRig{app: a, fake: fake, portal: p, cfg: cfg}
 	r.do(put("Mia", 0, appDoc(fake.URL(), key))).has(t, http.StatusOK)
 	r.fake.AddPullRequest(githubtest.PullRequest{Repo: "example-org/shop-web", Number: 90, Title: "Add search to the shop", Author: "ana", SHA: "5f0e2b19c4d7", Branch: "search"})
 	return r

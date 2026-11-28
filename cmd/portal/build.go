@@ -29,16 +29,39 @@ func (systemClock) Now() time.Time { return time.Now().UTC() }
 type portal struct {
 	handler http.Handler
 	answers *answer.Service
+	events  *inbound.Service
 	close   func()
 }
 
-// build assembles the portal and gives its handler and what closes it.
+// build assembles the portal, starts its clock, which fires the specs' schedules, and gives its handler and what
+// stops the clock and closes it.
 func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 	p, err := assemble(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
-	return p.handler, p.close, nil
+	clock, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.events.Loop(clock, wallClock{})
+	}()
+	return p.handler, func() { stop(); <-done; p.close() }, nil
+}
+
+// wallClock is the clock the schedules fire on.
+type wallClock struct{ systemClock }
+
+// Wait sleeps for d, and says false when ctx ends first.
+func (wallClock) Wait(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 // assemble opens the store and wires the services into the web handler. cmd is the one place that knows every adapter.
@@ -64,7 +87,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 	rn := newRunners(ctx, cfg, db, tasks, svc)
 	specs, closeHome := specSource(ctx, cfg, hub)
 	events := inbound.New(inbound.Deps{
-		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: links{hub},
+		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: links{hub}, Crons: yamlfile.Crons{}, Branches: hub,
 		Clock: systemClock{}, Config: taskCfg, Stop: rn.control.Stop,
 	})
 	handler, err := web.New(
@@ -81,7 +104,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		db.Close()
 		return nil, fmt.Errorf("build the web handler: %w", err)
 	}
-	return &portal{handler: hub.mount(rn.mount(handler), events), answers: hub.answers(db, tasks), close: func() { closeHome(); rn.close(); db.Close() }}, nil
+	return &portal{handler: hub.mount(rn.mount(handler), events), answers: hub.answers(db, tasks), events: events, close: func() { closeHome(); rn.close(); db.Close() }}, nil
 }
 
 // noSpecs stands in for the team's home when none is configured.
