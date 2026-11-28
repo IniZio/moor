@@ -11,7 +11,7 @@ KUBECONFORM_VERSION := 0.8.0
 YQ_VERSION := 4.54.3
 CHART_TESTS := $(if $(shell command -v helm 2>/dev/null),chart-lint)
 
-.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image chart-tools chart-lint
+.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image chart-tools chart-lint cluster-test
 
 setup:
 	@golangci-lint version 2>/dev/null | grep -q 'version $(GOLANGCI_LINT_VERSION) ' || \
@@ -80,3 +80,7 @@ chart-lint: chart-tools
 	helm lint deploy/chart -f deploy/chart/ci/values.yaml
 	helm template portal deploy/chart -f deploy/chart/ci/values.yaml | kubeconform -strict -summary -kubernetes-version 1.31.0
 	sh deploy/chart-test.sh
+
+cluster-test: image
+	@echo "cluster-test is not in make ci: it pulls a node image of about 1 GB, starts three containers and takes minutes, so it proves a deploy rather than gating each commit"
+	sh deploy/cluster-test.sh
