@@ -163,6 +163,16 @@ func (st *Stream) Send(v any) error { return WriteFrame(st.conn, v) }
 // Recv reads one frame Send wrote. It is lenient, like a reply.
 func (st *Stream) Recv(v any) error { return ReadFrame(st.conn, v, false) }
 
+// Read reads the raw bytes that follow the reply on an op that streams them, such as term.attach.
+func (st *Stream) Read(p []byte) (int, error) {
+	return st.conn.Read(p) //nolint:wrapcheck // an io.Reader must return io.EOF itself
+}
+
+// Write writes raw bytes after the reply on an op that streams them.
+func (st *Stream) Write(p []byte) (int, error) {
+	return st.conn.Write(p) //nolint:wrapcheck // an io.Writer's errors pass through as they are
+}
+
 func (st *Stream) Close() error {
 	st.stop()
 	if err := st.conn.Close(); err != nil {

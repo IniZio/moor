@@ -91,6 +91,7 @@ type rig struct {
 	portal *linktest.Portal
 	host   *fakeHost
 	desks  *desks
+	ttys   *ttys
 }
 
 func newRig(t *testing.T) *rig { return rigWithin(t, 20*time.Second) }
@@ -99,14 +100,14 @@ func rigWithin(t *testing.T, limit time.Duration) *rig {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	t.Cleanup(cancel)
-	return &rig{t: t, ctx: ctx, portal: linktest.New(t), host: &fakeHost{tasks: map[string]runner.Held{}}, desks: &desks{cores: map[string]*herdrtest.Core{}}}
+	return &rig{t: t, ctx: ctx, portal: linktest.New(t), host: &fakeHost{tasks: map[string]runner.Held{}}, desks: &desks{cores: map[string]*herdrtest.Core{}}, ttys: &ttys{}}
 }
 
 // start runs a runner and returns the portal's end of its link and a stop that ends the runner
 // as a process exit would, and checks it returned cleanly.
 func (g *rig) start(h runner.Host, connect func(context.Context, string) (io.ReadWriteCloser, error)) (*link.Session, func()) {
 	g.t.Helper()
-	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, argv: []string{"harness"}}, []string{"api.example.com"})
+	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, argv: []string{"harness"}}, []string{"api.example.com"})
 	ctx, cancel := context.WithCancel(g.ctx)
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()

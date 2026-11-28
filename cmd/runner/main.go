@@ -77,7 +77,7 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
-	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, argv: []string{"harness"}}, strings.Split(o.deskAllow, ","))
+	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, argv: []string{"harness"}}, strings.Split(o.deskAllow, ","))
 	if err := r.Run(ctx); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}

@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/IniZio/moor/internal/domain"
@@ -43,8 +44,10 @@ type Link interface {
 	Close() error
 }
 
-// Stream is one op the portal opened on a link.
+// Stream is one op the portal opened on a link. Read and Write carry the raw bytes after the reply,
+// such as term.attach frames.
 type Stream interface {
 	Recv(v any) error
+	io.ReadWriter
 	Close() error
 }

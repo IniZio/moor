@@ -38,8 +38,11 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 	tasks := task.New(db, systemClock{}, task.Config{})
 	rn := newRunners(ctx, cfg, db, tasks, svc)
 	handler, err := web.New(
-		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins},
-		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: tasks, Tasks: db, Machines: rn.machines, Ready: db.Ping},
+		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins, InternalSecret: cfg.internalSecret},
+		web.Deps{
+			Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
+			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping,
+		},
 	)
 	if err != nil {
 		db.Close()

@@ -21,6 +21,9 @@ var ops = map[wire.Kind]handler{
 	wire.KindTaskList:     (*Runner).listOp,
 	wire.KindTaskWatch:    (*Runner).watchOp,
 	wire.KindRunnerStatus: (*Runner).status,
+	wire.KindTermAttach:   (*Runner).termAttach,
+	wire.KindTermRead:     (*Runner).termRead,
+	wire.KindTermSend:     (*Runner).termSend,
 }
 
 // serve runs one op. Ops run on the runner's context, not the link's: a link that drops mid-op

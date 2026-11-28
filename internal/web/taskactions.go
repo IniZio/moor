@@ -17,6 +17,8 @@ type TaskActions interface {
 	Cancel(ctx context.Context, id domain.TaskID) (task.Outcome, error)
 	End(ctx context.Context, id domain.TaskID) (task.Outcome, error)
 	Retry(ctx context.Context, newID, oldID domain.TaskID) (task.Outcome, error)
+	// Steer is typing to the task. It reopens a done task and is refused on one that cannot take it.
+	Steer(ctx context.Context, id domain.TaskID) (task.Outcome, error)
 }
 
 // act runs an action on the task the path names. A task the action cannot change gets a 409 and the words in

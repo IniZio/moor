@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"io"
 
 	"github.com/IniZio/moor/internal/wire"
 )
@@ -45,10 +46,21 @@ type SessionState struct {
 
 // Sessions starts and follows the harness session in a task's desk. Start of a session that is
 // already live succeeds. Watch calls on with the session's state now and on each change, until ctx
-// ends or the session cannot be reached.
+// ends or the session cannot be reached. Attach puts one more viewer on the session: closing its TTY
+// ends that viewer and never the session. Screen reads the screen as text with lines of scrollback,
+// and Type types text and presses enter.
 type Sessions interface {
 	Start(ctx context.Context, s wire.TaskStart) error
 	Watch(ctx context.Context, task string, on func(SessionState)) error
+	Attach(ctx context.Context, a wire.TermAttach) (TTY, error)
+	Screen(ctx context.Context, task string, lines int) (string, error)
+	Type(ctx context.Context, task, text string) error
+}
+
+// TTY is one viewer's terminal on a session: its output, its keys and its size.
+type TTY interface {
+	io.ReadWriteCloser
+	Resize(s wire.Size) error
 }
 
 // Link is one live link to the portal. Accept returns the portal's next op, and fails once the
@@ -66,5 +78,7 @@ type Stream interface {
 	Fail(e *wire.Error) error
 	Send(v any) error
 	Recv(v any) error
+	// Read and Write carry the raw bytes that follow the reply, such as term.attach frames.
+	io.ReadWriter
 	Close() error
 }

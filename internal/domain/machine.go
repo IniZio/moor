@@ -16,6 +16,8 @@ var (
 	ErrNotDraining = errors.New("only a draining machine can be resumed")
 	// ErrNotRevoked is a remove of a machine that is not revoked.
 	ErrNotRevoked = errors.New("only a revoked machine can be removed")
+	// ErrNoSession is a terminal, screen or input for a task with no live session to reach.
+	ErrNoSession = errors.New("the task has no live session")
 )
 
 // MachineState is what a machine row shows. It is derived from the row and the clock, never stored.

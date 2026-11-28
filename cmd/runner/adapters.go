@@ -84,6 +84,24 @@ func (h host) List(ctx context.Context) ([]runner.Held, error) {
 	return held, nil
 }
 
+// attach runs argv in the task's desk under a PTY on this host.
+func (h host) attach(ctx context.Context, task string, s wire.Size, argv ...string) (runner.TTY, error) {
+	t, err := h.d.ExecTTY(ctx, domain.TaskID(task), docker.Desk, s.Cols, s.Rows, argv...)
+	if err != nil {
+		return nil, fmt.Errorf("attach to the desk: %w", err)
+	}
+	return tty{t}, nil
+}
+
+type tty struct{ *docker.TTY }
+
+func (t tty) Resize(s wire.Size) error {
+	if err := t.TTY.Resize(s.Cols, s.Rows); err != nil {
+		return fmt.Errorf("tty: %w", err)
+	}
+	return nil
+}
+
 func (h host) connect(ctx context.Context, task string) (io.ReadWriteCloser, error) {
 	rwc, err := h.d.Exec(ctx, domain.TaskID(task), docker.Desk, "hc", "connect")
 	if err != nil {
@@ -96,10 +114,46 @@ func (h host) connect(ctx context.Context, task string) (io.ReadWriteCloser, err
 const sessionName = "task"
 
 // sessions runs the harness session in herdr-core in the desk. connect opens a fresh stream to the
-// desk's herdr-core.
+// desk's herdr-core, and attach runs a command in the desk under a PTY.
 type sessions struct {
 	connect func(ctx context.Context, task string) (io.ReadWriteCloser, error)
+	attach  func(ctx context.Context, task string, s wire.Size, argv ...string) (runner.TTY, error)
 	argv    []string
+}
+
+// Attach runs hc attach on the session in the desk, with --observe for a watcher, so herdr-core
+// never takes a watcher's keys or size.
+func (s sessions) Attach(ctx context.Context, a wire.TermAttach) (runner.TTY, error) {
+	argv := []string{"hc", "attach", sessionName, "--history", strconv.Itoa(a.History)}
+	if a.Mode == wire.TermObserve {
+		argv = append(argv, "--observe")
+	}
+	return s.attach(ctx, a.Task, wire.Size{Cols: a.Cols, Rows: a.Rows}, argv...)
+}
+
+func (s sessions) Screen(ctx context.Context, task string, lines int) (string, error) {
+	c, err := s.dial(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = c.Close() }()
+	r, err := c.Read(ctx, sessionName, lines)
+	if err != nil {
+		return "", fmt.Errorf("read the session of %s: %w", task, err)
+	}
+	return r.Text, nil
+}
+
+func (s sessions) Type(ctx context.Context, task, text string) error {
+	c, err := s.dial(ctx, task)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Send(ctx, sessionName, text); err != nil {
+		return fmt.Errorf("type into the session of %s: %w", task, err)
+	}
+	return nil
 }
 
 func (s sessions) dial(ctx context.Context, task string) (*herdr.Conn, error) {

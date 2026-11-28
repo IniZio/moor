@@ -31,14 +31,17 @@ type replica struct {
 	stop func()
 }
 
-func startReplica(t *testing.T, dsn, addr string) *replica {
+func startReplica(t *testing.T, dsn, addr string, opts ...func(*config)) *replica {
 	t.Helper()
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	addr = ln.Addr().String()
-	a := newAppOn(t, dsn, func(c *config) { c.publicURL, c.linkTick = "http://"+addr, 50*time.Millisecond })
+	a := newAppOn(t, dsn, append([]func(*config){func(c *config) {
+		c.publicURL, c.linkTick = "http://"+addr, 50*time.Millisecond
+		c.internalURL, c.internalSecret = "http://"+addr, peerSecret
+	}}, opts...)...)
 	srv := &http.Server{Handler: a.handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	r := &replica{app: a, addr: addr, srv: srv}
@@ -113,10 +116,13 @@ func (h *fakeHost) launches(task string) int {
 	return h.ups[task]
 }
 
-// fakeSessions reports every session live until the test ends it.
+// fakeSessions reports every session live until the test ends it. Each viewer gets a terminal that
+// echoes its keys, and typed lines make up the screen.
 type fakeSessions struct {
-	mu   sync.Mutex
-	ends map[string]chan struct{}
+	mu      sync.Mutex
+	ends    map[string]chan struct{}
+	typed   []string
+	viewers []*echoTTY
 }
 
 func (s *fakeSessions) end(task string) chan struct{} {

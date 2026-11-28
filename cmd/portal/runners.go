@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -44,8 +45,7 @@ type runners struct {
 }
 
 func newRunners(ctx context.Context, cfg config, db *store.Store, tasks *task.Service, svc *settings.Service) *runners {
-	host, _ := os.Hostname()
-	rn := &runners{db: db, holder: host + "-" + strings.ToLower(rand.Text()[:6]), log: slog.Default()}
+	rn := &runners{db: db, holder: holderOf(cfg), log: slog.Default()}
 	rn.ctx, rn.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	rn.machines = machine.New(db, tasks, systemClock{}, cfg.publicURL)
 	rn.control = machine.NewControl(machine.ControlConfig{Store: db, Tasks: tasks, Clock: systemClock{}, Policy: boxAllow(svc), Tick: cfg.linkTick, Log: rn.log})
@@ -53,6 +53,42 @@ func newRunners(ctx context.Context, cfg config, db *store.Store, tasks *task.Se
 		rn.hs, _ = link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{db}, Presence: presence{db, rn.holder}})
 	}
 	return rn
+}
+
+// holderOf names this replica in the machines it holds links for. With an internal address it is that
+// address, which another replica dials for a terminal hop. Without one it is unique and not dialled.
+func holderOf(cfg config) string {
+	if cfg.internalURL != "" {
+		return cfg.internalURL
+	}
+	host, _ := os.Hostname()
+	return host + "-" + strings.ToLower(rand.Text()[:6])
+}
+
+// terms is the link control seen as the web's terminals.
+type terms struct{ *machine.Control }
+
+func (t terms) TermAttach(ctx context.Context, id domain.TaskID, a wire.TermAttach) (io.ReadWriteCloser, error) {
+	st, err := t.Control.TermAttach(ctx, id, a)
+	if err != nil {
+		return nil, fmt.Errorf("terminal: %w", err)
+	}
+	return st, nil
+}
+
+// acts are the task actions of a Run page. A cancel also sends its stop at once over a link this
+// replica holds, rather than on the holder's next tick.
+type acts struct {
+	*task.Service
+	control *machine.Control
+}
+
+func (a acts) Cancel(ctx context.Context, id domain.TaskID) (task.Outcome, error) {
+	out, err := a.Service.Cancel(ctx, id)
+	if err == nil {
+		a.control.Stop(context.WithoutCancel(ctx), out.Effects)
+	}
+	return out, err //nolint:wrapcheck // the web branches on the task service's own errors
 }
 
 // mount serves the runner routes beside next. Without a public URL no runner can sign a proof, so

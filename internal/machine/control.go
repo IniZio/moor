@@ -26,7 +26,12 @@ const defaultTick = 2 * time.Second
 
 // Control drives the tasks on the runner links this replica holds. It keeps nothing a restart
 // would lose: every decision is read again from the store on each tick.
-type Control struct{ cfg ControlConfig }
+// The links it holds are kept by machine only so that terminals and stops can reach them.
+type Control struct {
+	cfg   ControlConfig
+	mu    sync.Mutex
+	links map[domain.RunnerID]*holding
+}
 
 func NewControl(cfg ControlConfig) *Control {
 	if cfg.Tick == 0 {
@@ -35,7 +40,29 @@ func NewControl(cfg ControlConfig) *Control {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Control{cfg: cfg}
+	return &Control{cfg: cfg, links: map[domain.RunnerID]*holding{}}
+}
+
+// hold names h as the machine's link on this replica until the returned func lets it go.
+func (c *Control) hold(h *holding) func() {
+	c.mu.Lock()
+	c.links[h.id] = h
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.links[h.id] == h {
+			delete(c.links, h.id)
+		}
+	}
+}
+
+// held is the machine's link if this replica holds it.
+func (c *Control) held(id domain.RunnerID) (*holding, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h, ok := c.links[id]
+	return h, ok
 }
 
 // holding is one link this replica holds, from its handshake to its end.
@@ -67,6 +94,7 @@ func (c *Control) Serve(ctx context.Context, id domain.RunnerID, gen int64, l Li
 		return err
 	}
 	h.slots = st.Slots
+	defer c.hold(h)()
 	h.wg.Go(func() { h.watch(ctx) })
 	tick := time.NewTicker(c.cfg.Tick)
 	defer tick.Stop()

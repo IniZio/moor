@@ -23,6 +23,9 @@ type Config struct {
 	UserHeader     string
 	OrgName        string
 	TrustedOrigins []string
+	// InternalSecret is shared by the portal replicas, which send it on a terminal hop. Without it no
+	// replica hops and none takes a hop.
+	InternalSecret string
 }
 
 // SettingsService is what the settings screen needs.
@@ -43,14 +46,17 @@ type Deps struct {
 	Act      TaskActions
 	Tasks    TaskReader
 	Machines MachineService
+	Terms    Terminals
 	Ready    func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
 }
 
 type server struct {
-	cfg  Config
-	deps Deps
+	cfg         Config
+	deps        Deps
+	seats       seats
+	originHosts []string
 }
 
 // New builds the portal's handler. Every route but the health checks and the static files needs a person.
@@ -68,12 +74,13 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("web: static files: %w", err)
 	}
-	s := &server{cfg: cfg, deps: deps}
+	s := &server{cfg: cfg, deps: deps, originHosts: hostsOf(cfg.TrustedOrigins)}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Logger, middleware.Recoverer)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	r.Get("/readyz", s.readyz)
 	r.Handle("/static/*", http.StripPrefix("/static/", cached(http.FileServerFS(static))))
+	s.internalRoutes(r)
 	r.Group(func(r chi.Router) {
 		r.Use(guard.Handler, s.person)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
@@ -89,6 +96,9 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Get("/api/tasks/events", s.taskListEvents)
 		r.Get("/api/tasks/{id}", s.taskSnapshot)
 		r.Get("/api/tasks/{id}/events", s.runEvents)
+		r.Get("/api/tasks/{id}/terminal", s.terminal)
+		r.Get("/api/tasks/{id}/screen", s.routed("/screen", s.screenHere))
+		r.Post("/api/tasks/{id}/input", s.routed("/input", s.inputHere))
 		r.Post("/api/tasks/{id}/stop", s.stopTask)
 		r.Post("/api/tasks/{id}/end", s.endTask)
 		r.Post("/api/tasks/{id}/retry", s.retryTask)

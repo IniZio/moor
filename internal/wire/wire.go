@@ -28,6 +28,8 @@ const (
 	KindTaskRelease    Kind = "task.release"
 	KindTaskList       Kind = "task.list"
 	KindTermAttach     Kind = "term.attach"
+	KindTermRead       Kind = "term.read"
+	KindTermSend       Kind = "term.send"
 	KindWarmBuild      Kind = "warm.build"
 )
 
