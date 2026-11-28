@@ -20,8 +20,16 @@ portal:
   trustedOrigins: []
   homeDir: ""
   runnerArgs: ""
+  # The Postgres schema for every table, when other software shares the database. Made when missing.
+  databaseSchema: ""
+
+# A first settings document, saved as version 1 when none exists. It may hold real secret values.
+seed:
+  settings: ""
 
 secrets:
+  create: false
+  values: {}
   existingSecret: ""
   keys:
     databaseURL: database-url
@@ -48,6 +56,7 @@ ingress:
   className: ""
   host: ""
   tlsSecretName: ""
+  hosts: []
   # What reaches the portal from outside the sign-in: the webhook, the runner's join and link, and what the
   # tasks' own proxies and desks call with their per-task tokens. No page and no person's API is here.
   paths:
@@ -55,7 +64,7 @@ ingress:
     - /runner/join
     - /runner/link
     - /internal/policy
-    - /internal/connections
+    - /internal/credentials
     - /internal/blocked
   patterns:
     - /api/tasks/[^/]+/results

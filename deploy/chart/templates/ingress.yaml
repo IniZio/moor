@@ -1,13 +1,23 @@
 {{- if .Values.ingress.enabled }}
-{{- $host := required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
+{{- $base := omit .Values.ingress "enabled" "hosts" }}
+{{- $entries := .Values.ingress.hosts | default (list (dict)) }}
+{{- range $entry := $entries }}
+{{- $in := deepCopy $base }}
+{{- range $k, $v := $entry }}{{- $_ := set $in $k $v }}{{- end }}
+{{- $host := required "ingress.host, or the host of each ingress.hosts entry, is required when ingress.enabled is true" $in.host }}
+{{- $name := include "portal.fullname" $ }}
+{{- if $.Values.ingress.hosts }}
+{{- $name = printf "%s-%s" $name (required "each ingress.hosts entry needs a name" $in.name) }}
+{{- end }}
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "portal.fullname" . }}
+  name: {{ $name }}
   labels:
-    {{- include "portal.labels" . | nindent 4 }}
-  {{- $annotations := .Values.ingress.annotations | default dict }}
-  {{- if .Values.ingress.patterns }}
+    {{- include "portal.labels" $ | nindent 4 }}
+  {{- $annotations := $in.annotations | default dict }}
+  {{- if $in.patterns }}
   {{- $annotations = merge (dict "nginx.ingress.kubernetes.io/use-regex" "true") $annotations }}
   {{- end }}
   {{- with $annotations }}
@@ -15,19 +25,19 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- with .Values.ingress.className }}
+  {{- with $in.className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- if .Values.ingress.tlsSecretName }}
+  {{- if $in.tlsSecretName }}
   tls:
     - hosts: [{{ $host | quote }}]
-      secretName: {{ .Values.ingress.tlsSecretName }}
+      secretName: {{ $in.tlsSecretName }}
   {{- end }}
   rules:
     - host: {{ $host | quote }}
       http:
         paths:
-          {{- range .Values.ingress.paths }}
+          {{- range $in.paths }}
           - path: {{ . }}
             pathType: Prefix
             backend:
@@ -36,7 +46,7 @@ spec:
                 port:
                   name: http
           {{- end }}
-          {{- range .Values.ingress.patterns }}
+          {{- range $in.patterns }}
           - path: {{ . | quote }}
             pathType: ImplementationSpecific
             backend:
@@ -45,4 +55,5 @@ spec:
                 port:
                   name: http
           {{- end }}
+{{- end }}
 {{- end }}

@@ -87,17 +87,41 @@
         "runnerArgs": {
           "type": "string",
           "description": "The flags the join command ends with, PORTAL_RUNNER_ARGS. A runner needs -box-image, -desk-image, -relay-image and -proxy-image."
+        },
+        "databaseSchema": {
+          "type": "string",
+          "description": "The Postgres schema that holds every table, migration and goose's version table, PORTAL_DATABASE_SCHEMA. The portal makes it when missing. Empty is the schema the database URL selects. Use it when other software shares the database."
         }
       }
     },
     "secrets": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The chart never holds a secret value. It reads these from one existing Secret.",
+      "description": "The chart holds no secret value unless secrets.create is set. It reads these from one Secret, an existing one or the one it renders.",
       "properties": {
         "existingSecret": {
           "type": "string",
-          "description": "Required. Name of an existing Secret in the release's namespace."
+          "description": "Name of an existing Secret in the release's namespace. Set this or create, not both."
+        },
+        "create": {
+          "type": "boolean",
+          "description": "Render the Secret, named <fullname>-secrets, from secrets.values, in place of existingSecret. A change to a value rolls the pods."
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What secrets.create puts under the keys. All three are required with it.",
+          "properties": {
+            "databaseURL": {
+              "type": "string"
+            },
+            "secretKey": {
+              "type": "string"
+            },
+            "internalSecret": {
+              "type": "string"
+            }
+          }
         },
         "keys": {
           "type": "object",
@@ -203,6 +227,34 @@
         "annotations": {
           "type": "object",
           "description": "Event streams are long responses: turn response buffering off and raise read timeouts if the controller buffers by default."
+        },
+        "hosts": {
+          "type": "array",
+          "description": "One Ingress per entry, named <fullname>-<name>, in place of the single one. A field an entry sets, an empty list too, replaces the top-level field of the same name.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "host": { "type": "string" },
+              "className": { "type": "string" },
+              "tlsSecretName": { "type": "string" },
+              "paths": { "type": "array", "items": { "type": "string" } },
+              "patterns": { "type": ["array", "null"], "items": { "type": "string" } },
+              "annotations": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "type": "string",
+          "description": "A whole settings document, as the editor takes it, with real secret values inline. The portal saves it as version 1 at start, only when no settings exist. The chart renders it into a Secret, <fullname>-seed, and mounts it read-only. A change rolls the pods and does nothing once version 1 exists."
         }
       }
     },

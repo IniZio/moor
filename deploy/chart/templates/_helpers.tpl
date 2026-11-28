@@ -43,6 +43,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/* The Secret the pod reads: the one the chart renders, or an existing one. Exactly one of the two. */}}
+{{- define "portal.secretName" -}}
+{{- if and .Values.secrets.create .Values.secrets.existingSecret -}}
+{{- fail "set secrets.create or secrets.existingSecret, not both" -}}
+{{- else if .Values.secrets.create -}}
+{{- printf "%s-secrets" (include "portal.fullname" .) -}}
+{{- else -}}
+{{- required "secrets.existingSecret must name a Secret that holds the database URL and keys, or set secrets.create" .Values.secrets.existingSecret -}}
+{{- end -}}
+{{- end -}}
+
 {{/* The stop rule: a pod told to stop waits for traffic to move, then drains, and the grace period outlasts both. */}}
 {{- define "portal.checkStop" -}}
 {{- $need := add (int .Values.stop.waitSeconds) (int .Values.stop.drainSeconds) -}}

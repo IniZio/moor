@@ -1,6 +1,6 @@
 # portal chart
 
-Runs the portal, which serves pages, the webhook route and runner links. State lives in an existing Postgres. The chart ships no Postgres and holds no secret value.
+Runs the portal, which serves pages, the webhook route and runner links. State lives in an existing Postgres. The chart ships no Postgres. It holds no secret value unless you ask it to render the Secret or seed the settings.
 
 The values schema describes every value, and the values file holds the defaults.
 
@@ -23,6 +23,16 @@ helm upgrade --install portal ./deploy/chart -n portal \
 ```
 
 Keep the secret key. It encrypts stored secret values, and a new key cannot read them.
+
+To let the chart make the Secret instead, set `secrets.create=true` with `secrets.values.databaseURL`, `secrets.values.secretKey` and `secrets.values.internalSecret`. The Secret is named `<fullname>-secrets` and takes the key names in `secrets.keys`. Set it or `secrets.existingSecret`, not both. A changed value rolls the pods through a checksum annotation.
+
+## Shared database
+
+Set `portal.databaseSchema` to put every table, the migrations and goose's version table in one Postgres schema, made when missing. Other software can then share the database, and its tables stay untouched. It is `PORTAL_DATABASE_SCHEMA`, a plain lower-case identifier. Leave it empty for the schema the database URL selects.
+
+## Seed settings
+
+Set `seed.settings` to a whole settings document, with real secret values inline, and the portal comes up configured. At start, when no settings version exists, it saves the document as version 1 by "seed". The checks and the sealing are those of a person's save. When one exists it does nothing and does not read the file. A document the editor would refuse stops the pod with the problems, never a secret value. Replicas that start together make one version 1. The chart keeps the document in a Secret named `<fullname>-seed`, mounted read-only, and a change to it rolls the pods.
 
 ## Migrations
 
@@ -55,7 +65,9 @@ People reach the portal only through the proxy's host. A request that reaches th
 
 ## Machine paths
 
-Some callers cannot sit behind a browser sign-in. They are the GitHub webhook, the runner join and link, and the proxies and desks of tasks, which call with per-task tokens. Turn on the chart's own Ingress with a host of its own. It routes only these paths and never the pages. They are `/hooks/github`, `/runner/join`, `/runner/link`, `/internal/policy`, `/internal/connections`, `/internal/blocked` and the desk's publish route `/api/tasks/<id>/results`. The publish route has a wildcard segment, so it is a regular expression in `ingress.patterns`. The chart sets the ingress-nginx `use-regex` annotation for it. Another controller needs its own way to read it. The terminal hop between replicas, under `/internal/terminal`, stays inside the cluster. Event streams are long responses, so turn response buffering off in the controller.
+Some callers cannot sit behind a browser sign-in. They are the GitHub webhook, the runner join and link, and the proxies and desks of tasks, which call with per-task tokens. Turn on the chart's own Ingress with a host of its own. It routes only these paths and never the pages. They are `/hooks/github`, `/runner/join`, `/runner/link`, `/internal/policy`, `/internal/credentials`, `/internal/blocked` and the desk's publish route `/api/tasks/<id>/results`. The publish route has a wildcard segment, so it is a regular expression in `ingress.patterns`. The chart sets the ingress-nginx `use-regex` annotation for it. Another controller needs its own way to read it. The terminal hop between replicas, under `/internal/terminal`, stays inside the cluster. Event streams are long responses, so turn response buffering off in the controller.
+
+`ingress.hosts` makes one Ingress per entry, named `<fullname>-<name>`, when the machine paths need more than one host or class. An entry takes `host`, `className`, `tlsSecretName`, `paths`, `patterns` and `annotations`. A field it sets, an empty list too, replaces the top-level one.
 
 ## Join command
 

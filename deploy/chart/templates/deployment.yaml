@@ -1,5 +1,5 @@
 {{- include "portal.checkStop" . }}
-{{- $secrets := required "secrets.existingSecret must name a Secret that holds the database URL and keys" .Values.secrets.existingSecret }}
+{{- $secrets := include "portal.secretName" . }}
 {{- $header := required "portal.userHeader must name the header your sign-in proxy sets" .Values.portal.userHeader }}
 {{- $keys := .Values.secrets.keys }}
 apiVersion: apps/v1
@@ -23,7 +23,11 @@ spec:
     metadata:
       labels:
         {{- include "portal.selectorLabels" . | nindent 8 }}
-      {{- with .Values.podAnnotations }}
+      {{- $rolls := dict }}
+      {{- if or .Values.secrets.create .Values.seed.settings }}
+      {{- $_ := set $rolls "checksum/secrets" (include (print $.Template.BasePath "/secret.yaml") . | sha256sum) }}
+      {{- end }}
+      {{- with merge $rolls .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -82,6 +86,14 @@ spec:
             - name: PORTAL_HOME_DIR
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.portal.databaseSchema }}
+            - name: PORTAL_DATABASE_SCHEMA
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.seed.settings }}
+            - name: PORTAL_SEED_SETTINGS_FILE
+              value: /etc/portal/seed/settings.yaml
+            {{- end }}
             {{- with .Values.portal.runnerArgs }}
             - name: PORTAL_RUNNER_ARGS
               value: {{ . | quote }}
@@ -131,13 +143,27 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.extraVolumeMounts }}
+          {{- if or .Values.seed.settings .Values.extraVolumeMounts }}
           volumeMounts:
+            {{- if .Values.seed.settings }}
+            - name: seed
+              mountPath: /etc/portal/seed
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
-      {{- with .Values.extraVolumes }}
+      {{- if or .Values.seed.settings .Values.extraVolumes }}
       volumes:
+        {{- if .Values.seed.settings }}
+        - name: seed
+          secret:
+            secretName: {{ include "portal.fullname" . }}-seed
+        {{- end }}
+        {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
