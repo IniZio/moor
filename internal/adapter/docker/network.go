@@ -104,19 +104,14 @@ func (d *Docker) createNetwork(ctx context.Context, k Key, role string) (inspect
 var innerPool = netip.MustParsePrefix("10.213.0.0/16")
 
 // createInner takes the first free /24 of innerPool. The Box and its proxies sit at fixed addresses
-// in it because containers inside the Box cannot resolve names.
+// in it because containers inside the Box cannot resolve names. Docker refuses a subnet that overlaps
+// a network of the host, so the loop asks Docker rather than reading every network itself: another
+// process's networks come and go between a list and an inspect.
 func (d *Docker) createInner(ctx context.Context, args []string, name string) error {
-	used, err := d.usedSubnets(ctx)
-	if err != nil {
-		return err
-	}
 	base := innerPool.Addr().As4()
 	for i := range 256 {
 		base[2] = byte(i)
 		sub := netip.PrefixFrom(netip.AddrFrom4(base), 24)
-		if overlaps(sub, used) {
-			continue
-		}
 		dyn := netip.PrefixFrom(netip.AddrFrom4([4]byte{base[0], base[1], base[2], 128}), 25)
 		_, err := d.run(ctx, append(args, "--subnet", sub.String(), "--ip-range", dyn.String(), name)...)
 		if err == nil || !strings.Contains(err.Error(), "overlap") {
@@ -124,32 +119,6 @@ func (d *Docker) createInner(ctx context.Context, args []string, name string) er
 		}
 	}
 	return errors.New("docker: no free subnet left in " + innerPool.String())
-}
-
-func (d *Docker) usedSubnets(ctx context.Context) ([]netip.Prefix, error) {
-	ids, err := d.lines(ctx, "network", "ls", "-q")
-	if err != nil {
-		return nil, err
-	}
-	all, err := d.inspect(ctx, "network", ids)
-	var used []netip.Prefix
-	for _, n := range all {
-		for _, c := range n.IPAM.Config {
-			if p, perr := netip.ParsePrefix(c.Subnet); perr == nil && p.Addr().Is4() {
-				used = append(used, p)
-			}
-		}
-	}
-	return used, err
-}
-
-func overlaps(p netip.Prefix, used []netip.Prefix) bool {
-	for _, u := range used {
-		if u.Overlaps(p) {
-			return true
-		}
-	}
-	return false
 }
 
 func password() (string, error) {
