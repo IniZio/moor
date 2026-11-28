@@ -24,6 +24,8 @@ type config struct {
 	internalURL    string
 	internalSecret string
 	linkTick       time.Duration
+	// keepWindow is how long a done or failed task keeps its containers, so a person can reopen or look.
+	keepWindow     time.Duration
 	trustedOrigins []string
 	secretKey      []byte
 	// github is the GitHub App. With none of it set the portal serves no /hooks/github.
@@ -43,7 +45,8 @@ github flags go together, none has a default, and with none of them the portal s
 // because which header the sign-in proxy sets is the operator's to say.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
 	var c config
-	var origins, appID string
+	var origins, appID, keep string
+	var err error
 	fs := flag.NewFlagSet("portal", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&c.listen, "listen", orDefault(getenv("PORTAL_LISTEN"), "127.0.0.1:8080"), "address to listen on (PORTAL_LISTEN)")
@@ -57,14 +60,14 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&appID, "github-app-id", getenv("PORTAL_GITHUB_APP_ID"), "id of the GitHub App that answers pull requests (PORTAL_GITHUB_APP_ID)")
 	fs.StringVar(&c.github.KeyFile, "github-private-key-file", getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "file holding the GitHub App's private key (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
 	fs.StringVar(&c.github.APIBase, "github-api-url", getenv("PORTAL_GITHUB_API_URL"), "address of GitHub's API, such as https://api.github.com/ (PORTAL_GITHUB_API_URL)")
+	fs.StringVar(&keep, "keep-window", orDefault(getenv("PORTAL_KEEP_WINDOW"), defaultKeepWindow), "how long a done or failed task keeps its containers, such as 24h (PORTAL_KEEP_WINDOW)")
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
-	for _, o := range strings.Split(origins, ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			c.trustedOrigins = append(c.trustedOrigins, o)
-		}
+	if c.keepWindow, err = readKeep(keep); err != nil {
+		return config{}, err
 	}
+	c.trustedOrigins = splitList(origins)
 	key, err := base64.StdEncoding.DecodeString(getenv("PORTAL_SECRET_KEY"))
 	if err != nil || len(key) != secretbox.KeySize {
 		return config{}, errors.New("PORTAL_SECRET_KEY must be the base64 of a 32-byte key")
@@ -80,6 +83,17 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 	}
 	return c, nil
+}
+
+// splitList reads a comma-separated list, dropping blanks.
+func splitList(text string) []string {
+	var out []string
+	for _, o := range strings.Split(text, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // readGitHub sets the App's id from its text and its webhook secret, and checks that the App is whole or not given at all.
@@ -99,6 +113,18 @@ func readGitHub(c *github.Config, appID, webhookSecret string) error {
 		return fmt.Errorf("github app: %w", err)
 	}
 	return nil
+}
+
+// defaultKeepWindow is a day: long enough to reopen a task the next morning, short enough that a host
+// does not fill with the containers of finished tasks. The spec leaves the length open.
+const defaultKeepWindow = "24h"
+
+func readKeep(text string) (time.Duration, error) {
+	d, err := time.ParseDuration(text)
+	if err != nil || d <= 0 {
+		return 0, errors.New("keep-window must be a duration above zero, such as 24h")
+	}
+	return d, nil
 }
 
 func orDefault(v, fallback string) string {

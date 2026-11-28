@@ -14,8 +14,8 @@ import (
 )
 
 // reconcile makes what the runner holds match what the store wants: a task the portal no longer
-// wants is stopped, and a task still starting on this machine is started again. A cancel on any
-// replica reaches the runner this way, on the holder's next tick.
+// wants is stopped, a task whose keep window ended is released, and a task still starting on this
+// machine is started again. A cancel on any replica reaches the runner this way, on the holder's next tick.
 func (h *holding) reconcile(ctx context.Context) error {
 	var listed wire.TaskListReply
 	if err := call(ctx, h.link, wire.KindTaskList, wire.TaskList{}, &listed); err != nil {
@@ -37,16 +37,66 @@ func (h *holding) reconcile(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// keepOrStop decides what the runner does with a task it holds, from the stored task and the clock alone, so
+// a restart of any replica loses no timer. A done or failed task keeps its containers until its keep window
+// ends, then the runner is told to release them, after the event that says so is recorded: a release that did
+// not reach the runner is sent again on the next tick and records nothing twice.
 func (h *holding) keepOrStop(ctx context.Context, f wire.Fence) error {
 	t, err := h.c.cfg.Store.Load(ctx, domain.TaskID(f.Task))
-	switch {
-	case err != nil && !errors.Is(err, domain.ErrNotFound):
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("load task %s: %w", f.Task, err)
-	case err == nil && t.Runner == h.id && keeps(t, h.c.cfg.Clock.Now()):
+	}
+	v := verdictOf(t, err == nil && t.Runner == h.id, h.c.cfg.Clock.Now())
+	if v == keep {
 		return nil
+	}
+	if v == release {
+		return h.release(ctx, f)
 	}
 	h.log.Info("stopping a task the portal no longer wants", "task", f.Task, "run", f.Run)
 	return call(ctx, h.link, wire.KindTaskStop, wire.TaskStop{Fence: f}, nil)
+}
+
+// release records that the keep window ended and tells the runner to remove the task's containers. A
+// record the task service refuses means a person reopened the task meanwhile, so nothing is removed.
+func (h *holding) release(ctx context.Context, f wire.Fence) error {
+	if _, err := h.c.cfg.Tasks.Released(ctx, domain.TaskID(f.Task)); err != nil {
+		if errors.Is(err, domain.ErrRefused) {
+			return nil
+		}
+		return fmt.Errorf("record the release of %s: %w", f.Task, err)
+	}
+	h.log.Info("releasing a task whose keep window ended", "task", f.Task, "run", f.Run)
+	return call(ctx, h.link, wire.KindTaskRelease, wire.TaskRelease{Task: f.Task}, nil)
+}
+
+type verdict uint8
+
+const (
+	// keep leaves the task's containers alone.
+	keep verdict = iota
+	// release removes the containers of a done or failed task after its keep window.
+	release
+	// stop removes the containers of a task the portal has no more use for: one that is gone, on another
+	// machine, cancelled or superseded.
+	stop
+)
+
+// verdictOf is what the portal wants of the containers a machine holds for t. mine says t is on this machine.
+// A task with no keep window to end is kept for as long as it is done or failed.
+func verdictOf(t domain.Task, mine bool, now time.Time) verdict {
+	switch {
+	case !mine:
+		return stop
+	case t.State.Live():
+		return keep
+	case t.State == domain.Done || t.State == domain.Failed:
+		if t.KeepUntil.IsZero() || now.Before(t.KeepUntil) {
+			return keep
+		}
+		return release
+	}
+	return stop
 }
 
 // watch follows task.watch for the life of the link, opening it again after a drop.

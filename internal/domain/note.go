@@ -11,6 +11,8 @@ const (
 	PhaseCheckout = "checked out"
 	PhasePrompt   = "prompt sent"
 	PhaseReview   = "review sent"
+	// PhaseReleased says the keep window of a finished task ended and its containers were released.
+	PhaseReleased = "containers released"
 )
 
 // NoteText joins a phase and its detail into the text of a note.

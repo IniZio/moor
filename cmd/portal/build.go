@@ -58,12 +58,13 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		return nil, err
 	}
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
-	tasks := task.New(db, systemClock{}, taskConfig(hub))
+	taskCfg := withKeep(taskConfig(hub), cfg)
+	tasks := task.New(db, systemClock{}, taskCfg)
 	rn := newRunners(ctx, cfg, db, tasks, svc)
 	specs := specSource(cfg.homeDir)
 	events := inbound.New(inbound.Deps{
 		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: hub.links(),
-		Clock: systemClock{}, Config: taskConfig(hub), Stop: rn.control.Stop,
+		Clock: systemClock{}, Config: taskCfg, Stop: rn.control.Stop,
 	})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins, InternalSecret: cfg.internalSecret},

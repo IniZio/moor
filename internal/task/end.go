@@ -43,6 +43,31 @@ func (s *Service) MachineRevoked(ctx context.Context, id domain.TaskID) (Outcome
 	})
 }
 
+// Released records, once, that the keep window of a done or failed task has ended, so its containers may be
+// removed. It is refused before the window ends, for a task whose window has no end, and for a task that is not
+// done or failed, such as one a teammate reopened inside its window.
+func (s *Service) Released(ctx context.Context, id domain.TaskID) (Outcome, error) {
+	return s.apply(ctx, id, func(ctx context.Context, e env, t domain.Task) (decision, error) {
+		ended := t.State == domain.Done || t.State == domain.Failed
+		if !ended || t.KeepUntil.IsZero() || e.now.Before(t.KeepUntil) {
+			return decision{}, fmt.Errorf("task %s: %w: no keep window has ended on a %s task", id, domain.ErrRefused, t.State)
+		}
+		text := domain.NoteText(domain.PhaseReleased, "keep window ended")
+		have, err := s.store.HasNote(ctx, id, text)
+		if err != nil || have {
+			return decision{task: t}, wrapIf("look for the release note of "+string(id), err)
+		}
+		return decision{task: t, rows: []row{{domain.KindNote, domain.NoteData{Text: text}}}}, nil
+	})
+}
+
+func wrapIf(what string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // Steer is input into the session. On a done task inside its keep window it reopens the task.
 func (s *Service) Steer(ctx context.Context, id domain.TaskID) (Outcome, error) {
 	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {

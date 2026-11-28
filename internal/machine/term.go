@@ -40,7 +40,7 @@ func (c *Control) deskOf(ctx context.Context, id domain.TaskID) (domain.Task, er
 	switch {
 	case err != nil:
 		return domain.Task{}, fmt.Errorf("terminal of %s: %w", id, err)
-	case t.Runner == "" || t.State == domain.Waiting || !keeps(t, c.cfg.Clock.Now()):
+	case t.Runner == "" || t.State == domain.Waiting || verdictOf(t, true, c.cfg.Clock.Now()) != keep:
 		return domain.Task{}, fmt.Errorf("terminal of %s: %w", id, domain.ErrNoSession)
 	}
 	return t, nil

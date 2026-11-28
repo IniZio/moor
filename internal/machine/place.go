@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/task"
@@ -94,11 +93,4 @@ func (h *holding) report(ctx context.Context, id domain.TaskID, r task.Report) {
 	if err != nil && !errors.Is(err, task.ErrStaleReport) && !errors.Is(err, domain.ErrRefused) && !errors.Is(err, domain.ErrNotFound) {
 		h.log.Warn("report", "task", id, "err", err)
 	}
-}
-
-// keeps is whether the portal still wants the task's containers: while it is live, and for the keep
-// window after it is done or failed.
-func keeps(t domain.Task, now time.Time) bool {
-	ended := t.State == domain.Done || t.State == domain.Failed
-	return t.State.Live() || (ended && (t.KeepUntil.IsZero() || now.Before(t.KeepUntil)))
 }
