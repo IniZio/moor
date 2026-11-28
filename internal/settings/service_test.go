@@ -19,13 +19,13 @@ type stubParser struct{}
 
 func (stubParser) Parse(text string) (settings.Parsed, error) {
 	var p settings.Parsed
-	var bad []settings.LineError
+	var bad []domain.SettingsProblem
 	var kept []string
 	for i, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
 		f := strings.Fields(line)
 		switch {
 		case line == "bad":
-			bad = append(bad, settings.LineError{Line: i + 1, Message: "this line is bad"})
+			bad = append(bad, domain.SettingsProblem{Line: i + 1, Message: "this line is bad"})
 		case len(f) == 3 && f[0] == "secret":
 			p.Secrets = append(p.Secrets, domain.NewSecret{Connection: f[1], Value: f[2]})
 			p.Connections = append(p.Connections, f[1])
@@ -35,7 +35,7 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 		}
 	}
 	if len(bad) > 0 {
-		return settings.Parsed{}, &settings.InvalidError{Lines: bad}
+		return settings.Parsed{}, &domain.InvalidSettingsError{Problems: bad}
 	}
 	p.Text = strings.Join(kept, "\n") + "\n"
 	return p, nil
@@ -67,9 +67,9 @@ func newFixture(sealer reversingSealer) fixture {
 	return fixture{svc: settings.New(store, stubParser{}, sealer, c), store: store, clock: c}
 }
 
-func (f fixture) save(t *testing.T, base int, text string) settings.Saved {
+func (f fixture) save(t *testing.T, base int, text string) domain.SettingsSaved {
 	t.Helper()
-	got, err := f.svc.Save(context.Background(), settings.Save{Base: base, Text: text, By: "Mia"})
+	got, err := f.svc.Save(context.Background(), domain.SettingsSave{Base: base, Text: text, By: "Mia"})
 	if err != nil {
 		t.Fatalf("save %q on v%d: %v", text, base, err)
 	}
@@ -100,10 +100,10 @@ func TestASaveFromAnOldVersionIsRefusedAndNamesTheNewest(t *testing.T) {
 	f := newFixture(reversingSealer{})
 	f.save(t, 0, "a\n")
 	f.save(t, 1, "b\n")
-	_, err := f.svc.Save(context.Background(), settings.Save{Base: 1, Text: "c\n", By: "Ken"})
-	var stale *settings.StaleError
+	_, err := f.svc.Save(context.Background(), domain.SettingsSave{Base: 1, Text: "c\n", By: "Ken"})
+	var stale *domain.StaleSettingsError
 	if !errors.As(err, &stale) || stale.Newest != 2 || !errors.Is(err, domain.ErrStaleSettings) {
-		t.Fatalf("error %v, want a StaleError naming v2", err)
+		t.Fatalf("error %v, want a StaleSettingsError naming v2", err)
 	}
 	if cur, _ := f.svc.Current(context.Background()); cur.N != 2 || cur.Text != "b\n" {
 		t.Errorf("a refused save changed the document: %+v", cur)
@@ -112,9 +112,9 @@ func TestASaveFromAnOldVersionIsRefusedAndNamesTheNewest(t *testing.T) {
 
 func TestAnInvalidDocumentIsRefusedWithItsLinesAndStoresNothing(t *testing.T) {
 	f := newFixture(reversingSealer{})
-	_, err := f.svc.Save(context.Background(), settings.Save{Base: 0, Text: "a\nbad\nsecret api hunter2\nbad\n"})
-	var invalid *settings.InvalidError
-	if !errors.As(err, &invalid) || len(invalid.Lines) != 2 || invalid.Lines[0].Line != 2 || invalid.Lines[1].Line != 4 {
+	_, err := f.svc.Save(context.Background(), domain.SettingsSave{Base: 0, Text: "a\nbad\nsecret api hunter2\nbad\n"})
+	var invalid *domain.InvalidSettingsError
+	if !errors.As(err, &invalid) || len(invalid.Problems) != 2 || invalid.Problems[0].Line != 2 || invalid.Problems[1].Line != 4 {
 		t.Fatalf("error %v, want problems on lines 2 and 4", err)
 	}
 	if _, err := f.store.LatestSettings(context.Background()); !errors.Is(err, domain.ErrNotFound) {
@@ -150,7 +150,7 @@ func TestATypedValueIsSealedApartAndNeverInTheStoredDocumentOrNote(t *testing.T)
 
 func TestAnExplicitNoteWinsOverTheReplacedValueNote(t *testing.T) {
 	f := newFixture(reversingSealer{})
-	got, err := f.svc.Save(context.Background(), settings.Save{Base: 0, Text: "secret api x\n", Note: "rotated", By: "Mia"})
+	got, err := f.svc.Save(context.Background(), domain.SettingsSave{Base: 0, Text: "secret api x\n", Note: "rotated", By: "Mia"})
 	if err != nil || got.Version.Note != "rotated" {
 		t.Fatalf("saved %+v, %v", got, err)
 	}
@@ -158,7 +158,7 @@ func TestAnExplicitNoteWinsOverTheReplacedValueNote(t *testing.T) {
 
 func TestAFailedSealStoresNoVersion(t *testing.T) {
 	f := newFixture(reversingSealer{fail: true})
-	if _, err := f.svc.Save(context.Background(), settings.Save{Base: 0, Text: "secret api x\n"}); err == nil {
+	if _, err := f.svc.Save(context.Background(), domain.SettingsSave{Base: 0, Text: "secret api x\n"}); err == nil {
 		t.Fatal("saved without a key")
 	}
 	if _, err := f.store.LatestSettings(context.Background()); !errors.Is(err, domain.ErrNotFound) {
@@ -197,11 +197,11 @@ func TestHistoryListsNewestFirstEachDiffedAgainstTheOneBefore(t *testing.T) {
 	if err != nil || len(got) != 3 {
 		t.Fatalf("history = %v, %v", got, err)
 	}
-	type line = settings.DiffLine
+	type line = domain.DiffLine
 	for i, want := range [][]line{
-		{{Kind: settings.Same, Text: "a"}, {Kind: settings.Same, Text: "c"}, {Kind: settings.Added, Text: "d"}},
-		{{Kind: settings.Same, Text: "a"}, {Kind: settings.Removed, Text: "b"}, {Kind: settings.Added, Text: "c"}},
-		{{Kind: settings.Added, Text: "a"}, {Kind: settings.Added, Text: "b"}},
+		{{Kind: domain.DiffSame, Text: "a"}, {Kind: domain.DiffSame, Text: "c"}, {Kind: domain.DiffAdded, Text: "d"}},
+		{{Kind: domain.DiffSame, Text: "a"}, {Kind: domain.DiffRemoved, Text: "b"}, {Kind: domain.DiffAdded, Text: "c"}},
+		{{Kind: domain.DiffAdded, Text: "a"}, {Kind: domain.DiffAdded, Text: "b"}},
 	} {
 		if got[i].N != 3-i || !reflect.DeepEqual(got[i].Diff, want) {
 			t.Errorf("history[%d] = v%d %+v, want %+v", i, got[i].N, got[i].Diff, want)
@@ -211,7 +211,7 @@ func TestHistoryListsNewestFirstEachDiffedAgainstTheOneBefore(t *testing.T) {
 
 func TestADiffOfTwoEqualTextsKeepsEveryLine(t *testing.T) {
 	got := settings.Diff("a\nb\n", "a\nb\n")
-	if len(got) != 2 || got[0].Kind != settings.Same || got[1].Text != "b" {
+	if len(got) != 2 || got[0].Kind != domain.DiffSame || got[1].Text != "b" {
 		t.Errorf("diff = %+v", got)
 	}
 	if got := settings.Diff("", ""); len(got) != 0 {

@@ -21,7 +21,7 @@ type Parsed struct {
 	Secrets     []domain.NewSecret
 }
 
-// Parser checks a document as typed. It returns an *InvalidError for a document with problems.
+// Parser checks a document as typed. It returns an *domain.InvalidSettingsError for a document with problems.
 type Parser interface {
 	Parse(text string) (Parsed, error)
 }

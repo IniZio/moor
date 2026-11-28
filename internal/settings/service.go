@@ -9,32 +9,6 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// LineError is one problem in a typed document. Line counts from 1 and is 0 when the problem has no line.
-type LineError struct {
-	Line    int
-	Message string
-}
-
-// InvalidError lists every problem of a refused document.
-type InvalidError struct{ Lines []LineError }
-
-func (e *InvalidError) Error() string {
-	parts := make([]string, len(e.Lines))
-	for i, l := range e.Lines {
-		parts[i] = fmt.Sprintf("line %d: %s", l.Line, l.Message)
-	}
-	return "invalid settings: " + strings.Join(parts, "; ")
-}
-
-// StaleError is a save based on a version that is no longer the newest.
-type StaleError struct{ Newest int }
-
-func (e *StaleError) Error() string {
-	return fmt.Sprintf("settings changed: the newest version is v%d", e.Newest)
-}
-
-func (e *StaleError) Is(target error) bool { return target == domain.ErrStaleSettings }
-
 // InitialText is what the editor shows until the first save.
 const InitialText = `# Settings. Everyone in the organisation can read and edit this document.
 # repositories: where tasks run, and what agents may clone.
@@ -68,50 +42,34 @@ func (s *Service) Current(ctx context.Context) (domain.SettingsVersion, error) {
 }
 
 // Check reports the problems of a document without saving it.
-func (s *Service) Check(text string) []LineError {
+func (s *Service) Check(text string) []domain.SettingsProblem {
 	_, err := s.parser.Parse(text)
-	var invalid *InvalidError
+	var invalid *domain.InvalidSettingsError
 	if errors.As(err, &invalid) {
-		return invalid.Lines
+		return invalid.Problems
 	}
 	return nil
 }
 
-// Save is a whole document typed by a person, based on version Base.
-type Save struct {
-	Base int
-	Text string
-	Note string
-	By   string
-}
-
-// Saved is what a save did. Unchanged means the document and its values matched the newest version, so no
-// version was made. Replaced names the connections whose value was typed.
-type Saved struct {
-	Version   domain.SettingsVersion
-	Unchanged bool
-	Replaced  []string
-}
-
 // Save stores the document as a new version. Typed secret values are sealed and stored apart from it.
-func (s *Service) Save(ctx context.Context, in Save) (Saved, error) {
+func (s *Service) Save(ctx context.Context, in domain.SettingsSave) (domain.SettingsSaved, error) {
 	cur, err := s.Current(ctx)
 	if err != nil {
-		return Saved{}, err
+		return domain.SettingsSaved{}, err
 	}
 	if cur.N != in.Base {
-		return Saved{}, &StaleError{Newest: cur.N}
+		return domain.SettingsSaved{}, &domain.StaleSettingsError{Newest: cur.N}
 	}
 	parsed, err := s.parser.Parse(in.Text)
 	if err != nil {
-		return Saved{}, fmt.Errorf("check settings: %w", err)
+		return domain.SettingsSaved{}, fmt.Errorf("check settings: %w", err)
 	}
 	if cur.N > 0 && parsed.Text == cur.Text && len(parsed.Secrets) == 0 {
-		return Saved{Version: cur, Unchanged: true}, nil
+		return domain.SettingsSaved{Version: cur, Unchanged: true}, nil
 	}
 	sealed, err := s.seal(parsed.Secrets)
 	if err != nil {
-		return Saved{}, err
+		return domain.SettingsSaved{}, err
 	}
 	replaced := make([]string, len(parsed.Secrets))
 	for i, sec := range parsed.Secrets {
@@ -125,9 +83,9 @@ func (s *Service) Save(ctx context.Context, in Save) (Saved, error) {
 		Base: in.Base, Text: parsed.Text, Note: note, By: in.By, At: s.clock.Now(), Keep: parsed.Connections, Secrets: sealed,
 	})
 	if err != nil {
-		return Saved{}, s.staleOrErr(ctx, err)
+		return domain.SettingsSaved{}, s.staleOrErr(ctx, err)
 	}
-	return Saved{Version: v, Replaced: replaced}, nil
+	return domain.SettingsSaved{Version: v, Replaced: replaced}, nil
 }
 
 func (s *Service) seal(secrets []domain.NewSecret) ([]domain.SealedSecret, error) {
@@ -152,5 +110,5 @@ func (s *Service) staleOrErr(ctx context.Context, err error) error {
 	if curErr != nil {
 		return err
 	}
-	return &StaleError{Newest: cur.N}
+	return &domain.StaleSettingsError{Newest: cur.N}
 }
