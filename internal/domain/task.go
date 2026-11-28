@@ -46,6 +46,8 @@ type Task struct {
 	State     State
 	Version   int64
 	Pins      map[Dir]Commit
+	// Refs are the refs a person named for entries, by dir. Pins hold what they resolved to.
+	Refs      map[Dir]string
 	Runner    RunnerID
 	Run       int64
 	Gen       int64

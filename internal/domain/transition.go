@@ -101,6 +101,11 @@ var rules = []rule{
 	{Delivering, Cancel, Cancelled, anyFlow},
 }
 
+// Handles tells whether any rule gives the flow this event, whatever the state.
+func Handles(flow Flow, on Event) bool {
+	return slices.ContainsFunc(rules, func(r rule) bool { return r.on == on && slices.Contains(r.flows, flow) })
+}
+
 // Next gives the state a task in this flow moves to on an event. A refused event leaves the state as it was.
 func Next(flow Flow, from State, on Event) (State, error) {
 	for _, r := range rules {

@@ -20,6 +20,11 @@ const (
 	Cancelled
 )
 
+// Live is true while a task still holds, or waits for, a slot.
+func (s State) Live() bool {
+	return s == Waiting || s == Starting || s == Running || s == Delivering
+}
+
 var ErrUnknownState = errors.New("unknown task state")
 
 var stateNames = map[State]string{

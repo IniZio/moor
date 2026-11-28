@@ -1,0 +1,160 @@
+package task_test
+
+import (
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/IniZio/moor/internal/domain"
+	"github.com/IniZio/moor/internal/task"
+)
+
+func fxKinds(fx []task.Effect) []task.EffectKind {
+	out := make([]task.EffectKind, len(fx))
+	for i, e := range fx {
+		out[i] = e.Kind
+	}
+	return out
+}
+
+func wantEffect(t *testing.T, out task.Outcome, kind task.EffectKind, version int) {
+	t.Helper()
+	if len(out.Effects) != 1 || out.Effects[0].Kind != kind || out.Effects[0].Version != version {
+		t.Fatalf("effects = %+v, want kind %d for version %d", out.Effects, kind, version)
+	}
+}
+
+func TestFreePromptPublishEnds(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.FreePrompt, domain.Running)
+	out := h.publish(id, "d1")
+	got := h.get(id)
+	if got.State != domain.Done || len(out.Effects) != 0 || got.KeepUntil != h.clock.Now().Add(cfg.KeepWindow) || got.EndedAt.IsZero() {
+		t.Fatalf("task = %+v, effects %v", got, out.Effects)
+	}
+	if k := kinds(out.Events); len(k) != 2 || k[0] != domain.KindPublished || k[1] != domain.KindState {
+		t.Errorf("events = %v", k)
+	}
+}
+
+func TestTriggeredPublishDeliversThenDelivered(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Triggered, domain.Running)
+	out := h.publish(id, "d1")
+	wantEffect(t, out, task.Deliver, 1)
+	if h.get(id).State != domain.Delivering {
+		t.Fatalf("state = %s", h.get(id).State)
+	}
+	done := h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Target: "pr 7", ExternalID: "c1", Version: 1}))
+	if h.get(id).State != domain.Done || kinds(done.Events)[0] != domain.KindDelivered {
+		t.Fatalf("state %s, events %v", h.get(id).State, kinds(done.Events))
+	}
+	var data domain.DeliveredData
+	if err := json.Unmarshal(done.Events[0].Data, &data); err != nil || data.ExternalID != "c1" || data.Version != 1 {
+		t.Errorf("delivered data = %+v, %v", data, err)
+	}
+}
+
+func TestSameDigestTwiceIsOneVersion(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Triggered, domain.Running)
+	h.publish(id, "d1")
+	before := len(h.mem.Events(id))
+	again := h.publish(id, "d1")
+	versions, _ := h.mem.Versions(h.ctx(), id)
+	if len(versions) != 1 || len(again.Events) != 0 || len(h.mem.Events(id)) != before {
+		t.Fatalf("versions %d, events %d", len(versions), len(h.mem.Events(id))-before)
+	}
+	wantEffect(t, again, task.Deliver, 1)
+}
+
+func TestPublishRefusals(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Triggered, domain.Running)
+	for name, in := range map[string]task.PublishInput{
+		"no digest": {Line: "l", EntryURL: "u"},
+		"no url":    {Line: "l", Digest: "d"},
+	} {
+		if _, err := h.svc.Publish(h.ctx(), id, in); !errors.Is(err, task.ErrBadInput) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	h.publish(id, "d1")
+	if _, err := h.svc.Publish(h.ctx(), id, task.PublishInput{Line: "l", EntryURL: "u", Digest: "d2"}); !refused(err) {
+		t.Errorf("a new publish while delivering: err = %v", err)
+	}
+	if v, _ := h.mem.Versions(h.ctx(), id); len(v) != 1 {
+		t.Errorf("versions = %d", len(v))
+	}
+}
+
+func TestReviewTurnPath(t *testing.T) {
+	h := newHarness(t)
+	id := h.trig("acme/app#7", "rev-1", review)
+	h.running(id)
+
+	first := h.publish(id, "d1")
+	wantEffect(t, first, task.SendReviewTurn, 1)
+	if got := h.get(id); got.State != domain.Running || kinds(first.Events)[0] != domain.KindPublished || len(first.Events) != 1 {
+		t.Fatalf("after the first publish: state %s, events %v", got.State, kinds(first.Events))
+	}
+
+	replay := h.publish(id, "d1")
+	wantEffect(t, replay, task.SendReviewTurn, 1)
+	if len(replay.Events) != 0 {
+		t.Error("a repeated first publish wrote events")
+	}
+
+	second := h.publish(id, "d2")
+	wantEffect(t, second, task.Deliver, 2)
+	if h.get(id).State != domain.Delivering {
+		t.Fatalf("state = %s", h.get(id).State)
+	}
+	if late := h.publish(id, "d1"); len(late.Effects) != 0 || len(late.Events) != 0 {
+		t.Errorf("a late repeat of the first version: %+v", late)
+	}
+
+	h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Target: "pr 7", ExternalID: "c1", Version: 2}))
+	h.ok(h.svc.Steer(h.ctx(), id))
+	third := h.publish(id, "d3")
+	wantEffect(t, third, task.Deliver, 3)
+}
+
+func TestReviewTurnOnlyForTriggerRecipeThatAsksForIt(t *testing.T) {
+	h := newHarness(t)
+	plainID := h.trig("acme/app#7", "rev-1", plain)
+	h.running(plainID)
+	if out := h.publish(plainID, "d1"); fxKinds(out.Effects)[0] != task.Deliver {
+		t.Errorf("a recipe without a review turn: effects %v", fxKinds(out.Effects))
+	}
+
+	person := h.id("person")
+	h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: person, Project: h.proj, By: "ann", Recipe: domain.Recipe{Name: review, Prompt: "p"}}))
+	h.running(person)
+	out := h.publish(person, "d1")
+	if h.get(person).State != domain.Done || len(out.Effects) != 0 {
+		t.Errorf("a person-started task with a review recipe: state %s, effects %v", h.get(person).State, out.Effects)
+	}
+}
+
+func TestDeliveredRefusals(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Triggered, domain.Running)
+	h.publish(id, "d1")
+	if _, err := h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 2}); !refused(err) {
+		t.Errorf("a delivery for a version that does not exist: err = %v", err)
+	}
+	if h.get(id).State != domain.Delivering {
+		t.Error("a refused delivery moved the task")
+	}
+}
+
+func TestDeliveringIsRetriedByPublishReplay(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Triggered, domain.Delivering)
+	wantEffect(t, h.publish(id, "d1"), task.Deliver, 1)
+	h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 1}))
+	if out := h.publish(id, "d1"); len(out.Effects) != 0 {
+		t.Errorf("a done task owes nothing: %+v", out.Effects)
+	}
+}
