@@ -100,7 +100,7 @@ func scanTask(row pgx.Row) (domain.Task, error) {
 		return domain.Task{}, fmt.Errorf("task %s: %w", t.ID, err)
 	}
 	if source != nil {
-		t.Trigger = &domain.Trigger{Name: domain.TriggerName(*name), Source: domain.TriggerSource(*source), Group: domain.TriggerGroup(*group), Rev: domain.Revision(*rev), Context: context}
+		t.Trigger = &domain.Trigger{Name: domain.SpecName(*name), Source: domain.TriggerSource(*source), Group: domain.TriggerGroup(*group), Rev: domain.Revision(*rev), Context: context}
 	}
 	t.CreatedAt = t.CreatedAt.UTC()
 	t.Deadline, t.KeepUntil, t.EndedAt = utc(deadline), utc(keepUntil), utc(endedAt)

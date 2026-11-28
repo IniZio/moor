@@ -28,7 +28,7 @@ type Repo struct {
 
 // Trigger is the integration event that started a task, and the definition that took it. Group and Context are opaque to the core.
 type Trigger struct {
-	Name    TriggerName
+	Name    SpecName
 	Source  TriggerSource
 	Group   TriggerGroup
 	Rev     Revision
