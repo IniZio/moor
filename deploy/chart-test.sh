@@ -44,6 +44,9 @@ check "no GitHub settings by default" "$(dep '[.spec.template.spec.containers[0]
 refuses "refuses a missing Secret name" --set secrets.existingSecret=
 refuses "refuses a missing user header" --set portal.userHeader=
 refuses "refuses a grace period that cuts the drain" --set stop.waitSeconds=10 --set stop.drainSeconds=30 --set terminationGracePeriodSeconds=40
+check "no runner args by default" "$(dep '[.spec.template.spec.containers[0].env[] | select(.name == "PORTAL_RUNNER_ARGS")] | length')" 0
+ra=$(render --set 'portal.runnerArgs=-box-image b:1 -desk-image d:1')
+check "runner args reach the portal" "$(printf '%s\n' "$ra" | pick 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "PORTAL_RUNNER_ARGS") | .value')" "-box-image b:1 -desk-image d:1"
 
 ing=$(render --set ingress.enabled=true --set ingress.host=portal.example.org)
 check "ingress on request" "$(printf '%s\n' "$ing" | pick 'select(.kind == "Ingress") | .spec.rules[0].host')" portal.example.org

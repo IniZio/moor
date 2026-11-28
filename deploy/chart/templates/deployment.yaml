@@ -82,6 +82,10 @@ spec:
             - name: PORTAL_HOME_DIR
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.portal.runnerArgs }}
+            - name: PORTAL_RUNNER_ARGS
+              value: {{ . | quote }}
+            {{- end }}
             - name: PORTAL_DATABASE_URL
               valueFrom:
                 secretKeyRef:

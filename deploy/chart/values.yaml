@@ -19,6 +19,7 @@ portal:
   publicURL: ""
   trustedOrigins: []
   homeDir: ""
+  runnerArgs: ""
 
 secrets:
   existingSecret: ""

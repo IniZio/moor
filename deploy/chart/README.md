@@ -59,4 +59,5 @@ Some callers cannot sit behind a browser sign-in. They are the GitHub webhook, t
 
 ## Join command
 
-Add machine shows one line that joins a machine and starts its runner. The runner needs the image names, which the portal cannot know. Set `PORTAL_RUNNER_ARGS` through `extraEnv` to the flags the line should end with. For example, set it to `-box-image <image> -desk-image <image> -relay-image <image> -proxy-image <image>`. Set `PORTAL_KEEP_WINDOW` the same way to change how long a finished task keeps its containers. The default is 24 hours.
+Add machine shows one line that joins a machine and starts its runner. Set `portal.runnerArgs` to the flags it ends with. They name the four images the runner needs, as `-box-image REPO/moor-box:VERSION -desk-image REPO/moor-desk:VERSION -relay-image REPO/moor-relay:VERSION -proxy-image REPO/moor-proxy:VERSION`.
+CD publishes them as `ghcr.io/OWNER/moor-{box,desk,relay,proxy}` with the same version tag as the portal image. Set `PORTAL_KEEP_WINDOW` through `extraEnv` to change how long a finished task keeps its containers. The default is 24 hours.

@@ -83,6 +83,10 @@
         "homeDir": {
           "type": "string",
           "description": "Folder holding the checked-out team home, PORTAL_HOME_DIR. Mount it through extraVolumes. The chart does not fetch it."
+        },
+        "runnerArgs": {
+          "type": "string",
+          "description": "The flags the join command ends with, PORTAL_RUNNER_ARGS. A runner needs -box-image, -desk-image, -relay-image and -proxy-image."
         }
       }
     },
