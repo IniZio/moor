@@ -56,7 +56,7 @@ func (e env) slotTaken(t domain.Task, r Report) (decision, error) {
 	if t.State != domain.Waiting && t.Runner == r.Runner {
 		return decision{task: t}, nil
 	}
-	d, err := e.run(t, op{event: domain.SlotFree, reason: "slot taken on " + string(r.Runner)})
+	d, err := e.run(t, op{signal: domain.SlotFree, reason: "slot taken on " + string(r.Runner)})
 	d.task.Runner = r.Runner
 	d.task.Run = t.Run + 1
 	return d, err
@@ -64,26 +64,26 @@ func (e env) slotTaken(t domain.Task, r Report) (decision, error) {
 
 func (e env) partsUp(t domain.Task, r Report) (decision, error) {
 	return e.run(t, op{
-		event: domain.PartsUp, settled: []domain.State{domain.Running, domain.Delivering, domain.Done},
+		signal: domain.PartsUp, settled: []domain.State{domain.Running, domain.Delivering, domain.Done},
 		reason: orText(r.Text, "desk, box and proxy up"),
 	})
 }
 
 func (e env) partFailed(t domain.Task, r Report) (decision, error) {
-	return e.run(t, op{event: domain.PartFailed, settled: []domain.State{domain.Failed}, reason: orText(r.Text, "a part did not start")})
+	return e.run(t, op{signal: domain.PartFailed, settled: []domain.State{domain.Failed}, reason: orText(r.Text, "a part did not start")})
 }
 
 // harnessExited is settled in every state past running, since a session ends normally after a publish.
 func (e env) harnessExited(t domain.Task, _ Report) (decision, error) {
 	return e.run(t, op{
-		event:   domain.SessionEnded,
+		signal:  domain.SessionEnded,
 		settled: []domain.State{domain.Delivering, domain.Done, domain.Failed, domain.Superseded, domain.Cancelled},
 		reason:  "session ended with nothing published",
 	})
 }
 
 func (e env) boxRecreated(t domain.Task, r Report) (decision, error) {
-	if _, err := domain.Next(t.Flow(), t.State, domain.BoxRecreated); err != nil {
+	if _, err := domain.Next(e.flow(t), t.State, domain.BoxRecreated); err != nil {
 		return decision{}, fmt.Errorf("task %s: %w", t.ID, err)
 	}
 	if r.Gen <= t.Gen {

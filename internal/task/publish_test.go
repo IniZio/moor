@@ -25,8 +25,8 @@ func wantEffect(t *testing.T, out task.Outcome, kind task.EffectKind, version in
 	}
 }
 
-func TestPublishWithoutAReplyTargetEnds(t *testing.T) {
-	for _, flow := range []domain.Flow{personFlow, triggerSilent} {
+func TestPublishOfATaskThatAnswersNothingEnds(t *testing.T) {
+	for _, flow := range []domain.Flow{domain.Plain, domain.Evented} {
 		t.Run(flow.String(), func(t *testing.T) {
 			h := newHarness(t)
 			id := h.reach(flow, domain.Running)
@@ -42,15 +42,9 @@ func TestPublishWithoutAReplyTargetEnds(t *testing.T) {
 	}
 }
 
-func TestPublishWithAReplyTargetDeliversThenDelivered(t *testing.T) {
-	for _, flow := range []domain.Flow{personReplies, triggerFlow} {
-		t.Run(flow.String(), func(t *testing.T) { deliverThenDone(t, flow) })
-	}
-}
-
-func deliverThenDone(t *testing.T, flow domain.Flow) {
+func TestPublishOfAnAnsweredEventDeliversThenDelivered(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(flow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	out := h.publish(id, "d1")
 	wantEffect(t, out, task.Deliver, 1)
 	if h.get(id).State != domain.Delivering {
@@ -66,9 +60,22 @@ func deliverThenDone(t *testing.T, flow domain.Flow) {
 	}
 }
 
+func TestTheConfigDecidesWhichSourcesAreAnswered(t *testing.T) {
+	h := newHarness(t)
+	silent := task.New(h.mem, h.clock, task.Config{})
+	id := h.id("ev")
+	h.ok(silent.StartByEvent(h.ctx(), h.evIn(id, "acme/app#7", "abc")))
+	h.ok(silent.Report(h.ctx(), id, task.Report{Kind: task.SlotTaken, Runner: "r1"}))
+	h.ok(silent.Report(h.ctx(), id, task.Report{Kind: task.PartsUp, Run: 1}))
+	out := h.ok(silent.Publish(h.ctx(), id, task.PublishInput{Line: "l", EntryURL: "u", Digest: "d1"}))
+	if h.get(id).State != domain.Done || len(out.Effects) != 0 {
+		t.Errorf("an event of a source nobody answers: state %s, effects %v", h.get(id).State, out.Effects)
+	}
+}
+
 func TestSameDigestTwiceIsOneVersion(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	h.publish(id, "d1")
 	before := len(h.mem.Events(id))
 	again := h.publish(id, "d1")
@@ -81,7 +88,7 @@ func TestSameDigestTwiceIsOneVersion(t *testing.T) {
 
 func TestPublishRefusals(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	for name, in := range map[string]task.PublishInput{
 		"no digest": {Line: "l", EntryURL: "u"},
 		"no url":    {Line: "l", Digest: "d"},
@@ -101,7 +108,7 @@ func TestPublishRefusals(t *testing.T) {
 
 func TestReviewPromptPath(t *testing.T) {
 	h := newHarness(t)
-	id := h.start(triggerFlow, "check it")
+	id := h.start(domain.Answering, "check it")
 	h.running(id)
 
 	first := h.publish(id, "d1")
@@ -136,10 +143,9 @@ func TestReviewPromptOnAnyKindOfTask(t *testing.T) {
 		flow     domain.Flow
 		accepted domain.State
 	}{
-		{personFlow, domain.Done},
-		{personReplies, domain.Delivering},
-		{triggerSilent, domain.Done},
-		{triggerFlow, domain.Delivering},
+		{domain.Plain, domain.Done},
+		{domain.Evented, domain.Done},
+		{domain.Answering, domain.Delivering},
 	}
 	for _, c := range cases {
 		t.Run(c.flow.String(), func(t *testing.T) {
@@ -166,7 +172,7 @@ func btoi(b bool) int {
 }
 
 func TestNoReviewStepWithoutAReviewPrompt(t *testing.T) {
-	for _, flow := range []domain.Flow{personFlow, personReplies, triggerSilent, triggerFlow} {
+	for _, flow := range []domain.Flow{domain.Plain, domain.Evented, domain.Answering} {
 		t.Run(flow.String(), func(t *testing.T) {
 			h := newHarness(t)
 			id := h.reach(flow, domain.Running)
@@ -178,8 +184,8 @@ func TestNoReviewStepWithoutAReviewPrompt(t *testing.T) {
 	}
 }
 
-func TestDeliveredIsRefusedWithoutAReplyTarget(t *testing.T) {
-	for _, flow := range []domain.Flow{personFlow, triggerSilent} {
+func TestDeliveredIsRefusedForATaskThatAnswersNothing(t *testing.T) {
+	for _, flow := range []domain.Flow{domain.Plain, domain.Evented} {
 		h := newHarness(t)
 		id := h.reach(flow, domain.Running)
 		h.publish(id, "d1")
@@ -191,7 +197,7 @@ func TestDeliveredIsRefusedWithoutAReplyTarget(t *testing.T) {
 
 func TestDeliveredRefusals(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	h.publish(id, "d1")
 	if _, err := h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 2}); !refused(err) {
 		t.Errorf("a delivery for a version that does not exist: err = %v", err)
@@ -203,7 +209,7 @@ func TestDeliveredRefusals(t *testing.T) {
 
 func TestDeliveringIsRetriedByPublishReplay(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Delivering)
+	id := h.reach(domain.Answering, domain.Delivering)
 	wantEffect(t, h.publish(id, "d1"), task.Deliver, 1)
 	h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Version: 1}))
 	if out := h.publish(id, "d1"); len(out.Effects) != 0 {

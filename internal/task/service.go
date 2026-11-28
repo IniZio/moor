@@ -40,6 +40,8 @@ type env struct {
 
 func (s *Service) env() env { return env{now: s.clock.Now(), cfg: s.cfg} }
 
+func (e env) flow(t domain.Task) domain.Flow { return t.Flow(e.cfg.Answerable) }
+
 type row struct {
 	kind domain.EventKind
 	data any

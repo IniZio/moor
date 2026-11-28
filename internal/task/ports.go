@@ -13,8 +13,8 @@ type Store interface {
 	// Load and ByKey return domain.ErrNotFound for no row.
 	Load(ctx context.Context, id domain.TaskID) (domain.Task, error)
 	ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error)
-	// LiveInGroup lists the live tasks of one project, source and group, oldest first.
-	LiveInGroup(ctx context.Context, project domain.ProjectName, source domain.TriggerSource, group domain.TriggerGroup) ([]domain.Task, error)
+	// LiveInGroup lists the live tasks of one project, spec, event source and event group, oldest first.
+	LiveInGroup(ctx context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
 	// Versions lists a task's result versions in order.
 	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
 	// Save applies w in one transaction. It returns the task as stored, with its version bumped.
@@ -29,6 +29,9 @@ type Clock interface {
 type Config struct {
 	TimeLimit  time.Duration
 	KeepWindow time.Duration
+	// Answerable lists the event sources whose tasks post their result back, so they go through
+	// delivering. A task of any other source, and a plain-prompt task, is done on its accepted publish.
+	Answerable map[domain.EventSource]bool
 	// Attempts caps the reads and writes an operation repeats when it loses a race. Zero means 5.
 	Attempts int
 }

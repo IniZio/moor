@@ -133,18 +133,18 @@ type EntryCommit struct {
 	Setup  string `json:"setup,omitempty"`
 }
 
-type Trigger struct {
-	Name    string          `json:"name"`
+// Event is the integration event that started a task. Its parts are opaque to the link.
+type Event struct {
 	Source  string          `json:"source"`
 	Group   string          `json:"group"`
 	Rev     string          `json:"rev"`
 	Context json.RawMessage `json:"context,omitempty"`
 }
 
-// ReplyTarget is where a task's result is posted. Both parts are opaque to the link.
-type ReplyTarget struct {
-	Source string `json:"source"`
-	Ref    string `json:"ref"`
+// Spec names the task spec that started a task, and the spec's file in the team's home.
+type Spec struct {
+	Name string `json:"name"`
+	File string `json:"file"`
 }
 
 type TaskStart struct {
@@ -152,9 +152,9 @@ type TaskStart struct {
 	Entries       []EntryCommit   `json:"entries"`
 	Prompt        string          `json:"prompt"`
 	ReviewPrompt  string          `json:"review_prompt,omitempty"`
-	Reply         *ReplyTarget    `json:"reply,omitempty"`
 	Skills        []string        `json:"skills"`
-	Trigger       *Trigger        `json:"trigger,omitempty"`
+	Spec          *Spec           `json:"spec,omitempty"`
+	Event         *Event          `json:"event,omitempty"`
 	Harness       string          `json:"harness"`
 	WarmState     string          `json:"warm_state"`
 	BudgetSeconds int64           `json:"budget"`

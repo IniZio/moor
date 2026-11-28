@@ -1,19 +1,18 @@
 -- +goose Up
--- A trigger is set when all four trigger columns are, and the key then holds once per project.
+-- A spec and an event are each set whole, an event needs a spec, and the key holds per project and spec.
 -- Context and event data are json, not jsonb, because the core never reads them and must get the bytes back.
 CREATE TABLE tasks (
     id text PRIMARY KEY,
     project text NOT NULL,
     prompt text NOT NULL,
     review_prompt text NOT NULL DEFAULT '',
-    reply_source text NOT NULL DEFAULT '',
-    reply_ref text NOT NULL DEFAULT '',
     started_by text NOT NULL DEFAULT '',
-    trigger_name text,
-    trigger_source text,
-    trigger_group text,
-    trigger_rev text,
-    trigger_context json,
+    spec_name text,
+    spec_file text,
+    event_source text,
+    event_group text,
+    event_rev text,
+    event_context json,
     state text NOT NULL CHECK (state IN
         ('waiting', 'starting', 'running', 'delivering', 'done', 'failed', 'superseded', 'cancelled')),
     version bigint NOT NULL CHECK (version > 0),
@@ -29,14 +28,14 @@ CREATE TABLE tasks (
     token_owner text NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL,
     ended_at timestamptz,
-    CONSTRAINT tasks_trigger_whole CHECK (
-        (trigger_source IS NULL) = (trigger_name IS NULL) AND (trigger_source IS NULL) = (trigger_group IS NULL)
-        AND (trigger_source IS NULL) = (trigger_rev IS NULL)),
-    CONSTRAINT tasks_reply_whole CHECK ((reply_source = '') = (reply_ref = ''))
+    CONSTRAINT tasks_spec_whole CHECK ((spec_name IS NULL) = (spec_file IS NULL)),
+    CONSTRAINT tasks_event_whole CHECK (
+        (event_source IS NULL) = (event_group IS NULL) AND (event_source IS NULL) = (event_rev IS NULL)),
+    CONSTRAINT tasks_event_has_spec CHECK (event_source IS NULL OR spec_name IS NOT NULL)
 );
 
-CREATE UNIQUE INDEX tasks_trigger_key ON tasks (project, trigger_source, trigger_group, trigger_rev)
-    WHERE trigger_source IS NOT NULL;
+CREATE UNIQUE INDEX tasks_event_key ON tasks (project, spec_name, event_source, event_group, event_rev)
+    WHERE event_source IS NOT NULL;
 
 CREATE TABLE task_events (
     task_id text NOT NULL REFERENCES tasks (id),

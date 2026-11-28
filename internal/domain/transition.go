@@ -6,11 +6,11 @@ import (
 	"slices"
 )
 
-// Event is something that happened to a task and may move its state.
-type Event uint8
+// Signal is something that happened to a task and may move its state.
+type Signal uint8
 
 const (
-	SlotFree Event = iota + 1
+	SlotFree Signal = iota + 1
 	PartsUp
 	PartFailed
 	BoxRecreated
@@ -24,7 +24,7 @@ const (
 	Cancel
 )
 
-var eventNames = map[Event]string{
+var signalNames = map[Signal]string{
 	SlotFree:     "slot free",
 	PartsUp:      "parts up",
 	PartFailed:   "part failed",
@@ -39,62 +39,66 @@ var eventNames = map[Event]string{
 	Cancel:       "cancel",
 }
 
-func (e Event) String() string {
-	if name, ok := eventNames[e]; ok {
+func (s Signal) String() string {
+	if name, ok := signalNames[s]; ok {
 		return name
 	}
-	return fmt.Sprintf("Event(%d)", uint8(e))
+	return fmt.Sprintf("Signal(%d)", uint8(s))
 }
 
-// Flow is what the state machine reads of a task. A task a trigger started can be superseded and
-// cannot be ended by a person. A task with a reply target is delivered before it is done.
-type Flow struct {
-	Triggered bool
-	Replies   bool
-}
+// Flow is what the state machine reads of a task. An event task can be superseded and cannot be ended
+// by a person. One whose event can be answered is delivered before it is done. A plain task never is.
+type Flow uint8
+
+const (
+	Plain Flow = iota
+	Evented
+	Answering
+)
 
 func (f Flow) String() string {
-	who := "person-started"
-	if f.Triggered {
-		who = "trigger-started"
+	switch f {
+	case Plain:
+		return "plain"
+	case Evented:
+		return "event"
+	case Answering:
+		return "event answering"
 	}
-	if f.Replies {
-		return who + " replying"
-	}
-	return who
+	return fmt.Sprintf("Flow(%d)", uint8(f))
 }
 
 var ErrRefused = errors.New("transition refused")
 
 type rule struct {
 	from State
-	on   Event
+	on   Signal
 	to   State
 	when func(Flow) bool
 }
 
-func always(Flow) bool         { return true }
-func byTrigger(f Flow) bool    { return f.Triggered }
-func byPerson(f Flow) bool     { return !f.Triggered }
-func withReply(f Flow) bool    { return f.Replies }
-func withoutReply(f Flow) bool { return !f.Replies }
+func always(Flow) bool        { return true }
+func byEvent(f Flow) bool     { return f != Plain }
+func byPerson(f Flow) bool    { return f == Plain }
+func answering(f Flow) bool   { return f == Answering }
+func unanswering(f Flow) bool { return f != Answering }
 
 var rules = []rule{
 	{Waiting, SlotFree, Starting, always},
 	{Starting, PartsUp, Running, always},
 	{Starting, PartFailed, Failed, always},
 	{Running, BoxRecreated, Running, always},
-	{Running, Published, Delivering, withReply},
-	{Delivering, Delivered, Done, withReply},
-	{Running, Published, Done, withoutReply},
+	{Running, Published, Delivering, answering},
+	{Delivering, Delivered, Done, answering},
+	{Running, Published, Done, unanswering},
 	{Running, PersonEnded, Done, byPerson},
 	{Done, Steered, Running, always},
 	{Running, SessionEnded, Failed, always},
 	{Running, TimeLimit, Failed, always},
-	{Waiting, NewerRev, Superseded, byTrigger},
-	{Starting, NewerRev, Superseded, byTrigger},
-	{Running, NewerRev, Superseded, byTrigger},
-	{Delivering, NewerRev, Superseded, byTrigger},
+	{Waiting, NewerRev, Superseded, byEvent},
+	{Starting, NewerRev, Superseded, byEvent},
+	{Running, NewerRev, Superseded, byEvent},
+	{Delivering, NewerRev, Superseded, byEvent},
 	{Waiting, Cancel, Cancelled, always},
 	{Starting, Cancel, Cancelled, always},
 	{Running, Cancel, Cancelled, always},
@@ -102,12 +106,12 @@ var rules = []rule{
 }
 
 // Handles tells whether any rule gives the flow this event, whatever the state.
-func Handles(flow Flow, on Event) bool {
+func Handles(flow Flow, on Signal) bool {
 	return slices.ContainsFunc(rules, func(r rule) bool { return r.on == on && r.when(flow) })
 }
 
 // Next gives the state a task in this flow moves to on an event. A refused event leaves the state as it was.
-func Next(flow Flow, from State, on Event) (State, error) {
+func Next(flow Flow, from State, on Signal) (State, error) {
 	for _, r := range rules {
 		if r.from == from && r.on == on && r.when(flow) {
 			return r.to, nil

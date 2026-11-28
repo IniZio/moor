@@ -10,14 +10,14 @@ import (
 )
 
 // opCase is one operation with its expected result from each state, in the order of allStates, once
-// for a person-started task with no reply target and once for a trigger-started one with a reply
-// target. "x" is a state the flow cannot reach, and "-" a refusal. "=" is a repeat that changes nothing and "~" a change that keeps the state.
+// for a plain-prompt task and once for an event task whose source can be answered. "x" is a state
+// the flow cannot reach, and "-" a refusal. "=" is a repeat that changes nothing and "~" a change that keeps the state.
 type opCase struct {
-	name   string
-	run    func(*harness, domain.TaskID) error
-	person string
-	trig   string
-	pre    func(*harness)
+	name  string
+	run   func(*harness, domain.TaskID) error
+	plain string
+	event string
+	pre   func(*harness)
 }
 
 func rep(kind task.ReportKind, gen int64) func(*harness, domain.TaskID) error {
@@ -35,49 +35,49 @@ func viaService(call func(*task.Service, *harness, domain.TaskID) (task.Outcome,
 var opCases = []opCase{
 	{
 		name: "slot taken", run: rep(task.SlotTaken, 0),
-		person: "starting = = x = = x =", trig: "starting = = = = = = =",
+		plain: "starting = = x = = x =", event: "starting = = = = = = =",
 	},
 	{
 		name: "parts up", run: rep(task.PartsUp, 0),
-		person: "- running = x = - x -", trig: "- running = = = - - -",
+		plain: "- running = x = - x -", event: "- running = = = - - -",
 	},
 	{
 		name: "part failed", run: rep(task.PartFailed, 0),
-		person: "- failed - x - = x -", trig: "- failed - - - = - -",
+		plain: "- failed - x - = x -", event: "- failed - - - = - -",
 	},
 	{
 		name: "harness exited", run: rep(task.HarnessExited, 0),
-		person: "- - failed x = = x =", trig: "- - failed = = = = =",
+		plain: "- - failed x = = x =", event: "- - failed = = = = =",
 	},
 	{
 		name: "box recreated", run: rep(task.BoxRecreated, 1),
-		person: "- - ~ x - - x -", trig: "- - ~ - - - - -",
+		plain: "- - ~ x - - x -", event: "- - ~ - - - - -",
 	},
 	{name: "publish", run: viaService(func(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, error) {
 		return wrapped(s.Publish(h.ctx(), id, task.PublishInput{Line: "ok", EntryURL: "https://pages.example/x", Digest: "dx"}))
-	}), person: "- - done x - - x -", trig: "- - delivering - - - - -"},
+	}), plain: "- - done x - - x -", event: "- - delivering - - - - -"},
 	{name: "delivered", run: viaService(func(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, error) {
 		return wrapped(s.Delivered(h.ctx(), id, task.DeliveredInput{Target: "pr", ExternalID: "c1", Version: 1}))
-	}), person: "- - - x - - x -", trig: "- - - done = - - -"},
+	}), plain: "- - - x - - x -", event: "- - - done = - - -"},
 	{
 		name: "end", run: viaService(svcEnd),
-		person: "- - done x = - x -", trig: "- - - - - - - -",
+		plain: "- - done x = - x -", event: "- - - - - - - -",
 	},
 	{
 		name: "cancel", run: viaService(svcCancel),
-		person: "cancelled cancelled cancelled x - - x =", trig: "cancelled cancelled cancelled cancelled - - - =",
+		plain: "cancelled cancelled cancelled x - - x =", event: "cancelled cancelled cancelled cancelled - - - =",
 	},
 	{
 		name: "time limit", run: viaService(svcTimeLimit), pre: func(h *harness) { h.advance(2 * cfg.TimeLimit) },
-		person: "- - failed x - = x -", trig: "- - failed - - = - -",
+		plain: "- - failed x - = x -", event: "- - failed - - = - -",
 	},
 	{
 		name: "steer", run: viaService(svcSteer),
-		person: "- - = x running - x -", trig: "- - = - running - - -",
+		plain: "- - = x running - x -", event: "- - = - running - - -",
 	},
 	{
 		name: "newer rev", run: newerRev,
-		trig: "superseded superseded superseded superseded = = = =",
+		event: "superseded superseded superseded superseded = = = =",
 	},
 }
 
@@ -98,22 +98,21 @@ func svcSteer(s *task.Service, h *harness, id domain.TaskID) (task.Outcome, erro
 }
 
 func newerRev(h *harness, id domain.TaskID) error {
-	g := h.get(id).Trigger.Group
-	return errOf(h.svc.StartByTrigger(h.ctx(), h.trigIn("newer-"+id, string(g), "rev-newer")))
+	return errOf(h.svc.StartByEvent(h.ctx(), h.newerIn("newer-"+id, id, "rev-newer")))
 }
 
 func TestEveryOperationFromEveryState(t *testing.T) {
 	for _, oc := range opCases {
-		for _, flow := range []domain.Flow{personFlow, triggerFlow} {
+		for _, flow := range []domain.Flow{domain.Plain, domain.Answering} {
 			runCase(t, oc, flow)
 		}
 	}
 }
 
 func runCase(t *testing.T, oc opCase, flow domain.Flow) {
-	want := oc.person
-	if flow.Triggered {
-		want = oc.trig
+	want := oc.plain
+	if flow != domain.Plain {
+		want = oc.event
 	}
 	tokens := strings.Fields(want)
 	for i, state := range allStates {

@@ -9,14 +9,13 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// StartInput starts a task for a person. ID comes from the caller, so a retried request names the
-// same task. A task with no review prompt and no reply target ends on its first publish.
+// StartInput starts a task for a person from a plain prompt. ID comes from the caller, so a
+// retried request names the same task. A task with no review prompt ends on its first publish.
 type StartInput struct {
 	ID           domain.TaskID
 	Project      domain.Project
 	Prompt       string
 	ReviewPrompt string
-	Reply        domain.ReplyTarget
 	Refs         map[domain.Dir]string
 	By           domain.Person
 }
@@ -37,14 +36,11 @@ func personTask(in StartInput) (domain.Task, error) {
 	if in.Prompt == "" {
 		return domain.Task{}, fmt.Errorf("%w: no prompt", ErrBadInput)
 	}
-	if err := in.Reply.Check(); err != nil {
-		return domain.Task{}, fmt.Errorf("%w: %w", ErrBadInput, err)
-	}
 	if err := checkRefs(in.Project, in.Refs); err != nil {
 		return domain.Task{}, err
 	}
 	return domain.Task{
-		ID: in.ID, Project: in.Project.Name(), Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt, Reply: in.Reply,
+		ID: in.ID, Project: in.Project.Name(), Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
 		StartedBy: string(in.By), Refs: maps.Clone(in.Refs), State: domain.Waiting,
 	}, nil
 }
@@ -62,18 +58,18 @@ func checkRefs(p domain.Project, refs map[domain.Dir]string) error {
 	return nil
 }
 
-// Retry starts a new task with a failed person-started task's inputs and records the link on it.
-// A trigger-started task has no retry: its key stays taken, and a newer revision starts afresh.
+// Retry starts a new task with a failed plain-prompt task's inputs and records the link on it.
+// An event task has no retry: its key stays taken, and a newer revision starts afresh.
 func (s *Service) Retry(ctx context.Context, newID, oldID domain.TaskID) (Outcome, error) {
 	old, err := s.store.Load(ctx, oldID)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("load task %s: %w", oldID, err)
 	}
-	if old.State != domain.Failed || old.Trigger != nil || newID == "" {
-		return Outcome{}, fmt.Errorf("task %s: %w: retry needs a failed person-started task and a new id", oldID, domain.ErrRefused)
+	if old.State != domain.Failed || old.Event != nil || newID == "" {
+		return Outcome{}, fmt.Errorf("task %s: %w: retry needs a failed plain-prompt task and a new id", oldID, domain.ErrRefused)
 	}
 	t := domain.Task{
-		ID: newID, Project: old.Project, Prompt: old.Prompt, ReviewPrompt: old.ReviewPrompt, Reply: old.Reply,
+		ID: newID, Project: old.Project, Prompt: old.Prompt, ReviewPrompt: old.ReviewPrompt,
 		StartedBy: old.StartedBy, Refs: maps.Clone(old.Refs), State: domain.Waiting,
 	}
 	rows := []row{createdRow("retry of " + string(oldID)), {domain.KindNote, domain.NoteData{Text: "retry of " + string(oldID)}}}
@@ -84,7 +80,7 @@ func createdRow(reason string) row {
 	return row{domain.KindState, domain.StateData{To: domain.Waiting.String(), Reason: reason}}
 }
 
-// create stores a new task unless its id, or its trigger key, already names one.
+// create stores a new task unless its id, or its event key, already names one.
 func (s *Service) create(ctx context.Context, t domain.Task, rows []row) (Outcome, error) {
 	var out Outcome
 	err := s.retry(fmt.Sprintf("start %s", t.ID), func() error {

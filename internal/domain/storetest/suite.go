@@ -14,7 +14,7 @@ import (
 type Store interface {
 	Load(ctx context.Context, id domain.TaskID) (domain.Task, error)
 	ByKey(ctx context.Context, key domain.TaskKey) (domain.Task, error)
-	LiveInGroup(ctx context.Context, project domain.ProjectName, source domain.TriggerSource, group domain.TriggerGroup) ([]domain.Task, error)
+	LiveInGroup(ctx context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
 	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
 	Save(ctx context.Context, w domain.TaskWrite) (domain.Task, error)
 }
@@ -34,8 +34,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Subject) {
 		run  func(*testing.T, Subject)
 	}{
 		{"round trip", roundTrip},
-		{"person-started has no key", personStarted},
-		{"person-started review prompt and reply target", personFields},
+		{"plain-prompt task has no spec, event or key", plainPrompt},
+		{"review prompt", reviewPrompt},
 		{"missing rows", missing},
 		{"duplicate id and key", duplicates},
 		{"stale version", staleVersion},

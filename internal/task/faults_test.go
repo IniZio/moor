@@ -54,7 +54,7 @@ func faulty(t *testing.T) (*harness, *faultStore) {
 
 func TestStaleWriteIsRefusedThenRetried(t *testing.T) {
 	h, fs := faulty(t)
-	id := h.reach(triggerFlow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	other := task.New(h.mem, h.clock, cfg)
 	fs.before = func() {
 		if _, err := other.Report(h.ctx(), id, task.Report{Kind: task.BoxRecreated, Run: 1, Gen: 1}); err != nil {
@@ -77,7 +77,7 @@ func TestStaleWriteIsRefusedThenRetried(t *testing.T) {
 
 func TestStaleWritesGiveUp(t *testing.T) {
 	h, fs := faulty(t)
-	id := h.reach(personFlow, domain.Running)
+	id := h.reach(domain.Plain, domain.Running)
 	fs.stale = true
 	fs.saves = 0
 	before := h.get(id)
@@ -94,11 +94,11 @@ func TestCreateRacingOnTheSameKeyFindsTheWinner(t *testing.T) {
 	h, fs := faulty(t)
 	other := task.New(h.mem, h.clock, cfg)
 	fs.before = func() {
-		if _, err := other.StartByTrigger(h.ctx(), h.trigIn("winner", "acme/app#7", "abc")); err != nil {
+		if _, err := other.StartByEvent(h.ctx(), h.evIn("winner", "acme/app#7", "abc")); err != nil {
 			t.Error(err)
 		}
 	}
-	out := h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn("loser", "acme/app#7", "abc")))
+	out := h.ok(h.svc.StartByEvent(h.ctx(), h.evIn("loser", "acme/app#7", "abc")))
 	if out.Task.ID != "winner" || len(h.mem.Tasks()) != 1 {
 		t.Errorf("task %s, %d tasks", out.Task.ID, len(h.mem.Tasks()))
 	}

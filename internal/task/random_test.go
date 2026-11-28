@@ -59,20 +59,23 @@ func (f *fuzz) start() func() error {
 	if f.pick(3) == 0 {
 		project = f.other
 	}
-	review, target := "", domain.ReplyTarget{}
+	review := ""
 	if f.pick(2) == 0 {
 		review = "check it"
 	}
-	if f.pick(2) == 0 {
-		target = reply
-	}
 	if n < 3 {
-		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Project: project, Prompt: "p", ReviewPrompt: review, Reply: target, By: "ann"}
+		in := task.StartInput{ID: domain.TaskID(fmt.Sprintf("p%d", f.pick(40))), Project: project, Prompt: "p", ReviewPrompt: review, By: "ann"}
 		return func() error { return errOf(f.svc.StartByPerson(f.ctx(), in)) }
 	}
-	in := f.trigIn(domain.TaskID(fmt.Sprintf("g%d", f.pick(60))), fmt.Sprintf("pr%d", f.pick(2)), fmt.Sprintf("rev%d", f.pick(4)))
-	in.Project, in.ReviewPrompt, in.Reply = project, review, target
-	return func() error { return errOf(f.svc.StartByTrigger(f.ctx(), in)) }
+	in := f.evIn(domain.TaskID(fmt.Sprintf("g%d", f.pick(60))), fmt.Sprintf("pr%d", f.pick(2)), fmt.Sprintf("rev%d", f.pick(4)))
+	in.Project, in.ReviewPrompt = project, review
+	if f.pick(3) == 0 {
+		in.Event.Source = quiet
+	}
+	if f.pick(3) == 0 {
+		in.Spec, in.CancelInProgress = nightly, false
+	}
+	return func() error { return errOf(f.svc.StartByEvent(f.ctx(), in)) }
 }
 
 func (f *fuzz) taskOp(id domain.TaskID, n int) func() error {
@@ -171,8 +174,8 @@ func (f *fuzz) invariants(t *testing.T, i int) {
 	live := make(map[domain.TaskKey]int)
 	for _, tk := range f.mem.Tasks() {
 		f.checkTask(t, i, tk)
-		if tk.Trigger != nil && tk.State.Live() {
-			live[domain.TaskKey{Project: tk.Project, Source: tk.Trigger.Source, Group: tk.Trigger.Group}]++
+		if tk.Event != nil && *tk.Spec == spec && tk.State.Live() {
+			live[domain.TaskKey{Project: tk.Project, Spec: tk.Spec.Name, Source: tk.Event.Source, Group: tk.Event.Group}]++
 		}
 	}
 	for key, n := range live {
@@ -187,12 +190,12 @@ func (f *fuzz) checkTask(t *testing.T, i int, tk domain.Task) {
 	if _, err := domain.ParseState(tk.State.String()); err != nil {
 		t.Fatalf("step %d: %s has state %v", i, tk.ID, tk.State)
 	}
-	if prev, seen := f.previous[tk.ID]; seen && !moved(tk.Flow(), prev, tk.State) {
+	if prev, seen := f.previous[tk.ID]; seen && !moved(tk.Flow(cfg.Answerable), prev, tk.State) {
 		t.Fatalf("step %d: %s went %s to %s, which no event allows", i, tk.ID, prev, tk.State)
 	}
 	f.previous[tk.ID] = tk.State
-	if (tk.State == domain.Delivering && !tk.Reply.Set()) || (tk.State == domain.Superseded && tk.Trigger == nil) {
-		t.Fatalf("step %d: task %s with reply %+v and trigger %v is %s", i, tk.ID, tk.Reply, tk.Trigger, tk.State)
+	if (tk.State == domain.Delivering && !tk.Answers(cfg.Answerable)) || (tk.State == domain.Superseded && (tk.Spec == nil || *tk.Spec != spec)) {
+		t.Fatalf("step %d: task %s with spec %+v and event %+v is %s", i, tk.ID, tk.Spec, tk.Event, tk.State)
 	}
 	f.checkRows(t, i, tk)
 	f.checkVersions(t, i, tk)

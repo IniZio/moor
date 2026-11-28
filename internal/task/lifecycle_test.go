@@ -11,7 +11,7 @@ import (
 
 func TestReportFencesOlderRuns(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(personFlow, domain.Running)
+	id := h.reach(domain.Plain, domain.Running)
 	before := h.get(id)
 	_, err := h.svc.Report(h.ctx(), id, task.Report{Kind: task.HarnessExited, Run: before.Run - 1})
 	if !errors.Is(err, task.ErrStaleReport) || h.get(id).State != domain.Running {
@@ -50,11 +50,11 @@ func TestSlotTakenStartsARun(t *testing.T) {
 
 func TestPartsUpSetsTheDeadlineAndPartFailureRecordsWhy(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(personFlow, domain.Running)
+	id := h.reach(domain.Plain, domain.Running)
 	if got := h.get(id); got.Deadline != h.clock.Now().Add(cfg.TimeLimit) {
 		t.Errorf("deadline = %v", got.Deadline)
 	}
-	failed := h.reach(personFlow, domain.Failed)
+	failed := h.reach(domain.Plain, domain.Failed)
 	got := h.get(failed)
 	rows := h.mem.Events(failed)
 	if got.Failure != "no box" || rows[len(rows)-1].Kind != domain.KindError || got.KeepUntil.IsZero() {
@@ -64,7 +64,7 @@ func TestPartsUpSetsTheDeadlineAndPartFailureRecordsWhy(t *testing.T) {
 
 func TestBoxRecreatedRaisesGenOnce(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(personFlow, domain.Running)
+	id := h.reach(domain.Plain, domain.Running)
 	out := h.ok(h.report(id, task.Report{Kind: task.BoxRecreated, Gen: 1, HomeCommit: "abc"}))
 	if got := h.get(id); got.Gen != 1 || got.State != domain.Running || out.Events[0].Kind != domain.KindBox {
 		t.Fatalf("task = %+v", got)
@@ -79,7 +79,7 @@ func TestBoxRecreatedRaisesGenOnce(t *testing.T) {
 
 func TestTimeLimit(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(personFlow, domain.Running)
+	id := h.reach(domain.Plain, domain.Running)
 	h.advance(cfg.TimeLimit - time.Second)
 	if out := h.ok(h.svc.TimeLimit(h.ctx(), id)); len(out.Events) != 0 || h.get(id).State != domain.Running {
 		t.Fatal("the limit fired early")
@@ -93,7 +93,7 @@ func TestTimeLimit(t *testing.T) {
 
 func TestSteerReopensAndRestartsTheLimit(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(personFlow, domain.Done)
+	id := h.reach(domain.Plain, domain.Done)
 	h.advance(time.Hour)
 	h.ok(h.svc.Steer(h.ctx(), id))
 	got := h.get(id)
@@ -104,7 +104,7 @@ func TestSteerReopensAndRestartsTheLimit(t *testing.T) {
 
 func TestSteerAfterTheKeepWindowIsRefused(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Done)
+	id := h.reach(domain.Answering, domain.Done)
 	h.advance(cfg.KeepWindow)
 	if _, err := h.svc.Steer(h.ctx(), id); !refused(err) || h.get(id).State != domain.Done {
 		t.Fatalf("err = %v, state %s", err, h.get(id).State)
@@ -131,7 +131,7 @@ func TestNoLimitsWhenConfiguredZero(t *testing.T) {
 
 func TestCancelAndEndReportEvents(t *testing.T) {
 	h := newHarness(t)
-	id := h.reach(triggerFlow, domain.Running)
+	id := h.reach(domain.Answering, domain.Running)
 	out := h.ok(h.svc.Cancel(h.ctx(), id))
 	if len(out.Effects) != 1 || out.Effects[0].Kind != task.StopJob || out.Effects[0].Runner != "r1" {
 		t.Fatalf("effects = %+v", out.Effects)
@@ -139,11 +139,11 @@ func TestCancelAndEndReportEvents(t *testing.T) {
 	if again := h.ok(h.svc.Cancel(h.ctx(), id)); len(again.Events) != 0 || len(again.Effects) != 1 {
 		t.Errorf("a repeated cancel: %d events, %d effects", len(again.Events), len(again.Effects))
 	}
-	waiting := h.reach(triggerFlow, domain.Waiting)
+	waiting := h.reach(domain.Answering, domain.Waiting)
 	if out := h.ok(h.svc.Cancel(h.ctx(), waiting)); len(out.Effects) != 0 {
 		t.Errorf("a waiting task has no job to stop: %+v", out.Effects)
 	}
-	person := h.reach(personFlow, domain.Running)
+	person := h.reach(domain.Plain, domain.Running)
 	h.ok(h.svc.End(h.ctx(), person))
 	if h.get(person).State != domain.Done {
 		t.Error("end did not finish the task")

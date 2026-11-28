@@ -15,7 +15,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 if [ -z "${MOOR_TEST_POSTGRES_DSN:-}" ]; then
-	name="spike-fresh-pg-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+	name="moor-test-pg-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 	docker run -d --name "$name" -e POSTGRES_PASSWORD=moor -e POSTGRES_DB=moor \
 		-p 127.0.0.1::5432 --tmpfs /var/lib/postgresql/data postgres:17 -c fsync=off >/dev/null
 	port=$(docker port "$name" 5432/tcp | head -n 1 | sed 's/.*://')

@@ -37,12 +37,12 @@ var messages = []struct {
 	{"runner.report", &wire.RunnerReport{DiskFree: 10, MemFree: 20, SlotsFree: 3}, "disk_free mem_free slots_free"},
 	{"task.start", &wire.TaskStart{
 		Fence: fence, Entries: entries, Prompt: "show it", ReviewPrompt: "check it", Skills: []string{"drive"},
-		Reply:     &wire.ReplyTarget{Source: "forge", Ref: "acme/app#7"},
-		Trigger:   &wire.Trigger{Name: "pr-evidence", Source: "forge", Group: "acme/app#7", Rev: "abc", Context: json.RawMessage(`{"n":7}`)},
+		Spec:      &wire.Spec{Name: "pr-evidence", File: "specs/pr-evidence.yaml"},
+		Event:     &wire.Event{Source: "forge", Group: "acme/app#7", Rev: "abc", Context: json.RawMessage(`{"n":7}`)},
 		Harness:   "claude",
 		WarmState: "w1", BudgetSeconds: 3600, ModelToken: "tok", AllowHosts: []string{"example.com"},
 		SecretRules: json.RawMessage(`[{"host":"example.com"}]`),
-	}, "allow_hosts budget entries gen harness model_token prompt reply review_prompt run secret_rules skills task trigger warm_state"},
+	}, "allow_hosts budget entries event gen harness model_token prompt review_prompt run secret_rules skills spec task warm_state"},
 	{"task.watch", &wire.TaskWatch{}, ""},
 	{"task.watch line", &wire.TaskWatchLine{Fence: fence, Part: "box", State: "up", Code: 0}, "code gen part run state task"},
 	{"box.recreate", &wire.BoxRecreate{Fence: fence, HomeCommit: "h1", WarmState: "w1"}, "gen home_commit run task warm_state"},
@@ -90,7 +90,7 @@ func TestTaskStartOmitsTheOptionalFieldsOnAPlainPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, optional := range []string{"trigger", "reply", "review_prompt"} {
+	for _, optional := range []string{"spec", "event", "review_prompt"} {
 		if got := fieldNames(t, data); strings.Contains(got, optional) {
 			t.Errorf("fields %q", got)
 		}

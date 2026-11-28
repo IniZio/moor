@@ -18,8 +18,9 @@ func TestPostgresPassesTheStoreContract(t *testing.T) {
 }
 
 func newTask(id string, rev domain.Revision) domain.Task {
-	tr := &domain.Trigger{Source: "forge", Group: "g", Rev: rev}
-	return domain.Task{ID: domain.TaskID(id), Project: "shop", Trigger: tr, State: domain.Waiting, LastSeq: 1, CreatedAt: time.Unix(1, 0)}
+	sp := &domain.Spec{Name: "review", File: "specs/review.yaml"}
+	ev := &domain.Event{Source: "forge", Group: "g", Rev: rev}
+	return domain.Task{ID: domain.TaskID(id), Project: "shop", Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1, CreatedAt: time.Unix(1, 0)}
 }
 
 func row(id domain.TaskID, seq int64) domain.EventRow {
@@ -227,5 +228,32 @@ func TestOpeningTwiceAppliesMigrationsOnce(t *testing.T) {
 	s := openStore(t, dsn)
 	if n := count(t, s, "SELECT count(*) FROM goose_db_version WHERE version_id = 1"); n != 1 {
 		t.Errorf("migration 1 recorded %d times, want 1", n)
+	}
+}
+
+func TestTheTableKeepsSpecAndEventWhole(t *testing.T) {
+	s := freshStore(t)
+	insert := "INSERT INTO tasks (id, project, prompt, state, version, created_at, spec_name, spec_file, event_source, event_group, event_rev) " +
+		"VALUES ($1, 'p', '', 'waiting', 1, now(), $2, $3, $4, $5, $6)"
+	refused := map[string][]any{
+		"a spec name without a file": {"review", nil, nil, nil, nil},
+		"a spec file without a name": {nil, "f.yaml", nil, nil, nil},
+		"an event without a spec":    {nil, nil, "forge", "g", "r"},
+		"half an event":              {"review", "f.yaml", "forge", nil, nil},
+	}
+	for name, args := range refused {
+		if _, err := s.pool.Exec(context.Background(), insert, append([]any{"refused"}, args...)...); err == nil {
+			t.Errorf("%s was stored", name)
+		}
+	}
+	allowed := map[string][]any{
+		"no spec and no event": {nil, nil, nil, nil, nil},
+		"a spec alone":         {"review", "f.yaml", nil, nil, nil},
+		"a spec and an event":  {"review", "f.yaml", "forge", "g", "r"},
+	}
+	for name, args := range allowed {
+		if _, err := s.pool.Exec(context.Background(), insert, append([]any{name}, args...)...); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

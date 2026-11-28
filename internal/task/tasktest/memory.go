@@ -12,7 +12,7 @@ import (
 )
 
 // Memory is a Store that enforces what a database would: the version check, the unique task id and
-// trigger key, contiguous event seqs and unique digests.
+// event key, contiguous event seqs and unique digests.
 type Memory struct {
 	mu       sync.Mutex
 	tasks    map[domain.TaskID]domain.Task
@@ -49,12 +49,12 @@ func (m *Memory) ByKey(_ context.Context, key domain.TaskKey) (domain.Task, erro
 	return domain.Task{}, fmt.Errorf("key %v: %w", key, domain.ErrNotFound)
 }
 
-func (m *Memory) LiveInGroup(_ context.Context, project domain.ProjectName, source domain.TriggerSource, group domain.TriggerGroup) ([]domain.Task, error) {
+func (m *Memory) LiveInGroup(_ context.Context, project domain.ProjectName, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var live []domain.Task
 	for _, t := range m.tasks {
-		if t.Trigger != nil && t.Project == project && t.Trigger.Source == source && t.Trigger.Group == group && t.State.Live() {
+		if k, ok := t.Key(); ok && k.Project == project && k.Spec == spec && k.Source == source && k.Group == group && t.State.Live() {
 			live = append(live, clone(t))
 		}
 	}
@@ -178,10 +178,14 @@ func checkEvents(w domain.TaskWrite, lastSeq int64) error {
 func clone(t domain.Task) domain.Task {
 	t.Pins = maps.Clone(t.Pins)
 	t.Refs = maps.Clone(t.Refs)
-	if t.Trigger != nil {
-		tr := *t.Trigger
-		tr.Context = bytes.Clone(tr.Context)
-		t.Trigger = &tr
+	if t.Spec != nil {
+		sp := *t.Spec
+		t.Spec = &sp
+	}
+	if t.Event != nil {
+		ev := *t.Event
+		ev.Context = bytes.Clone(ev.Context)
+		t.Event = &ev
 	}
 	return t
 }

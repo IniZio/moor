@@ -46,7 +46,7 @@ func (e env) publish(t domain.Task, versions []domain.ResultVersion, in PublishI
 	v := domain.ResultVersion{Task: t.ID, N: len(versions) + 1, EntryURL: in.EntryURL, Line: in.Line, Digest: in.Digest, PublishedAt: e.now}
 	published := row{domain.KindPublished, domain.PublishedData{Version: v.N, Line: in.Line, EntryURL: in.EntryURL}}
 	if review {
-		if _, err := domain.Next(t.Flow(), t.State, domain.Published); err != nil {
+		if _, err := domain.Next(e.flow(t), t.State, domain.Published); err != nil {
 			return decision{}, fmt.Errorf("task %s: %w", t.ID, err)
 		}
 		return decision{task: t, rows: []row{published}, result: &v, effects: e.owed(t, v, v.N)}, nil
@@ -82,7 +82,7 @@ func (s *Service) Delivered(ctx context.Context, id domain.TaskID, in DeliveredI
 		if err := s.checkNewest(ctx, t, in.Version); err != nil {
 			return decision{}, err
 		}
-		d, err := e.run(t, op{event: domain.Delivered, settled: []domain.State{domain.Done}, reason: fmt.Sprintf("delivered version %d", in.Version)})
+		d, err := e.run(t, op{signal: domain.Delivered, settled: []domain.State{domain.Done}, reason: fmt.Sprintf("delivered version %d", in.Version)})
 		if err != nil || len(d.rows) == 0 {
 			return d, err
 		}

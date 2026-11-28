@@ -15,14 +15,14 @@ func (s *Service) simple(ctx context.Context, id domain.TaskID, fn func(env, dom
 // End is a person ending a task a person started. It ends as done, with or without a page.
 func (s *Service) End(ctx context.Context, id domain.TaskID) (Outcome, error) {
 	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {
-		return e.run(t, op{event: domain.PersonEnded, settled: []domain.State{domain.Done}, reason: "ended by person"})
+		return e.run(t, op{signal: domain.PersonEnded, settled: []domain.State{domain.Done}, reason: "ended by person"})
 	})
 }
 
 // Cancel ends a task that has not finished. It tells the caller which job to stop.
 func (s *Service) Cancel(ctx context.Context, id domain.TaskID) (Outcome, error) {
 	return s.simple(ctx, id, func(e env, t domain.Task) (decision, error) {
-		return e.run(t, op{event: domain.Cancel, settled: []domain.State{domain.Cancelled}, reason: "cancelled", effects: stopJob})
+		return e.run(t, op{signal: domain.Cancel, settled: []domain.State{domain.Cancelled}, reason: "cancelled", effects: stopJob})
 	})
 }
 
@@ -32,7 +32,7 @@ func (s *Service) TimeLimit(ctx context.Context, id domain.TaskID) (Outcome, err
 		if t.State == domain.Running && (t.Deadline.IsZero() || e.now.Before(t.Deadline)) {
 			return decision{task: t}, nil
 		}
-		return e.run(t, op{event: domain.TimeLimit, settled: []domain.State{domain.Failed}, reason: "time limit reached"})
+		return e.run(t, op{signal: domain.TimeLimit, settled: []domain.State{domain.Failed}, reason: "time limit reached"})
 	})
 }
 
@@ -42,6 +42,6 @@ func (s *Service) Steer(ctx context.Context, id domain.TaskID) (Outcome, error) 
 		if t.State == domain.Done && !t.KeepUntil.IsZero() && !e.now.Before(t.KeepUntil) {
 			return decision{}, fmt.Errorf("task %s: %w: keep window ended", id, domain.ErrRefused)
 		}
-		return e.run(t, op{event: domain.Steered, settled: []domain.State{domain.Running}, reason: "teammate typed"})
+		return e.run(t, op{signal: domain.Steered, settled: []domain.State{domain.Running}, reason: "teammate typed"})
 	})
 }

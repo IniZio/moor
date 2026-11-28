@@ -8,9 +8,9 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// op names one domain event and the states where a repeat of it is already done.
+// op names one domain signal and the states where a repeat of it is already done.
 type op struct {
-	event   domain.Event
+	signal  domain.Signal
 	settled []domain.State
 	reason  string
 	effects func(domain.Task) []Effect
@@ -19,9 +19,9 @@ type op struct {
 // run moves the task by the op, or does nothing when the op already took effect. It decides on the
 // task's state alone, so any retry of any earlier attempt lands on the same end state.
 func (e env) run(t domain.Task, o op) (decision, error) {
-	next, rows, err := e.move(t, o.event, o.reason)
+	next, rows, err := e.move(t, o.signal, o.reason)
 	if err != nil {
-		if slices.Contains(o.settled, t.State) && domain.Handles(t.Flow(), o.event) {
+		if slices.Contains(o.settled, t.State) && domain.Handles(e.flow(t), o.signal) {
 			return decision{task: t, effects: o.fx(t)}, nil
 		}
 		return decision{}, err
@@ -36,8 +36,8 @@ func (o op) fx(t domain.Task) []Effect {
 	return o.effects(t)
 }
 
-func (e env) move(t domain.Task, ev domain.Event, reason string) (domain.Task, []row, error) {
-	to, err := domain.Next(t.Flow(), t.State, ev)
+func (e env) move(t domain.Task, sig domain.Signal, reason string) (domain.Task, []row, error) {
+	to, err := domain.Next(e.flow(t), t.State, sig)
 	if err != nil {
 		return t, nil, fmt.Errorf("task %s: %w", t.ID, err)
 	}

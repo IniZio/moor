@@ -12,8 +12,8 @@ import (
 )
 
 var taskColumns = []string{
-	"id", "project", "prompt", "review_prompt", "reply_source", "reply_ref", "started_by",
-	"trigger_name", "trigger_source", "trigger_group", "trigger_rev", "trigger_context",
+	"id", "project", "prompt", "review_prompt", "started_by",
+	"spec_name", "spec_file", "event_source", "event_group", "event_rev", "event_context",
 	"state", "version", "pins", "refs", "runner_id", "run", "gen", "last_seq",
 	"deadline", "keep_until", "failure", "token_owner", "created_at", "ended_at",
 }
@@ -47,18 +47,30 @@ func taskArgs(t domain.Task, version int64) ([]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("task %s: %w", t.ID, err)
 	}
-	var name, source, group, rev *string
-	var context []byte
-	if tr := t.Trigger; tr != nil {
-		n, s, g, r := string(tr.Name), string(tr.Source), string(tr.Group), string(tr.Rev)
-		name, source, group, rev, context = &n, &s, &g, &r, nilIfEmpty(tr.Context)
-	}
+	specName, specFile := specArgs(t.Spec)
+	source, group, rev, context := eventArgs(t.Event)
 	return []any{
-		string(t.ID), string(t.Project), t.Prompt, t.ReviewPrompt, t.Reply.Source, t.Reply.Ref, t.StartedBy,
-		name, source, group, rev, context,
+		string(t.ID), string(t.Project), t.Prompt, t.ReviewPrompt, t.StartedBy,
+		specName, specFile, source, group, rev, context,
 		string(state), version, mapOrNil(t.Pins), mapOrNil(t.Refs), string(t.Runner), t.Run, t.Gen, t.LastSeq,
 		timeOrNil(t.Deadline), timeOrNil(t.KeepUntil), t.Failure, string(t.TokenOwner), t.CreatedAt, timeOrNil(t.EndedAt),
 	}, nil
+}
+
+func specArgs(sp *domain.Spec) (name, file *string) {
+	if sp == nil {
+		return nil, nil
+	}
+	n, f := string(sp.Name), sp.File
+	return &n, &f
+}
+
+func eventArgs(ev *domain.Event) (source, group, rev *string, context []byte) {
+	if ev == nil {
+		return nil, nil, nil, nil
+	}
+	s, g, r := string(ev.Source), string(ev.Group), string(ev.Rev)
+	return &s, &g, &r, nilIfEmpty(ev.Context)
 }
 
 func nilIfEmpty(b []byte) []byte {
@@ -85,12 +97,13 @@ func timeOrNil(t time.Time) any {
 func scanTask(row pgx.Row) (domain.Task, error) {
 	var (
 		t                            domain.Task
-		name, source, group, rev     *string
+		specName, specFile           *string
+		source, group, rev           *string
 		context                      []byte
 		state                        string
 		deadline, keepUntil, endedAt *time.Time
 	)
-	err := row.Scan(&t.ID, &t.Project, &t.Prompt, &t.ReviewPrompt, &t.Reply.Source, &t.Reply.Ref, &t.StartedBy, &name, &source, &group, &rev, &context,
+	err := row.Scan(&t.ID, &t.Project, &t.Prompt, &t.ReviewPrompt, &t.StartedBy, &specName, &specFile, &source, &group, &rev, &context,
 		&state, &t.Version, &t.Pins, &t.Refs, &t.Runner, &t.Run, &t.Gen, &t.LastSeq,
 		&deadline, &keepUntil, &t.Failure, &t.TokenOwner, &t.CreatedAt, &endedAt)
 	if err != nil {
@@ -99,8 +112,11 @@ func scanTask(row pgx.Row) (domain.Task, error) {
 	if t.State, err = domain.ParseState(state); err != nil {
 		return domain.Task{}, fmt.Errorf("task %s: %w", t.ID, err)
 	}
+	if specName != nil {
+		t.Spec = &domain.Spec{Name: domain.SpecName(*specName), File: *specFile}
+	}
 	if source != nil {
-		t.Trigger = &domain.Trigger{Name: domain.SpecName(*name), Source: domain.TriggerSource(*source), Group: domain.TriggerGroup(*group), Rev: domain.Revision(*rev), Context: context}
+		t.Event = &domain.Event{Source: domain.EventSource(*source), Group: domain.EventGroup(*group), Rev: domain.Revision(*rev), Context: context}
 	}
 	t.CreatedAt = t.CreatedAt.UTC()
 	t.Deadline, t.KeepUntil, t.EndedAt = utc(deadline), utc(keepUntil), utc(endedAt)

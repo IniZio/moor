@@ -12,20 +12,18 @@ var (
 		domain.Waiting, domain.Starting, domain.Running, domain.Delivering,
 		domain.Done, domain.Failed, domain.Superseded, domain.Cancelled,
 	}
-	allEvents = []domain.Event{
+	allSignals = []domain.Signal{
 		domain.SlotFree, domain.PartsUp, domain.PartFailed, domain.BoxRecreated,
 		domain.Published, domain.Delivered, domain.PersonEnded, domain.SessionEnded,
 		domain.TimeLimit, domain.Steered, domain.NewerRev, domain.Cancel,
 	}
-	allFlows = []domain.Flow{
-		{}, {Replies: true}, {Triggered: true}, {Triggered: true, Replies: true},
-	}
+	allFlows = []domain.Flow{domain.Plain, domain.Evented, domain.Answering}
 )
 
 type edge struct {
 	flow domain.Flow
 	from domain.State
-	on   domain.Event
+	on   domain.Signal
 }
 
 func allowedEdges() map[edge]domain.State {
@@ -45,7 +43,7 @@ func allowedEdges() map[edge]domain.State {
 }
 
 func addPublishEdges(allowed map[edge]domain.State, f domain.Flow) {
-	if f.Replies {
+	if f == domain.Answering {
 		allowed[edge{f, domain.Running, domain.Published}] = domain.Delivering
 		allowed[edge{f, domain.Delivering, domain.Delivered}] = domain.Done
 		return
@@ -54,12 +52,12 @@ func addPublishEdges(allowed map[edge]domain.State, f domain.Flow) {
 }
 
 func addEndEdges(allowed map[edge]domain.State, f domain.Flow) {
-	if !f.Triggered {
+	if f == domain.Plain {
 		allowed[edge{f, domain.Running, domain.PersonEnded}] = domain.Done
 	}
 	for _, s := range []domain.State{domain.Waiting, domain.Starting, domain.Running, domain.Delivering} {
 		allowed[edge{f, s, domain.Cancel}] = domain.Cancelled
-		if f.Triggered {
+		if f != domain.Plain {
 			allowed[edge{f, s, domain.NewerRev}] = domain.Superseded
 		}
 	}
@@ -84,7 +82,7 @@ func everyEdge() []edge {
 	var edges []edge
 	for _, f := range allFlows {
 		for _, s := range allStates {
-			for _, e := range allEvents {
+			for _, e := range allSignals {
 				edges = append(edges, edge{f, s, e})
 			}
 		}
@@ -106,7 +104,7 @@ func checkEdge(t *testing.T, allowed map[edge]domain.State, e edge) (refused boo
 }
 
 func TestNextRefusesStatesOutsideTheEnum(t *testing.T) {
-	if _, err := domain.Next(domain.Flow{}, domain.State(0), domain.SlotFree); !errors.Is(err, domain.ErrRefused) {
+	if _, err := domain.Next(domain.Plain, domain.State(0), domain.SlotFree); !errors.Is(err, domain.ErrRefused) {
 		t.Fatalf("zero state: err = %v", err)
 	}
 }

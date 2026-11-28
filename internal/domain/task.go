@@ -6,18 +6,18 @@ import (
 )
 
 type (
-	TaskID        string
-	ProjectName   string
-	SkillName     string
-	Person        string
-	Commit        string
-	Dir           string
-	RunnerID      string
-	RepoHost      string
-	RepoPath      string
-	TriggerSource string
-	TriggerGroup  string
-	Revision      string
+	TaskID      string
+	ProjectName string
+	SkillName   string
+	Person      string
+	Commit      string
+	Dir         string
+	RunnerID    string
+	RepoHost    string
+	RepoPath    string
+	EventSource string
+	EventGroup  string
+	Revision    string
 )
 
 // Repo names a repository by its host and its path there, never by a bare path.
@@ -26,13 +26,18 @@ type Repo struct {
 	Path RepoPath
 }
 
-// Trigger is the integration event that started a task, and the definition that took it. Group and Context are opaque to the core.
-type Trigger struct {
-	Name    SpecName
-	Source  TriggerSource
-	Group   TriggerGroup
+// Event is the integration event that started a task. Group and Context are opaque to the core.
+type Event struct {
+	Source  EventSource
+	Group   EventGroup
 	Rev     Revision
 	Context json.RawMessage
+}
+
+// Spec names the task spec that started a task and its file in the team's home, both required.
+type Spec struct {
+	Name SpecName
+	File string
 }
 
 type Task struct {
@@ -41,11 +46,10 @@ type Task struct {
 	Prompt  string
 	// ReviewPrompt is sent after the first publish. Empty means the task has no review step.
 	ReviewPrompt string
-	// Reply is where the result is posted. Empty means the task ends on the accepted publish.
-	Reply     ReplyTarget
-	StartedBy string
-	// Trigger is nil on a task a person started.
-	Trigger *Trigger
+	StartedBy    string
+	// Spec and Event are nil on a plain-prompt task. A person who runs a spec by hand starts a task with both.
+	Spec    *Spec
+	Event   *Event
 	State   State
 	Version int64
 	Pins    map[Dir]Commit
@@ -58,27 +62,39 @@ type Task struct {
 	Deadline  time.Time
 	KeepUntil time.Time
 	Failure   string
-	// TokenOwner is the fallback person on a task a trigger started.
+	// TokenOwner is the fallback person on a task an event started.
 	TokenOwner Person
 	CreatedAt  time.Time
 	EndedAt    time.Time
 }
 
-func (t Task) Flow() Flow {
-	return Flow{Triggered: t.Trigger != nil, Replies: t.Reply.Set()}
+// Answers tells whether the task posts its result back to its event, which it does when the event's source is answerable.
+func (t Task) Answers(answerable map[EventSource]bool) bool {
+	return t.Event != nil && answerable[t.Event.Source]
 }
 
-// TaskKey is unique among tasks a trigger started, so a redelivered event starts nothing.
+func (t Task) Flow(answerable map[EventSource]bool) Flow {
+	switch {
+	case t.Event == nil:
+		return Plain
+	case t.Answers(answerable):
+		return Answering
+	}
+	return Evented
+}
+
+// TaskKey is unique among tasks an event started, and each spec that hears an event has its own.
 type TaskKey struct {
 	Project ProjectName
-	Source  TriggerSource
-	Group   TriggerGroup
+	Spec    SpecName
+	Source  EventSource
+	Group   EventGroup
 	Rev     Revision
 }
 
 func (t Task) Key() (TaskKey, bool) {
-	if t.Trigger == nil {
+	if t.Event == nil || t.Spec == nil {
 		return TaskKey{}, false
 	}
-	return TaskKey{Project: t.Project, Source: t.Trigger.Source, Group: t.Trigger.Group, Rev: t.Trigger.Rev}, true
+	return TaskKey{Project: t.Project, Spec: t.Spec.Name, Source: t.Event.Source, Group: t.Event.Group, Rev: t.Event.Rev}, true
 }

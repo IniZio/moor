@@ -11,8 +11,9 @@ import (
 )
 
 func newTask(id domain.TaskID, rev domain.Revision) domain.Task {
-	tr := &domain.Trigger{Source: "forge", Group: "g", Rev: rev, Context: []byte("{}")}
-	return domain.Task{ID: id, Project: "shop", Trigger: tr, State: domain.Waiting, LastSeq: 1}
+	sp := &domain.Spec{Name: "review", File: "specs/review.yaml"}
+	ev := &domain.Event{Source: "forge", Group: "g", Rev: rev, Context: []byte("{}")}
+	return domain.Task{ID: id, Project: "shop", Spec: sp, Event: ev, State: domain.Waiting, LastSeq: 1}
 }
 
 func row(id domain.TaskID, seq int64) domain.EventRow {
@@ -66,7 +67,7 @@ func TestMemoryVersionsAndGroup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	live, err := m.LiveInGroup(ctx, "shop", "forge", "g")
+	live, err := m.LiveInGroup(ctx, "shop", "review", "forge", "g")
 	if err != nil || len(live) != 2 || live[0].ID != "b" {
 		t.Fatalf("live = %+v, %v", live, err)
 	}
@@ -78,10 +79,10 @@ func TestMemoryVersionsAndGroup(t *testing.T) {
 	if v, _ := m.Versions(ctx, "a"); len(v) != 1 {
 		t.Errorf("versions = %v", v)
 	}
-	if live, _ = m.LiveInGroup(ctx, "shop", "forge", "g"); len(live) != 1 {
+	if live, _ = m.LiveInGroup(ctx, "shop", "review", "forge", "g"); len(live) != 1 {
 		t.Errorf("a done task is live: %d", len(live))
 	}
-	if _, err := m.ByKey(ctx, domain.TaskKey{Project: "shop", Source: "forge", Group: "g", Rev: "nope"}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := m.ByKey(ctx, domain.TaskKey{Project: "shop", Spec: "review", Source: "forge", Group: "g", Rev: "nope"}); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("err = %v", err)
 	}
 }

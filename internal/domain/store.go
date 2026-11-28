@@ -5,7 +5,7 @@ import "errors"
 var (
 	ErrNotFound     = errors.New("not found")
 	ErrStaleVersion = errors.New("stale task version")
-	// ErrExists is a create that hit the task id or the trigger key of another task.
+	// ErrExists is a create that hit the task id or the event key of another task.
 	ErrExists = errors.New("already exists")
 )
 

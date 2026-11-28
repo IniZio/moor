@@ -12,20 +12,18 @@ import (
 	"github.com/IniZio/moor/internal/task/tasktest"
 )
 
-const source domain.TriggerSource = "forge"
-
-var reply = domain.ReplyTarget{Source: "forge", Ref: "acme/app#7"}
-
-// The four shapes of task the state machine tells apart. personFlow and triggerFlow are the ones
-// most tests drive, since they are what a person's prompt and a trigger's event usually start.
-var (
-	personFlow    = domain.Flow{}
-	personReplies = domain.Flow{Replies: true}
-	triggerSilent = domain.Flow{Triggered: true}
-	triggerFlow   = domain.Flow{Triggered: true, Replies: true}
+const (
+	source domain.EventSource = "forge"
+	quiet  domain.EventSource = "schedule"
 )
 
-var cfg = task.Config{TimeLimit: time.Hour, KeepWindow: 24 * time.Hour}
+var (
+	spec    = domain.Spec{Name: "pr-evidence", File: "specs/pr-evidence.yaml"}
+	nightly = domain.Spec{Name: "nightly", File: "specs/nightly.yaml"}
+)
+
+// cfg answers the events of source only, so quiet events and plain prompts end on their publish.
+var cfg = task.Config{TimeLimit: time.Hour, KeepWindow: 24 * time.Hour, Answerable: map[domain.EventSource]bool{source: true}}
 
 type harness struct {
 	t     *testing.T
@@ -78,37 +76,42 @@ func (h *harness) person() domain.TaskID {
 	return id
 }
 
-// trigIn is an event that starts a task whose result is posted to reply.
-func (h *harness) trigIn(id domain.TaskID, group, rev string) task.TriggerInput {
-	tr := domain.Trigger{Name: "pr-evidence", Source: source, Group: domain.TriggerGroup(group), Rev: domain.Revision(rev), Context: []byte(`{"pr":7}`)}
-	return task.TriggerInput{ID: id, Project: h.proj, Prompt: "show it", Reply: reply, Trigger: tr}
+// evIn is an event of the pr-evidence spec from source, which starts a task. Its spec cancels in-progress tasks.
+func (h *harness) evIn(id domain.TaskID, group, rev string) task.EventInput {
+	return h.evInFrom(id, source, group, rev)
 }
 
-func (h *harness) trig(group, rev string) domain.TaskID {
-	id := h.id("trig")
-	h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn(id, group, rev)))
+func (h *harness) evInFrom(id domain.TaskID, from domain.EventSource, group, rev string) task.EventInput {
+	ev := domain.Event{Source: from, Group: domain.EventGroup(group), Rev: domain.Revision(rev), Context: []byte(`{"pr":7}`)}
+	return task.EventInput{ID: id, Project: h.proj, Spec: spec, Event: ev, Prompt: "show it", CancelInProgress: true}
+}
+
+func (h *harness) newerIn(id, old domain.TaskID, rev string) task.EventInput {
+	ev := h.get(old).Event
+	return h.evInFrom(id, ev.Source, string(ev.Group), rev)
+}
+
+func (h *harness) ev(group, rev string) domain.TaskID {
+	id := h.id("ev")
+	h.ok(h.svc.StartByEvent(h.ctx(), h.evIn(id, group, rev)))
 	return id
 }
 
-// start makes a waiting task of the given shape.
 func (h *harness) start(flow domain.Flow, review string) domain.TaskID {
 	h.t.Helper()
-	if flow.Triggered {
-		id := h.id("trig")
-		in := h.trigIn(id, fmt.Sprintf("acme/app#%d", h.n+1), "rev-1")
-		in.ReviewPrompt = review
-		if !flow.Replies {
-			in.Reply = domain.ReplyTarget{}
-		}
-		h.ok(h.svc.StartByTrigger(h.ctx(), in))
+	if flow == domain.Plain {
+		id := h.id("person")
+		h.ok(h.svc.StartByPerson(h.ctx(), task.StartInput{ID: id, Project: h.proj, Prompt: "look at it", ReviewPrompt: review, By: "ann"}))
 		return id
 	}
-	id := h.id("person")
-	in := task.StartInput{ID: id, Project: h.proj, Prompt: "look at it", ReviewPrompt: review, By: "ann"}
-	if flow.Replies {
-		in.Reply = reply
+	from := source
+	if flow == domain.Evented {
+		from = quiet
 	}
-	h.ok(h.svc.StartByPerson(h.ctx(), in))
+	id := h.id("ev")
+	in := h.evInFrom(id, from, fmt.Sprintf("acme/app#%d", h.n+1), "rev-1")
+	in.ReviewPrompt = review
+	h.ok(h.svc.StartByEvent(h.ctx(), in))
 	return id
 }
 
@@ -168,7 +171,7 @@ var steps = map[domain.State]func(*harness, domain.Flow, domain.TaskID){
 	domain.Done: func(h *harness, flow domain.Flow, id domain.TaskID) {
 		h.running(id)
 		h.publish(id, "d1")
-		if flow.Replies {
+		if flow == domain.Answering {
 			h.ok(h.svc.Delivered(h.ctx(), id, task.DeliveredInput{Target: "pr", ExternalID: "c1", Version: 1}))
 		}
 	},
@@ -178,8 +181,7 @@ var steps = map[domain.State]func(*harness, domain.Flow, domain.TaskID){
 	},
 	domain.Superseded: func(h *harness, _ domain.Flow, id domain.TaskID) {
 		h.running(id)
-		g := h.get(id).Trigger.Group
-		h.ok(h.svc.StartByTrigger(h.ctx(), h.trigIn(h.id("newer"), string(g), "rev-2")))
+		h.ok(h.svc.StartByEvent(h.ctx(), h.newerIn(h.id("newer"), id, "rev-2")))
 	},
 	domain.Cancelled: func(h *harness, _ domain.Flow, id domain.TaskID) {
 		h.running(id)

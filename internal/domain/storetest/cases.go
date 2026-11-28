@@ -27,28 +27,23 @@ func roundTrip(t *testing.T, s Subject) {
 	sameEvents(t, "events", events(t, s, "t1"), eventsFrom("t1", 1, 2))
 }
 
-func personStarted(t *testing.T, s Subject) {
+func plainPrompt(t *testing.T, s Subject) {
 	a, b := create(t, s, person("a")), create(t, s, person("b"))
-	if a.Trigger != nil || b.Trigger != nil || a.Flow() != (domain.Flow{}) {
-		t.Errorf("a person-started task came back with a trigger: %+v", a.Trigger)
+	if a.Event != nil || b.Event != nil || a.Spec != nil || b.Spec != nil || a.Flow(nil) != domain.Plain {
+		t.Errorf("a plain-prompt task came back with a spec %+v or an event %+v", a.Spec, a.Event)
 	}
 	if _, ok := load(t, s, "a").Key(); ok {
-		t.Error("a person-started task has no key")
+		t.Error("a plain-prompt task has no key")
 	}
 }
 
-func personFields(t *testing.T, s Subject) {
+func reviewPrompt(t *testing.T, s Subject) {
 	in := person("t1")
-	in.ReviewPrompt, in.Reply = "check it", domain.ReplyTarget{Source: "forge", Ref: "acme/app#7"}
+	in.ReviewPrompt = "check it"
 	in.Version = create(t, s, in).Version
-	got := load(t, s, "t1")
-	sameTask(t, "loaded", got, in)
-	if got.Trigger != nil || got.Flow() != (domain.Flow{Replies: true}) {
-		t.Errorf("flow = %s, trigger %+v", got.Flow(), got.Trigger)
-	}
-	none := create(t, s, person("t2"))
-	if none.ReviewPrompt != "" || none.Reply.Set() {
-		t.Errorf("a task with neither came back with %q and %+v", none.ReviewPrompt, none.Reply)
+	sameTask(t, "loaded", load(t, s, "t1"), in)
+	if none := create(t, s, person("t2")); none.ReviewPrompt != "" {
+		t.Errorf("a task with no review prompt came back with %q", none.ReviewPrompt)
 	}
 }
 
@@ -56,7 +51,7 @@ func missing(t *testing.T, s Subject) {
 	ctx := context.Background()
 	_, err := s.Store.Load(ctx, "nope")
 	wantErr(t, "load", err, domain.ErrNotFound)
-	_, err = s.Store.ByKey(ctx, domain.TaskKey{Project: "shop", Source: "forge", Group: "g", Rev: "nope"})
+	_, err = s.Store.ByKey(ctx, domain.TaskKey{Project: "shop", Spec: "review", Source: "forge", Group: "g", Rev: "nope"})
 	wantErr(t, "by key", err, domain.ErrNotFound)
 	_, err = s.Store.Save(ctx, domain.TaskWrite{Task: person("nope")})
 	wantErr(t, "save", err, domain.ErrNotFound)
@@ -67,15 +62,18 @@ func missing(t *testing.T, s Subject) {
 
 func duplicates(t *testing.T, s Subject) {
 	ctx := context.Background()
-	create(t, s, triggered("t1", "r1"))
-	cases := map[string]domain.Task{"same id": triggered("t1", "r2"), "same key": triggered("t2", "r1")}
+	create(t, s, evented("t1", "r1"))
+	cases := map[string]domain.Task{"same id": evented("t1", "r2"), "same key": evented("t2", "r1")}
 	for name, task := range cases {
 		_, err := s.Store.Save(ctx, domain.TaskWrite{Task: task, Create: true, Events: eventsFrom(task.ID, 1, 1)})
 		wantErr(t, name, err, domain.ErrExists)
 	}
-	other := triggered("t3", "r1")
+	other := evented("t3", "r1")
 	other.Project = "blog"
 	create(t, s, other)
+	otherSpec := evented("t4", "r1")
+	otherSpec.Spec = &domain.Spec{Name: "nightly", File: "specs/nightly.yaml"}
+	create(t, s, otherSpec)
 	if _, err := s.Store.Load(ctx, "t2"); err == nil {
 		t.Error("a refused create left a task behind")
 	}
@@ -189,7 +187,7 @@ func refusedResultUndoesWrite(t *testing.T, s Subject) {
 
 func liveInGroup(t *testing.T, s Subject) {
 	mk := func(id domain.TaskID, rev domain.Revision, created int64, state domain.State, edit func(*domain.Task)) {
-		task := triggered(id, rev)
+		task := evented(id, rev)
 		task.CreatedAt, task.State = at(created), state
 		if edit != nil {
 			edit(&task)
@@ -199,12 +197,13 @@ func liveInGroup(t *testing.T, s Subject) {
 	mk("a", "r1", 2, domain.Waiting, nil)
 	mk("b", "r2", 1, domain.Running, nil)
 	mk("c", "r3", 3, domain.Done, nil)
-	mk("d", "r4", 4, domain.Delivering, func(x *domain.Task) { x.Trigger.Group = "other" })
+	mk("d", "r4", 4, domain.Delivering, func(x *domain.Task) { x.Event.Group = "other" })
 	mk("e", "r5", 5, domain.Waiting, func(x *domain.Task) { x.Project = "blog" })
-	mk("f", "r6", 6, domain.Waiting, func(x *domain.Task) { x.Trigger.Source = "other" })
+	mk("f", "r6", 6, domain.Waiting, func(x *domain.Task) { x.Event.Source = "other" })
 	mk("g", "r7", 7, domain.Superseded, nil)
+	mk("i", "r8", 8, domain.Waiting, func(x *domain.Task) { x.Spec.Name = "nightly" })
 	create(t, s, person("h"))
-	got, err := s.Store.LiveInGroup(context.Background(), "shop", "forge", "g")
+	got, err := s.Store.LiveInGroup(context.Background(), "shop", "review", "forge", "g")
 	if err != nil || len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
 		t.Errorf("live = %+v, %v, want b then a", got, err)
 	}
@@ -214,9 +213,10 @@ func copies(t *testing.T, s Subject) {
 	create(t, s, full("t1"))
 	got := load(t, s, "t1")
 	got.Pins["api"] = "changed"
-	got.Trigger.Context[0] = 'X'
+	got.Event.Context[0] = 'X'
+	got.Spec.File = "changed"
 	again := load(t, s, "t1")
-	if again.Pins["api"] != "abc" || again.Trigger.Context[0] != '{' {
+	if again.Pins["api"] != "abc" || again.Event.Context[0] != '{' || again.Spec.File != "specs/review.yaml" {
 		t.Errorf("a caller changed the stored task: %+v", again)
 	}
 }
