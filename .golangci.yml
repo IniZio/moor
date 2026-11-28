@@ -105,9 +105,10 @@ linters:
             - github.com/IniZio/moor/internal/adapter/artifacts
         adapter-link:
           files: ["**/internal/adapter/link/**"]
-          list-mode: lax
-          deny: *internal
+          list-mode: strict
           allow:
+            - $gostd
+            - github.com/coder/websocket
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/adapter/link

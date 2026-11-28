@@ -1,7 +1,10 @@
 // Package wire holds the runner link messages shared by the portal and the runner.
 package wire
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Proto is the link protocol version this build speaks.
 const Proto = 1
@@ -27,6 +30,33 @@ const (
 	KindTermAttach     Kind = "term.attach"
 	KindWarmBuild      Kind = "warm.build"
 )
+
+// Code classifies a failure that crossed the link. A code is never renumbered and never reused.
+type Code string
+
+const (
+	CodeUnknownOp  Code = "unknown_op"
+	CodeBadRequest Code = "bad_request"
+	CodeForbidden  Code = "forbidden"
+	CodeBusy       Code = "busy"
+	CodeDraining   Code = "draining"
+	CodeCancelled  Code = "cancelled"
+	CodeRefused    Code = "refused"
+	CodeInternal   Code = "internal"
+)
+
+// Error is a failure the peer reported. errors.Is(err, &Error{Code: c}) matches on the code alone.
+type Error struct {
+	Code Code   `json:"code"`
+	Msg  string `json:"msg"`
+}
+
+func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Msg) }
+
+func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+	return ok && t.Code == e.Code
+}
 
 // TermFrame is the first byte of each frame on a term.attach stream after its opening frame.
 type TermFrame byte

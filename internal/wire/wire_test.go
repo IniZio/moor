@@ -3,6 +3,8 @@ package wire_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -22,6 +24,7 @@ var messages = []struct {
 	msg    any
 	fields string
 }{
+	{"error", &wire.Error{Code: wire.CodeBusy, Msg: "too many ops"}, "code msg"},
 	{"hello", &wire.Hello{Runner: "r1", Proto: wire.Proto, Build: "b1"}, "build proto runner"},
 	{"challenge", &wire.Challenge{Nonce: []byte{1, 2}}, "nonce"},
 	{"proof", &wire.Proof{Sig: []byte{3}}, "sig"},
@@ -68,6 +71,16 @@ func TestMessagesRoundTrip(t *testing.T) {
 		if got := fieldNames(t, data); got != m.fields {
 			t.Errorf("%s: fields %q, want %q", m.name, got, m.fields)
 		}
+	}
+}
+
+func TestErrorMatchesOnCodeAlone(t *testing.T) {
+	err := fmt.Errorf("call: %w", &wire.Error{Code: wire.CodeRefused, Msg: "superseded"})
+	if !errors.Is(err, &wire.Error{Code: wire.CodeRefused}) {
+		t.Error("an error of the same code must match")
+	}
+	if errors.Is(err, &wire.Error{Code: wire.CodeBusy}) {
+		t.Error("an error of another code must not match")
 	}
 }
 
