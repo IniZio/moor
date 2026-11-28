@@ -31,6 +31,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      # test-docker builds the multi-GB Box image, which does not fit in this job's time.
+      MOOR_SKIP_DOCKER_TESTS: "1"
       MOOR_TEST_POSTGRES_DSN: postgres://postgres:moor@localhost:5432/moor?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
