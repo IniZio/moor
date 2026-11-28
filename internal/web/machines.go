@@ -70,12 +70,14 @@ func (s *server) actOnMachine(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.act(w, r, a)
+	s.actMachine(w, r, a)
 }
 
-func (s *server) removeMachine(w http.ResponseWriter, r *http.Request) { s.act(w, r, domain.Remove) }
+func (s *server) removeMachine(w http.ResponseWriter, r *http.Request) {
+	s.actMachine(w, r, domain.Remove)
+}
 
-func (s *server) act(w http.ResponseWriter, r *http.Request, a domain.MachineAction) {
+func (s *server) actMachine(w http.ResponseWriter, r *http.Request, a domain.MachineAction) {
 	err := s.deps.Machines.Act(r.Context(), domain.RunnerID(chi.URLParam(r, "id")), domain.Person(personOf(r.Context())), a)
 	switch {
 	case err == nil:
