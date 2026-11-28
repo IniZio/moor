@@ -17,6 +17,21 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: moor
+          POSTGRES_DB: moor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d moor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MOOR_TEST_POSTGRES_DSN: postgres://postgres:moor@localhost:5432/moor?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

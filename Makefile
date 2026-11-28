@@ -1,7 +1,10 @@
 GOLANGCI_LINT_VERSION := 2.13.2
 GOVULNCHECK_VERSION := 1.8.0
 
-.PHONY: setup lint lint-selftest format audit test ci herdr-golden
+# make ci runs test-store when a Docker daemon answers, or when MOOR_TEST_POSTGRES_DSN names a server.
+STORE_TESTS := $(if $(or $(MOOR_TEST_POSTGRES_DSN),$(shell docker info >/dev/null 2>&1 && echo docker)),test-store)
+
+.PHONY: setup lint lint-selftest format audit test test-store ci herdr-golden
 
 setup:
 	@golangci-lint version 2>/dev/null | grep -q 'version $(GOLANGCI_LINT_VERSION) ' || \
@@ -30,7 +33,11 @@ audit:
 test:
 	go test -race -count=1 ./...
 
-ci: audit lint lint-selftest test
+# Store tests need a Postgres. make test skips them, test-store runs them and fails on any skip.
+test-store:
+	sh scripts/test-store.sh
+
+ci: audit lint lint-selftest test $(STORE_TESTS)
 
 herdr-golden:
 	go test -tags herdrgolden -run TestRecordTranscripts -count=1 ./internal/adapter/herdr/
