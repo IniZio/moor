@@ -1,5 +1,7 @@
 #!/bin/bash.real
-until [ -f /desk/go ]; do sleep 0.5; done
+until [ -f /desk/go ]; do
+  if read -r -t 0.5 line; then echo "standin heard: $line"; elif [ $? -le 128 ]; then sleep 0.5; fi
+done
 out=/desk/standin.out
 run() {
   r=$(bash -c "$2" 2>&1)

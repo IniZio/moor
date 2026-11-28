@@ -32,4 +32,6 @@ and checksum.
 - **The desk sends shell commands to the Box.** The desk's `bash` is a wrapper. With `BOX_SSH`
   set, `bash -c` runs the line in the Box over ssh.
 - **Stand-in harness.** `harness` starts `standin`, which waits for `/desk/go` and runs
-  three commands in the Box. A later image starts a coding agent there instead.
+  three commands in the Box. While it waits it answers each line typed to it with
+  `standin heard: <line>`, so a terminal test can see its keys reach the harness. A later
+  image starts a coding agent there instead.

@@ -26,6 +26,8 @@ func actionURL(v runView, action string) string { return "/api/tasks/" + v.Row.I
 
 templ runPage(p page, v runView, part string) {
 	@layout(p, "Task #" + v.Row.ID, "tasks") {
+		<link rel="stylesheet" href="/static/xterm.css"/>
+		<script src="/static/term.js" defer></script>
 		<div id="run" hx-ext="sse" sse-connect={ runStreamURL(v, part) } sse-swap="page" data-task={ v.Row.ID }>
 			@runBody(v, part)
 		</div>
@@ -221,14 +223,14 @@ templ agentPane(v runView, p partView) {
 				<span>{ v.Fail.Reason }</span>
 			</div>
 		}
-		<pre class="term" aria-label="Terminal"><span class="d">The terminal is not connected yet.</span></pre>
+		<div id="term" class="term" hx-preserve="true" aria-label="Terminal" data-task={ v.Row.ID } data-me={ v.Page.Person } data-readonly={ strconv.FormatBool(v.Fail != nil) }><span class="d">The terminal is not connected yet.</span></div>
 		if v.Fail == nil {
-			<form class="tin" onsubmit="return false">
+			<form class="tin">
 				<span class="d">›</span>
-				<input type="text" id="tin" aria-label="Type to the agent" placeholder={ typePlaceholder(v) } disabled/>
+				<input type="text" id="tin" aria-label="Type to the agent" placeholder={ typePlaceholder(v) } autocomplete="off" disabled/>
 			</form>
 		}
-		<div class="keys">Not connected. Typing to the agent works here once the terminal is.</div>
+		<div class="keys" id="keys">Not connected. Typing to the agent works here once the terminal is.</div>
 	</div>
 }
 

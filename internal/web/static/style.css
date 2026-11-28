@@ -162,7 +162,7 @@ details[open] > summary::before { content: '▾'; }
 .log div { padding: 0 14px; white-space: pre-wrap; display: grid; grid-template-columns: 36px minmax(0, 1fr); }
 .log .ln { color: var(--term-dim); text-align: right; padding-right: 14px; user-select: none; }
 .log .muted { display: block; color: var(--term-dim); }
-.term { background: var(--term-bg); color: var(--term-fg); padding: 10px 14px; height: calc(100vh - 290px); min-height: 360px; overflow: auto; line-height: 1.5; }
+.term { background: var(--term-bg); color: var(--term-fg); padding: 10px 14px; height: calc(100vh - 290px); min-height: 360px; overflow: hidden; line-height: 1.5; }
 .term .d, .tin .d { color: var(--term-dim); }
 .tin { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--term-bg); border-top: 1px solid #3a332c; font-family: var(--mono); }
 .tin input { flex: 1; height: 28px; background: #231f1b; border: 1px solid #463f37; border-radius: 5px; color: var(--term-fg); font-family: var(--mono); font-size: 12px; padding: 0 8px; }

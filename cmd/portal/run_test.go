@@ -190,7 +190,8 @@ func TestTheAgentPartShowsTheTerminalAreaNotConnectedWithTheInputOff(t *testing.
 	a := newApp(t).withRepos()
 	a.seedRun("7")
 	agent := a.do(get("Mia", "/tasks/7/agent"))
-	agent.has(t, http.StatusOK, "running for", "The terminal is not connected yet.", `aria-label="Type to the agent"`, `placeholder="Type to the agent"`, "disabled", "Not connected.")
+	agent.has(t, http.StatusOK, "running for", "The terminal is not connected yet.", `aria-label="Type to the agent"`, `placeholder="Type to the agent"`, "disabled", "Not connected.",
+		`id="term"`, `hx-preserve="true"`, `data-task="7"`, `data-me="Mia"`, `data-readonly="false"`, `src="/static/term.js"`)
 	a.do(get("Mia", "/tasks/7/review")).has(t, http.StatusOK, "The task has not reached this part yet.")
 	a.do(get("Mia", "/tasks/7/nonsense")).has(t, http.StatusNotFound)
 	a.do(get("Mia", "/tasks/99/agent")).has(t, http.StatusNotFound)

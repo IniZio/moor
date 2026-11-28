@@ -111,6 +111,7 @@ func tail(s string, n int) string {
 // portal is a portal process on a fixed address, so a restart keeps the address runners dial.
 type portal struct {
 	bin, addr, dsn string
+	env            []string
 	p              *proc
 }
 
@@ -120,6 +121,7 @@ func (pt *portal) start(t *testing.T) {
 		"PORTAL_LISTEN=" + pt.addr, "PORTAL_DATABASE_URL=" + pt.dsn, "PORTAL_USER_HEADER=" + userHeader,
 		"PORTAL_SECRET_KEY=" + secretKey, "PORTAL_PUBLIC_URL=http://" + pt.addr,
 	}
+	env = append(env, pt.env...)
 	pt.p = start(t, "portal", env, pt.bin)
 	eventually(t, time.Minute, "the portal answers", func() bool {
 		resp, err := http.Get("http://" + pt.addr + "/healthz")

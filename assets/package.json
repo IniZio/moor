@@ -1,10 +1,10 @@
 {
   "name": "portal-assets",
   "private": true,
-  "description": "Build-time only. make assets bundles the editor and copies htmx and the fonts into internal/web/static.",
+  "description": "Build-time only. make assets bundles the editor and the terminal and copies htmx, the terminal's stylesheet and the fonts into internal/web/static.",
   "type": "module",
   "scripts": {
-    "build": "esbuild editor.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --outfile=../internal/web/static/editor.js && sh copy.sh"
+    "build": "esbuild editor.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --outfile=../internal/web/static/editor.js && esbuild term.js --bundle --minify --format=iife --target=es2020 --legal-comments=none --outfile=../internal/web/static/term.js && sh copy.sh"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.2",
@@ -13,6 +13,8 @@
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.44.2",
     "@lezer/highlight": "1.2.5",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "codemirror": "6.0.2"
   },
   "devDependencies": {
