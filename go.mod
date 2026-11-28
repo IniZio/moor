@@ -5,6 +5,7 @@ go 1.26.11
 require (
 	github.com/a-h/templ v0.3.1118
 	github.com/aymanbagabas/go-udiff v0.4.2
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/hashicorp/yamux v0.1.2

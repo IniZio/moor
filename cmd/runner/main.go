@@ -1,10 +1,107 @@
 // Command runner runs tasks on a host and dials out to the portal.
 package main
 
-import "fmt"
+import (
+	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"github.com/IniZio/moor/internal/adapter/docker"
+	"github.com/IniZio/moor/internal/adapter/link"
+	"github.com/IniZio/moor/internal/domain"
+	"github.com/IniZio/moor/internal/runner"
+)
 
 var version = "dev"
 
 func main() {
-	fmt.Println("runner", version)
+	if err := run(os.Args[1:]); err != nil {
+		slog.Error("runner", "err", err)
+		os.Exit(1)
+	}
+}
+
+type options struct {
+	portal, id, keyFile, prefix, deskAllow string
+	images                                 docker.Images
+	slots                                  int
+}
+
+func parse(args []string) (options, error) {
+	var o options
+	fs := flag.NewFlagSet("runner", flag.ContinueOnError)
+	fs.StringVar(&o.portal, "portal", "", "the portal's link URL, such as wss://portal.example.com/runner/link")
+	fs.StringVar(&o.id, "id", "", "this runner's id, as the portal enrolled it")
+	fs.StringVar(&o.keyFile, "key", "", "file holding this runner's ed25519 seed, base64")
+	fs.StringVar(&o.prefix, "prefix", "moor", "prefix of every Docker object the runner makes")
+	fs.StringVar(&o.deskAllow, "desk-allow", "", "comma-separated hosts the desk proxy lets through")
+	fs.StringVar(&o.images.Box, "box-image", "", "Box image")
+	fs.StringVar(&o.images.Desk, "desk-image", "", "desk image")
+	fs.StringVar(&o.images.Relay, "relay-image", "", "relay image")
+	fs.StringVar(&o.images.Proxy, "proxy-image", "", "proxy image")
+	fs.IntVar(&o.slots, "slots", 1, "tasks this machine runs at once")
+	if err := fs.Parse(args); err != nil {
+		return o, fmt.Errorf("flags: %w", err)
+	}
+	if o.portal == "" || o.id == "" || o.keyFile == "" || o.deskAllow == "" {
+		return o, errors.New("-portal, -id, -key and -desk-allow are required")
+	}
+	return o, nil
+}
+
+func run(args []string) error {
+	o, err := parse(args)
+	if err != nil {
+		return err
+	}
+	key, err := readKey(o.keyFile)
+	if err != nil {
+		return err
+	}
+	d, err := docker.New(docker.Config{Prefix: o.prefix, Images: o.images})
+	if err != nil {
+		return fmt.Errorf("docker: %w", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
+	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, argv: []string{"harness"}}, strings.Split(o.deskAllow, ","))
+	if err := r.Run(ctx); err != nil {
+		return fmt.Errorf("run: %w", err)
+	}
+	return nil
+}
+
+// newRunner is where the adapters meet the runner.
+func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions, deskAllow []string) *runner.Runner {
+	return runner.New(runner.Config{
+		Dial: dialer(agent), Host: h, Sessions: s, DeskAllow: deskAllow,
+		Build: agent.Build, Slots: 1, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	})
+}
+
+func readKey(path string) (ed25519.PrivateKey, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("key: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, 1<<10))
+	if err != nil {
+		return nil, fmt.Errorf("key: %w", err)
+	}
+	seed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b)))
+	if err != nil || len(seed) != ed25519.SeedSize {
+		return nil, fmt.Errorf("key: %s does not hold a base64 ed25519 seed", path)
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
 }
