@@ -58,12 +58,7 @@ func (h *holding) launch(ctx context.Context, t domain.Task) {
 // is a part that did not start. One cut short by the link is left as it is: the task stays starting
 // and the next tick sends the same fence again, which the runner joins.
 func (h *holding) start(ctx context.Context, t domain.Task) {
-	allow, err := h.c.cfg.Policy(ctx)
-	if err != nil {
-		h.log.Warn("policy", "task", t.ID, "err", err)
-		return
-	}
-	err = call(ctx, h.link, wire.KindTaskStart, startOf(t, allow), nil)
+	err := call(ctx, h.link, wire.KindTaskStart, startOf(t, h.c.cfg.Access(t)), nil)
 	var we *wire.Error
 	switch {
 	case err == nil:
@@ -77,10 +72,10 @@ func (h *holding) start(ctx context.Context, t domain.Task) {
 
 func fenceOf(t domain.Task) wire.Fence { return wire.Fence{Task: string(t.ID), Run: t.Run, Gen: t.Gen} }
 
-func startOf(t domain.Task, allow []string) wire.TaskStart {
+func startOf(t domain.Task, access wire.ProxyAccess) wire.TaskStart {
 	s := wire.TaskStart{
 		Fence: fenceOf(t), Repo: wire.Repo{Host: string(t.Repo.Host), Path: string(t.Repo.Path)},
-		Commit: string(t.Commit), Prompt: t.Prompt, ReviewPrompt: t.ReviewPrompt, AllowHosts: allow,
+		Commit: string(t.Commit), Prompt: t.Prompt, ReviewPrompt: t.ReviewPrompt, Proxies: access,
 	}
 	if t.Spec != nil {
 		s.Spec = &wire.Spec{Name: string(t.Spec.Name), File: t.Spec.File}

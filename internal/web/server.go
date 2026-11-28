@@ -48,9 +48,11 @@ type Deps struct {
 	Machines MachineService
 	Terms    Terminals
 	// Run starts a task spec by hand, and Events reads the events of tasks for their titles. Both may be left nil.
-	Run    SpecRunner
-	Events domain.EventReaders
-	Ready  func(ctx context.Context) error
+	Run     SpecRunner
+	Events  domain.EventReaders
+	Proxies ProxyAPI
+	Blocked BlockedRequests
+	Ready   func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
 }
@@ -84,6 +86,7 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 	r.Get("/readyz", s.readyz)
 	r.Handle("/static/*", http.StripPrefix("/static/", cached(http.FileServerFS(static))))
 	s.internalRoutes(r)
+	s.proxyRoutes(r)
 	r.Group(func(r chi.Router) {
 		r.Use(guard.Handler, s.person)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
@@ -106,6 +109,7 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Post("/api/tasks/{id}/stop", s.stopTask)
 		r.Post("/api/tasks/{id}/end", s.endTask)
 		r.Post("/api/tasks/{id}/retry", s.retryTask)
+		r.Post("/api/tasks/{id}/blocked/{bid}", s.decideBlocked)
 		r.Get("/api/machines", s.listMachines)
 		r.Get("/api/machines/events", s.machineEvents)
 		r.Get("/api/machines/{id}/ask", s.askMachine)

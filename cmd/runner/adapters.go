@@ -56,7 +56,8 @@ func keyOf(f wire.Fence) docker.Key {
 }
 
 func (h host) Up(ctx context.Context, b runner.Box) error {
-	if err := h.d.Up(ctx, docker.Spec{Key: keyOf(b.Fence), BoxAllow: b.BoxAllow, DeskAllow: b.DeskAllow}); err != nil {
+	spec := docker.Spec{Key: keyOf(b.Fence), Portal: b.Proxies.Portal, BoxToken: b.Proxies.BoxToken, DeskToken: b.Proxies.DeskToken}
+	if err := h.d.Up(ctx, spec); err != nil {
 		return fmt.Errorf("up: %w", err)
 	}
 	return nil

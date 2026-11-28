@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,9 +19,15 @@ import (
 
 const dockerEnv = "MOOR_TEST_DOCKER"
 
-var testImages = Images{
-	Box: "moor-fresh-box:dev", Desk: "moor-fresh-desk:dev",
-	Relay: "moor-fresh-relay:dev", Proxy: "moor-fresh-proxy:dev",
+// testImages are the images make images built, under the tag make passes in MOOR_IMAGE_TAG.
+var testImages = Images{Box: image("box"), Desk: image("desk"), Relay: image("relay"), Proxy: image("proxy")}
+
+func image(name string) string {
+	tag := os.Getenv("MOOR_IMAGE_TAG")
+	if tag == "" {
+		tag = "dev"
+	}
+	return "moor-fresh-" + name + ":" + tag
 }
 
 // boxAllow is a public package registry plus the Docker Hub hosts a nested pull needs.
@@ -29,6 +38,39 @@ var boxAllow = []string{
 }
 
 const nestedImage = "curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40"
+
+// fakePortal serves the proxies their policy from the host, at the Docker bridge's gateway, which a task's
+// egress network reaches. The Box egress proxy gets boxAllow and the desk proxy one registry.
+func fakePortal(t *testing.T) string {
+	t.Helper()
+	gw := sh(t, "docker", "network", "inspect", "bridge", "-f", "{{(index .IPAM.Config 0).Gateway}}")
+	ln, err := net.Listen("tcp", net.JoinHostPort(gw, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := make([]string, len(boxAllow))
+	for i, h := range boxAllow {
+		lines[i] = h + ":443 GET HEAD POST"
+	}
+	policies := map[string]any{
+		"Bearer box.t":  map[string]any{"version": 1, "allow": lines, "connections": []any{}},
+		"Bearer desk.t": map[string]any{"version": 1, "allow": []string{"registry.npmjs.org:443 GET"}, "connections": []any{}},
+	}
+	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, ok := policies[r.Header.Get("Authorization")]
+		switch {
+		case !ok:
+			http.Error(w, "no", http.StatusUnauthorized)
+		case r.Method == http.MethodGet && r.URL.Path == "/internal/policy/t1":
+			_ = json.NewEncoder(w).Encode(p)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return "http://" + ln.Addr().String()
+}
 
 // adapter gives the test its own prefix and fails it if anything with that prefix is left after it.
 // This is the only skip in the package: without Docker and the images there is nothing to run.
@@ -115,7 +157,7 @@ func TestTaskLifecycle(t *testing.T) {
 	}
 	ctx := context.Background()
 	key := Key{Task: "t1", Run: 1, Gen: 1}
-	spec := Spec{Key: key, BoxAllow: boxAllow, DeskAllow: []string{"registry.npmjs.org"}}
+	spec := Spec{Key: key, Portal: fakePortal(t), BoxToken: "box.t", DeskToken: "desk.t"}
 	t.Cleanup(func() { _ = d.Down(context.Background(), Key{Task: key.Task, Run: 99, Gen: 99}) })
 
 	start := time.Now()

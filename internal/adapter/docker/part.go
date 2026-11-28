@@ -13,10 +13,12 @@ const (
 	volKeys      = "keys"
 	volBoxDocker = "boxdocker"
 	volBoxCache  = "boxcache"
+	volBoxCA     = "boxca"
+	volDeskCA    = "deskca"
 )
 
 var (
-	taskVolumes = []string{volWorkspace, volDesk, volKeys}
+	taskVolumes = []string{volWorkspace, volDesk, volKeys, volBoxCA, volDeskCA}
 	boxVolumes  = []string{volBoxDocker, volBoxCache}
 )
 
@@ -25,7 +27,6 @@ type join struct{ net, ip string }
 type partPlan struct {
 	args  []string
 	image string
-	cmd   []string
 	join  []join
 }
 
@@ -34,10 +35,7 @@ func (d *Docker) plan(l layout, p Part) partPlan {
 	im := d.cfg.Images
 	switch p {
 	case BoxProxy:
-		return partPlan{
-			args:  []string{"--network", n(netEgress), "-e", "NONO_PROXY_PASS=" + l.boxPass},
-			image: im.Proxy, cmd: allowArgs(l.spec.BoxAllow), join: []join{{n(netInner), l.innerIP(2)}},
-		}
+		return partPlan{args: d.proxyArgs(l, l.boxPass, l.spec.BoxToken, volBoxCA), image: im.Proxy, join: []join{{n(netInner), l.innerIP(2)}}}
 	case Relay:
 		return partPlan{args: []string{
 			"--network", n(netInner), "--ip", l.innerIP(3),
@@ -46,49 +44,56 @@ func (d *Docker) plan(l layout, p Part) partPlan {
 	case Box:
 		return partPlan{args: d.boxArgs(l), image: im.Box}
 	case DeskProxy:
-		return partPlan{
-			args:  []string{"--network", n(netEgress), "-e", "NONO_PROXY_PASS=" + l.deskPass},
-			image: im.Proxy, cmd: allowArgs(l.spec.DeskAllow), join: []join{{net: n(netDesk)}},
-		}
+		return partPlan{args: d.proxyArgs(l, l.deskPass, l.spec.DeskToken, volDeskCA), image: im.Proxy, join: []join{{net: n(netDesk)}}}
 	case Desk:
 		return partPlan{args: d.deskArgs(l), image: im.Desk, join: []join{{net: n(netInner)}}}
 	}
 	return partPlan{}
 }
 
+// proxyArgs start a proxy on the egress network. It writes the certificate its clients trust into the
+// volume ca, which its clients mount read-only. The token never reaches the Box or the desk.
+func (d *Docker) proxyArgs(l layout, pass, token, ca string) []string {
+	return []string{
+		"--network", d.name(l.spec.Key.Task, netEgress), "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+		"-e", "MOOR_PROXY_PASS=" + pass, "-e", "MOOR_PORTAL=" + l.spec.Portal, "-e", "MOOR_TASK=" + string(l.spec.Key.Task),
+		"-e", "MOOR_TOKEN=" + token, "-v", d.name(l.spec.Key.Task, ca) + ":/ca",
+	}
+}
+
+// trustArgs mount the proxy's certificate read-only and point the usual tools at it.
+func (d *Docker) trustArgs(l layout, ca string) []string {
+	return []string{
+		"-v", d.name(l.spec.Key.Task, ca) + ":/ca:ro", "-e", "SSL_CERT_FILE=/ca/bundle.pem",
+		"-e", "NODE_EXTRA_CA_CERTS=/ca/ca.crt", "-e", "REQUESTS_CA_BUNDLE=/ca/bundle.pem",
+	}
+}
+
 func (d *Docker) boxArgs(l layout) []string {
 	n := func(what string) string { return d.name(l.spec.Key.Task, what) }
-	return []string{
+	return append(d.trustArgs(l, volBoxCA),
 		"--hostname", n(string(Box)), "--network", n(netInner), "--ip", l.innerIP(10), "--init",
 		"--device", "/dev/kvm", "--device", "/dev/net/tun",
 		"--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined", "--security-opt", "systempaths=unconfined",
-		"-e", "DOCKER_TLS_CERTDIR=", "-e", "BOX_DNS=" + l.innerIP(3),
-		"-e", "HTTPS_PROXY=http://x:" + l.boxPass + "@" + l.innerIP(2) + ":8080",
-		"-e", "HTTP_PROXY=http://" + l.innerIP(3) + ":8081", "-e", "NO_PROXY=localhost,127.0.0.1",
-		"-v", n(volWorkspace) + ":/workspace", "-v", n(volKeys) + ":/keys:ro",
-		"-v", n(volBoxDocker) + ":/home/rootless/.local/share/docker", "-v", n(volBoxCache) + ":/home/rootless/.cache",
-	}
+		"-e", "DOCKER_TLS_CERTDIR=", "-e", "BOX_DNS="+l.innerIP(3),
+		"-e", "HTTPS_PROXY=http://x:"+l.boxPass+"@"+l.innerIP(2)+":8080",
+		"-e", "HTTP_PROXY=http://"+l.innerIP(3)+":8081", "-e", "NO_PROXY=localhost,127.0.0.1",
+		"-v", n(volWorkspace)+":/workspace", "-v", n(volKeys)+":/keys:ro",
+		"-v", n(volBoxDocker)+":/home/rootless/.local/share/docker", "-v", n(volBoxCache)+":/home/rootless/.cache",
+	)
 }
 
 func (d *Docker) deskArgs(l layout) []string {
 	n := func(what string) string { return d.name(l.spec.Key.Task, what) }
 	proxy := "http://x:" + l.deskPass + "@" + n(string(DeskProxy)) + ":8080"
-	return []string{
+	return append(d.trustArgs(l, volDeskCA),
 		"--hostname", n(string(Desk)), "--network", n(netDesk),
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-		"-e", "HTTPS_PROXY=" + proxy, "-e", "HTTP_PROXY=" + proxy,
-		"-e", "NO_PROXY=" + n(string(Box)) + "," + n(string(DeskProxy)) + ",localhost,127.0.0.1",
-		"-e", "HARNESS_BOX_SSH=rootless@" + n(string(Box)),
-		"-v", n(volWorkspace) + ":/workspace", "-v", n(volDesk) + ":/desk", "-v", n(volKeys) + ":/keys:ro",
-	}
-}
-
-func allowArgs(hosts []string) []string {
-	var a []string
-	for _, h := range hosts {
-		a = append(a, "--allow-domain", h)
-	}
-	return a
+		"-e", "HTTPS_PROXY="+proxy, "-e", "HTTP_PROXY="+proxy,
+		"-e", "NO_PROXY="+n(string(Box))+","+n(string(DeskProxy))+",localhost,127.0.0.1",
+		"-e", "HARNESS_BOX_SSH=rootless@"+n(string(Box)),
+		"-v", n(volWorkspace)+":/workspace", "-v", n(volDesk)+":/desk", "-v", n(volKeys)+":/keys:ro",
+	)
 }
 
 func probe(p Part) []string {
@@ -109,7 +114,7 @@ func (d *Docker) create(ctx context.Context, l layout, p Part) error {
 	pl := d.plan(l, p)
 	name := d.name(l.spec.Key.Task, string(p))
 	args := append([]string{"create", "--name", name}, d.labels(l.spec.Key, string(p))...)
-	args = append(append(append(args, pl.args...), pl.image), pl.cmd...)
+	args = append(append(args, pl.args...), pl.image)
 	if _, err := d.run(ctx, args...); err != nil {
 		return err
 	}
@@ -167,7 +172,8 @@ func (d *Docker) remove(ctx context.Context, kind string, names []string) error 
 // initScript makes the key the desk signs in to the Box with. The key lands under its final name
 // last, so a run cut short leaves no half key behind.
 const initScript = `[ -f /keys/id ] || { rm -f /keys/new /keys/new.pub && ssh-keygen -q -t ed25519 -N "" -f /keys/new ` +
-	`&& mv /keys/new.pub /keys/id.pub && mv /keys/new /keys/id; } && chown -R 1000:1000 /keys && chown 1000:1000 /workspace /desk`
+	`&& mv /keys/new.pub /keys/id.pub && mv /keys/new /keys/id; } && chown -R 1000:1000 /keys && chown 1000:1000 /workspace /desk ` +
+	`&& chown 65534:65534 /boxca /deskca`
 
 func (d *Docker) initVolumes(ctx context.Context, l layout) error {
 	k := l.spec.Key
@@ -178,7 +184,8 @@ func (d *Docker) initVolumes(ctx context.Context, l layout) error {
 	args := append([]string{"run", "--rm", "--name", name}, d.labels(k, "init")...)
 	args = append(args, "--network", "none", "--user", "root", "--entrypoint", "sh",
 		"-v", d.name(k.Task, volKeys)+":/keys", "-v", d.name(k.Task, volWorkspace)+":/workspace",
-		"-v", d.name(k.Task, volDesk)+":/desk", d.cfg.Images.Box, "-c", initScript)
+		"-v", d.name(k.Task, volDesk)+":/desk", "-v", d.name(k.Task, volBoxCA)+":/boxca", "-v", d.name(k.Task, volDeskCA)+":/deskca",
+		d.cfg.Images.Box, "-c", initScript)
 	_, err := d.run(ctx, args...)
 	return err
 }

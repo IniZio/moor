@@ -70,8 +70,8 @@ func newFakeHost() *fakeHost {
 func (h *fakeHost) Up(_ context.Context, b runner.Box) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(b.BoxAllow) == 0 {
-		return errors.New("fake host: no allowed hosts")
+	if b.Proxies.Portal == "" || b.Proxies.BoxToken == "" || b.Proxies.DeskToken == "" {
+		return errors.New("fake host: the proxies have no way to the portal")
 	}
 	if cur, ok := h.tasks[b.Fence.Task]; ok && cur.Fence == b.Fence {
 		return nil
@@ -204,7 +204,7 @@ func (m *machineRig) run(t *testing.T, addr string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	agent := link.AgentConfig{URL: "ws://" + addr + "/runner/link", Runner: domain.RunnerID(m.id), Key: m.key, Build: "test"}
-	r := runner.New(runner.Config{Dial: dialer(agent), Host: m.host, Sessions: m.sessions, DeskAllow: []string{"api.example.com"}, Slots: 1})
+	r := runner.New(runner.Config{Dial: dialer(agent), Host: m.host, Sessions: m.sessions, Slots: 1})
 	m.done, m.stop = make(chan error, 1), cancel
 	go func() { m.done <- r.Run(ctx) }()
 	t.Cleanup(func() {

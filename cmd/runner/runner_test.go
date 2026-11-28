@@ -141,7 +141,7 @@ func TestARefusedRunnerStopsDialling(t *testing.T) {
 	g := newRig(t)
 	agent := g.portal.Agent()
 	_, agent.Key, _ = ed25519.GenerateKey(rand.Reader)
-	r := newRunner(agent, g.host, sessions{connect: g.desks.connect}, []string{"api.example.com"})
+	r := newRunner(agent, g.host, sessions{connect: g.desks.connect})
 	ctx, cancel := context.WithCancel(g.ctx)
 	defer cancel()
 	if err := r.Run(ctx); !errors.Is(err, runner.ErrFatal) {

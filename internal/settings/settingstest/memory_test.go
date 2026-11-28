@@ -7,6 +7,10 @@ import (
 	"github.com/IniZio/moor/internal/settings/settingstest"
 )
 
+func TestMemoryPassesTheBlockedContract(t *testing.T) {
+	storetest.RunBlocked(t, func(*testing.T) storetest.BlockedStore { return settingstest.NewMemory() })
+}
+
 func TestMemoryPassesTheSettingsContract(t *testing.T) {
 	storetest.RunSettings(t, func(*testing.T) storetest.SettingsStore { return settingstest.NewMemory() })
 }

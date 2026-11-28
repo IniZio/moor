@@ -39,6 +39,7 @@ func (s *server) runPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := s.run(t, rows)
+	v.Blocked = blockedOf(s.blockedList(r.Context(), t.ID))
 	v.Page = s.pageData(r)
 	render(w, r, http.StatusOK, runPage(v.Page, v, part))
 }
@@ -79,9 +80,11 @@ func (s *server) taskSnapshot(w http.ResponseWriter, r *http.Request) {
 		Versions []jsonResultVersion `json:"versions"`
 		Events   []jsonRow           `json:"events"`
 		LastSeq  int64               `json:"last_seq"`
+		Blocked  []jsonBlocked       `json:"blocked_requests"`
 	}{
 		Task:     jsonDetail{jsonTask: s.jsonTaskRead(domain.TaskListing{Task: t}), Prompt: t.Prompt, Failure: t.Failure, Commit: string(t.Commit), Runner: string(t.Runner), Run: t.Run, Gen: t.Gen},
 		Versions: resultVersionsOf(versions), Events: make([]jsonRow, len(rows)),
+		Blocked: jsonBlockedOf(s.blockedList(r.Context(), id)),
 	}
 	for i, row := range rows {
 		out.Events[i] = jsonRowOf(row)

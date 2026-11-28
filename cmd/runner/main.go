@@ -31,9 +31,9 @@ func main() {
 }
 
 type options struct {
-	portal, id, keyFile, prefix, deskAllow string
-	images                                 docker.Images
-	slots                                  int
+	portal, id, keyFile, prefix string
+	images                      docker.Images
+	slots                       int
 }
 
 func parse(args []string) (options, error) {
@@ -43,7 +43,6 @@ func parse(args []string) (options, error) {
 	fs.StringVar(&o.id, "id", "", "this runner's id, as the portal enrolled it")
 	fs.StringVar(&o.keyFile, "key", "", "file holding this runner's ed25519 seed, base64")
 	fs.StringVar(&o.prefix, "prefix", "moor", "prefix of every Docker object the runner makes")
-	fs.StringVar(&o.deskAllow, "desk-allow", "", "comma-separated hosts the desk proxy lets through")
 	fs.StringVar(&o.images.Box, "box-image", "", "Box image")
 	fs.StringVar(&o.images.Desk, "desk-image", "", "desk image")
 	fs.StringVar(&o.images.Relay, "relay-image", "", "relay image")
@@ -52,8 +51,8 @@ func parse(args []string) (options, error) {
 	if err := fs.Parse(args); err != nil {
 		return o, fmt.Errorf("flags: %w", err)
 	}
-	if o.portal == "" || o.id == "" || o.keyFile == "" || o.deskAllow == "" {
-		return o, errors.New("-portal, -id, -key and -desk-allow are required")
+	if o.portal == "" || o.id == "" || o.keyFile == "" {
+		return o, errors.New("-portal, -id and -key are required")
 	}
 	return o, nil
 }
@@ -77,7 +76,7 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
-	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, argv: []string{"harness"}}, strings.Split(o.deskAllow, ","))
+	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, argv: []string{"harness"}})
 	if err := r.Run(ctx); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -85,9 +84,9 @@ func run(args []string) error {
 }
 
 // newRunner is where the adapters meet the runner.
-func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions, deskAllow []string) *runner.Runner {
+func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions) *runner.Runner {
 	return runner.New(runner.Config{
-		Dial: dialer(agent), Host: h, Sessions: s, DeskAllow: deskAllow,
+		Dial: dialer(agent), Host: h, Sessions: s,
 		Build: agent.Build, Slots: 1, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	})
 }

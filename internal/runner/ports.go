@@ -22,11 +22,10 @@ type Part struct {
 	State     string
 }
 
-// Box is what Up needs for one launch.
+// Box is what Up needs for one launch: the fence, and how the task's proxies reach the portal.
 type Box struct {
-	Fence     wire.Fence
-	BoxAllow  []string
-	DeskAllow []string
+	Fence   wire.Fence
+	Proxies wire.ProxyAccess
 }
 
 // Host starts, finds and removes the containers of tasks. Up and Down converge, so a repeat is

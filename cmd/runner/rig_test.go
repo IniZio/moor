@@ -107,7 +107,7 @@ func rigWithin(t *testing.T, limit time.Duration) *rig {
 // as a process exit would, and checks it returned cleanly.
 func (g *rig) start(h runner.Host, connect func(context.Context, string) (io.ReadWriteCloser, error)) (*link.Session, func()) {
 	g.t.Helper()
-	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, argv: []string{"harness"}}, []string{"api.example.com"})
+	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, argv: []string{"harness"}})
 	ctx, cancel := context.WithCancel(g.ctx)
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()
@@ -137,7 +137,7 @@ func call(ctx context.Context, s *link.Session, op wire.Kind, body, out any) err
 }
 
 func startMsg(task string, run, gen int64) wire.TaskStart {
-	return wire.TaskStart{Fence: wire.Fence{Task: task, Run: run, Gen: gen}, Prompt: "fix the build", AllowHosts: []string{"registry.npmjs.org"}, Harness: "stand-in"}
+	return wire.TaskStart{Fence: wire.Fence{Task: task, Run: run, Gen: gen}, Prompt: "fix the build", Proxies: wire.ProxyAccess{Portal: "http://portal.invalid", BoxToken: "box.t", DeskToken: "desk.t"}, Harness: "stand-in"}
 }
 
 // watch opens task.watch and delivers its lines until the test ends.

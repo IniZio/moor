@@ -17,9 +17,15 @@ import (
 
 const dockerEnv = "MOOR_TEST_DOCKER"
 
-var testImages = docker.Images{
-	Box: "moor-fresh-box:dev", Desk: "moor-fresh-desk:dev",
-	Relay: "moor-fresh-relay:dev", Proxy: "moor-fresh-proxy:dev",
+// testImages are the images make images built, under the tag make passes in MOOR_IMAGE_TAG.
+var testImages = docker.Images{Box: image("box"), Desk: image("desk"), Relay: image("relay"), Proxy: image("proxy")}
+
+func image(name string) string {
+	tag := os.Getenv("MOOR_IMAGE_TAG")
+	if tag == "" {
+		tag = "dev"
+	}
+	return "moor-fresh-" + name + ":" + tag
 }
 
 // realHost gives the test a Docker adapter of its own prefix, and fails the test if anything of that

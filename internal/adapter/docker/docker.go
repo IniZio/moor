@@ -32,12 +32,13 @@ type Config struct {
 	Images Images
 }
 
-// Spec is everything Up needs for a task. BoxAllow are the hosts the Box egress proxy lets through,
-// DeskAllow those the desk proxy lets through.
+// Spec is everything Up needs for a task. Portal is the address the proxies read the task's policy at,
+// and BoxToken and DeskToken are the tokens of the Box egress proxy and the desk proxy there.
 type Spec struct {
 	Key       Key
-	BoxAllow  []string
-	DeskAllow []string
+	Portal    string
+	BoxToken  string
+	DeskToken string
 }
 
 type Part string
@@ -96,8 +97,8 @@ func checkSpec(s Spec) error {
 	if err := checkTask(s.Key.Task); err != nil {
 		return err
 	}
-	if len(s.BoxAllow) == 0 || len(s.DeskAllow) == 0 {
-		return errors.New("docker: both proxies need at least one allowed host")
+	if s.Portal == "" || s.BoxToken == "" || s.DeskToken == "" {
+		return errors.New("docker: the proxies need the portal's address and their tokens")
 	}
 	return nil
 }

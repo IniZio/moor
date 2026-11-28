@@ -86,7 +86,7 @@ func (r *Runner) start(st Stream) error {
 	if ok && wire.Admit(&h.Fence, s.Fence) == wire.Refuse {
 		return &wire.Error{Code: wire.CodeRefused, Msg: "the host runs a newer launch of this task"}
 	}
-	if err := r.cfg.Host.Up(r.ctx, Box{Fence: s.Fence, BoxAllow: s.AllowHosts, DeskAllow: r.cfg.DeskAllow}); err != nil {
+	if err := r.cfg.Host.Up(r.ctx, Box{Fence: s.Fence, Proxies: s.Proxies}); err != nil {
 		return fmt.Errorf("runner: up %s: %w", s.Task, err)
 	}
 	if err := r.cfg.Sessions.Start(r.ctx, s); err != nil {

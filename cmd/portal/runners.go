@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/IniZio/moor/internal/adapter/link"
 	"github.com/IniZio/moor/internal/adapter/store"
-	"github.com/IniZio/moor/internal/adapter/yamlfile"
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/machine"
 	"github.com/IniZio/moor/internal/settings"
@@ -48,7 +46,7 @@ func newRunners(ctx context.Context, cfg config, db *store.Store, tasks *task.Se
 	rn := &runners{db: db, holder: holderOf(cfg), log: slog.Default()}
 	rn.ctx, rn.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	rn.machines = machine.New(db, tasks, systemClock{}, cfg.publicURL)
-	rn.control = machine.NewControl(machine.ControlConfig{Store: db, Tasks: tasks, Clock: systemClock{}, Policy: boxAllow(svc), Tick: cfg.linkTick, Log: rn.log})
+	rn.control = machine.NewControl(machine.ControlConfig{Store: db, Tasks: tasks, Clock: systemClock{}, Access: newTokens(cfg.secretKey).access(cfg.publicURL), Tick: cfg.linkTick, Log: rn.log})
 	if u, err := url.Parse(cfg.publicURL); err == nil && u.Host != "" {
 		rn.hs, _ = link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{db}, Presence: presence{db, rn.holder}})
 	}
@@ -217,26 +215,4 @@ func (p presence) Unlinked(ctx context.Context, id domain.RunnerID, gen int64) e
 		return fmt.Errorf("presence: %w", err)
 	}
 	return nil
-}
-
-// boxAllow reads the hosts of the newest settings document's allow rules, which a task's Box egress
-// proxy lets through.
-func boxAllow(svc *settings.Service) func(ctx context.Context) ([]string, error) {
-	return func(ctx context.Context) ([]string, error) {
-		cur, err := svc.Current(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("settings: %w", err)
-		}
-		doc, _, err := yamlfile.ParseSettings([]byte(cur.Text))
-		if err != nil {
-			return nil, fmt.Errorf("settings: %w", err)
-		}
-		var hosts []string
-		for _, rule := range doc.Settings().Allow {
-			if h := string(rule.Host); !slices.Contains(hosts, h) {
-				hosts = append(hosts, h)
-			}
-		}
-		return hosts, nil
-	}
 }

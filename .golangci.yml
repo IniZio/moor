@@ -122,6 +122,15 @@ linters:
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/task
             - github.com/IniZio/moor/internal/adapter/store
+        proxy:
+          files: ["**/internal/proxy/**"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/elazarl/goproxy
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/wire
+            - github.com/IniZio/moor/internal/proxy
         adapter-github:
           files: ["**/internal/adapter/github/**"]
           list-mode: lax

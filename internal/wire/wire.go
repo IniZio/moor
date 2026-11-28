@@ -156,7 +156,7 @@ type TaskStart struct {
 	WarmState     string          `json:"warm_state"`
 	BudgetSeconds int64           `json:"budget"`
 	ModelToken    string          `json:"model_token"`
-	AllowHosts    []string        `json:"allow_hosts"`
+	Proxies       ProxyAccess     `json:"proxies"`
 	SecretRules   json.RawMessage `json:"secret_rules"`
 }
 

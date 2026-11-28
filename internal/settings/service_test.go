@@ -22,6 +22,7 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 	var p settings.Parsed
 	var bad []domain.SettingsProblem
 	var kept []string
+	var access error
 	for i, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
 		f := strings.Fields(line)
 		switch {
@@ -39,6 +40,7 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 			p.Connections = append(p.Connections, f[1])
 			kept = append(kept, f[1]+": set")
 		default:
+			access = errors.Join(access, stubAccess(&p, f))
 			kept = append(kept, line)
 		}
 	}
@@ -46,10 +48,51 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 		return settings.Parsed{}, &domain.InvalidSettingsError{Problems: bad}
 	}
 	p.Text = strings.Join(kept, "\n") + "\n"
-	return p, nil
+	return p, access
+}
+
+// stubAccess reads "allow RULE" as an allow rule and "conn NAME HOST STATE" as a placeholder connection,
+// with an underscore for a space in STATE.
+func stubAccess(p *settings.Parsed, f []string) error {
+	if len(f) < 2 || (f[0] != "allow" && f[0] != "conn") {
+		return nil
+	}
+	if f[0] == "conn" && len(f) == 4 {
+		p.Settings.Connections = append(p.Settings.Connections, domain.Connection{
+			Name: f[1], Hosts: []domain.HostPattern{domain.HostPattern(f[2])}, Add: domain.PlaceholderAdd{Token: f[1]},
+			Secret: domain.SecretState(strings.ReplaceAll(f[3], "_", " ")),
+		})
+		p.Connections = append(p.Connections, f[1])
+		return nil
+	}
+	r, err := domain.ParseAllowRule(strings.Join(f[1:], " "))
+	if err != nil {
+		return fmt.Errorf("stub %v: %w", f, err)
+	}
+	p.Settings.Allow = append(p.Settings.Allow, r)
+	return nil
+}
+
+// AppendAllow adds an "allow RULE" line at the end, or answers the line that already says it.
+func (stubParser) AppendAllow(text, rule string) (string, int, error) {
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	for i, l := range lines {
+		if l == "allow "+rule {
+			return text, i + 1, nil
+		}
+	}
+	lines = append(lines, "allow "+rule)
+	return strings.Join(lines, "\n") + "\n", len(lines), nil
 }
 
 type reversingSealer struct{ fail bool }
+
+func (reversingSealer) Open(sealed []byte, keyID string) ([]byte, error) {
+	if keyID != "k1" {
+		return nil, errors.New("another key")
+	}
+	return []byte(strings.ToLower(string(sealed))), nil
+}
 
 func (s reversingSealer) Seal(plain []byte) ([]byte, string, error) {
 	if s.fail {

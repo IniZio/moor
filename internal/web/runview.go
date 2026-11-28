@@ -67,6 +67,7 @@ type runView struct {
 	Waiting bool
 	Earlier []versionView
 	Answer  *answerView
+	Blocked blockedView
 	HasSpec bool
 	SpecRef string
 	LastSeq int64

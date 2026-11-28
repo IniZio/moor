@@ -114,7 +114,7 @@ func runningOn(t *testing.T, pt *portal, runnerBin, dir, prefix string) (domain.
 	id := joined(t, pt, runnerBin, keyFile)
 	start(t, "runner", nil, runnerBin, append([]string{
 		"-portal", "ws://" + pt.addr + "/runner/link", "-id", id,
-		"-key", keyFile, "-prefix", prefix, "-desk-allow", "api.example.com",
+		"-key", keyFile, "-prefix", prefix,
 	}, images...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, id) == "linked" })
 	db, err := store.Open(context.Background(), pt.dsn)

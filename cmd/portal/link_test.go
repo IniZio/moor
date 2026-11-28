@@ -63,7 +63,7 @@ func TestARelinkingRunnerKeepsWantedTasksAndStopsTheRest(t *testing.T) {
 	addr := p.addr
 	p.stop()
 	ghost := wire.Fence{Task: "ghost", Run: 1, Gen: 0}
-	if err := m.host.Up(context.Background(), runner.Box{Fence: ghost, BoxAllow: []string{"x"}}); err != nil {
+	if err := m.host.Up(context.Background(), runner.Box{Fence: ghost, Proxies: wire.ProxyAccess{Portal: "http://portal.invalid", BoxToken: "x", DeskToken: "x"}}); err != nil {
 		t.Fatal(err)
 	}
 	again := startReplica(t, dsn, addr)

@@ -30,13 +30,12 @@ const SessionPart = wire.SessionPart
 
 // Config wires a runner. Dial makes one link, already through its handshake.
 type Config struct {
-	Dial      func(ctx context.Context) (Link, error)
-	Host      Host
-	Sessions  Sessions
-	DeskAllow []string
-	Build     string
-	Slots     int
-	Log       *slog.Logger
+	Dial     func(ctx context.Context) (Link, error)
+	Host     Host
+	Sessions Sessions
+	Build    string
+	Slots    int
+	Log      *slog.Logger
 }
 
 // Runner serves the portal's ops for the tasks on one host.

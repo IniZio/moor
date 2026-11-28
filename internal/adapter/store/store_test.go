@@ -29,6 +29,10 @@ func TestPostgresPassesTheSettingsContract(t *testing.T) {
 	storetest.RunSettings(t, func(t *testing.T) storetest.SettingsStore { return freshStore(t) })
 }
 
+func TestPostgresPassesTheBlockedContract(t *testing.T) {
+	storetest.RunBlocked(t, func(t *testing.T) storetest.BlockedStore { return freshStore(t) })
+}
+
 func TestPostgresPassesTheMachineContract(t *testing.T) {
 	storetest.RunMachines(t, func(t *testing.T) storetest.MachineStore { return freshStore(t) })
 }

@@ -10,7 +10,7 @@ and checksum.
 | box | Box | Rootless Docker in Docker with the project tools. sshd on port 2222 takes the desk's commands. |
 | desk | desk | herdr-core, the terminal host, with the harness launcher and a shell wrapper. |
 | relay | relay | Plain HTTP relay to the Box egress proxy, and a DNS server that refuses every query. |
-| proxy | Box egress proxy, desk proxy | nono's allow-list proxy at a pinned release. |
+| proxy | Box egress proxy, desk proxy | cmd/proxy, built by make images: elazarl/goproxy with the task's live policy from the portal. |
 
 ## Why it is built this way
 
@@ -24,8 +24,12 @@ and checksum.
   address does not connect from the Box.
 - **Fixed addresses in the Box network.** Containers inside the Box cannot resolve names (the
   relay refuses DNS), so the proxies sit at fixed addresses of a subnet chosen per task.
-- **One upstream connection per request.** nono never answers a second plain HTTP request on a
+- **One upstream connection per request.** The proxy this replaced never answered a second plain HTTP request on a
   kept-open connection. So the relay opens a new one each time.
+- **Tunnel by default, intercept only connection hosts.** The proxy reads its task's policy from
+  the portal each second with its own token. It tunnels an allowed HTTPS host untouched, so nested
+  containers that do not trust it still connect. It intercepts a host that has a connection, to add the
+  value. Its certificate lands in a volume the Box or desk mounts read-only at `/ca`.
 - **The shell enters the Docker user namespace.** sshd's forced command runs `nsenter -U` into
   rootless Docker's namespace. `id -u` is 0 there, and files land as the Box user outside it.
   A nested container run with the caller's uid can write a bind mount.

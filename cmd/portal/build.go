@@ -70,6 +70,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		web.Deps{
 			Settings: svc, Specs: specs, Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
 			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping, Run: events, Events: hub.readers(),
+			Proxies: newProxyAPI(cfg, svc, db), Blocked: svc,
 		},
 	)
 	if err != nil {
@@ -104,6 +105,7 @@ func (yamlParser) Parse(text string) (settings.Parsed, error) {
 		return settings.Parsed{}, fmt.Errorf("render settings: %w", err)
 	}
 	out := settings.Parsed{Text: string(rendered), Secrets: secrets, Repositories: doc.Settings().Repositories}
+	out.Settings = doc.Settings()
 	if out.Text == "{}\n" {
 		out.Text = text
 	}

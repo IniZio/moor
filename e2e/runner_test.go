@@ -23,9 +23,16 @@ allow:
 
 var joinLine = regexp.MustCompile(`^runner join -portal (\S+) -id (\S+) -token (\S+) -key runner\.key$`)
 
-var images = []string{
-	"-box-image", "moor-fresh-box:dev", "-desk-image", "moor-fresh-desk:dev",
-	"-relay-image", "moor-fresh-relay:dev", "-proxy-image", "moor-fresh-proxy:dev",
+// images are the runner's image flags for the images make images built, under the tag make passes in
+// MOOR_IMAGE_TAG.
+var images = []string{"-box-image", image("box"), "-desk-image", image("desk"), "-relay-image", image("relay"), "-proxy-image", image("proxy")}
+
+func image(name string) string {
+	tag := os.Getenv("MOOR_IMAGE_TAG")
+	if tag == "" {
+		tag = "dev"
+	}
+	return "moor-fresh-" + name + ":" + tag
 }
 
 type clock struct{}
@@ -83,7 +90,7 @@ func TestATaskRunsOnARealRunnerOutlivesAPortalRestartAndIsCancelled(t *testing.T
 	id := joined(t, pt, runnerBin, keyFile)
 	start(t, "runner", nil, runnerBin, append([]string{
 		"-portal", "ws://" + pt.addr + "/runner/link", "-id", id,
-		"-key", keyFile, "-prefix", prefix, "-desk-allow", "api.example.com",
+		"-key", keyFile, "-prefix", prefix,
 	}, images...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, id) == "linked" })
 

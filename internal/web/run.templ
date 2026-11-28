@@ -156,6 +156,9 @@ templ summaryPane(v runView) {
 			</div>
 		</section>
 	}
+	if len(v.Blocked.Rows) > 0 {
+		@blockedBox(v)
+	}
 	if v.Answer != nil {
 		<p class="answer">
 			@stateIcon(domain.GroupDone)
@@ -163,6 +166,26 @@ templ summaryPane(v runView) {
 			<span class="faint">{ v.Answer.At }</span>
 		</p>
 	}
+}
+
+templ blockedBox(v runView) {
+	<section class="box" id="blocked">
+		<div class="bhead"><b>{ v.Blocked.Title }</b></div>
+		<div class="tbl">
+			<div class="tr th"><span>Request</span><span>Times</span><span></span></div>
+			for _, b := range v.Blocked.Rows {
+				<div class="tr">
+					<span class="mono">{ b.Request }</span>
+					<span class="num">{ b.Times }</span>
+					if b.CanAllow {
+						<span><button class="btn" type="button" hx-post={ actionURL(v, "blocked/"+b.ID) } hx-vals='{"action":"allow"}' hx-swap="none" title={ "Adds " + b.Request + " under allow in settings" }>Allow</button></span>
+					} else {
+						<span class="muted">{ b.State }</span>
+					}
+				</div>
+			}
+		</div>
+	</section>
 }
 
 templ resultBox(v runView) {

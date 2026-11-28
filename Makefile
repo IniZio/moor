@@ -10,6 +10,7 @@ PORTAL_IMAGE := moor-fresh-portal:dev
 KUBECONFORM_VERSION := 0.8.0
 YQ_VERSION := 4.54.3
 CHART_TESTS := $(if $(shell command -v helm 2>/dev/null),chart-lint)
+IMAGE_TAG ?= dev
 
 .PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image chart-tools chart-lint cluster-test
 
@@ -57,12 +58,13 @@ test-store:
 	sh scripts/test-store.sh
 
 images:
-	@for i in $(IMAGES); do docker build -q --network host -t moor-fresh-$$i:dev images/$$i || exit 1; done
-	@echo "images: built $(IMAGES:%=moor-fresh-%:dev)"
+	CGO_ENABLED=0 go build -trimpath -o images/proxy/moor-proxy ./cmd/proxy
+	@for i in $(IMAGES); do docker build -q --network host -t moor-fresh-$$i:$(IMAGE_TAG) images/$$i || exit 1; done
+	@echo "images: built $(IMAGES:%=moor-fresh-%:$(IMAGE_TAG))"
 
 # Docker tests start real task containers. make test skips them, test-docker runs them and fails on any skip.
 test-docker: images
-	sh scripts/test-docker.sh
+	MOOR_IMAGE_TAG=$(IMAGE_TAG) sh scripts/test-docker.sh
 
 ci: audit generate-check lint lint-selftest test $(STORE_TESTS) $(DOCKER_TESTS) $(CHART_TESTS)
 

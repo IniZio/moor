@@ -11,13 +11,13 @@ import (
 	"github.com/IniZio/moor/internal/wire"
 )
 
-// ControlConfig wires the control of runner links. Policy gives the hosts the Box egress proxy lets
-// through, read when a task starts. Zero Tick takes the default.
+// ControlConfig wires the control of runner links. Access gives a task's proxies the portal's address and
+// their tokens, sent when the task starts. Zero Tick takes the default.
 type ControlConfig struct {
 	Store  Store
 	Tasks  Tasks
 	Clock  Clock
-	Policy func(ctx context.Context) ([]string, error)
+	Access func(t domain.Task) wire.ProxyAccess
 	Tick   time.Duration
 	Log    *slog.Logger
 }

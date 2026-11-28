@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/IniZio/moor/internal/domain"
 )
@@ -14,9 +15,59 @@ type Memory struct {
 	mu       sync.Mutex
 	versions []domain.SettingsVersion
 	secrets  map[string]domain.SealedSecret
+	blocked  []domain.BlockedRequest
 }
 
 func NewMemory() *Memory { return &Memory{secrets: map[string]domain.SealedSecret{}} }
+
+func (m *Memory) RecordBlocked(_ context.Context, h domain.BlockedHit) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, b := range m.blocked {
+		if b.Task == h.Task && b.Proxy == h.Proxy && b.Host == h.Host && b.Port == h.Port && b.Method == h.Method {
+			m.blocked[i].Count++
+			m.blocked[i].LastAt, m.blocked[i].Reason = h.At.UTC(), h.Reason
+			return nil
+		}
+	}
+	m.blocked = append(m.blocked, domain.BlockedRequest{
+		ID: domain.BlockedID(len(m.blocked) + 1), Task: h.Task, Proxy: h.Proxy, Host: h.Host, Port: h.Port,
+		Method: h.Method, Reason: h.Reason, Count: 1, FirstAt: h.At.UTC(), LastAt: h.At.UTC(),
+	})
+	return nil
+}
+
+func (m *Memory) BlockedRequests(_ context.Context, task domain.TaskID) ([]domain.BlockedRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []domain.BlockedRequest
+	for _, b := range m.blocked {
+		if b.Task == task {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+func (m *Memory) BlockedRequest(_ context.Context, id domain.BlockedID) (domain.BlockedRequest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.blocked) {
+		return domain.BlockedRequest{}, fmt.Errorf("blocked request %d: %w", id, domain.ErrNotFound)
+	}
+	return m.blocked[id-1], nil
+}
+
+func (m *Memory) DecideBlocked(_ context.Context, id domain.BlockedID, d domain.Decision, by string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id < 1 || int(id) > len(m.blocked) {
+		return fmt.Errorf("blocked request %d: %w", id, domain.ErrNotFound)
+	}
+	b := &m.blocked[id-1]
+	b.Decision, b.DecidedBy, b.DecidedAt = d, by, at.UTC()
+	return nil
+}
 
 func (m *Memory) LatestSettings(context.Context) (domain.SettingsVersion, error) {
 	m.mu.Lock()

@@ -9,6 +9,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
+	github.com/elazarl/goproxy v1.9.4
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/go-github/v88 v88.0.0
 	github.com/hashicorp/yamux v0.1.2
