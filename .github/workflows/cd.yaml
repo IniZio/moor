@@ -1,0 +1,142 @@
+name: CD
+
+on:
+  push:
+    branches: [develop, fresh]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  # A cancel mid-publish would leave a release without some of its parts.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      owner: ${{ steps.v.outputs.owner }}
+    steps:
+      - id: v
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "version=1.0.0-nightly.$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
+
+  gate:
+    uses: ./.github/workflows/ci.yaml
+
+  images:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      IMAGE_PREFIX: ghcr.io/${{ needs.version.outputs.owner }}/moor-
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push the portal and the four task images
+        env:
+          BUILD_FLAGS: --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        run: make images image push-images IMAGE_TAG="$VERSION" PUSH_TAGS="$VERSION $GITHUB_SHA"
+
+  chart:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      OWNER: ${{ needs.version.outputs.owner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make chart-package
+      - name: Push the chart at the release version
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          # helm uploads the manifest by digest, then reads it back to apply the version tag. ghcr sometimes
+          # answers 404 for a manifest it just accepted (helm/helm#31348), so retry that one error. The
+          # blobs and manifest are already there, so a retry only tags.
+          for attempt in 1 2 3 4; do
+            if helm push dist/chart/*.tgz "oci://ghcr.io/$OWNER/charts" 2>&1 | tee "$RUNNER_TEMP/push.log"; then
+              break
+            fi
+            grep -q 'failed to perform "Tag" on destination.*not found' "$RUNNER_TEMP/push.log" || exit 1
+            [ "$attempt" -lt 4 ] || exit 1
+            echo "::warning::ghcr 404 on the chart manifest just pushed (attempt $attempt); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+
+  runner:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: make runner-dist
+      - name: Publish the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          # A re-run of this commit finds the release and only replaces its files.
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
+            --title "$tag" --notes "Nightly build of $GITHUB_SHA. The runner tarballs are for linux/amd64 and linux/arm64."
+          gh release upload "$tag" dist/runner/* --clobber
+
+  gitops:
+    if: github.ref == 'refs/heads/develop'
+    needs: [version, gate, images, chart, runner]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Record the version in the deploy repository
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          GITOPS_DEPLOY_KEY: ${{ secrets.GITOPS_DEPLOY_KEY }}
+          GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+        run: .github/scripts/gitops-bump.sh
