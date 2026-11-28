@@ -6,8 +6,9 @@ STORE_TESTS := $(if $(or $(MOOR_TEST_POSTGRES_DSN),$(shell docker info >/dev/nul
 # make ci runs test-docker when a Docker daemon answers, unless MOOR_SKIP_DOCKER_TESTS is set.
 DOCKER_TESTS := $(if $(MOOR_SKIP_DOCKER_TESTS),,$(shell docker info >/dev/null 2>&1 && echo test-docker))
 IMAGES := box desk relay proxy
+PORTAL_IMAGE := moor-fresh-portal:dev
 
-.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden
+.PHONY: setup generate generate-check assets lint lint-selftest format audit test test-store test-docker images ci herdr-golden image
 
 setup:
 	@golangci-lint version 2>/dev/null | grep -q 'version $(GOLANGCI_LINT_VERSION) ' || \
@@ -64,3 +65,6 @@ ci: audit generate-check lint lint-selftest test $(STORE_TESTS) $(DOCKER_TESTS)
 
 herdr-golden:
 	go test -tags herdrgolden -run TestRecordTranscripts -count=1 ./internal/adapter/herdr/
+
+image:
+	docker build -q --network host --provenance=false -f deploy/Dockerfile --build-arg VERSION=$$(git describe --tags --always --dirty) -t $(PORTAL_IMAGE) .
