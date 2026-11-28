@@ -16,10 +16,11 @@
     "codemirror": "6.0.2"
   },
   "devDependencies": {
-    "esbuild": "0.28.2",
-    "htmx.org": "2.0.11",
-    "@fontsource-variable/figtree": "5.3.0",
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
-    "@fontsource-variable/jetbrains-mono": "5.3.0"
+    "@fontsource-variable/figtree": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "esbuild": "0.28.2",
+    "htmx-ext-sse": "2.2.4",
+    "htmx.org": "2.0.11"
   }
 }

@@ -83,9 +83,11 @@ func ago(now, t time.Time) string {
 }
 
 // lasted words the time between two instants as 40s, 9m 41s, 1h 05m or 2d 03h.
-func lasted(from, to time.Time) string {
-	d := max(to.Sub(from), 0).Round(time.Second)
-	secs := int(d.Seconds())
+func lasted(from, to time.Time) string { return words(to.Sub(from)) }
+
+// words words a length of time as lasted does.
+func words(d time.Duration) string {
+	secs := int(max(d, 0).Round(time.Second).Seconds())
 	switch {
 	case secs < 60:
 		return fmt.Sprintf("%ds", secs)

@@ -3,13 +3,10 @@ package web
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/IniZio/moor/internal/domain"
 )
@@ -33,6 +30,8 @@ type tasksView struct {
 	People   []string
 	Filter   domain.TaskFilter
 	List     listView
+	// Stamp is the state of the task table the page was drawn from, which the stream tells changes against.
+	Stamp string
 }
 
 func (v tasksView) filterBy() string {
@@ -107,6 +106,9 @@ func (s *server) tasksView(r *http.Request, f domain.TaskFilter) (tasksView, err
 	ctx := r.Context()
 	v := tasksView{Page: s.pageData(r), Filter: f, Prompt: f.FromPrompt}
 	var err error
+	if v.Stamp, err = s.deps.Tasks.TaskStamp(ctx); err != nil {
+		return v, fmt.Errorf("task stamp: %w", err)
+	}
 	if v.Repos, err = s.deps.Settings.Allowed(ctx); err != nil {
 		return v, fmt.Errorf("allowed repositories: %w", err)
 	}
@@ -145,17 +147,4 @@ func (s *server) listFragment(w http.ResponseWriter, r *http.Request, f domain.T
 	v := tasksView{Filter: f, People: people, List: list}
 	w.Header().Add("Vary", "HX-Request")
 	render(w, r, http.StatusOK, listResponse(v, r.URL.Query().Get("people") != v.peopleSig()))
-}
-
-func (s *server) runPage(w http.ResponseWriter, r *http.Request) {
-	t, err := s.deps.Tasks.Load(r.Context(), domain.TaskID(chi.URLParam(r, "id")))
-	if errors.Is(err, domain.ErrNotFound) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		serverError(w, r, err)
-		return
-	}
-	render(w, r, http.StatusOK, runPage(s.pageData(r), rowOf(domain.TaskListing{Task: t}, s.now())))
 }

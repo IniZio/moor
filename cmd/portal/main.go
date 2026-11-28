@@ -41,13 +41,17 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
+	streams, endStreams := context.WithCancel(context.Background())
+	defer endStreams()
 	srv := &http.Server{
 		Handler:           handler,
+		BaseContext:       func(net.Listener) context.Context { return streams },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
+	srv.RegisterOnShutdown(endStreams)
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 	log.Printf("portal %s listening on %s", version, ln.Addr())

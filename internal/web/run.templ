@@ -1,0 +1,240 @@
+package web
+
+import (
+	"net/url"
+	"strconv"
+
+	"github.com/IniZio/moor/internal/domain"
+)
+
+func runHref(id, part string) templ.SafeURL {
+	if part == "" {
+		return templ.URL("/tasks/" + id)
+	}
+	return templ.URL("/tasks/" + id + "/" + part)
+}
+
+func runStreamURL(v runView, part string) string {
+	q := url.Values{"view": {"page"}, "after": {strconv.FormatInt(v.LastSeq, 10)}}
+	if part != "" {
+		q.Set("part", part)
+	}
+	return "/api/tasks/" + v.Row.ID + "/events?" + q.Encode()
+}
+
+func actionURL(v runView, action string) string { return "/api/tasks/" + v.Row.ID + "/" + action }
+
+templ runPage(p page, v runView, part string) {
+	@layout(p, "Task #" + v.Row.ID, "tasks") {
+		<div id="run" hx-ext="sse" sse-connect={ runStreamURL(v, part) } sse-swap="page" data-task={ v.Row.ID }>
+			@runBody(v, part)
+		</div>
+	}
+}
+
+templ runBody(v runView, part string) {
+	@runHead(v)
+	<div class="twocol">
+		@runSide(v, part)
+		<div class="col">
+			switch {
+				case part == "":
+					@summaryPane(v)
+				default:
+					@partPane(v, part)
+			}
+		</div>
+	</div>
+}
+
+templ runHead(v runView) {
+	<div class="rhead">
+		if v.Row.Spec != "" {
+			<a class="lnk" href={ specHref(v.Row.Spec) }>← { v.Row.Spec }</a>
+		} else {
+			<a class="lnk" href={ promptHref() }>← From a prompt</a>
+		}
+		<div class="row">
+			@stateIcon(v.Row.Group)
+			<h1>{ v.Row.Title } <span class="faint">#{ v.Row.ID }</span></h1>
+			<span class="grow"></span>
+			if v.Actions.End {
+				<button class="btn" type="button" hx-post={ actionURL(v, "end") } hx-swap="none">End</button>
+			}
+			if v.Actions.Cancel {
+				<button class="btn" type="button" hx-post={ actionURL(v, "stop") } hx-swap="none">Cancel</button>
+			}
+			if v.Actions.Rerun {
+				<button class="btn primary" type="button" hx-post={ actionURL(v, "retry") } hx-swap="none">Re-run</button>
+			}
+		</div>
+		<p class="muted mono rrepo">{ v.Row.Repo }</p>
+	</div>
+}
+
+templ runSide(v runView, part string) {
+	<nav class="side" aria-label="Run">
+		<a href={ runHref(v.Row.ID, "") } aria-current?={ part == "" }>Summary</a>
+		<h3>Parts</h3>
+		for _, p := range v.Parts {
+			<a class="part" href={ runHref(v.Row.ID, p.Key) } aria-current?={ part == p.Key }>
+				@stateIcon(p.Mark)
+				<span>{ p.Name }</span>
+				<span class="faint num">{ p.Dur }</span>
+			</a>
+		}
+		<hr/>
+		if v.HasSpec {
+			<span class="item" title={ v.SpecRef }>Task spec file</span>
+		}
+		<a href="/settings">Settings used</a>
+	</nav>
+}
+
+templ summaryPane(v runView) {
+	<div class="box facts">
+		<div><span class="faint">{ v.Facts.Started }</span><span>{ v.Facts.Detail }</span></div>
+		<div><span class="faint">State</span><b>{ v.Facts.State }</b></div>
+		<div><span class="faint">Duration</span><b class="num">{ v.Facts.Dur }</b></div>
+		<div>
+			<span class="faint">Checked out</span>
+			switch {
+				case v.Facts.Commit == "":
+					<span class="muted">Not yet</span>
+				case v.Facts.Ref == "":
+					<span class="mono">{ v.Facts.Commit }</span>
+				default:
+					<span>{ v.Facts.Ref } at <span class="mono">{ v.Facts.Commit }</span></span>
+			}
+		</div>
+	</div>
+	if v.Fail != nil {
+		<div class="box annot">
+			<div class="ahead">
+				@stateIcon(domain.GroupFailed)
+				<b>{ v.Fail.Part } failed</b>
+				<a class="lnk" href={ runHref(v.Row.ID, v.Fail.Key) }>View in { v.Fail.Part }</a>
+			</div>
+			<p>{ v.Fail.Reason }</p>
+		</div>
+	}
+	switch {
+		case v.Result != nil:
+			@resultBox(v)
+		case v.Waiting:
+			<section class="box">
+				<div class="bhead"><b>Nothing published yet.</b></div>
+				<p class="pad muted">The result page shows here when the agent publishes it. <a href={ runHref(v.Row.ID, partAgent) }>Watch or type in Agent</a>.</p>
+			</section>
+	}
+	if len(v.Earlier) > 0 {
+		<section class="box">
+			<div class="bhead"><b>Earlier versions</b></div>
+			<div class="tbl">
+				<div class="tr th"><span>Name</span><span>Published</span><span></span></div>
+				for _, e := range v.Earlier {
+					<div class="tr">
+						if e.URL != "" {
+							<a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer">{ e.Name }</a>
+						} else {
+							<span>{ e.Name }</span>
+						}
+						<span class="num">{ e.At }</span>
+						<span class="muted">{ e.Note }</span>
+					</div>
+				}
+			</div>
+		</section>
+	}
+	if v.Answer != nil {
+		<p class="answer">
+			@stateIcon(domain.GroupDone)
+			<span>{ v.Answer.Text }</span>
+			<span class="faint">{ v.Answer.At }</span>
+		</p>
+	}
+}
+
+templ resultBox(v runView) {
+	<section class="box">
+		<div class="bhead"><b>{ v.Result.Line }</b></div>
+		<div class="bsub">
+			<span class="muted">Result page, { v.Result.Name }, published { v.Result.At }</span>
+			<span class="grow"></span>
+			if v.Result.URL != "" {
+				<a class="lnk" href={ templ.URL(v.Result.URL) } target="_blank" rel="noopener noreferrer">Open in a new tab</a>
+			}
+		</div>
+		if v.Result.URL != "" {
+			<iframe id={ "result-" + v.Result.Name } hx-preserve="true" title="Result page" src={ v.Result.URL } sandbox="allow-scripts allow-popups" referrerpolicy="no-referrer"></iframe>
+		}
+	</section>
+}
+
+templ partPane(v runView, key string) {
+	switch {
+		case !v.has(key):
+			<div class="box"><p class="pad muted">The task has not reached this part yet.</p></div>
+		case key == partAgent:
+			@agentPane(v, v.partOf(key))
+		default:
+			@stepsPane(v.partOf(key))
+	}
+}
+
+templ stepsPane(p partView) {
+	<div class="box">
+		<div class="bhead"><b>{ p.Name }</b><span class="faint">{ p.Head }</span></div>
+		<div class="steps">
+			for i, s := range p.Steps {
+				@stepRow(p.Key, i, s)
+			}
+		</div>
+	</div>
+}
+
+templ stepRow(part string, i int, s stepView) {
+	<details id={ "step-" + part + "-" + strconv.Itoa(i) }>
+		<summary>
+			@stateIcon(s.Mark)
+			<span>{ s.Name }</span>
+			<span class="grow"></span>
+			<span class="faint num">{ s.Dur }</span>
+		</summary>
+		<div class="log">
+			if len(s.Log) == 0 {
+				<div class="muted">Nothing to show yet.</div>
+			}
+			for j, l := range s.Log {
+				<div><span class="ln">{ strconv.Itoa(j + 1) }</span>{ l }</div>
+			}
+		</div>
+	</details>
+}
+
+templ agentPane(v runView, p partView) {
+	<div class="box">
+		<div class="bhead"><b>{ p.Name }</b><span class="faint">{ p.Head }</span></div>
+		if v.Fail != nil && v.Fail.Key == partAgent {
+			<div class="annot inline">
+				@stateIcon(domain.GroupFailed)
+				<span>{ v.Fail.Reason }</span>
+			</div>
+		}
+		<pre class="term" aria-label="Terminal"><span class="d">The terminal is not connected yet.</span></pre>
+		if v.Fail == nil {
+			<form class="tin" onsubmit="return false">
+				<span class="d">›</span>
+				<input type="text" id="tin" aria-label="Type to the agent" placeholder={ typePlaceholder(v) } disabled/>
+			</form>
+		}
+		<div class="keys">Not connected. Typing to the agent works here once the terminal is.</div>
+	</div>
+}
+
+func typePlaceholder(v runView) string {
+	if v.Row.Group == domain.GroupDone {
+		return "Type to the agent. Typing reopens this task."
+	}
+	return "Type to the agent"
+}

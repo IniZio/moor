@@ -40,6 +40,7 @@ type Deps struct {
 	Settings SettingsService
 	Specs    SpecSource
 	Start    TaskStarter
+	Act      TaskActions
 	Tasks    TaskReader
 	Ready    func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
@@ -77,12 +78,19 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
 		r.Get("/tasks", s.tasksPage)
 		r.Get("/tasks/{id}", s.runPage)
+		r.Get("/tasks/{id}/{part}", s.runPage)
 		r.Get("/machines", s.placeholder("Machines", "machines"))
 		r.Get("/settings", s.settingsPage)
 		r.Get("/api/me", s.me)
 		r.Get("/api/task-specs", s.taskSpecs)
 		r.Get("/api/tasks", s.listTasks)
 		r.Post("/api/tasks", s.startTask)
+		r.Get("/api/tasks/events", s.taskListEvents)
+		r.Get("/api/tasks/{id}", s.taskSnapshot)
+		r.Get("/api/tasks/{id}/events", s.runEvents)
+		r.Post("/api/tasks/{id}/stop", s.stopTask)
+		r.Post("/api/tasks/{id}/end", s.endTask)
+		r.Post("/api/tasks/{id}/retry", s.retryTask)
 		r.Get("/api/settings", s.getSettings)
 		r.Put("/api/settings", s.putSettings)
 		r.Post("/api/settings/check", s.checkSettings)

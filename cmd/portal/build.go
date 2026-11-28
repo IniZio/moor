@@ -35,9 +35,10 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 		return nil, nil, fmt.Errorf("secret key: %w", err)
 	}
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
+	tasks := task.New(db, systemClock{}, task.Config{})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins},
-		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: task.New(db, systemClock{}, task.Config{}), Tasks: db, Ready: db.Ping},
+		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Start: tasks, Act: tasks, Tasks: db, Ready: db.Ping},
 	)
 	if err != nil {
 		db.Close()

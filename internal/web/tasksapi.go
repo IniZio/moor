@@ -28,6 +28,11 @@ type TaskReader interface {
 	Starters(ctx context.Context, f domain.TaskFilter) ([]string, error)
 	NextTaskID(ctx context.Context) (domain.TaskID, error)
 	Load(ctx context.Context, id domain.TaskID) (domain.Task, error)
+	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
+	// EventsAfter lists up to limit event rows of a task above seq, in seq order.
+	EventsAfter(ctx context.Context, id domain.TaskID, after int64, limit int) ([]domain.EventRow, error)
+	// TaskStamp changes whenever any task is created or written.
+	TaskStamp(ctx context.Context) (string, error)
 }
 
 const listLimit = 200

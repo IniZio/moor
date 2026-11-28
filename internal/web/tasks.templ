@@ -111,7 +111,7 @@ templ filterBar(v tasksView) {
 		id="filters"
 		class="lhead"
 		hx-get="/api/tasks"
-		hx-trigger="change, every 5s, task-started from:body"
+		hx-trigger="change, sse:tasks, task-started from:body"
 		hx-target="#rows"
 		hx-swap="innerHTML"
 	>
@@ -176,7 +176,7 @@ templ tasksPage(v tasksView) {
 			<div class="col">
 				@heading(v)
 				if v.Spec == nil || v.Spec.Name != "" {
-					<div class="box">
+					<div class="box" hx-ext="sse" sse-connect={ "/api/tasks/events?since=" + url.QueryEscape(v.Stamp) }>
 						@filterBar(v)
 						<div id="rows">
 							@taskRows(v.List)
@@ -200,22 +200,4 @@ templ listResponse(v tasksView, withPeople bool) {
 templ startedResponse(msg string, repos []domain.Repo) {
 	@taskBox(repos, true)
 	@toast(msg, true)
-}
-
-templ runPage(p page, r rowView) {
-	@layout(p, "Task #" + r.ID, "tasks") {
-		<div class="rhead">
-			if r.Spec != "" {
-				<a class="lnk" href={ specHref(r.Spec) }>← { r.Spec }</a>
-			} else {
-				<a class="lnk" href={ promptHref() }>← From a prompt</a>
-			}
-			<div class="row">
-				@stateIcon(r.Group)
-				<h1>{ r.Title } <span class="faint">#{ r.ID }</span></h1>
-			</div>
-			<p class="muted mono rrepo">{ r.Repo }</p>
-		</div>
-		<p class="muted empty">The run page is not built yet.</p>
-	}
 }

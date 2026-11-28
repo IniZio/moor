@@ -121,6 +121,7 @@ a.trow:hover { background: var(--hover); }
 .ic.failed circle { fill: var(--bad); stroke: var(--bad); } .ic.failed path { stroke: #fff; }
 .ic.cancelled circle, .ic.cancelled path { stroke: var(--faint); }
 .ic.queued circle { stroke: var(--faint); stroke-dasharray: 3 2.5; }
+.ic.pending circle { stroke: var(--line-strong); }
 .ic.running circle { stroke: var(--warn); stroke-dasharray: 30 14; transform-origin: center; animation: spin 1.2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ic.running circle { animation: none; } }
@@ -128,6 +129,45 @@ a.trow:hover { background: var(--hover); }
 .rhead { display: flex; flex-direction: column; gap: 4px; padding-bottom: 4px; }
 .rhead h1 { font-size: 19px; }
 .rrepo { padding-left: 24px; }
+.side .part span:nth-child(2) { flex: 1; }
+.side .item { padding: 5px 8px; color: var(--muted); cursor: default; }
+
+.facts { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 16px; padding: 12px 16px; }
+.facts div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.facts span.faint { font-size: 12px; }
+.bhead { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.bhead b { font-weight: 600; font-size: 14px; }
+.bsub { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--sunken); border-bottom: 1px solid var(--line); font-size: 12px; }
+.box iframe { display: block; width: 100%; height: 560px; border: 0; background: #fff; }
+.pad { padding: 12px 14px; }
+.tbl .tr { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: center; min-height: 32px; padding: 3px 14px; border-bottom: 1px solid var(--line); }
+.tbl .tr:last-child { border-bottom: 0; }
+.tbl .th { min-height: 26px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.annot { border-color: var(--bad-soft); }
+.annot .ahead { display: flex; align-items: center; gap: 8px; padding: 10px 14px 4px; color: var(--bad); }
+.annot p { padding: 0 14px 12px 38px; }
+.annot.inline { display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px; background: #fdf6f4; color: var(--bad); border-bottom: 1px solid var(--bad-soft); }
+.answer { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; }
+.steps details { border-bottom: 1px solid var(--line); }
+.steps details:last-child { border-bottom: 0; }
+.steps summary { display: flex; align-items: center; gap: 10px; padding: 7px 14px; }
+.steps summary:hover { background: var(--hover); }
+.steps summary::before { width: 10px; }
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▸'; color: var(--faint); }
+details[open] > summary::before { content: '▾'; }
+.log { padding: 6px 0 10px; background: var(--term-bg); color: var(--term-fg); font: 12px/20px var(--mono); }
+.log div { padding: 0 14px; white-space: pre-wrap; display: grid; grid-template-columns: 36px minmax(0, 1fr); }
+.log .ln { color: var(--term-dim); text-align: right; padding-right: 14px; user-select: none; }
+.log .muted { display: block; color: var(--term-dim); }
+.term { background: var(--term-bg); color: var(--term-fg); padding: 10px 14px; height: calc(100vh - 290px); min-height: 360px; overflow: auto; line-height: 1.5; }
+.term .d, .tin .d { color: var(--term-dim); }
+.tin { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--term-bg); border-top: 1px solid #3a332c; font-family: var(--mono); }
+.tin input { flex: 1; height: 28px; background: #231f1b; border: 1px solid #463f37; border-radius: 5px; color: var(--term-fg); font-family: var(--mono); font-size: 12px; padding: 0 8px; }
+.tin input::placeholder { color: var(--term-dim); }
+.tin input:disabled { cursor: not-allowed; opacity: 0.7; }
+.keys { padding: 6px 14px; font-size: 12px; color: var(--muted); background: var(--sunken); }
 
 .diffhead { margin-bottom: 6px; }
 .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

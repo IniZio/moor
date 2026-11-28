@@ -24,7 +24,7 @@ func TestTheTasksPageHasTheLeftListTheTaskBoxAndAnEmptyList(t *testing.T) {
 		`<option value="github.com/example-org/shop-web">example-org/shop-web</option>`,
 		`aria-label="Task specs"`, `Task specs</h3>`, `PR evidence`, `Dependency check`, `tasks/broken.yaml`, `From a prompt`,
 		`href="/tasks?spec=PR+evidence"`, `href="/tasks?from=prompt"`,
-		`hx-trigger="change, every 5s, task-started from:body"`, `hx-get="/api/tasks"`,
+		`hx-trigger="change, sse:tasks, task-started from:body"`, `hx-get="/api/tasks"`,
 		`id="count"`, `0 tasks`, `No tasks yet.`)
 	r.has(t, http.StatusOK, `<a href="/tasks" aria-current><b>All tasks</b></a>`)
 	r.lacks(t, `Nothing here yet.`, "src=\"http", "https://")
