@@ -18,4 +18,6 @@ type TaskWrite struct {
 	Create bool
 	Events []EventRow
 	Result *ResultVersion
+	// Page is the result page of Result, stored with it. Empty when Result is nil or the page lives elsewhere.
+	Page []byte
 }

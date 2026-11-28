@@ -59,6 +59,7 @@ test-store:
 
 images:
 	CGO_ENABLED=0 go build -trimpath -o images/proxy/moor-proxy ./cmd/proxy
+	CGO_ENABLED=0 go build -trimpath -o images/desk/publish ./cmd/publish
 	@for i in $(IMAGES); do docker build -q --network host -t moor-fresh-$$i:$(IMAGE_TAG) images/$$i || exit 1; done
 	@echo "images: built $(IMAGES:%=moor-fresh-%:$(IMAGE_TAG))"
 

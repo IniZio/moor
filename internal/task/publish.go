@@ -4,15 +4,23 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/IniZio/moor/internal/domain"
 )
 
-// PublishInput is one publish call. Digest names the page's content.
+// EntryURLVersion in a publish's EntryURL stands for the number of the version the publish makes, which only the task
+// knows.
+const EntryURLVersion = "{version}"
+
+// PublishInput is one publish call. Digest names the page's content. Page is the page itself, kept with the
+// version when the portal serves it, and empty when the page lives at EntryURL elsewhere.
 type PublishInput struct {
 	Line     string
 	EntryURL string
 	Digest   string
+	Page     []byte
 }
 
 // DeliveredInput says the bridge posted the delivery for Version.
@@ -43,19 +51,21 @@ func (e env) publish(t domain.Task, versions []domain.ResultVersion, in PublishI
 	if i := slices.IndexFunc(versions, func(v domain.ResultVersion) bool { return v.Digest == in.Digest }); i >= 0 {
 		return decision{task: t, effects: e.owed(t, versions[i], len(versions))}, nil
 	}
-	v := domain.ResultVersion{Task: t.ID, N: len(versions) + 1, EntryURL: in.EntryURL, Line: in.Line, Digest: in.Digest, PublishedAt: e.now}
-	published := row{domain.KindPublished, domain.PublishedData{Version: v.N, Line: in.Line, EntryURL: in.EntryURL}}
+	n := len(versions) + 1
+	url := strings.ReplaceAll(in.EntryURL, EntryURLVersion, strconv.Itoa(n))
+	v := domain.ResultVersion{Task: t.ID, N: n, EntryURL: url, Line: in.Line, Digest: in.Digest, PublishedAt: e.now}
+	published := row{domain.KindPublished, domain.PublishedData{Version: v.N, Line: in.Line, EntryURL: url}}
 	if review {
 		if _, err := domain.Next(e.flow(t), t.State, domain.Published); err != nil {
 			return decision{}, fmt.Errorf("task %s: %w", t.ID, err)
 		}
-		return decision{task: t, rows: []row{published}, result: &v, effects: e.owed(t, v, v.N)}, nil
+		return decision{task: t, rows: []row{published}, result: &v, page: in.Page, effects: e.owed(t, v, v.N)}, nil
 	}
 	next, rows, err := e.move(t, domain.Published, fmt.Sprintf("published version %d", v.N))
 	if err != nil {
 		return decision{}, err
 	}
-	return decision{task: next, rows: append([]row{published}, rows...), result: &v, effects: e.owed(next, v, v.N)}, nil
+	return decision{task: next, rows: append([]row{published}, rows...), result: &v, page: in.Page, effects: e.owed(next, v, v.N)}, nil
 }
 
 // owed derives the effect of version v from the state alone: a delivery while delivering, or the
@@ -104,4 +114,49 @@ func (s *Service) checkNewest(ctx context.Context, t domain.Task, version int) e
 		return fmt.Errorf("task %s: %w: delivered version %d, newest is %d", t.ID, domain.ErrRefused, version, len(versions))
 	}
 	return nil
+}
+
+// ReviewFailed records that the review prompt was claimed and could not be typed, and why. Nobody asks again.
+func (s *Service) ReviewFailed(ctx context.Context, id domain.TaskID, reason string) (Outcome, error) {
+	return s.simple(ctx, id, func(_ env, t domain.Task) (decision, error) {
+		text := "the review prompt was not typed: " + reason
+		return decision{task: t, rows: []row{{domain.KindError, domain.ErrorData{Text: text}}}}, nil
+	})
+}
+
+// ReviewTurn claims the review turn of a task whose first version waits for it. It records the turn as a note and
+// reports it as an effect to the one caller that recorded it: the write checks the task's version under a row lock, so
+// when two replicas ask at once the second finds the note and is owed nothing. The turn is at most once. A caller that
+// claimed it and could not type it must say so with an error row, because nobody asks again.
+func (s *Service) ReviewTurn(ctx context.Context, id domain.TaskID) (Outcome, error) {
+	return s.apply(ctx, id, func(ctx context.Context, e env, t domain.Task) (decision, error) {
+		owed, err := s.reviewOwed(ctx, t)
+		if err != nil || !owed {
+			return decision{task: t}, err
+		}
+		if _, err := domain.Next(e.flow(t), t.State, domain.ReviewSent); err != nil {
+			return decision{}, fmt.Errorf("task %s: %w", id, err)
+		}
+		fx := Effect{Kind: SendReviewTurn, Task: t.ID, Runner: t.Runner, Run: t.Run, Gen: t.Gen, Version: 1}
+		return decision{task: t, rows: []row{{domain.KindNote, domain.NoteData{Text: domain.PhaseReview}}}, effects: []Effect{fx}}, nil
+	})
+}
+
+// reviewOwed is true while a running task with a review prompt holds its first version and has not sent the prompt.
+func (s *Service) reviewOwed(ctx context.Context, t domain.Task) (bool, error) {
+	if t.ReviewPrompt == "" || t.State != domain.Running {
+		return false, nil
+	}
+	versions, err := s.store.Versions(ctx, t.ID)
+	if err != nil {
+		return false, fmt.Errorf("load versions of %s: %w", t.ID, err)
+	}
+	if len(versions) != 1 {
+		return false, nil
+	}
+	sent, err := s.store.HasNote(ctx, t.ID, domain.PhaseReview)
+	if err != nil {
+		return false, fmt.Errorf("look for the review note of %s: %w", t.ID, err)
+	}
+	return !sent, nil
 }

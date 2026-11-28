@@ -93,6 +93,7 @@ func (r *Runner) start(st Stream) error {
 		return fmt.Errorf("runner: start the session of %s: %w", s.Task, err)
 	}
 	r.watch(s.Fence)
+	r.note(j, s.Fence)
 	if err := r.emitParts(s.Task); err != nil {
 		return err
 	}

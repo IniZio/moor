@@ -46,7 +46,7 @@ func (s *Store) events(ctx context.Context, id domain.TaskID) ([]domain.EventRow
 
 func subject(t *testing.T) storetest.Subject {
 	s := freshStore(t)
-	return storetest.Subject{Store: s, Events: s.events}
+	return storetest.Subject{Store: s, Events: s.events, Page: s.Page}
 }
 
 func count(t *testing.T, s *Store, query string, args ...any) int {

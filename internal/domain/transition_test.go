@@ -15,7 +15,7 @@ var (
 	allSignals = []domain.Signal{
 		domain.SlotFree, domain.PartsUp, domain.PartFailed, domain.BoxRecreated,
 		domain.Published, domain.Delivered, domain.PersonEnded, domain.SessionEnded,
-		domain.TimeLimit, domain.Steered, domain.NewerRev, domain.Cancel, domain.RunnerRevoked,
+		domain.TimeLimit, domain.Steered, domain.NewerRev, domain.Cancel, domain.RunnerRevoked, domain.ReviewSent,
 	}
 	allFlows = []domain.Flow{domain.Plain, domain.Evented, domain.Answering}
 )
@@ -33,6 +33,7 @@ func allowedEdges() map[edge]domain.State {
 		allowed[edge{f, domain.Starting, domain.PartsUp}] = domain.Running
 		allowed[edge{f, domain.Starting, domain.PartFailed}] = domain.Failed
 		allowed[edge{f, domain.Running, domain.BoxRecreated}] = domain.Running
+		allowed[edge{f, domain.Running, domain.ReviewSent}] = domain.Running
 		allowed[edge{f, domain.Done, domain.Steered}] = domain.Running
 		allowed[edge{f, domain.Running, domain.SessionEnded}] = domain.Failed
 		allowed[edge{f, domain.Running, domain.TimeLimit}] = domain.Failed

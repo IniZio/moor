@@ -157,7 +157,7 @@ func TestTaskLifecycle(t *testing.T) {
 	}
 	ctx := context.Background()
 	key := Key{Task: "t1", Run: 1, Gen: 1}
-	spec := Spec{Key: key, Portal: fakePortal(t), BoxToken: "box.t", DeskToken: "desk.t"}
+	spec := Spec{Key: key, Portal: fakePortal(t), BoxToken: "box.t", DeskToken: "desk.t", TaskToken: "task.t"}
 	t.Cleanup(func() { _ = d.Down(context.Background(), Key{Task: key.Task, Run: 99, Gen: 99}) })
 
 	start := time.Now()
@@ -170,6 +170,7 @@ func TestTaskLifecycle(t *testing.T) {
 		t.Fatalf("want %d parts running, got %v", len(parts), first)
 	}
 
+	t.Run("only the desk holds the task token", func(t *testing.T) { onlyTheDeskHoldsTheTaskToken(t, d, key.Task) })
 	t.Run("box cannot reach the desk proxy", func(t *testing.T) { boxCannotReachDeskProxy(t, d, key.Task) })
 	t.Run("stand-in runs three commands in the box", func(t *testing.T) { standIn(t, d, key.Task) })
 	t.Run("nested container fetches and writes a bind mount", func(t *testing.T) { nested(t, d, key.Task) })
@@ -183,6 +184,18 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 	t.Run("recreate replaces only the box", func(t *testing.T) { recreate(t, d, spec, first) })
 	t.Run("another adapter lists the task and takes it down", func(t *testing.T) { readopt(t, cfg, Key{Task: key.Task, Run: 1, Gen: 2}) })
+}
+
+func onlyTheDeskHoldsTheTaskToken(t *testing.T, d *Docker, task domain.TaskID) {
+	for _, p := range parts {
+		env := sh(t, "docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", d.name(task, string(p)))
+		if has := strings.Contains(env, "MOOR_TASK_TOKEN=task.t\n"); has != (p == Desk) {
+			t.Errorf("%s holds the task token: %v", p, has)
+		}
+		if p == Desk && !strings.Contains(env, "MOOR_TASK=t1\n") {
+			t.Errorf("the desk does not know its task:\n%s", env)
+		}
+	}
 }
 
 func equal(a, b map[Part]string) bool {

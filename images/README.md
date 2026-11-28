@@ -8,7 +8,7 @@ and checksum.
 | Image | Runs as | What it is |
 |---|---|---|
 | box | Box | Rootless Docker in Docker with the project tools. sshd on port 2222 takes the desk's commands. |
-| desk | desk | herdr-core, the terminal host, with the harness launcher and a shell wrapper. |
+| desk | desk | herdr-core, the terminal host, with the harness launcher, a shell wrapper and `publish`, cmd/publish built by make images: the one command that posts the agent's result page. |
 | relay | relay | Plain HTTP relay to the Box egress proxy, and a DNS server that refuses every query. |
 | proxy | Box egress proxy, desk proxy | cmd/proxy, built by make images: elazarl/goproxy with the task's live policy from the portal. |
 
@@ -37,5 +37,10 @@ and checksum.
   set, `bash -c` runs the line in the Box over ssh.
 - **Stand-in harness.** `harness` starts `standin`, which waits for `/desk/go` and runs
   three commands in the Box. While it waits it answers each line typed to it with
-  `standin heard: <line>`, so a terminal test can see its keys reach the harness. A later
+  `standin heard: <line>`, so a terminal test can see its keys reach the harness. With a script
+  in `/desk/script` it plays that instead. `publish <page> <verdict>` runs the publish tool.
+  `wait <text>` reads typed lines until one holds the text. The harness exits when the script ends. A later
   image starts a coding agent there instead.
+- **The publish tool.** `publish <page.html> --verdict "..."` posts the page to
+  `$MOOR_PORTAL/api/tasks/$MOOR_TASK/results` as the task, with `$MOOR_TASK_TOKEN`. It goes through the desk
+  proxy like every desk call. The token is in the desk only, never in the Box or a proxy.

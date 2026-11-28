@@ -169,11 +169,17 @@ const (
 	SessionFinished = "finished"
 )
 
+// NotePart is the part of a task.watch line that carries a note, a step the runner took such as the desk coming up.
+// The line's Text is the note as domain.NoteText makes it. A note is an edge, not a level, so the runner sends the
+// notes of a launch again each time a watch opens and the portal keeps each once.
+const NotePart = "note"
+
 type TaskWatchLine struct {
 	Fence
 	Part  string `json:"part"`
 	State string `json:"state"`
 	Code  int    `json:"code"`
+	Text  string `json:"text,omitempty"`
 }
 
 type BoxRecreate struct {

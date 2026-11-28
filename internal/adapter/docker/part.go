@@ -86,7 +86,7 @@ func (d *Docker) boxArgs(l layout) []string {
 func (d *Docker) deskArgs(l layout) []string {
 	n := func(what string) string { return d.name(l.spec.Key.Task, what) }
 	proxy := "http://x:" + l.deskPass + "@" + n(string(DeskProxy)) + ":8080"
-	return append(d.trustArgs(l, volDeskCA),
+	return append(append(d.trustArgs(l, volDeskCA), taskArgs(l.spec)...),
 		"--hostname", n(string(Desk)), "--network", n(netDesk),
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges",
 		"-e", "HTTPS_PROXY="+proxy, "-e", "HTTP_PROXY="+proxy,
@@ -94,6 +94,14 @@ func (d *Docker) deskArgs(l layout) []string {
 		"-e", "HARNESS_BOX_SSH=rootless@"+n(string(Box)),
 		"-v", n(volWorkspace)+":/workspace", "-v", n(volDesk)+":/desk", "-v", n(volKeys)+":/keys:ro",
 	)
+}
+
+// taskArgs give the desk what its publish tool needs to call the portal as its task, through the desk proxy.
+func taskArgs(s Spec) []string {
+	if s.TaskToken == "" {
+		return nil
+	}
+	return []string{"-e", "MOOR_PORTAL=" + s.Portal, "-e", "MOOR_TASK=" + string(s.Key.Task), "-e", "MOOR_TASK_TOKEN=" + s.TaskToken}
 }
 
 func probe(p Part) []string {

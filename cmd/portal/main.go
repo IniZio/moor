@@ -16,7 +16,8 @@ import (
 
 var version = "dev"
 
-const shutdownGrace = 10 * time.Second
+// shutdownGrace is the longest the portal drains after SIGTERM, which the stop rule bounds at 30 seconds.
+const shutdownGrace = 30 * time.Second
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

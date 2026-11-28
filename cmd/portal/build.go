@@ -71,6 +71,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 			Settings: svc, Specs: specs, Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
 			Machines: rn.machines, Terms: terms{rn.control}, Ready: db.Ping, Run: events, Events: hub.readers(),
 			Proxies: newProxyAPI(cfg, svc, db), Blocked: svc,
+			Results: newResults(cfg, db, hub.answers(db, tasks)),
 		},
 	)
 	if err != nil {

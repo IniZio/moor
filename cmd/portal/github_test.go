@@ -64,8 +64,8 @@ func newHookRig(t *testing.T, files map[string]string) *hookRig {
 	}
 	cfg := config{
 		listen: "127.0.0.1:0", database: dsn, userHeader: userHeader, orgName: "example-org", secretKey: secret,
-		homeDir: writeHome(t, files),
-		github:  github.Config{AppID: 17, KeyFile: key, WebhookSecret: []byte(hookSecret), APIBase: fake.URL()},
+		homeDir: writeHome(t, files), publicURL: "https://portal.example.test",
+		github: github.Config{AppID: 17, KeyFile: key, WebhookSecret: []byte(hookSecret), APIBase: fake.URL()},
 	}
 	p, err := assemble(context.Background(), cfg)
 	if err != nil {

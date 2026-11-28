@@ -3,6 +3,7 @@ package tasktest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
@@ -17,6 +18,7 @@ type Memory struct {
 	tasks    map[domain.TaskID]domain.Task
 	events   map[domain.TaskID][]domain.EventRow
 	versions map[domain.TaskID][]domain.ResultVersion
+	pages    map[domain.TaskID][][]byte
 }
 
 func NewMemory() *Memory {
@@ -24,6 +26,7 @@ func NewMemory() *Memory {
 		tasks:    make(map[domain.TaskID]domain.Task),
 		events:   make(map[domain.TaskID][]domain.EventRow),
 		versions: make(map[domain.TaskID][]domain.ResultVersion),
+		pages:    make(map[domain.TaskID][][]byte),
 	}
 }
 
@@ -67,6 +70,26 @@ func (m *Memory) Versions(_ context.Context, id domain.TaskID) ([]domain.ResultV
 	return slices.Clone(m.versions[id]), nil
 }
 
+// HasNote tells whether the task has a note row with exactly this text.
+func (m *Memory) HasNote(_ context.Context, id domain.TaskID, text string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	want, _ := json.Marshal(domain.NoteData{Text: text})
+	return slices.ContainsFunc(m.events[id], func(r domain.EventRow) bool {
+		return r.Kind == domain.KindNote && bytes.Equal(r.Data, want)
+	}), nil
+}
+
+// Page is the page stored with a version, for tests to inspect.
+func (m *Memory) Page(_ context.Context, id domain.TaskID, n int) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if n < 1 || n > len(m.pages[id]) || len(m.pages[id][n-1]) == 0 {
+		return nil, fmt.Errorf("task %s page %d: %w", id, n, domain.ErrNotFound)
+	}
+	return bytes.Clone(m.pages[id][n-1]), nil
+}
+
 func (m *Memory) Save(_ context.Context, w domain.TaskWrite) (domain.Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -82,6 +105,7 @@ func (m *Memory) Save(_ context.Context, w domain.TaskWrite) (domain.Task, error
 		v := *w.Result
 		v.Task = t.ID
 		m.versions[t.ID] = append(m.versions[t.ID], v)
+		m.pages[t.ID] = append(m.pages[t.ID], bytes.Clone(w.Page))
 	}
 	return clone(t), nil
 }

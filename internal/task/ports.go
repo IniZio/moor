@@ -17,6 +17,8 @@ type Store interface {
 	LiveInGroup(ctx context.Context, repo domain.Repo, spec domain.SpecName, source domain.EventSource, group domain.EventGroup) ([]domain.Task, error)
 	// Versions lists a task's result versions in order.
 	Versions(ctx context.Context, id domain.TaskID) ([]domain.ResultVersion, error)
+	// HasNote tells whether the task has a note row with exactly this text.
+	HasNote(ctx context.Context, id domain.TaskID, text string) (bool, error)
 	// Save applies w in one transaction. It returns the task as stored, with its version bumped.
 	Save(ctx context.Context, w domain.TaskWrite) (domain.Task, error)
 }

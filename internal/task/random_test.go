@@ -1,6 +1,7 @@
 package task_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -220,12 +221,24 @@ func (f *fuzz) checkVersions(t *testing.T, i int, tk domain.Task) {
 		digests[v.Digest] = true
 	}
 	wantVersions := 1
-	if tk.ReviewPrompt != "" {
+	if tk.ReviewPrompt != "" && !f.acceptedAtSessionEnd(tk.ID) {
 		wantVersions = 2
 	}
 	if tk.State == domain.Delivering && len(versions) < wantVersions {
 		t.Fatalf("step %d: %s delivers with %d versions, review prompt %q", i, tk.ID, len(versions), tk.ReviewPrompt)
 	}
+}
+
+// acceptedAtSessionEnd tells whether the task took its first version because the session ended while it waited for the
+// review, the one way a review task delivers before its second publish.
+func (f *fuzz) acceptedAtSessionEnd(id domain.TaskID) bool {
+	for _, r := range f.mem.Events(id) {
+		var s domain.StateData
+		if r.Kind == domain.KindState && json.Unmarshal(r.Data, &s) == nil && s.Reason == "session ended after the first version" {
+			return true
+		}
+	}
+	return false
 }
 
 func moved(flow domain.Flow, from, to domain.State) bool {

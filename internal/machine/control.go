@@ -128,6 +128,9 @@ func (h *holding) tick(ctx context.Context) bool {
 	if err := h.place(ctx); err != nil {
 		h.log.Warn("place", "err", err)
 	}
+	if err := h.reviews(ctx); err != nil {
+		h.log.Warn("review", "err", err)
+	}
 	return true
 }
 

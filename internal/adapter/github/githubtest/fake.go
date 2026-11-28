@@ -131,6 +131,8 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/_fake/comments":
 		reply(w, http.StatusOK, f.comments)
+	case r.Method == http.MethodGet && r.URL.Path == "/_fake/calls":
+		reply(w, http.StatusOK, f.calls)
 	case r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "app" && parts[3] == "access_tokens":
 		reply(w, http.StatusCreated, map[string]any{"token": "fake-token-" + parts[2], "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
 	case r.Method == http.MethodGet && len(parts) == 4 && parts[0] == "repos" && parts[3] == "installation":

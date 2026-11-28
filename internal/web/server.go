@@ -38,7 +38,7 @@ type SettingsService interface {
 	Allowed(ctx context.Context) ([]domain.Repo, error)
 }
 
-// Deps are the parts the server calls. Ready reports whether the database answers.
+// Deps are the parts the server calls.
 type Deps struct {
 	Settings SettingsService
 	Specs    SpecSource
@@ -51,8 +51,10 @@ type Deps struct {
 	Run     SpecRunner
 	Events  domain.EventReaders
 	Proxies ProxyAPI
+	Results Results
 	Blocked BlockedRequests
-	Ready   func(ctx context.Context) error
+	// Ready is not read: readiness reports the process only, so a slow database never takes a pod out of service.
+	Ready func(ctx context.Context) error
 	// Now is the clock the ages and durations read, and is time.Now when left nil.
 	Now func() time.Time
 }
@@ -87,6 +89,7 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 	r.Handle("/static/*", http.StripPrefix("/static/", cached(http.FileServerFS(static))))
 	s.internalRoutes(r)
 	s.proxyRoutes(r)
+	s.resultRoutes(r)
 	r.Group(func(r chi.Router) {
 		r.Use(guard.Handler, s.person)
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/tasks", http.StatusFound) })
@@ -133,12 +136,7 @@ func cached(next http.Handler) http.Handler {
 	})
 }
 
-func (s *server) readyz(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer cancel()
-	if err := s.deps.Ready(ctx); err != nil {
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
-		return
-	}
+// readyz says the process serves. It asks nothing of the database or any other part.
+func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }

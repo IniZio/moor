@@ -17,6 +17,7 @@ func TestMemoryPassesTheStoreContract(t *testing.T) {
 			Events: func(_ context.Context, id domain.TaskID) ([]domain.EventRow, error) {
 				return m.Events(id), nil
 			},
+			Page: m.Page,
 		}
 	})
 }

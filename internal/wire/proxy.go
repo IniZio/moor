@@ -1,11 +1,13 @@
 package wire
 
 // ProxyAccess is how a task's two proxies reach the portal: its address, and a token for each proxy that
-// names the task and the proxy. Only the proxies hold it, never the Box or the desk.
+// names the task and the proxy. Only the proxies hold the proxy tokens, never the Box or the desk. TaskToken is
+// the task scope's token, which the desk's publish tool presents, and it opens nothing a proxy's token does.
 type ProxyAccess struct {
 	Portal    string `json:"portal"`
 	BoxToken  string `json:"box_token"`
 	DeskToken string `json:"desk_token"`
+	TaskToken string `json:"task_token,omitempty"`
 }
 
 // Policy answers GET /internal/policy/{task}: one settings version's allow lines and the connections the

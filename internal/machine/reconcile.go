@@ -82,12 +82,12 @@ func (h *holding) follow(ctx context.Context) error {
 // line turns a session line into a report, and the state machine decides what it moves. A live
 // session means the desk, Box and proxy are up; a finished one means the harness exited.
 func (h *holding) line(ctx context.Context, l wire.TaskWatchLine) {
-	if l.Part != wire.SessionPart {
-		return
+	switch {
+	case l.Part == wire.NotePart:
+		h.report(ctx, domain.TaskID(l.Task), task.Report{Kind: task.Noted, Run: l.Run, Text: l.Text})
+	case l.Part == wire.SessionPart && l.State == wire.SessionFinished:
+		h.report(ctx, domain.TaskID(l.Task), task.Report{Kind: task.HarnessExited, Run: l.Run})
+	case l.Part == wire.SessionPart:
+		h.report(ctx, domain.TaskID(l.Task), task.Report{Kind: task.PartsUp, Run: l.Run})
 	}
-	kind := task.PartsUp
-	if l.State == wire.SessionFinished {
-		kind = task.HarnessExited
-	}
-	h.report(ctx, domain.TaskID(l.Task), task.Report{Kind: kind, Run: l.Run})
 }

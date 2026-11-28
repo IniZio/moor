@@ -31,6 +31,8 @@ type Store interface {
 type Tasks interface {
 	Report(ctx context.Context, id domain.TaskID, r task.Report) (task.Outcome, error)
 	MachineRevoked(ctx context.Context, id domain.TaskID) (task.Outcome, error)
+	ReviewTurn(ctx context.Context, id domain.TaskID) (task.Outcome, error)
+	ReviewFailed(ctx context.Context, id domain.TaskID, reason string) (task.Outcome, error)
 }
 
 type Clock interface {

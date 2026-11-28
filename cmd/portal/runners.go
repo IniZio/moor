@@ -46,7 +46,7 @@ func newRunners(ctx context.Context, cfg config, db *store.Store, tasks *task.Se
 	rn := &runners{db: db, holder: holderOf(cfg), log: slog.Default()}
 	rn.ctx, rn.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	rn.machines = machine.New(db, tasks, systemClock{}, cfg.publicURL)
-	rn.control = machine.NewControl(machine.ControlConfig{Store: db, Tasks: tasks, Clock: systemClock{}, Access: newTokens(cfg.secretKey).access(cfg.publicURL), Tick: cfg.linkTick, Log: rn.log})
+	rn.control = machine.NewControl(machine.ControlConfig{Store: db, Tasks: tasks, Clock: systemClock{}, Access: newTokens(cfg.secretKey).scoped(cfg.publicURL), Tick: cfg.linkTick, Log: rn.log})
 	if u, err := url.Parse(cfg.publicURL); err == nil && u.Host != "" {
 		rn.hs, _ = link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{db}, Presence: presence{db, rn.holder}})
 	}

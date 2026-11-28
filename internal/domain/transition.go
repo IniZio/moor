@@ -23,6 +23,8 @@ const (
 	NewerRev
 	Cancel
 	RunnerRevoked
+	// ReviewSent says the review prompt went into the session. It moves nothing: the result is accepted on the next publish.
+	ReviewSent
 )
 
 var signalNames = map[Signal]string{
@@ -39,6 +41,7 @@ var signalNames = map[Signal]string{
 	NewerRev:      "newer rev",
 	Cancel:        "cancel",
 	RunnerRevoked: "machine revoked",
+	ReviewSent:    "review sent",
 }
 
 func (s Signal) String() string {
@@ -90,6 +93,7 @@ var rules = []rule{
 	{Starting, PartsUp, Running, always},
 	{Starting, PartFailed, Failed, always},
 	{Running, BoxRecreated, Running, always},
+	{Running, ReviewSent, Running, always},
 	{Running, Published, Delivering, answering},
 	{Delivering, Delivered, Done, answering},
 	{Running, Published, Done, unanswering},

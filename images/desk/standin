@@ -7,6 +7,26 @@ run() {
   r=$(bash -c "$2" 2>&1)
   printf '%s rc=%s %s\n' "$1" "$?" "$r" >> "$out.tmp"
 }
+hear() {
+  while :; do
+    if read -r -t 1 line; then
+      echo "standin heard: $line"
+      case "$line" in *"$1"*) return 0 ;; esac
+    elif [ $? -le 128 ]; then
+      sleep 0.5
+    fi
+  done
+}
+play() {
+  while read -r -u 3 step a b; do
+    case "$step" in
+      publish) r=$(publish "$a" --verdict "$b" 2>&1); printf 'publish rc=%s %s\n' "$?" "$r" >> /desk/play.out ;;
+      wait) hear "$a ${b}"; printf 'heard %s %s\n' "$a" "$b" >> /desk/play.out ;;
+    esac
+  done 3< /desk/script
+  exit 0
+}
+[ -f /desk/script ] && play
 rm -f "$out.tmp"
 run write 'echo standin > /workspace/standin.txt && id -u'
 run allowed 'curl -s -o /dev/null -w "%{http_code}" https://registry.npmjs.org/'

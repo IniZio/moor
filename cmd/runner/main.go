@@ -87,7 +87,7 @@ func run(args []string) error {
 func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions) *runner.Runner {
 	return runner.New(runner.Config{
 		Dial: dialer(agent), Host: h, Sessions: s,
-		Build: agent.Build, Slots: 1, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		Build: agent.Build, Machine: string(agent.Runner), Slots: 1, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	})
 }
 

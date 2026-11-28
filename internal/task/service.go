@@ -52,6 +52,7 @@ type decision struct {
 	task    domain.Task
 	rows    []row
 	result  *domain.ResultVersion
+	page    []byte
 	effects []Effect
 }
 
@@ -90,7 +91,7 @@ func (s *Service) commit(ctx context.Context, e env, d decision, create bool) (O
 		return Outcome{}, err
 	}
 	d.task.LastSeq += int64(len(events))
-	saved, err := s.store.Save(ctx, domain.TaskWrite{Task: d.task, Create: create, Events: events, Result: d.result})
+	saved, err := s.store.Save(ctx, domain.TaskWrite{Task: d.task, Create: create, Events: events, Result: d.result, Page: d.page})
 	if err != nil {
 		return Outcome{}, fmt.Errorf("save task %s: %w", d.task.ID, err)
 	}

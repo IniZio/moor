@@ -43,7 +43,7 @@ func save(ctx context.Context, tx pgx.Tx, w domain.TaskWrite) (domain.Task, erro
 		return domain.Task{}, err
 	}
 	if w.Result != nil {
-		if err := writeResult(ctx, tx, w.Task.ID, *w.Result); err != nil {
+		if err := writeResult(ctx, tx, w.Task.ID, *w.Result, w.Page); err != nil {
 			return domain.Task{}, err
 		}
 	}
@@ -120,7 +120,7 @@ func writeEvents(ctx context.Context, tx pgx.Tx, rows []domain.EventRow) error {
 
 // writeResult wants the next version number. A digest the task has published is refused, so
 // publishing the same page twice stores it once.
-func writeResult(ctx context.Context, tx pgx.Tx, id domain.TaskID, r domain.ResultVersion) error {
+func writeResult(ctx context.Context, tx pgx.Tx, id domain.TaskID, r domain.ResultVersion, page []byte) error {
 	var latest int
 	if err := tx.QueryRow(ctx, "SELECT COALESCE(max(version), 0) FROM result_versions WHERE task_id = $1", string(id)).Scan(&latest); err != nil {
 		return fmt.Errorf("task %s versions: %w", id, err)
@@ -133,6 +133,12 @@ func writeResult(ctx context.Context, tx pgx.Tx, id domain.TaskID, r domain.Resu
 		string(id), r.N, r.EntryURL, r.Line, r.Digest, r.PublishedAt)
 	if err != nil {
 		return exists(err, what)
+	}
+	if len(page) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, "INSERT INTO result_pages (task_id, version, page) VALUES ($1, $2, $3)", string(id), r.N, page); err != nil {
+		return fmt.Errorf("%s page: %w", what, err)
 	}
 	return nil
 }

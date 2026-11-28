@@ -111,13 +111,27 @@ func (r *Runner) levels(task string) ([]wire.TaskWatchLine, error) {
 		for _, p := range h.Parts {
 			out = append(out, wire.TaskWatchLine{Fence: h.Fence, Part: p.Name, State: p.State})
 		}
-		r.mu.Lock()
-		if j := r.jobs[h.Fence.Task]; j != nil && j.session != nil {
-			out = append(out, *j.session)
-		}
-		r.mu.Unlock()
+		out = append(out, r.jobLevels(h.Fence)...)
 	}
 	return out, nil
+}
+
+// jobLevels are the notes of the launch f and then its session's last line, when the runner has them.
+func (r *Runner) jobLevels(f wire.Fence) []wire.TaskWatchLine {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j := r.jobs[f.Task]
+	if j == nil {
+		return nil
+	}
+	var out []wire.TaskWatchLine
+	if j.noted == f {
+		out = append(out, j.notes...)
+	}
+	if j.session != nil {
+		out = append(out, *j.session)
+	}
+	return out
 }
 
 func (r *Runner) emitParts(task string) error {

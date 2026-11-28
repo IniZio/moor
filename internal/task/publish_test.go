@@ -216,3 +216,32 @@ func TestDeliveringIsRetriedByPublishReplay(t *testing.T) {
 		t.Errorf("a done task owes nothing: %+v", out.Effects)
 	}
 }
+
+func TestPublishKeepsThePageWithItsVersionAndOnlyThere(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Plain, domain.Running)
+	page := []byte("<h1>It works</h1>")
+	h.ok(h.svc.Publish(h.ctx(), id, task.PublishInput{Line: "it works", EntryURL: "https://pages.example/1", Digest: "d1", Page: page}))
+	got, err := h.mem.Page(h.ctx(), id, 1)
+	if err != nil || string(got) != string(page) {
+		t.Fatalf("page = %q, %v", got, err)
+	}
+	if _, err := h.mem.Page(h.ctx(), id, 2); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("a version that does not exist: err = %v", err)
+	}
+}
+
+func TestTheEntryURLNamesItsVersionWhereItAsksForIt(t *testing.T) {
+	h := newHarness(t)
+	id := h.reach(domain.Plain, domain.Running)
+	h.ok(h.svc.Publish(h.ctx(), id, task.PublishInput{Line: "l", EntryURL: "https://portal.example/results/x/{version}", Digest: "d1"}))
+	v, _ := h.mem.Versions(h.ctx(), id)
+	if len(v) != 1 || v[0].EntryURL != "https://portal.example/results/x/1" {
+		t.Fatalf("versions = %+v", v)
+	}
+	h.ok(h.svc.Steer(h.ctx(), id))
+	h.ok(h.svc.Publish(h.ctx(), id, task.PublishInput{Line: "l", EntryURL: "https://portal.example/results/x/{version}", Digest: "d2"}))
+	if v, _ := h.mem.Versions(h.ctx(), id); v[1].EntryURL != "https://portal.example/results/x/2" {
+		t.Fatalf("second version = %+v", v[1])
+	}
+}

@@ -34,8 +34,10 @@ type Config struct {
 	Host     Host
 	Sessions Sessions
 	Build    string
-	Slots    int
-	Log      *slog.Logger
+	// Machine names this runner in the notes it writes.
+	Machine string
+	Slots   int
+	Log     *slog.Logger
 }
 
 // Runner serves the portal's ops for the tasks on one host.
@@ -55,6 +57,9 @@ type job struct {
 	watching wire.Fence
 	stop     context.CancelFunc
 	session  *wire.TaskWatchLine
+	// noted is the launch whose notes are in notes.
+	noted wire.Fence
+	notes []wire.TaskWatchLine
 }
 
 func New(cfg Config) *Runner {

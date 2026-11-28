@@ -9,8 +9,8 @@ RUN curl -fsSL "https://releases.herdr.dev/core/${HERDR_CORE_VERSION}/herdr-core
  && rm /tmp/hc.tgz \
  && herdr-core --version
 COPY bash-wrapper /tmp/bash-wrapper
-COPY desk-entry.sh harness standin /usr/local/bin/
-RUN chmod 755 /usr/local/bin/desk-entry.sh /usr/local/bin/harness /usr/local/bin/standin \
+COPY desk-entry.sh harness standin publish /usr/local/bin/
+RUN chmod 755 /usr/local/bin/desk-entry.sh /usr/local/bin/harness /usr/local/bin/standin /usr/local/bin/publish \
  && mv /usr/bin/bash /usr/bin/bash.real && install -m 755 /tmp/bash-wrapper /usr/bin/bash && rm /tmp/bash-wrapper \
  && mkdir -p /workspace /desk /keys && chown node /workspace /desk /keys
 USER node

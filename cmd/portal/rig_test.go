@@ -204,7 +204,7 @@ func (m *machineRig) run(t *testing.T, addr string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	agent := link.AgentConfig{URL: "ws://" + addr + "/runner/link", Runner: domain.RunnerID(m.id), Key: m.key, Build: "test"}
-	r := runner.New(runner.Config{Dial: dialer(agent), Host: m.host, Sessions: m.sessions, Slots: 1})
+	r := runner.New(runner.Config{Dial: dialer(agent), Host: m.host, Sessions: m.sessions, Machine: m.id, Slots: 1})
 	m.done, m.stop = make(chan error, 1), cancel
 	go func() { m.done <- r.Run(ctx) }()
 	t.Cleanup(func() {
