@@ -1,0 +1,1 @@
+depguard	import 'github.com/IniZio/moor/internal/adapter/store' is not allowed from list 'adapter-github'

@@ -1,0 +1,1 @@
+depguard	import 'net/http' is not allowed from list 'domain'

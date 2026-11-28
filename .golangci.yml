@@ -1,0 +1,136 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+    - exhaustive
+    - funlen
+    - gocognit
+    - nolintlint
+    - revive
+    - wrapcheck
+  settings:
+    gocognit:
+      min-complexity: 10
+    funlen:
+      lines: 60
+      statements: 40
+    exhaustive:
+      default-signifies-exhaustive: false
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: argument-limit
+          arguments: [6]
+        - name: package-naming
+        - name: file-length-limit
+          arguments: [{max: 500}]
+    # The Repository table's "May import" column. A longer match wins, so allowing one internal
+    # package beats the deny of all of them. cmd/ has no rule: it is where adapters meet.
+    depguard:
+      rules:
+        domain:
+          files: ["**/internal/domain/**"]
+          list-mode: strict
+          allow: [$gostd, github.com/IniZio/moor/internal/domain]
+          deny: &io
+            - pkg: net
+              desc: domain and wire types do no input or output
+            - pkg: os
+              desc: domain and wire types do no input or output
+            - pkg: syscall
+              desc: domain and wire types do no input or output
+            - pkg: database/sql
+              desc: domain and wire types do no input or output
+        wire:
+          files: ["**/internal/wire/**"]
+          list-mode: strict
+          allow: [$gostd, github.com/IniZio/moor/internal/wire]
+          deny: *io
+        task:
+          files: ["**/internal/task/**"]
+          list-mode: lax
+          deny: &internal
+            - pkg: github.com/IniZio/moor/internal
+              desc: not in this package's May import column
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/task
+        web:
+          files: ["**/internal/web/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/wire
+            - github.com/IniZio/moor/internal/task
+            - github.com/IniZio/moor/internal/web
+        runner:
+          files: ["**/internal/runner/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/wire
+            - github.com/IniZio/moor/internal/task
+            - github.com/IniZio/moor/internal/runner
+        adapter-github:
+          files: ["**/internal/adapter/github/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/adapter/github
+        adapter-store:
+          files: ["**/internal/adapter/store/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/adapter/store
+        adapter-artifacts:
+          files: ["**/internal/adapter/artifacts/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/adapter/artifacts
+        adapter-link:
+          files: ["**/internal/adapter/link/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/wire
+            - github.com/IniZio/moor/internal/adapter/link
+        adapter-herdr:
+          files: ["**/internal/adapter/herdr/**"]
+          list-mode: strict
+          allow: [$gostd, github.com/IniZio/moor/internal/adapter/herdr]
+        adapter-docker:
+          files: ["**/internal/adapter/docker/**"]
+          list-mode: lax
+          deny: *internal
+          allow:
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/adapter/docker
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: [github.com/IniZio/moor]
