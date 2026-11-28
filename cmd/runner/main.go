@@ -30,16 +30,17 @@ func main() {
 	}
 }
 
+// options are what a runner needs to serve a portal: where it dials, who it is, the key it proves it
+// with, and the Docker objects it makes.
 type options struct {
 	portal, id, keyFile, prefix string
 	images                      docker.Images
 	slots                       int
 }
 
-func parse(args []string) (options, error) {
-	var o options
-	fs := flag.NewFlagSet("runner", flag.ContinueOnError)
-	fs.StringVar(&o.portal, "portal", "", "the portal's link URL, such as wss://portal.example.com/runner/link")
+// flags adds the options' flags to fs. portalHelp says what -portal means to the command.
+func (o *options) flags(fs *flag.FlagSet, portalHelp string) {
+	fs.StringVar(&o.portal, "portal", "", portalHelp)
 	fs.StringVar(&o.id, "id", "", "this runner's id, as the portal enrolled it")
 	fs.StringVar(&o.keyFile, "key", "", "file holding this runner's ed25519 seed, base64")
 	fs.StringVar(&o.prefix, "prefix", "moor", "prefix of every Docker object the runner makes")
@@ -48,6 +49,12 @@ func parse(args []string) (options, error) {
 	fs.StringVar(&o.images.Relay, "relay-image", "", "relay image")
 	fs.StringVar(&o.images.Proxy, "proxy-image", "", "proxy image")
 	fs.IntVar(&o.slots, "slots", 1, "tasks this machine runs at once")
+}
+
+func parse(args []string) (options, error) {
+	var o options
+	fs := flag.NewFlagSet("runner", flag.ContinueOnError)
+	o.flags(fs, "the portal's link URL, such as wss://portal.example.com/runner/link")
 	if err := fs.Parse(args); err != nil {
 		return o, fmt.Errorf("flags: %w", err)
 	}
@@ -58,13 +65,21 @@ func parse(args []string) (options, error) {
 }
 
 func run(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	if len(args) > 0 && args[0] == "join" {
-		return join(args[1:])
+		return join(ctx, args[1:], hostEnv())
 	}
 	o, err := parse(args)
 	if err != nil {
 		return err
 	}
+	return serve(ctx, o)
+}
+
+// serve links to the portal and runs its tasks until ctx ends. A runner the portal says is revoked has
+// removed its tasks' containers by then, and ends without an error, so a service manager does not restart it.
+func serve(ctx context.Context, o options) error {
 	key, err := readKey(o.keyFile)
 	if err != nil {
 		return err
@@ -73,11 +88,14 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("docker: %w", err)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
 	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, clear: host{d}.clear, argv: []string{"harness"}})
-	if err := r.Run(ctx); err != nil {
+	err = r.Run(ctx)
+	if errors.Is(err, runner.ErrRevoked) {
+		slog.Warn("this machine was revoked in the portal; its task containers are removed and the runner ends")
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 	return nil

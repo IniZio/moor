@@ -50,7 +50,7 @@ func joined(t *testing.T, pt *portal, runnerBin, keyFile string) string {
 	if m == nil {
 		t.Fatalf("join command %q", added.JoinCommand)
 	}
-	out, err := runCmd(runnerBin, "join", "-portal", m[1], "-id", m[2], "-token", m[3], "-key", keyFile, "-name", "e2e-"+randHex(t, 4))
+	out, err := runCmd(runnerBin, "join", "-enrol-only", "-portal", m[1], "-id", m[2], "-token", m[3], "-key", keyFile, "-name", "e2e-"+randHex(t, 4))
 	if err != nil {
 		t.Fatalf("runner join: %v: %s", err, out)
 	}

@@ -39,7 +39,7 @@ func TestJoinMakesAKeyOnceAndSendsItsPublicHalf(t *testing.T) {
 	url := joinPortal(t, http.StatusOK, &seen)
 	keyFile := filepath.Join(t.TempDir(), "runner.key")
 	for range 2 {
-		if err := run([]string{"join", "-portal", url, "-id", "m-1", "-token", "tok", "-key", keyFile, "-name", "host-a"}); err != nil {
+		if err := run([]string{"join", "-enrol-only", "-portal", url, "-id", "m-1", "-token", "tok", "-key", keyFile, "-name", "host-a"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,7 +60,7 @@ func TestJoinMakesAKeyOnceAndSendsItsPublicHalf(t *testing.T) {
 func TestARefusedJoinSaysWhy(t *testing.T) {
 	var seen []joinSeen
 	url := joinPortal(t, http.StatusForbidden, &seen)
-	err := run([]string{"join", "-portal", url, "-id", "m-1", "-token", "tok", "-key", filepath.Join(t.TempDir(), "k"), "-name", "host-a"})
+	err := run([]string{"join", "-enrol-only", "-portal", url, "-id", "m-1", "-token", "tok", "-key", filepath.Join(t.TempDir(), "k"), "-name", "host-a"})
 	if err == nil || !strings.Contains(err.Error(), "unknown, used or expired") {
 		t.Fatalf("err = %v", err)
 	}
