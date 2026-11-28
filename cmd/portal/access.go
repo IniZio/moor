@@ -63,10 +63,12 @@ type proxyAPI struct {
 	svc    *settings.Service
 	db     *store.Store
 	portal domain.Rule
+	hub    *githubApp
+	log    *slog.Logger
 }
 
-func newProxyAPI(cfg config, svc *settings.Service, db *store.Store) proxyAPI {
-	return proxyAPI{tokens: newTokens(cfg.secretKey), svc: svc, db: db, portal: portalRule(cfg.publicURL)}
+func newProxyAPI(cfg config, svc *settings.Service, db *store.Store, hub *githubApp) proxyAPI {
+	return proxyAPI{tokens: newTokens(cfg.secretKey), svc: svc, db: db, portal: portalRule(cfg.publicURL), hub: hub, log: slog.Default()}
 }
 
 // portalRule lets the desk reach the portal at its public address.
@@ -108,7 +110,30 @@ func (a proxyAPI) Policy(ctx context.Context, task domain.TaskID, token string) 
 	if err != nil {
 		return domain.Policy{}, err
 	}
-	return a.svc.Policy(ctx, kind, a.portal, repo) //nolint:wrapcheck // the web branches on the service's own errors
+	p, err := a.svc.Policy(ctx, kind, a.portal, repo)
+	if err != nil {
+		return domain.Policy{}, err //nolint:wrapcheck // the web branches on the service's own errors
+	}
+	p.DefaultBranch, err = a.defaultBranch(ctx, task, repo)
+	return p, err
+}
+
+// defaultBranch is the task's repository's default branch, read from GitHub on the task's first policy read and
+// kept on the task. A read that fails is kept as unknown, so the push guard refuses main and master instead.
+func (a proxyAPI) defaultBranch(ctx context.Context, task domain.TaskID, repo domain.Repo) (string, error) {
+	branch, read, err := a.db.DefaultBranch(ctx, task)
+	if err != nil || read {
+		return branch, err //nolint:wrapcheck // the store names the task
+	}
+	branch, err = a.hub.defaultBranch(ctx, repo)
+	if err != nil {
+		a.log.Warn("default branch", "task", task, "err", err)
+	}
+	if err := a.db.SetDefaultBranch(ctx, task, branch); err != nil {
+		return "", err //nolint:wrapcheck // the store names the task
+	}
+	branch, _, err = a.db.DefaultBranch(ctx, task)
+	return branch, err //nolint:wrapcheck // the store names the task
 }
 
 func (a proxyAPI) Value(ctx context.Context, task domain.TaskID, token, credential string) (domain.CredentialValue, error) {

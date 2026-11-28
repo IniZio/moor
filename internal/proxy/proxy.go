@@ -174,10 +174,22 @@ func (p *Proxy) handle(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *
 		go p.report(host, port, method, path, v)
 		return r, deny(r, r.Method, host, port, v)
 	}
+	return p.pass(r, pol, host, port, *v.pass)
+}
+
+// pass sends on a request the rule passed: a push only past the push guard, a call to the task's publish route
+// with the task token, and any request with the rule's credential.
+func (p *Proxy) pass(r *http.Request, pol *domain.Policy, host string, port int, rule domain.Rule) (*http.Request, *http.Response) {
+	path := r.URL.EscapedPath()
+	if r.Method == http.MethodPost && strings.HasSuffix(path, receivePack) {
+		if resp := p.guardPush(r, pol, host, port, path, rule); resp != nil {
+			return r, resp
+		}
+	}
 	if p.home.is(host, port) && path == p.home.route {
 		r.Header.Set("Authorization", "Bearer "+p.cfg.TaskToken)
 	}
-	return p.inject(r, pol, *v.pass)
+	return p.inject(r, pol, rule)
 }
 
 // judgeRequest reads a GraphQL request's body, at most 64 KiB, and puts it back for the upstream.
@@ -240,7 +252,7 @@ func deny(r *http.Request, method, host string, port int, v verdict) *http.Respo
 		detail = ": " + v.detail
 	}
 	body := fmt.Sprintf("The organisation's policy refused %s %s:%d (%s%s).\n", method, host, port, v.reason, detail)
-	if v.reason != domain.DenyMerge {
+	if v.reason != domain.DenyMerge && v.reason != domain.DenyPush {
 		body += "The task does not wait for this. A person may allow it on the task's page, and a later attempt then passes.\n"
 	}
 	resp := goproxy.NewResponse(r, "text/plain; charset=utf-8", http.StatusForbidden, body)

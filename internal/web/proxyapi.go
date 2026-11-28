@@ -61,7 +61,10 @@ func (s *server) proxyPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func policyOf(p domain.Policy) wire.Policy {
-	out := wire.Policy{Version: p.Version, Repo: wire.Repo{Host: string(p.Repo.Host), Path: string(p.Repo.Path)}, Rules: make([]wire.PolicyRule, len(p.Rules))}
+	out := wire.Policy{
+		Version: p.Version, Repo: wire.Repo{Host: string(p.Repo.Host), Path: string(p.Repo.Path)},
+		Rules: make([]wire.PolicyRule, len(p.Rules)), DefaultBranch: p.DefaultBranch,
+	}
 	for i, r := range p.Rules {
 		w := wire.PolicyRule{Name: r.Name, Credential: r.Credential, Set: p.Set[r.Credential], GraphQLMutations: r.GraphQLMutations, Allow: entryTexts(r.Allow.Entries), Ask: entryTexts(r.Ask)}
 		for _, h := range r.Hosts {

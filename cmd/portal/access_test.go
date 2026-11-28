@@ -138,6 +138,44 @@ func TestAllowOnAnAskedRequestMovesItsEntryToAllow(t *testing.T) {
 	}
 }
 
+func TestThePolicyNamesTheDefaultBranchReadOnceFromGitHub(t *testing.T) {
+	r := newHookRig(t, defaultHome())
+	r.fake.SetDefaultBranch("example-org/shop-web", "trunk")
+	r.seed(seeded("41", 1, domain.Running, "Mia"))
+	tk := newTokens(r.key)
+	for _, kind := range []domain.ProxyKind{domain.BoxProxy, domain.DeskProxy, domain.BoxProxy} {
+		r.do(asProxy(http.MethodGet, "/internal/policy/41", tk.mint("41", kind), "")).has(t, http.StatusOK, `"default_branch":"trunk"`)
+	}
+	reads := 0
+	for _, c := range r.fake.Calls() {
+		if c.Method == http.MethodGet && c.Path == "/repos/example-org/shop-web" {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Errorf("the portal read the repository %d times, want once", reads)
+	}
+}
+
+func TestWithoutAGitHubAppTheDefaultBranchIsUnknown(t *testing.T) {
+	a, tk := accessApp(t)
+	got := a.do(asProxy(http.MethodGet, "/internal/policy/41", tk.mint("41", domain.BoxProxy), ""))
+	got.has(t, http.StatusOK)
+	got.lacks(t, "default_branch")
+}
+
+func TestARefusedPushShowsAsNeverAllowed(t *testing.T) {
+	a, tk := accessApp(t)
+	report := `{"task":"41","host":"github.com","port":443,"method":"POST","path":"/example-org/shop-web.git/git-receive-pack","rule":"github-git","reason":"push_not_allowed","detail":"pushing tags is not allowed from a task"}`
+	a.do(asProxy(http.MethodPost, "/internal/blocked", tk.mint("41", domain.BoxProxy), report)).has(t, http.StatusNoContent)
+	page := a.do(get("Mia", "/tasks/41"))
+	page.has(t, http.StatusOK, "pushing tags is not allowed from a task")
+	if strings.Contains(page.body, ">Allow<") {
+		t.Errorf("a refused push offers Allow")
+	}
+	a.do(get("Mia", "/api/tasks/41")).has(t, http.StatusOK, "push_not_allowed")
+}
+
 func TestAMergeShowsAsNeverAllowed(t *testing.T) {
 	a, tk := accessApp(t)
 	report := `{"task":"41","host":"api.github.com","port":443,"method":"POST","path":"/graphql","rule":"github-api","reason":"merge_not_allowed","detail":"merging is not allowed from a task (mutation mergePullRequest)"}`

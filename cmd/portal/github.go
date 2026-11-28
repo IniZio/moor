@@ -76,6 +76,20 @@ func (g *githubApp) Mint(ctx context.Context, keys domain.AppKeys, repo domain.R
 	return domain.CredentialValue{Value: token, Expires: expires}, nil
 }
 
+// defaultBranch reads the repository's default branch as the settings' App. It gives up after tokenTimeout.
+func (g *githubApp) defaultBranch(ctx context.Context, repo domain.Repo) (string, error) {
+	if repo.Host != domain.DefaultRepoHost {
+		return "", fmt.Errorf("%s is not on GitHub", repo)
+	}
+	a, err := g.adapter(ctx)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(ctx, tokenTimeout)
+	defer cancel()
+	return a.DefaultBranch(ctx, string(repo.Path)) //nolint:wrapcheck // the adapter names the repository
+}
+
 // taskConfig names the sources whose tasks answer their event. A task GitHub started answers it.
 func taskConfig() task.Config {
 	return task.Config{Answerable: map[domain.EventSource]bool{github.Source: true}}

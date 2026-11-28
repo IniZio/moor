@@ -68,7 +68,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		web.Deps{
 			Settings: svc, Specs: specs, Start: tasks, Act: acts{tasks, rn.control}, Tasks: db,
 			Machines: rn.machines, Terms: terms{rn.control}, Run: events, Events: readers(),
-			Proxies: newProxyAPI(cfg, svc, db), Blocked: svc,
+			Proxies: newProxyAPI(cfg, svc, db, hub), Blocked: svc,
 			Results: newResults(cfg, db, hub.answers(db, tasks)),
 		},
 	)

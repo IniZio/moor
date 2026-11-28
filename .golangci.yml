@@ -130,6 +130,7 @@ linters:
             - github.com/elazarl/goproxy
             - github.com/vektah/gqlparser/v2
             - github.com/bmatcuk/doublestar/v4
+            - github.com/go-git/go-git/v5/plumbing
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/proxy

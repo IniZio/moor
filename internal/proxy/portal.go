@@ -58,7 +58,10 @@ func (p *Proxy) Refresh(ctx context.Context) error {
 
 // policyOf reads the portal's answer with the settings document's own parsers.
 func policyOf(w wire.Policy) (domain.Policy, error) {
-	p := domain.Policy{Version: w.Version, Repo: domain.Repo{Host: domain.RepoHost(w.Repo.Host), Path: domain.RepoPath(w.Repo.Path)}, Set: map[string]bool{}}
+	p := domain.Policy{
+		Version: w.Version, Repo: domain.Repo{Host: domain.RepoHost(w.Repo.Host), Path: domain.RepoPath(w.Repo.Path)},
+		Set: map[string]bool{}, DefaultBranch: w.DefaultBranch,
+	}
 	for _, wr := range w.Rules {
 		r, err := ruleOf(wr)
 		if err != nil {

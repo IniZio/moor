@@ -35,17 +35,21 @@ const (
 	DenyGraphQL DenyReason = "graphql_not_allowed"
 	// DenyMerge is a request that would merge a pull request, which no rule can allow.
 	DenyMerge DenyReason = "merge_not_allowed"
+	// DenyPush is a push to the default branch, a branch delete or a tag push, which no rule can allow.
+	DenyPush DenyReason = "push_not_allowed"
 )
 
-var denyReasons = []DenyReason{DenyHost, DenyRequest, DenyAsk, DenyGraphQL, DenyMerge}
+var denyReasons = []DenyReason{DenyHost, DenyRequest, DenyAsk, DenyGraphQL, DenyMerge, DenyPush}
 
 // Policy is what one proxy of a task enforces, read from one settings version: the rules, which credentials
-// of theirs are set, and the task's repository, which {repo} stands for.
+// of theirs are set, and the task's repository, which {repo} stands for. DefaultBranch is the repository's
+// default branch, which no push may update, empty when it could not be read.
 type Policy struct {
-	Version int
-	Repo    Repo
-	Rules   []Rule
-	Set     map[string]bool
+	Version       int
+	Repo          Repo
+	Rules         []Rule
+	Set           map[string]bool
+	DefaultBranch string
 }
 
 // Gives is true when a rule of the policy adds the credential and the credential is set.

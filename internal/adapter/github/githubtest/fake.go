@@ -1,5 +1,5 @@
 // Package githubtest is a GitHub that speaks the few endpoints the adapter calls: the App's installation lookup, the
-// installation token, a pull request, its comments, and a collaborator's permission. It checks nothing about who
+// installation token, a repository, a pull request, its comments, and a collaborator's permission. It checks nothing about who
 // asks and keeps a record of every call, so a test can say what the adapter did. A test never reaches the real API.
 package githubtest
 
@@ -61,13 +61,14 @@ type Fake struct {
 	calls       []Call
 	tokens      []TokenRequest
 	permissions map[string]string
+	branches    map[string]string
 	failPosts   int
 	nextID      int64
 }
 
 // New starts the fake. Close stops it.
 func New() *Fake {
-	f := &Fake{prs: map[string]PullRequest{}, permissions: map[string]string{}, nextID: 1000}
+	f := &Fake{prs: map[string]PullRequest{}, permissions: map[string]string{}, branches: map[string]string{}, nextID: 1000}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -171,8 +172,21 @@ func (f *Fake) token(w http.ResponseWriter, r *http.Request, installation string
 	reply(w, http.StatusCreated, map[string]any{"token": "fake-token-" + installation, "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
 }
 
+// SetDefaultBranch names the repository's default branch, which is main until it is set.
+func (f *Fake) SetDefaultBranch(repo, branch string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.branches[strings.ToLower(repo)] = branch
+}
+
 func (f *Fake) repoRoute(w http.ResponseWriter, r *http.Request, repo string, rest []string) {
 	switch {
+	case r.Method == http.MethodGet && len(rest) == 0:
+		branch, ok := f.branches[strings.ToLower(repo)]
+		if !ok {
+			branch = "main"
+		}
+		reply(w, http.StatusOK, map[string]any{"full_name": repo, "default_branch": branch})
 	case r.Method == http.MethodGet && len(rest) == 2 && rest[0] == "pulls":
 		n, _ := strconv.Atoi(rest[1])
 		f.pull(w, repo, n)

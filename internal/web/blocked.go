@@ -66,9 +66,12 @@ func blockedOf(list []domain.BlockedRequest) blockedView {
 	return v
 }
 
-// notAllowable says why a row has no Allow: a merge never passes, a GraphQL mutation goes on the rule's list,
-// and anything else needs a rule a person writes in settings.
+// notAllowable says why a row has no Allow: a merge never passes, a refused push says which push guard it met,
+// a GraphQL mutation goes on the rule's list, and anything else needs a rule a person writes in settings.
 func notAllowable(b domain.BlockedRequest) string {
+	if b.Reason == domain.DenyPush {
+		return b.Detail
+	}
 	if text, ok := notAllowableText[b.Reason]; ok {
 		return text
 	}

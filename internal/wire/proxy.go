@@ -17,9 +17,10 @@ type ProxyAccess struct {
 // secret, and the task's repository, which {repo} stands for. Hosts and entries are in the document's own text,
 // and an allow of ["*"] lets every request through.
 type Policy struct {
-	Version int          `json:"version"`
-	Repo    Repo         `json:"repo"`
-	Rules   []PolicyRule `json:"rules"`
+	Version       int          `json:"version"`
+	Repo          Repo         `json:"repo"`
+	Rules         []PolicyRule `json:"rules"`
+	DefaultBranch string       `json:"default_branch,omitempty"`
 }
 
 type PolicyRule struct {
