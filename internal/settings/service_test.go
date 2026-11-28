@@ -3,6 +3,7 @@ package settings_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,6 +27,13 @@ func (stubParser) Parse(text string) (settings.Parsed, error) {
 		switch {
 		case line == "bad":
 			bad = append(bad, domain.SettingsProblem{Line: i + 1, Message: "this line is bad"})
+		case len(f) == 2 && f[0] == "repo":
+			repo, err := domain.ParseRepo(f[1])
+			if err != nil {
+				return settings.Parsed{}, fmt.Errorf("stub repo %q: %w", f[1], err)
+			}
+			p.Repositories = append(p.Repositories, repo)
+			kept = append(kept, line)
 		case len(f) == 3 && f[0] == "secret":
 			p.Secrets = append(p.Secrets, domain.NewSecret{Connection: f[1], Value: f[2]})
 			p.Connections = append(p.Connections, f[1])
@@ -80,6 +88,21 @@ func TestBeforeTheFirstSaveTheDocumentIsTheInitialText(t *testing.T) {
 	cur, err := newFixture(reversingSealer{}).svc.Current(context.Background())
 	if err != nil || cur.N != 0 || cur.Text != settings.InitialText {
 		t.Fatalf("current = %+v, %v", cur, err)
+	}
+}
+
+func TestAllowedAreTheRepositoriesOfTheNewestVersion(t *testing.T) {
+	f := newFixture(reversingSealer{})
+	ctx := context.Background()
+	if got, err := f.svc.Allowed(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("before the first save: %v, %v", got, err)
+	}
+	f.save(t, 0, "repo example-org/shop-web\nrepo example-org/docs-site\n")
+	f.save(t, 1, "repo example-org/shop-web\n")
+	got, err := f.svc.Allowed(ctx)
+	want := []domain.Repo{{Host: "github.com", Path: "example-org/shop-web"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowed = %v, %v, want %v", got, err, want)
 	}
 }
 

@@ -14,11 +14,13 @@ type Store interface {
 	SaveSettings(ctx context.Context, w domain.SettingsWrite) (domain.SettingsVersion, error)
 }
 
-// Parsed is a document that passed the parser. Text is the document with every secret replaced by its state.
+// Parsed is a document that passed the parser. Text is the document with every secret replaced by its state,
+// and Repositories are the ones it allows.
 type Parsed struct {
-	Text        string
-	Connections []string
-	Secrets     []domain.NewSecret
+	Text         string
+	Repositories []domain.Repo
+	Connections  []string
+	Secrets      []domain.NewSecret
 }
 
 // Parser checks a document as typed. It returns an *domain.InvalidSettingsError for a document with problems.

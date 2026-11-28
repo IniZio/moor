@@ -26,7 +26,7 @@ type app struct {
 	key     []byte
 }
 
-func newApp(t *testing.T) *app {
+func newApp(t *testing.T, opts ...func(*config)) *app {
 	t.Helper()
 	dsn := pgtest.SchemaDSN(t)
 	key, err := base64.StdEncoding.DecodeString(testKeyB64)
@@ -34,6 +34,9 @@ func newApp(t *testing.T) *app {
 		t.Fatalf("test key: %v", err)
 	}
 	cfg := config{listen: "127.0.0.1:0", database: dsn, userHeader: userHeader, orgName: "example-org", secretKey: key}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	handler, closeApp, err := build(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("build: %v", err)

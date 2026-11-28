@@ -16,6 +16,7 @@ type config struct {
 	database       string
 	userHeader     string
 	orgName        string
+	homeDir        string
 	trustedOrigins []string
 	secretKey      []byte
 }
@@ -34,6 +35,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&c.listen, "listen", orDefault(getenv("PORTAL_LISTEN"), "127.0.0.1:8080"), "address to listen on (PORTAL_LISTEN)")
 	fs.StringVar(&c.database, "database-url", getenv("PORTAL_DATABASE_URL"), "Postgres URL (PORTAL_DATABASE_URL)")
 	fs.StringVar(&c.userHeader, "user-header", getenv("PORTAL_USER_HEADER"), "request header that carries the signed-in person (PORTAL_USER_HEADER)")
+	fs.StringVar(&c.homeDir, "home-dir", getenv("PORTAL_HOME_DIR"), "folder holding the checked-out team home, whose tasks/*.yaml are the task specs (PORTAL_HOME_DIR); without it there are no task specs")
 	fs.StringVar(&c.orgName, "org-name", getenv("PORTAL_ORG_NAME"), "organisation name shown on Settings (PORTAL_ORG_NAME)")
 	fs.StringVar(&origins, "trusted-origins", getenv("PORTAL_TRUSTED_ORIGINS"), "comma-separated origins allowed to post when the proxy rewrites the host (PORTAL_TRUSTED_ORIGINS)")
 	if err := fs.Parse(args); err != nil {

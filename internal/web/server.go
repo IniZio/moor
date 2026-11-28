@@ -31,11 +31,14 @@ type SettingsService interface {
 	Check(text string) []domain.SettingsProblem
 	Save(ctx context.Context, in domain.SettingsSave) (domain.SettingsSaved, error)
 	History(ctx context.Context) ([]domain.SettingsEntry, error)
+	// Allowed lists the repositories the newest document allows.
+	Allowed(ctx context.Context) ([]domain.Repo, error)
 }
 
 // Deps are the parts the server calls. Ready reports whether the database answers.
 type Deps struct {
 	Settings SettingsService
+	Specs    SpecSource
 	Ready    func(ctx context.Context) error
 }
 
@@ -72,6 +75,7 @@ func New(cfg Config, deps Deps) (http.Handler, error) {
 		r.Get("/machines", s.placeholder("Machines", "machines"))
 		r.Get("/settings", s.settingsPage)
 		r.Get("/api/me", s.me)
+		r.Get("/api/task-specs", s.taskSpecs)
 		r.Get("/api/settings", s.getSettings)
 		r.Put("/api/settings", s.putSettings)
 		r.Post("/api/settings/check", s.checkSettings)

@@ -41,6 +41,19 @@ func (s *Service) Current(ctx context.Context) (domain.SettingsVersion, error) {
 	return v, nil
 }
 
+// Allowed lists the repositories the newest version allows.
+func (s *Service) Allowed(ctx context.Context) ([]domain.Repo, error) {
+	cur, err := s.Current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := s.parser.Parse(cur.Text)
+	if err != nil {
+		return nil, fmt.Errorf("read settings v%d: %w", cur.N, err)
+	}
+	return parsed.Repositories, nil
+}
+
 // Check reports the problems of a document without saving it.
 func (s *Service) Check(text string) []domain.SettingsProblem {
 	_, err := s.parser.Parse(text)

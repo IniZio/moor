@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -35,13 +36,25 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 	svc := settings.New(db, yamlParser{}, box, systemClock{})
 	handler, err := web.New(
 		web.Config{UserHeader: cfg.userHeader, OrgName: cfg.orgName, TrustedOrigins: cfg.trustedOrigins},
-		web.Deps{Settings: svc, Ready: db.Ping},
+		web.Deps{Settings: svc, Specs: specSource(cfg.homeDir), Ready: db.Ping},
 	)
 	if err != nil {
 		db.Close()
 		return nil, nil, fmt.Errorf("build the web handler: %w", err)
 	}
 	return handler, db.Close, nil
+}
+
+// noSpecs stands in for the team's home when none is configured.
+type noSpecs struct{}
+
+func (noSpecs) TaskSpecs(context.Context) ([]domain.SpecFile, error) { return nil, nil }
+
+func specSource(homeDir string) web.SpecSource {
+	if homeDir == "" {
+		return noSpecs{}
+	}
+	return yamlfile.NewHome(os.DirFS(homeDir))
 }
 
 // yamlParser lets the settings service read documents through the yamlfile adapter.
@@ -56,7 +69,7 @@ func (yamlParser) Parse(text string) (settings.Parsed, error) {
 	if err != nil {
 		return settings.Parsed{}, fmt.Errorf("render settings: %w", err)
 	}
-	out := settings.Parsed{Text: string(rendered), Secrets: secrets}
+	out := settings.Parsed{Text: string(rendered), Secrets: secrets, Repositories: doc.Settings().Repositories}
 	if out.Text == "{}\n" {
 		out.Text = text
 	}
