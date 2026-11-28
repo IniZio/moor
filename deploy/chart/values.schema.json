@@ -82,7 +82,11 @@
         },
         "homeDir": {
           "type": "string",
-          "description": "Folder holding the checked-out team home, PORTAL_HOME_DIR. Mount it through extraVolumes. The chart does not fetch it."
+          "description": "Folder holding the checked-out team home, PORTAL_HOME_DIR. Mount it through extraVolumes. The chart does not fetch it. Not with homeRepo."
+        },
+        "homeRepo": {
+          "type": "string",
+          "description": "The repository the portal fetches the team home from, github.com/owner/name or github.com/owner/name@branch, PORTAL_HOME_REPO. Needs the GitHub App in Settings. Not with homeDir."
         },
         "runnerArgs": {
           "type": "string",

@@ -47,6 +47,10 @@ check "chart holds no secret value" "$(printf '%s\n' "$out" | pick 'select(.kind
 check "disruption budget allows one" "$(printf '%s\n' "$out" | pick 'select(.kind == "PodDisruptionBudget") | .spec.maxUnavailable')" 1
 check "no GitHub settings by default" "$(dep '[.spec.template.spec.containers[0].env[] | select(.name | test("GITHUB"))] | length')" 0
 
+check "no home repository by default" "$(dep '[.spec.template.spec.containers[0].env[] | select(.name == "PORTAL_HOME_REPO")] | length')" 0
+hr=$(render --set 'portal.homeRepo=github.com/example-org/team-home@main')
+check "home repository reaches the portal" "$(printf '%s\n' "$hr" | pick 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "PORTAL_HOME_REPO") | .value')" "github.com/example-org/team-home@main"
+refuses "refuses a home repository with a home folder" --set portal.homeRepo=github.com/example-org/team-home --set portal.homeDir=/home-repo
 refuses "refuses a missing Secret name" --set secrets.existingSecret=
 refuses "refuses a missing user header" --set portal.userHeader=
 refuses "refuses a grace period that cuts the drain" --set stop.waitSeconds=10 --set stop.drainSeconds=30 --set terminationGracePeriodSeconds=40

@@ -30,6 +30,12 @@ To let the chart make the Secret instead, set `secrets.create=true` with `secret
 
 Set `portal.databaseSchema` to put every table, the migrations and goose's version table in one Postgres schema, made when missing. Other software can then share the database, and its tables stay untouched. It is `PORTAL_DATABASE_SCHEMA`, a plain lower-case identifier. Leave it empty for the schema the database URL selects.
 
+## Team home
+
+Set `portal.homeRepo` to `github.com/owner/name`, or add `@branch`. Each replica then fetches the team home with the GitHub App in Settings. It fetches at start, on each push to that branch, and every 5 minutes (`PORTAL_HOME_REFRESH` in `extraEnv`). The copy stays in memory, so the pod needs no volume, sidecar or cron. The App needs read access to the repository and a push webhook.
+
+`portal.homeDir` is the other way. A folder mounted through `extraVolumes` is kept current by something else. The two are exclusive.
+
 ## Seed settings
 
 Set `seed.settings` to a whole settings document, with real secret values inline, and the portal comes up configured. At start, when no settings version exists, it saves the document as version 1 by "seed". The checks and the sealing are those of a person's save. When one exists it does nothing and does not read the file. A document the editor would refuse stops the pod with the problems, never a secret value. Replicas that start together make one version 1. The chart keeps the document in a Secret named `<fullname>-seed`, mounted read-only, and a change to it rolls the pods.

@@ -86,6 +86,13 @@ spec:
             - name: PORTAL_HOME_DIR
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.portal.homeRepo }}
+            {{- if $.Values.portal.homeDir }}
+            {{- fail "portal.homeRepo and portal.homeDir are exclusive: fetch the home or mount it" }}
+            {{- end }}
+            - name: PORTAL_HOME_REPO
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.portal.databaseSchema }}
             - name: PORTAL_DATABASE_SCHEMA
               value: {{ . | quote }}

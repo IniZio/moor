@@ -19,6 +19,7 @@ portal:
   publicURL: ""
   trustedOrigins: []
   homeDir: ""
+  homeRepo: ""
   runnerArgs: ""
   # The Postgres schema for every table, when other software shares the database. Made when missing.
   databaseSchema: ""
