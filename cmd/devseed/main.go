@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
+	"github.com/IniZio/moor/internal/adapter/github"
 	"github.com/IniZio/moor/internal/adapter/store"
 	"github.com/IniZio/moor/internal/domain"
 	"github.com/IniZio/moor/internal/task"
@@ -22,13 +24,23 @@ func main() {
 	pace := flag.Duration("pace", 2*time.Second, "how long one wait of a played script lasts")
 	resultURL := flag.String("result-url", "https://results.example/page", "address a played task publishes as its result page")
 	repo := flag.String("repo", "example-org/shop-web", "repository of a played task, which Settings must allow for its page to be useful")
+	publish := flag.String("publish", "", "publish a result on the task with this number, as a runner and an agent would, and answer its pull request when a GitHub App is given")
+	line := flag.String("line", "Five of five flows passed.", "the one line of the result published with -publish")
+	var app github.Config
+	flag.Int64Var(&app.AppID, "github-app-id", envInt("PORTAL_GITHUB_APP_ID"), "GitHub App id for -publish (PORTAL_GITHUB_APP_ID)")
+	flag.StringVar(&app.KeyFile, "github-private-key-file", os.Getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "the App's private key file for -publish (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
+	flag.StringVar(&app.APIBase, "github-api-url", os.Getenv("PORTAL_GITHUB_API_URL"), "GitHub's API address for -publish (PORTAL_GITHUB_API_URL)")
 	flag.Parse()
+	app.WebhookSecret = []byte(os.Getenv("PORTAL_GITHUB_WEBHOOK_SECRET"))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	var err error
-	if *playName != "" {
+	switch {
+	case *publish != "":
+		err = publishTask(ctx, *dsn, app, *publish, *line, *resultURL)
+	case *playName != "":
 		err = playOne(ctx, *dsn, *playName, *repo, *pace, *resultURL)
-	} else {
+	default:
 		err = run(ctx, *dsn, time.Now().UTC())
 	}
 	if err != nil {
@@ -134,4 +146,13 @@ func (s seed) task(id domain.TaskID, now time.Time) (domain.Task, error) {
 		t.StartedBy = domain.EventStarterPrefix + s.source
 	}
 	return t, nil
+}
+
+// envInt reads a whole number from the environment, and gives 0 for text that is not one.
+func envInt(name string) int64 {
+	n, err := strconv.ParseInt(os.Getenv(name), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
