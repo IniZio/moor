@@ -18,7 +18,8 @@ import (
 
 // KeyStore is what the server needs to know about a runner at hello time. It is read on every
 // handshake, so revoking a runner takes effect on its next connect. It returns
-// domain.ErrUnknownRunner for an unknown or revoked id.
+// domain.ErrUnknownRunner for an unknown id, and a revoked runner's key with domain.ErrRevokedRunner, so that
+// the server can say "revoked" to the holder of that key and to no one else.
 type KeyStore interface {
 	Lookup(ctx context.Context, id domain.RunnerID) (ed25519.PublicKey, error)
 }
@@ -106,14 +107,15 @@ func (s *Server) run(ctx context.Context, hs hsio) (Accepted, error) {
 	}
 	runner := domain.RunnerID(hello.Runner)
 	key, err := s.cfg.Keys.Lookup(ctx, runner)
-	known := err == nil
+	revoked := errors.Is(err, domain.ErrRevokedRunner)
+	known := err == nil || revoked
 	switch {
-	case err != nil && !errors.Is(err, domain.ErrUnknownRunner):
+	case err != nil && !revoked && !errors.Is(err, domain.ErrUnknownRunner):
 		return Accepted{}, fmt.Errorf("link: key lookup: %w", err)
 	case known && len(key) != ed25519.PublicKeySize:
 		return Accepted{}, fmt.Errorf("link: stored key of %s has %d bytes", runner, len(key))
 	}
-	if err := s.authenticate(ctx, hs, hello, key, known); err != nil {
+	if err := s.authenticate(ctx, hs, hello, key, known, revoked); err != nil {
 		return Accepted{}, err
 	}
 	gen, err := s.cfg.Presence.Linked(ctx, runner, hello.Build)
@@ -154,8 +156,8 @@ func (s *Server) readHello(ctx context.Context, hs hsio) (wire.Hello, error) {
 }
 
 // authenticate sends a fresh nonce and checks the proof over it, the server's own host and the
-// runner id.
-func (s *Server) authenticate(ctx context.Context, hs hsio, hello wire.Hello, key ed25519.PublicKey, known bool) error {
+// runner id. A revoked runner that proves its key is told so, since it is the one who may know.
+func (s *Server) authenticate(ctx context.Context, hs hsio, hello wire.Hello, key ed25519.PublicKey, known, revoked bool) error {
 	nonce := make([]byte, 32)
 	if _, err := io.ReadFull(s.cfg.Rand, nonce); err != nil {
 		return fmt.Errorf("link: nonce: %w", err)
@@ -169,9 +171,15 @@ func (s *Server) authenticate(ctx context.Context, hs hsio, hello wire.Hello, ke
 		return err
 	}
 	claim := proof{Host: s.cfg.Host, Nonce: nonce, Runner: domain.RunnerID(hello.Runner), Proto: hello.Proto}
-	if err != nil || !claim.verify(key, known, pf.Sig) {
-		_ = hs.write(ctx, wire.KindRefused, wire.Refused{Reason: refusedReason})
-		return ErrRejected
+	reason := ""
+	switch {
+	case err != nil || !claim.verify(key, known, pf.Sig):
+		reason = refusedReason
+	case revoked:
+		reason = revokedReason
+	default:
+		return nil
 	}
-	return nil
+	_ = hs.write(ctx, wire.KindRefused, wire.Refused{Reason: reason})
+	return ErrRejected
 }

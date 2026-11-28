@@ -15,9 +15,12 @@ import (
 // never be a signature for anything else the key signs.
 const proofLabel = "moor-link/1"
 
-// refusedReason is the one reason a server gives. An unknown runner and a bad proof get the same
-// answer, so the reply is not an oracle for which ids exist.
+// refusedReason is what a server tells anyone who does not prove a known key. An unknown runner and a bad
+// proof get the same answer, so the reply is not an oracle for which ids exist.
 const refusedReason = "unauthorized"
+
+// revokedReason is what a revoked runner is told once it has proved it holds the revoked key.
+const revokedReason = "revoked"
 
 // HostOf is the host both ends sign into a proof: lower-cased, with the port kept only when it is
 // not the scheme's default. Both ends compute it from their own configuration, never from anything

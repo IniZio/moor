@@ -14,7 +14,7 @@ import (
 var taskColumns = []string{
 	"id", "repo_host", "repo_path", "prompt", "review_prompt", "started_by",
 	"spec_name", "spec_file", "event_source", "event_group", "event_rev", "event_context",
-	"state", "version", "commit", "ref", "runner_id", "run", "gen", "last_seq",
+	"state", "version", "commit", "ref", "machine_id", "run", "gen", "last_seq",
 	"deadline", "keep_until", "failure", "token_owner", "created_at", "ended_at",
 }
 

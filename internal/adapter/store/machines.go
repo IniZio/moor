@@ -16,7 +16,7 @@ const onMachine = "('starting', 'running', 'delivering')"
 
 const selectMachine = `SELECT m.id, COALESCE(m.name, ''), m.enrolled_by, m.pubkey, m.build, m.link_gen, m.holder_addr,
 	m.heard_at, m.draining_since, m.revoked_at, m.created_at,
-	(SELECT count(*) FROM tasks t WHERE t.runner_id = m.id AND t.state IN ` + onMachine + `)
+	(SELECT count(*) FROM tasks t WHERE t.machine_id = m.id AND t.state IN ` + onMachine + `)
 FROM machines m `
 
 func scanMachine(row pgx.Row) (domain.Machine, error) {
@@ -152,7 +152,7 @@ func (s *Store) WaitingTasks(ctx context.Context, limit int) ([]domain.TaskID, e
 }
 
 func (s *Store) TasksOn(ctx context.Context, id domain.RunnerID) ([]domain.Task, error) {
-	rows, err := s.pool.Query(ctx, selectTask+"WHERE runner_id = $1 AND state IN "+onMachine+" ORDER BY created_at, id", string(id))
+	rows, err := s.pool.Query(ctx, selectTask+"WHERE machine_id = $1 AND state IN "+onMachine+" ORDER BY created_at, id", string(id))
 	if err != nil {
 		return nil, fmt.Errorf("tasks on %s: %w", id, err)
 	}

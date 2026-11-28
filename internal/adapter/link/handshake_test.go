@@ -24,6 +24,7 @@ type fakeStore struct {
 	runner      domain.RunnerID
 	key         ed25519.PublicKey
 	lookupErr   error
+	revoked     bool
 	linkedErr   error
 	linked      int
 	unlinkedGen []int64
@@ -37,6 +38,8 @@ func (f *fakeStore) Lookup(_ context.Context, id domain.RunnerID) (ed25519.Publi
 		return nil, f.lookupErr
 	case id != f.runner:
 		return nil, domain.ErrUnknownRunner
+	case f.revoked:
+		return f.key, domain.ErrRevokedRunner
 	}
 	return f.key, nil
 }
@@ -205,6 +208,35 @@ func TestHandshakeAnswersUnknownRunnerAndBadProofAlike(t *testing.T) {
 	}
 	if ts.store.linkedCount() != 0 {
 		t.Fatal("a refused hello must not be recorded as a link")
+	}
+}
+
+func TestHandshakeTellsARevokedRunnerItIsRevokedOnlyAfterItProvesTheKey(t *testing.T) {
+	ts := newTestServer(t, nil)
+	ts.store.revoked = true
+	_, other, _ := ed25519.GenerateKey(rand.Reader)
+	cases := []struct {
+		name string
+		key  ed25519.PrivateKey
+		want string
+	}{
+		{"the revoked runner's own key", ts.key, `{"kind":"refused","body":{"reason":"revoked"}}`},
+		{"another key claiming to be the revoked runner", other, `{"kind":"refused","body":{"reason":"unauthorized"}}`},
+	}
+	for _, c := range cases {
+		rc := dialRaw(t, ts.wsURL())
+		nonce := rc.challenge(ts.runner)
+		rc.send(wire.KindProof, wire.Proof{Sig: proof{ts.host, nonce, ts.runner, wire.Proto}.sign(c.key)})
+		if got := rc.recv(); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+	if ts.store.linkedCount() != 0 {
+		t.Fatal("a revoked runner must not be recorded as a link")
+	}
+	var refused *RefusedError
+	if _, _, err := Dial(dialCtx(t), ts.agent()); !errors.As(err, &refused) || refused.Reason != "revoked" {
+		t.Fatalf("the runner's dial must say why it was refused: %v", err)
 	}
 }
 

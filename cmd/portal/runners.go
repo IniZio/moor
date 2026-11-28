@@ -155,8 +155,10 @@ func (k keys) Lookup(ctx context.Context, id domain.RunnerID) (ed25519.PublicKey
 		return nil, fmt.Errorf("machine %s: %w", id, domain.ErrUnknownRunner)
 	case err != nil:
 		return nil, fmt.Errorf("machine %s: %w", id, err)
-	case len(m.PubKey) == 0 || !m.RevokedAt.IsZero():
+	case len(m.PubKey) == 0:
 		return nil, fmt.Errorf("machine %s: %w", id, domain.ErrUnknownRunner)
+	case !m.RevokedAt.IsZero():
+		return m.PubKey, fmt.Errorf("machine %s: %w", id, domain.ErrRevokedRunner)
 	}
 	return m.PubKey, nil
 }
