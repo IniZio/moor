@@ -116,6 +116,7 @@ linters:
           allow:
             - $gostd
             - github.com/coder/websocket
+            - github.com/hashicorp/yamux
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/adapter/link
