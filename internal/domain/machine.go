@@ -94,8 +94,15 @@ const (
 	Remove     MachineAction = "remove"
 )
 
-// Enrolled is a new machine and the command that joins it, which is shown once.
+// Enrolled is a new machine and the command that joins it, which is shown once, until ExpiresAt.
 type Enrolled struct {
 	Machine     Machine
 	JoinCommand string
+	ExpiresAt   time.Time
+}
+
+// MachineActed is what a row action did: the machine as it was before, and how many tasks a revoke failed.
+type MachineActed struct {
+	Machine Machine
+	Failed  int
 }

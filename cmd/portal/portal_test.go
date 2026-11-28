@@ -142,14 +142,14 @@ func TestMeNamesThePerson(t *testing.T) {
 	a.do(get("Mia", "/api/me")).has(t, http.StatusOK, `"name":"Mia"`)
 }
 
-func TestTabsPlaceholdersAndRedirect(t *testing.T) {
+func TestTabsAndRedirect(t *testing.T) {
 	a := newApp(t)
 	if r := a.do(get("Mia", "/")); r.code != http.StatusFound || r.header.Get("Location") != "/tasks" {
 		t.Errorf("/ gave %d to %q", r.code, r.header.Get("Location"))
 	}
 	for path, current := range map[string]string{"/machines": "Machines"} {
 		r := a.do(get("Mia", path))
-		r.has(t, http.StatusOK, "Nothing here yet.", "Tasks</a>", "Settings</a>", "Machines</a>", `<span class="me" title="Mia">M</span>`)
+		r.has(t, http.StatusOK, "<h1>Machines</h1>", "Tasks</a>", "Settings</a>", "Machines</a>", `<span class="me" title="Mia">M</span>`)
 		if !strings.Contains(r.body, "aria-current href=\"/"+strings.ToLower(current)+"\"") && !strings.Contains(r.body, "href=\"/"+strings.ToLower(current)+"\" aria-current") {
 			t.Errorf("%s does not mark %s as current: %s", path, current, r.body)
 		}
@@ -158,7 +158,7 @@ func TestTabsPlaceholdersAndRedirect(t *testing.T) {
 
 func TestPagesLoadNothingFromOutside(t *testing.T) {
 	a := newApp(t)
-	for _, path := range []string{"/tasks", "/settings"} {
+	for _, path := range []string{"/tasks", "/settings", "/machines"} {
 		r := a.do(get("Mia", path))
 		r.has(t, http.StatusOK)
 		r.lacks(t, "src=\"http", "href=\"http", "https://")

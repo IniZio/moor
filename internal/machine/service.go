@@ -51,7 +51,7 @@ func (s *Service) Add(ctx context.Context, by domain.Person) (domain.Enrolled, e
 	}
 	m := domain.Machine{ID: id, EnrolledBy: by, CreatedAt: now}
 	cmd := fmt.Sprintf("runner join -portal %s -id %s -token %s -key runner.key", s.portalURL, id, token)
-	return domain.Enrolled{Machine: m, JoinCommand: cmd}, nil
+	return domain.Enrolled{Machine: m, JoinCommand: cmd, ExpiresAt: add.JoinExpiresAt}, nil
 }
 
 // JoinInput is what a runner sends to join.
@@ -75,6 +75,14 @@ func (s *Service) Join(ctx context.Context, in JoinInput) error {
 	return nil
 }
 
+func (s *Service) Machine(ctx context.Context, id domain.RunnerID) (domain.Machine, error) {
+	m, err := s.store.Machine(ctx, id)
+	if err != nil {
+		return domain.Machine{}, fmt.Errorf("machine: %w", err)
+	}
+	return m, nil
+}
+
 func (s *Service) Machines(ctx context.Context) ([]domain.Machine, error) {
 	ms, err := s.store.Machines(ctx)
 	if err != nil {
@@ -83,15 +91,17 @@ func (s *Service) Machines(ctx context.Context) ([]domain.Machine, error) {
 	return ms, nil
 }
 
-// Act runs a row action for the member who enrolled the machine and refuses anyone else.
-func (s *Service) Act(ctx context.Context, id domain.RunnerID, by domain.Person, a domain.MachineAction) error {
+// Act runs a row action for the member who enrolled the machine and refuses anyone else. It returns the machine
+// as it was and, for a revoke, how many tasks it failed.
+func (s *Service) Act(ctx context.Context, id domain.RunnerID, by domain.Person, a domain.MachineAction) (domain.MachineActed, error) {
 	m, err := s.store.Machine(ctx, id)
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", a, id, err)
+		return domain.MachineActed{}, fmt.Errorf("%s %s: %w", a, id, err)
 	}
 	if m.EnrolledBy != by {
-		return fmt.Errorf("%s %s: %w", a, id, domain.ErrNotEnroller)
+		return domain.MachineActed{}, fmt.Errorf("%s %s: %w", a, id, domain.ErrNotEnroller)
 	}
+	acted := domain.MachineActed{Machine: m}
 	now := s.clock.Now()
 	switch a {
 	case domain.Drain:
@@ -99,27 +109,29 @@ func (s *Service) Act(ctx context.Context, id domain.RunnerID, by domain.Person,
 	case domain.Disconnect:
 		err = s.store.DisconnectMachine(ctx, id)
 	case domain.Revoke:
-		err = s.revoke(ctx, id, now)
+		acted.Failed, err = s.revoke(ctx, id, now)
 	case domain.Remove:
 		err = s.store.RemoveMachine(ctx, id)
 	default:
 		err = domain.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("%s %s: %w", a, id, err)
+		return acted, fmt.Errorf("%s %s: %w", a, id, err)
 	}
-	return nil
+	return acted, nil
 }
 
-// revoke refuses the machine's key, which also ends its link, then fails the tasks it starts or runs.
-func (s *Service) revoke(ctx context.Context, id domain.RunnerID, now time.Time) error {
+// revoke refuses the machine's key, which also ends its link, then fails the tasks it starts or runs and
+// counts the ones it failed.
+func (s *Service) revoke(ctx context.Context, id domain.RunnerID, now time.Time) (int, error) {
 	if err := s.store.RevokeMachine(ctx, id, now); err != nil {
-		return fmt.Errorf("revoke: %w", err)
+		return 0, fmt.Errorf("revoke: %w", err)
 	}
 	on, err := s.store.TasksOn(ctx, id)
 	if err != nil {
-		return fmt.Errorf("tasks on the revoked machine: %w", err)
+		return 0, fmt.Errorf("tasks on the revoked machine: %w", err)
 	}
+	failed := 0
 	var errs []error
 	for _, t := range on {
 		if t.State == domain.Delivering {
@@ -127,7 +139,9 @@ func (s *Service) revoke(ctx context.Context, id domain.RunnerID, now time.Time)
 		}
 		if _, err := s.tasks.MachineRevoked(ctx, t.ID); err != nil {
 			errs = append(errs, err)
+			continue
 		}
+		failed++
 	}
-	return errors.Join(errs...)
+	return failed, errors.Join(errs...)
 }

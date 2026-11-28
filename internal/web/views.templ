@@ -9,7 +9,7 @@ import (
 	"github.com/IniZio/moor/internal/domain"
 )
 
-const htmxConfig = `{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}`
+const htmxConfig = `{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"403","swap":true},{"code":"409","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}`
 
 type page struct {
 	Person string
@@ -70,6 +70,7 @@ templ layout(p page, title, nav string) {
 			<script src="/static/htmx.min.js"></script>
 			<script src="/static/htmx-ext-sse.min.js"></script>
 			<script src="/static/run.js" defer></script>
+			<script src="/static/machines.js" defer></script>
 			<script src="/static/editor.js" defer></script>
 		</head>
 		<body>
@@ -88,13 +89,6 @@ templ layout(p page, title, nav string) {
 			@toast("", false)
 		</body>
 	</html>
-}
-
-templ placeholderPage(p page, title, nav string) {
-	@layout(p, title, nav) {
-		<div class="phead"><h1>{ title }</h1></div>
-		<p class="muted empty">Nothing here yet.</p>
-	}
 }
 
 templ toast(msg string, oob bool) {

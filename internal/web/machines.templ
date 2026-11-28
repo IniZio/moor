@@ -1,0 +1,123 @@
+package web
+
+import "strconv"
+
+func machinePath(id, tail string) string { return "/api/machines/" + id + "/" + tail }
+
+func joinNote(expires string) string {
+	return "Run it on the machine. Shown once, works once, expires " + expires + "."
+}
+
+templ addButton(hidden bool) {
+	<button
+		id="addbtn"
+		class="btn primary"
+		type="button"
+		hx-post="/api/machines"
+		hx-target="#addbox"
+		hx-swap="innerHTML"
+		hidden?={ hidden }
+		{ oobAttrs(hidden)... }
+	>Add machine</button>
+}
+
+templ joinBox(command, expires string) {
+	<section class="join" aria-label="Join command">
+		<div class="cmd">
+			<code id="joincmd">{ command }</code>
+			<button class="btn" type="button" data-copy="joincmd">Copy</button>
+		</div>
+		<p class="muted">
+			{ joinNote(expires) }
+			<button
+				class="lnk"
+				type="button"
+				hx-on:click="document.getElementById('addbox').replaceChildren(); document.getElementById('addbtn').hidden = false"
+			>Done</button>
+		</p>
+	</section>
+	@addButton(true)
+}
+
+templ menuItem(v machineRowView, item string) {
+	switch item {
+		case "Drain":
+			<button type="button" role="menuitem" hx-post={ machinePath(v.ID, "drain") } hx-swap="none">Drain</button>
+		case "Disconnect":
+			<button type="button" role="menuitem" hx-post={ machinePath(v.ID, "disconnect") } hx-swap="none">Disconnect</button>
+		case "Revoke":
+			<button type="button" role="menuitem" class="danger" hx-get={ machinePath(v.ID, "ask?verb=revoke") } hx-target={ "#act-" + v.ID } hx-swap="outerHTML">Revoke</button>
+		case "Remove":
+			<button type="button" role="menuitem" class="danger" hx-get={ machinePath(v.ID, "ask?verb=remove") } hx-target={ "#act-" + v.ID } hx-swap="outerHTML">Remove</button>
+	}
+}
+
+templ actionsCell(v machineRowView) {
+	<span class="act" id={ "act-" + v.ID }>
+		if len(v.Items) > 0 {
+			<details class="menu">
+				<summary class="btn" aria-label={ "Actions for " + v.Name }>⋯</summary>
+				<span class="pop" role="menu">
+					for _, item := range v.Items {
+						@menuItem(v, item)
+					}
+				</span>
+			</details>
+		}
+	</span>
+}
+
+templ confirmCell(v machineRowView, verb string) {
+	<span class="act confirm" id={ "act-" + v.ID }>
+		<span>{ verb + " " + v.Name + "?" }</span>
+		if verb == "Remove" {
+			<button class="btn danger" type="button" hx-delete={ "/api/machines/" + v.ID } hx-swap="none">Remove</button>
+		} else {
+			<button class="btn danger" type="button" hx-post={ machinePath(v.ID, "revoke") } hx-swap="none">Revoke</button>
+		}
+		<button class="btn" type="button" hx-get={ machinePath(v.ID, "menu") } hx-target={ "#act-" + v.ID } hx-swap="outerHTML">Keep</button>
+	</span>
+}
+
+templ machineRows(rows []machineRowView) {
+	if len(rows) == 0 {
+		<p class="empty muted">No machines yet. Choose Add machine to enrol one.</p>
+	}
+	for _, v := range rows {
+		<div class="lrow mrow" id={ v.ID }>
+			<span class="cut name">{ v.Name }</span>
+			<span class="sc">
+				<span class={ "st " + v.Class }>{ v.State }</span>
+				if v.Seen != "" {
+					<span class="faint">{ v.Seen }</span>
+				}
+			</span>
+			<span class="num">
+				if v.Tasks == 0 {
+					<span class="faint">0</span>
+				} else {
+					{ strconv.Itoa(v.Tasks) }
+				}
+			</span>
+			<span class="muted">{ v.By }</span>
+			@actionsCell(v)
+		</div>
+	}
+}
+
+templ machinesScreen(v machinesView) {
+	@layout(v.Page, "Machines", "machines") {
+		<div class="edbar">
+			<h1>Machines</h1>
+			<span class="grow"></span>
+			@addButton(false)
+		</div>
+		<div id="addbox"></div>
+		<div class="list" hx-ext="sse" sse-connect={ "/api/machines/events?since=" + v.Stamp }>
+			<div class="lrow mrow head"><span>Name</span><span>State</span><span>Tasks</span><span>Enrolled by</span><span></span></div>
+			<div id="mrows" hx-get="/api/machines" hx-trigger="sse:machines[!rowsBusy()], machines-changed from:body" hx-swap="innerHTML">
+				@machineRows(v.Rows)
+			</div>
+		</div>
+	}
+}
