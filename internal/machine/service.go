@@ -24,14 +24,22 @@ const maxName = 64
 
 // Service enrols machines and runs their row actions. PortalURL is the address the join command dials.
 type Service struct {
-	store     Store
-	tasks     Tasks
-	clock     Clock
-	portalURL string
+	store      Store
+	tasks      Tasks
+	clock      Clock
+	portalURL  string
+	runnerArgs string
 }
 
 func New(store Store, tasks Tasks, clock Clock, portalURL string) *Service {
 	return &Service{store: store, tasks: tasks, clock: clock, portalURL: portalURL}
+}
+
+// WithRunnerArgs makes the join command end with args, which the operator sets: the flags a machine's runner needs
+// that the portal cannot know, such as where its images are.
+func (s *Service) WithRunnerArgs(args string) *Service {
+	s.runnerArgs = strings.TrimSpace(args)
+	return s
 }
 
 func hashToken(token string) []byte {
@@ -51,6 +59,9 @@ func (s *Service) Add(ctx context.Context, by domain.Person) (domain.Enrolled, e
 	}
 	m := domain.Machine{ID: id, EnrolledBy: by, CreatedAt: now}
 	cmd := fmt.Sprintf("runner join -portal %s -id %s -token %s -key runner.key", s.portalURL, id, token)
+	if s.runnerArgs != "" {
+		cmd += " " + s.runnerArgs
+	}
 	return domain.Enrolled{Machine: m, JoinCommand: cmd, ExpiresAt: add.JoinExpiresAt}, nil
 }
 

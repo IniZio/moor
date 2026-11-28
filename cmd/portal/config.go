@@ -25,7 +25,9 @@ type config struct {
 	internalSecret string
 	linkTick       time.Duration
 	// keepWindow is how long a done or failed task keeps its containers, so a person can reopen or look.
-	keepWindow     time.Duration
+	keepWindow time.Duration
+	// runnerArgs is what the join command carries after its own flags, such as the image flags of the runner.
+	runnerArgs     string
 	trustedOrigins []string
 	secretKey      []byte
 	// github is the GitHub App. With none of it set the portal serves no /hooks/github.
@@ -60,11 +62,12 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&appID, "github-app-id", getenv("PORTAL_GITHUB_APP_ID"), "id of the GitHub App that answers pull requests (PORTAL_GITHUB_APP_ID)")
 	fs.StringVar(&c.github.KeyFile, "github-private-key-file", getenv("PORTAL_GITHUB_PRIVATE_KEY_FILE"), "file holding the GitHub App's private key (PORTAL_GITHUB_PRIVATE_KEY_FILE)")
 	fs.StringVar(&c.github.APIBase, "github-api-url", getenv("PORTAL_GITHUB_API_URL"), "address of GitHub's API, such as https://api.github.com/ (PORTAL_GITHUB_API_URL)")
+	fs.StringVar(&c.runnerArgs, "runner-args", getenv("PORTAL_RUNNER_ARGS"), "flags the join command ends with, such as the runner's image flags (PORTAL_RUNNER_ARGS)")
 	fs.StringVar(&keep, "keep-window", orDefault(getenv("PORTAL_KEEP_WINDOW"), defaultKeepWindow), "how long a done or failed task keeps its containers, such as 24h (PORTAL_KEEP_WINDOW)")
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
-	if c.keepWindow, err = readKeep(keep); err != nil {
+	if err = c.readOperations(keep); err != nil {
 		return config{}, err
 	}
 	c.trustedOrigins = splitList(origins)
@@ -119,12 +122,18 @@ func readGitHub(c *github.Config, appID, webhookSecret string) error {
 // does not fill with the containers of finished tasks. The spec leaves the length open.
 const defaultKeepWindow = "24h"
 
-func readKeep(text string) (time.Duration, error) {
-	d, err := time.ParseDuration(text)
+// readOperations reads what the operator sets about running tasks and machines: the keep window and the
+// runner args, which must stay one line because a person pastes the join command into a shell.
+func (c *config) readOperations(keep string) error {
+	d, err := time.ParseDuration(keep)
 	if err != nil || d <= 0 {
-		return 0, errors.New("keep-window must be a duration above zero, such as 24h")
+		return errors.New("keep-window must be a duration above zero, such as 24h")
 	}
-	return d, nil
+	c.keepWindow = d
+	if strings.ContainsAny(c.runnerArgs, "\r\n") {
+		return errors.New("runner-args must be on one line")
+	}
+	return nil
 }
 
 func orDefault(v, fallback string) string {

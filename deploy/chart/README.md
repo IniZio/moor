@@ -56,3 +56,7 @@ People reach the portal only through the proxy's host. A request that reaches th
 ## Machine paths
 
 Some callers cannot sit behind a browser sign-in. They are the GitHub webhook, the runner join and link, and the proxies and desks of tasks, which call with per-task tokens. Turn on the chart's own Ingress with a host of its own. It routes only these paths and never the pages. They are `/hooks/github`, `/runner/join`, `/runner/link`, `/internal/policy`, `/internal/connections`, `/internal/blocked` and the desk's publish route `/api/tasks/<id>/results`. The publish route has a wildcard segment, so it is a regular expression in `ingress.patterns`. The chart sets the ingress-nginx `use-regex` annotation for it. Another controller needs its own way to read it. The terminal hop between replicas, under `/internal/terminal`, stays inside the cluster. Event streams are long responses, so turn response buffering off in the controller.
+
+## Join command
+
+Add machine shows one line that joins a machine and starts its runner. The runner needs the image names, which the portal cannot know. Set `PORTAL_RUNNER_ARGS` through `extraEnv` to the flags the line should end with. For example, set it to `-box-image <image> -desk-image <image> -relay-image <image> -proxy-image <image>`. Set `PORTAL_KEEP_WINDOW` the same way to change how long a finished task keeps its containers. The default is 24 hours.
