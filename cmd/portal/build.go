@@ -43,7 +43,7 @@ func build(ctx context.Context, cfg config) (http.Handler, func(), error) {
 
 // assemble opens the store and wires the services into the web handler. cmd is the one place that knows every adapter.
 func assemble(ctx context.Context, cfg config) (*portal, error) {
-	db, err := store.Open(ctx, cfg.database)
+	db, err := store.OpenIn(ctx, cfg.database, cfg.databaseSchema)
 	if err != nil {
 		return nil, fmt.Errorf("open the database: %w", err)
 	}
@@ -55,6 +55,10 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 	hub := &githubApp{}
 	svc := settings.New(db, yamlParser{}, box, systemClock{}, hub)
 	hub.svc = svc
+	if err := seedSettings(ctx, svc, cfg.seedSettingsFile); err != nil {
+		db.Close()
+		return nil, err
+	}
 	taskCfg := withKeep(taskConfig(), cfg)
 	tasks := task.New(db, systemClock{}, taskCfg)
 	rn := newRunners(ctx, cfg, db, tasks, svc)

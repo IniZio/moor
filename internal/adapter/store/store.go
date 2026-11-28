@@ -21,13 +21,30 @@ type Store struct {
 }
 
 // Open connects to the database named by dsn and applies the pending migrations.
-func Open(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+func Open(ctx context.Context, dsn string) (*Store, error) { return OpenIn(ctx, dsn, "") }
+
+// OpenIn is Open for a schema of the database: it creates the schema when missing, and the tables, the migrations
+// and goose's own version table all live in it. The empty schema is the one the database url selects.
+func OpenIn(ctx context.Context, dsn, schema string) (*Store, error) {
+	if err := CheckSchema(schema); err != nil {
+		return nil, fmt.Errorf("database-schema: %w", err)
+	}
+	cfg, err := poolConfig(dsn, schema)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
+	if schema != "" {
+		if err := ensureSchema(ctx, pool, schema); err != nil {
+			pool.Close()
+			return nil, err
+		}
+	}
 	db := stdlib.OpenDBFromPool(pool)
-	err = migrate(ctx, db)
+	err = migrate(ctx, db, schema)
 	if closeErr := db.Close(); closeErr != nil && err == nil {
 		err = fmt.Errorf("close migration handle: %w", closeErr)
 	}

@@ -28,6 +28,9 @@ type config struct {
 	runnerArgs     string
 	trustedOrigins []string
 	secretKey      []byte
+	// databaseSchema holds the portal's tables when the database is shared, and seedSettingsFile its first settings.
+	databaseSchema   string
+	seedSettingsFile string
 }
 
 const usage = `portal [flags]
@@ -56,10 +59,14 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&origins, "trusted-origins", getenv("PORTAL_TRUSTED_ORIGINS"), "comma-separated origins allowed to post when the proxy rewrites the host (PORTAL_TRUSTED_ORIGINS)")
 	fs.StringVar(&c.runnerArgs, "runner-args", getenv("PORTAL_RUNNER_ARGS"), "flags the join command ends with, such as the runner's image flags (PORTAL_RUNNER_ARGS)")
 	fs.StringVar(&keep, "keep-window", orDefault(getenv("PORTAL_KEEP_WINDOW"), defaultKeepWindow), "how long a done or failed task keeps its containers, such as 24h (PORTAL_KEEP_WINDOW)")
+	c.bindStorage(fs, getenv)
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
 	if err = c.readOperations(keep); err != nil {
+		return config{}, err
+	}
+	if err = c.checkStorage(); err != nil {
 		return config{}, err
 	}
 	c.trustedOrigins = splitList(origins)
