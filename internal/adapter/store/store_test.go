@@ -17,6 +17,10 @@ func TestPostgresPassesTheStoreContract(t *testing.T) {
 	storetest.Run(t, subject)
 }
 
+func TestPostgresPassesTheSettingsContract(t *testing.T) {
+	storetest.RunSettings(t, func(t *testing.T) storetest.SettingsStore { return freshStore(t) })
+}
+
 func newTask(id string, rev domain.Revision) domain.Task {
 	sp := &domain.Spec{Name: "review", File: "specs/review.yaml"}
 	ev := &domain.Event{Source: "forge", Group: "g", Rev: rev}

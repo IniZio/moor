@@ -128,11 +128,13 @@ func (s *Store) Versions(ctx context.Context, id domain.TaskID) ([]domain.Result
 
 const uniqueViolation = "23505"
 
-// exists turns a unique violation into domain.ErrExists and leaves any other error as it is.
-func exists(err error, what string) error {
+// unique turns a unique violation into target and leaves any other error as it is.
+func unique(err error, what string, target error) error {
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && pg.Code == uniqueViolation {
-		return fmt.Errorf("%s: %w", what, domain.ErrExists)
+		return fmt.Errorf("%s: %w", what, target)
 	}
 	return fmt.Errorf("%s: %w", what, err)
 }
+
+func exists(err error, what string) error { return unique(err, what, domain.ErrExists) }
