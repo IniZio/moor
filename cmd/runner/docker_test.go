@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"os"
 	"os/exec"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/IniZio/moor/internal/adapter/docker"
+	"github.com/IniZio/moor/internal/runner"
 	"github.com/IniZio/moor/internal/wire"
 )
 
@@ -123,4 +125,84 @@ func TestARunnerRestartLeavesTheTaskRunningAndReadoptsIt(t *testing.T) {
 		t.Fatalf("the stop left %v running", left)
 	}
 	nothingLeft(t, prefix)
+}
+
+func TestARevokedRunnerRemovesItsRealContainersNetworksAndVolumes(t *testing.T) {
+	h, prefix := realHost(t)
+	g := rigWithin(t, 3*time.Minute)
+	r := newRunner(g.portal.Agent(), h, sessions{connect: h.connect, attach: h.attach, clear: h.clear, argv: []string{"harness"}})
+	done := make(chan error, 1)
+	go func() { done <- r.Run(g.ctx) }()
+	s, err := g.portal.Next(g.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := watch(t, g.ctx, s)
+	if err := call(g.ctx, s, wire.KindTaskStart, startMsg("t1", 1, 1), nil); err != nil {
+		t.Fatal(err)
+	}
+	await(t, g.ctx, lines, "the session live in the desk", sessionIs("t1", "live"))
+	if n := len(running(t, prefix)); n != len(partNames) {
+		t.Fatalf("%d containers running, want %d", n, len(partNames))
+	}
+	g.portal.Revoke()
+	g.portal.Drop()
+	select {
+	case err := <-done:
+		if !errors.Is(err, runner.ErrRevoked) {
+			t.Fatalf("the revoked runner ended with %v", err)
+		}
+	case <-g.ctx.Done():
+		t.Fatal("the revoked runner kept running")
+	}
+	if left := running(t, prefix); len(left) != 0 {
+		t.Fatalf("the revoked runner left %v running", left)
+	}
+	nothingLeft(t, prefix)
+}
+
+// viewers is how many hc attach processes the desk of task runs.
+func viewers(t *testing.T, prefix, task string) int {
+	t.Helper()
+	out, err := exec.Command("docker", "exec", prefix+"-"+task+"-desk", "ps", "-eo", "args").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ps in the desk: %v: %s", err, out)
+	}
+	return strings.Count(string(out), "hc attach")
+}
+
+func TestAdoptionClearsTheViewersARunnerThatDiedLeftInTheDesk(t *testing.T) {
+	h, prefix := realHost(t)
+	g := rigWithin(t, 3*time.Minute)
+	g.clear = h.clear
+	s, stop := g.start(h, h.connect)
+	lines := watch(t, g.ctx, s)
+	if err := call(g.ctx, s, wire.KindTaskStart, startMsg("t1", 1, 1), nil); err != nil {
+		t.Fatal(err)
+	}
+	await(t, g.ctx, lines, "the session live in the desk", sessionIs("t1", "live"))
+	viewer, err := h.attach(context.Background(), "t1", wire.Size{Cols: 80, Rows: 24}, "hc", "attach", sessionName, "--history", "10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = viewer.Close() }()
+	if n := viewers(t, prefix, "t1"); n != 1 {
+		t.Fatalf("%d viewers in the desk, want the one just attached", n)
+	}
+	stop()
+	if n := viewers(t, prefix, "t1"); n != 1 {
+		t.Fatalf("a runner that ends left %d viewers, want it to leave the one it cannot reach", n)
+	}
+	_, stop = g.start(h, h.connect)
+	defer stop()
+	deadline := time.Now().Add(time.Minute)
+	for viewers(t, prefix, "t1") != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the new runner left the dead runner's viewer in the desk")
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	if again := running(t, prefix); len(again) != len(partNames) {
+		t.Fatalf("clearing the viewer changed the containers: %v", again)
+	}
 }

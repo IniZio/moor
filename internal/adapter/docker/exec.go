@@ -31,6 +31,26 @@ func (d *Docker) Exec(ctx context.Context, t domain.TaskID, p Part, argv ...stri
 	return &process{Reader: out, WriteCloser: in, cmd: cmd}, nil
 }
 
+// Kill ends every process in one part of a task whose command line matches the pattern, as pkill -f
+// reads it. No match is not an error, and neither is a part that is not running: it has none.
+func (d *Docker) Kill(ctx context.Context, t domain.TaskID, p Part, pattern string) error {
+	if err := checkTask(t); err != nil {
+		return err
+	}
+	cs, err := d.taskContainers(ctx, t)
+	if err != nil {
+		return err
+	}
+	name := d.name(t, string(p))
+	for _, c := range cs {
+		if c.Name == name && c.Running {
+			_, err := d.run(ctx, "exec", name, "sh", "-c", "pkill -f \"$1\" || [ $? -eq 1 ]", "sh", pattern)
+			return err
+		}
+	}
+	return nil
+}
+
 type process struct {
 	io.Reader
 	io.WriteCloser

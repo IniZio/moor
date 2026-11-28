@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/coder/websocket"
@@ -27,6 +28,8 @@ type Portal struct {
 	URL   string
 	key   ed25519.PrivateKey
 	links chan *link.Session
+	// revoked makes the key store answer as it does for a revoked runner.
+	revoked atomic.Bool
 
 	mu   sync.Mutex
 	open []*link.Session
@@ -43,7 +46,7 @@ func New(t testing.TB) *Portal {
 	p := &Portal{key: key, links: make(chan *link.Session, 8)}
 	srv := httptest.NewServer(nil)
 	u, _ := url.Parse(srv.URL)
-	hs, err := link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{Runner: pub}, Presence: p})
+	hs, err := link.NewServer(link.ServerConfig{Host: link.HostOf(u), Keys: keys{p: p, pub: pub}, Presence: p})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +58,10 @@ func New(t testing.TB) *Portal {
 	})
 	return p
 }
+
+// Revoke makes the portal refuse the runner's key from now on with the reason revoked, as the real
+// portal does once a person revokes the machine. Links already open stay open until Drop.
+func (p *Portal) Revoke() { p.revoked.Store(true) }
 
 // Agent is the runner's config for this portal.
 func (p *Portal) Agent() link.AgentConfig {
@@ -110,11 +117,17 @@ func (p *Portal) Linked(context.Context, domain.RunnerID, string) (int64, error)
 
 func (p *Portal) Unlinked(context.Context, domain.RunnerID, int64) error { return nil }
 
-type keys map[domain.RunnerID]ed25519.PublicKey
+type keys struct {
+	p   *Portal
+	pub ed25519.PublicKey
+}
 
 func (k keys) Lookup(_ context.Context, id domain.RunnerID) (ed25519.PublicKey, error) {
-	if key, ok := k[id]; ok {
-		return key, nil
+	switch {
+	case id != Runner:
+		return nil, domain.ErrUnknownRunner
+	case k.p.revoked.Load():
+		return k.pub, domain.ErrRevokedRunner
 	}
-	return nil, domain.ErrUnknownRunner
+	return k.pub, nil
 }

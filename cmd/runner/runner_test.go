@@ -148,3 +148,77 @@ func TestARefusedRunnerStopsDialling(t *testing.T) {
 		t.Fatalf("a refused runner ends with ErrFatal: %v", err)
 	}
 }
+
+func TestARevokedRunnerRemovesTheContainersOfTheTasksItHoldsAndExits(t *testing.T) {
+	g := newRig(t)
+	r := newRunner(g.portal.Agent(), g.host, sessions{connect: g.desks.connect, attach: g.ttys.attach, clear: g.cleared.clear})
+	done := make(chan error, 1)
+	go func() { done <- r.Run(g.ctx) }()
+	s, err := g.portal.Next(g.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"t1", "t2"} {
+		if err := call(g.ctx, s, wire.KindTaskStart, startMsg(id, 1, 1), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if held, _ := g.host.List(g.ctx); len(held) != 2 {
+		t.Fatalf("the host holds %d tasks before the revoke, want 2", len(held))
+	}
+	g.portal.Revoke()
+	g.portal.Drop()
+	select {
+	case err := <-done:
+		if !errors.Is(err, runner.ErrRevoked) || !errors.Is(err, runner.ErrFatal) {
+			t.Fatalf("the revoked runner ended with %v, want ErrRevoked", err)
+		}
+	case <-g.ctx.Done():
+		t.Fatal("the revoked runner kept running")
+	}
+	if held, _ := g.host.List(g.ctx); len(held) != 0 {
+		t.Fatalf("a revoked runner left %+v on the host", held)
+	}
+}
+
+func TestAnUnknownRunnerIsRefusedAndTouchesNothing(t *testing.T) {
+	g := newRig(t)
+	s, stop := g.startFake()
+	if err := call(g.ctx, s, wire.KindTaskStart, startMsg("t1", 1, 1), nil); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	agent := g.portal.Agent()
+	_, agent.Key, _ = ed25519.GenerateKey(rand.Reader)
+	if err := newRunner(agent, g.host, sessions{connect: g.desks.connect}).Run(g.ctx); !errors.Is(err, runner.ErrFatal) || errors.Is(err, runner.ErrRevoked) {
+		t.Fatalf("a runner with the wrong key ends with %v, want ErrFatal and not ErrRevoked", err)
+	}
+	if held, _ := g.host.List(g.ctx); len(held) != 1 {
+		t.Fatalf("a refusal that is not a revoke removed tasks: %+v", held)
+	}
+}
+
+func TestAdoptionClearsTheViewersAStaleRunnerLeftInEachDesk(t *testing.T) {
+	g := newRig(t)
+	s, stop := g.startFake()
+	for _, id := range []string{"t1", "t2"} {
+		if err := call(g.ctx, s, wire.KindTaskStart, startMsg(id, 1, 1), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stop()
+	for len(g.cleared.calls) > 0 {
+		<-g.cleared.calls
+	}
+	_, stop = g.startFake()
+	defer stop()
+	got := map[string]bool{}
+	for len(got) < 2 {
+		select {
+		case id := <-g.cleared.calls:
+			got[id] = true
+		case <-g.ctx.Done():
+			t.Fatalf("the new runner cleared the viewers of %v, want t1 and t2", got)
+		}
+	}
+}

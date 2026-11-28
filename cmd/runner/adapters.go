@@ -24,6 +24,8 @@ func dialer(cfg link.AgentConfig) func(ctx context.Context) (runner.Link, error)
 		switch {
 		case errors.Is(err, link.ErrRelinkLater):
 			return nil, fmt.Errorf("%w: %w", runner.ErrRelink, err)
+		case errors.As(err, &refused) && refused.Reason == "revoked":
+			return nil, fmt.Errorf("%w: %w", runner.ErrRevoked, err)
 		case errors.As(err, &refused), errors.As(err, &update):
 			return nil, fmt.Errorf("%w: %w", runner.ErrFatal, err)
 		case err != nil:
@@ -85,6 +87,14 @@ func (h host) List(ctx context.Context) ([]runner.Held, error) {
 	return held, nil
 }
 
+// clear ends every viewer, which is every hc attach, in the task's desk.
+func (h host) clear(ctx context.Context, task string) error {
+	if err := h.d.Kill(ctx, domain.TaskID(task), docker.Desk, "^hc attach "); err != nil {
+		return fmt.Errorf("clear viewers: %w", err)
+	}
+	return nil
+}
+
 // attach runs argv in the task's desk under a PTY on this host.
 func (h host) attach(ctx context.Context, task string, s wire.Size, argv ...string) (runner.TTY, error) {
 	t, err := h.d.ExecTTY(ctx, domain.TaskID(task), docker.Desk, s.Cols, s.Rows, argv...)
@@ -119,8 +129,12 @@ const sessionName = "task"
 type sessions struct {
 	connect func(ctx context.Context, task string) (io.ReadWriteCloser, error)
 	attach  func(ctx context.Context, task string, s wire.Size, argv ...string) (runner.TTY, error)
+	clear   func(ctx context.Context, task string) error
 	argv    []string
 }
+
+// ClearViewers ends every hc attach in the task's desk.
+func (s sessions) ClearViewers(ctx context.Context, task string) error { return s.clear(ctx, task) }
 
 // Attach runs hc attach on the session in the desk, with --observe for a watcher, so herdr-core
 // never takes a watcher's keys or size.

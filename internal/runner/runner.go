@@ -18,11 +18,16 @@ var (
 	ErrFatal = errors.New("runner: the portal will not take this runner")
 	// ErrRelink wraps a dial error that asks for a quick redial: the portal is draining.
 	ErrRelink = errors.New("runner: the portal asked for a relink")
+	// ErrRevoked wraps a dial error that says a person revoked this machine. The runner then removes
+	// the containers of the tasks it holds and ends.
+	ErrRevoked = fmt.Errorf("runner: this machine was revoked: %w", ErrFatal)
 )
 
 const (
 	relinkWait  = 200 * time.Millisecond
 	maxDialWait = 10 * time.Second
+	// removeAllWait bounds the removal of a revoked machine's containers.
+	removeAllWait = 2 * time.Minute
 )
 
 // SessionPart is the part name of the harness session in task.watch lines.
@@ -84,7 +89,32 @@ func (r *Runner) Run(ctx context.Context) error {
 	if ctx.Err() != nil || err == nil {
 		return nil
 	}
+	if errors.Is(err, ErrRevoked) {
+		err = errors.Join(err, r.removeAll(ctx))
+	}
 	return fmt.Errorf("runner: %w", err)
+}
+
+// removeAll takes down every task the host holds. A revoked machine's tasks are failed, so nothing
+// of theirs is kept for a person to look at, and this runner is the only thing that can remove them.
+func (r *Runner) removeAll(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), removeAllWait)
+	defer cancel()
+	held, err := r.list(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, h := range held {
+		j := r.job(h.Fence.Task)
+		j.op.Lock()
+		r.unwatch(h.Fence.Task)
+		if err := r.cfg.Host.Down(ctx, h.Fence); err != nil {
+			errs = append(errs, fmt.Errorf("runner: down %s: %w", h.Fence.Task, err))
+		}
+		j.op.Unlock()
+	}
+	return errors.Join(errs...)
 }
 
 // linkOnce dials, re-adopts what the host holds and serves ops until the link drops. A link that
@@ -113,7 +143,9 @@ func (r *Runner) linkOnce(ctx context.Context) error {
 	}
 }
 
-// adopt follows the session of every task the host holds, by label alone.
+// adopt follows the session of every task the host holds, by label alone, and ends the viewers a
+// runner before this link left in their desks. No viewer of this link exists yet, and those of the
+// last one went with its streams.
 func (r *Runner) adopt(ctx context.Context) error {
 	held, err := r.list(ctx)
 	if err != nil {
@@ -121,6 +153,9 @@ func (r *Runner) adopt(ctx context.Context) error {
 	}
 	for _, h := range held {
 		r.watch(h.Fence)
+		if err := r.cfg.Sessions.ClearViewers(ctx, h.Fence.Task); err != nil {
+			r.cfg.Log.Warn("clear stale viewers", "task", h.Fence.Task, "err", err)
+		}
 	}
 	r.cfg.Log.Info("linked", "tasks", len(held))
 	return nil

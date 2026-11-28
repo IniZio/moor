@@ -141,6 +141,8 @@ func (s *fakeSessions) end(task string) chan struct{} {
 
 func (s *fakeSessions) Start(context.Context, wire.TaskStart) error { return nil }
 
+func (s *fakeSessions) ClearViewers(context.Context, string) error { return nil }
+
 func (s *fakeSessions) Watch(ctx context.Context, task string, on func(runner.SessionState)) error {
 	on(runner.SessionState{State: "live"})
 	select {

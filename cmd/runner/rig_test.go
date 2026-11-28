@@ -85,6 +85,14 @@ func (d *desks) connect(_ context.Context, task string) (io.ReadWriteCloser, err
 	return d.core(task).Connect(), nil
 }
 
+// clears records the tasks whose stale viewers the runner cleared.
+type clears struct{ calls chan string }
+
+func (c *clears) clear(_ context.Context, task string) error {
+	c.calls <- task
+	return nil
+}
+
 type rig struct {
 	t      *testing.T
 	ctx    context.Context
@@ -92,6 +100,10 @@ type rig struct {
 	host   *fakeHost
 	desks  *desks
 	ttys   *ttys
+	// cleared is each task the runner cleared viewers of, in order.
+	cleared *clears
+	// clear is how a runner ends the viewers in a desk: recorded by default, a real host's own in Docker tests.
+	clear func(ctx context.Context, task string) error
 }
 
 func newRig(t *testing.T) *rig { return rigWithin(t, 20*time.Second) }
@@ -100,14 +112,16 @@ func rigWithin(t *testing.T, limit time.Duration) *rig {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	t.Cleanup(cancel)
-	return &rig{t: t, ctx: ctx, portal: linktest.New(t), host: &fakeHost{tasks: map[string]runner.Held{}}, desks: &desks{cores: map[string]*herdrtest.Core{}}, ttys: &ttys{}}
+	g := &rig{t: t, ctx: ctx, portal: linktest.New(t), host: &fakeHost{tasks: map[string]runner.Held{}}, desks: &desks{cores: map[string]*herdrtest.Core{}}, ttys: &ttys{}, cleared: &clears{calls: make(chan string, 64)}}
+	g.clear = g.cleared.clear
+	return g
 }
 
 // start runs a runner and returns the portal's end of its link and a stop that ends the runner
 // as a process exit would, and checks it returned cleanly.
 func (g *rig) start(h runner.Host, connect func(context.Context, string) (io.ReadWriteCloser, error)) (*link.Session, func()) {
 	g.t.Helper()
-	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, argv: []string{"harness"}})
+	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, clear: g.clear, argv: []string{"harness"}})
 	ctx, cancel := context.WithCancel(g.ctx)
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()

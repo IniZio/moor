@@ -47,13 +47,16 @@ type SessionState struct {
 // already live succeeds. Watch calls on with the session's state now and on each change, until ctx
 // ends or the session cannot be reached. Attach puts one more viewer on the session: closing its TTY
 // ends that viewer and never the session. Screen reads the screen as text with lines of scrollback,
-// and Type types text and presses enter.
+// and Type types text and presses enter. ClearViewers ends every viewer on the task's session, which the
+// runner that put them there can no longer end. A desk that cannot be reached has none, so that is
+// not an error.
 type Sessions interface {
 	Start(ctx context.Context, s wire.TaskStart) error
 	Watch(ctx context.Context, task string, on func(SessionState)) error
 	Attach(ctx context.Context, a wire.TermAttach) (TTY, error)
 	Screen(ctx context.Context, task string, lines int) (string, error)
 	Type(ctx context.Context, task, text string) error
+	ClearViewers(ctx context.Context, task string) error
 }
 
 // TTY is one viewer's terminal on a session: its output, its keys and its size.
