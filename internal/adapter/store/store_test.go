@@ -21,6 +21,10 @@ func TestPostgresPassesTheListContract(t *testing.T) {
 	storetest.RunList(t, func(t *testing.T) storetest.ListStore { return freshStore(t) })
 }
 
+func TestPostgresPassesTheReadContract(t *testing.T) {
+	storetest.RunRead(t, func(t *testing.T) storetest.ReadStore { return freshStore(t) })
+}
+
 func TestPostgresPassesTheSettingsContract(t *testing.T) {
 	storetest.RunSettings(t, func(t *testing.T) storetest.SettingsStore { return freshStore(t) })
 }
