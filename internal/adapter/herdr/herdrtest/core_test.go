@@ -214,3 +214,26 @@ func TestFakeExecsSignalsAndStops(t *testing.T) {
 		t.Fatal("a stopped core answers nothing")
 	}
 }
+
+func TestSubscribeWithNoLabelsSeesEveryTerminal(t *testing.T) {
+	core := herdrtest.New()
+	c := herdr.Dial(core.Connect())
+	defer func() { _ = c.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Run(ctx, herdr.RunReq{Argv: []string{"sh"}, Name: "task"}); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(chan int, 1)
+	go func() {
+		_ = herdr.Subscribe(ctx, core.Connect(), nil, func(ts []herdr.Terminal) { seen <- len(ts) }, func(herdr.Event) {})
+	}()
+	select {
+	case n := <-seen:
+		if n != 1 {
+			t.Fatalf("snapshot of %d terminals, want the one", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("hc refuses labels sent as null, so nil labels must go out as an empty map")
+	}
+}

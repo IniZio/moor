@@ -14,11 +14,14 @@ type Event struct {
 }
 
 // Subscribe turns a fresh stream into an event feed for the terminals carrying every label in
-// labels. It calls snapshot once, then on for each event, until the stream or ctx ends. A subscribed
+// labels, every terminal when labels is empty or nil. It calls snapshot once, then on for each event, until the stream or ctx ends. A subscribed
 // connection answers nothing else, so the caller gives it a stream of its own. Subscribe closes rwc
 // before it returns.
 func Subscribe(ctx context.Context, rwc io.ReadWriteCloser, labels map[string]string, snapshot func([]Terminal), on func(Event)) error {
 	defer func() { _ = rwc.Close() }()
+	if labels == nil {
+		labels = map[string]string{}
+	}
 	stop := context.AfterFunc(ctx, func() { _ = rwc.Close() })
 	defer stop()
 	req, err := json.Marshal(map[string]any{

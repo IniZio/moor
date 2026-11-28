@@ -110,7 +110,7 @@ func (c *Core) handle(k *conn, r request) (any, *rpcError) {
 	case "terminal.list":
 		return c.list(r.Params), nil
 	case "events.subscribe":
-		return c.subscribe(k, r.Params), nil
+		return c.subscribe(k, r.Params)
 	}
 	return c.onTerminal(r)
 }
@@ -139,12 +139,16 @@ func (c *Core) list(params json.RawMessage) any {
 	return map[string]any{"terminals": out, "hidden_finished": 0}
 }
 
-func (c *Core) subscribe(k *conn, params json.RawMessage) any {
+// subscribe refuses labels sent as null, as hc 0.1.16 does.
+func (c *Core) subscribe(k *conn, params json.RawMessage) (any, *rpcError) {
 	var q struct {
-		Labels map[string]string `json:"labels"`
+		Labels json.RawMessage `json:"labels"`
 	}
 	_ = json.Unmarshal(params, &q)
-	k.sub = q.Labels
+	if string(q.Labels) == "null" {
+		return nil, &rpcError{Kind: "invalid_params", Message: "invalid type: null, expected a map"}
+	}
+	_ = json.Unmarshal(q.Labels, &k.sub)
 	if k.sub == nil {
 		k.sub = map[string]string{}
 	}
@@ -154,7 +158,7 @@ func (c *Core) subscribe(k *conn, params json.RawMessage) any {
 			out = append(out, t.t)
 		}
 	}
-	return map[string]any{"channel": nil, "seq": c.seq, "terminals": out}
+	return map[string]any{"channel": nil, "seq": c.seq, "terminals": out}, nil
 }
 
 func (c *Core) onTerminal(r request) (any, *rpcError) {
