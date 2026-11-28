@@ -112,6 +112,14 @@ linters:
             - github.com/IniZio/moor/internal/domain
             - github.com/IniZio/moor/internal/wire
             - github.com/IniZio/moor/internal/adapter/link
+        adapter-yamlfile:
+          files: ["**/internal/adapter/yamlfile/**"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - go.yaml.in/yaml/v3
+            - github.com/IniZio/moor/internal/domain
+            - github.com/IniZio/moor/internal/adapter/yamlfile
         adapter-herdr:
           files: ["**/internal/adapter/herdr/**"]
           list-mode: strict
