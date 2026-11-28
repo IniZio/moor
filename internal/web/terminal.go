@@ -191,10 +191,14 @@ func (s *server) termIn(ctx context.Context, c *websocket.Conn, st io.Writer, id
 	}
 }
 
-// pass gives the session one message from the seat holder: a size, or keys once the task took a steer.
+// pass gives the session one message from the seat holder: a size, or keys once the task took a steer. What the
+// browser's terminal answers by itself is dropped: it is no typing, and the desk's terminal answers the session.
 func (s *server) pass(ctx context.Context, st io.Writer, id domain.TaskID, typ websocket.MessageType, b []byte, steered *bool) error {
 	if typ == websocket.MessageText {
 		resize(st, b)
+		return nil
+	}
+	if terminalReply(b) {
 		return nil
 	}
 	if !*steered && s.steer(ctx, id) != nil {

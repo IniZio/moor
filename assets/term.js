@@ -40,6 +40,8 @@ function start(el) {
   el.addEventListener('keydown', human, true);
   el.addEventListener('paste', human, true);
   el.addEventListener('beforeinput', human, true);
+  el.addEventListener('mousedown', human, true);
+  el.addEventListener('wheel', human, true);
 
   const show = (text) => {
     keysText = text;
@@ -128,13 +130,14 @@ function start(el) {
     connect('steer');
   }
 
+  // keys sends what a person typed. What xterm.js answers by itself to the session's queries is dropped: the
+  // desk's terminal answers those, and a reply would reach the session as typing and reopen a done task.
   function keys(b) {
-    if (readonly) return;
+    if (readonly || performance.now() - lastHuman > 1000) return;
     if (steering()) {
       ws.send(b);
       return;
     }
-    if (performance.now() - lastHuman > 1000) return;
     pendingKeys.push(b);
     if (want !== 'steer') take();
   }

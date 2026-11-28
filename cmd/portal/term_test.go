@@ -155,6 +155,22 @@ func TestTheSeatHolderTypesAWatcherOnlyWatchesAndTakingTheSeatIsExplicit(t *test
 	}
 }
 
+// TestABrowsersOwnTerminalRepliesNeverReachTheSession is what a browser terminal sends unasked when it attaches to a
+// full-screen harness: its answers to colour, device and focus queries. Only the person's keys reach the session.
+func TestABrowsersOwnTerminalRepliesNeverReachTheSession(t *testing.T) {
+	p := startReplica(t, pgtest.SchemaDSN(t), "127.0.0.1:0")
+	id, _ := runningTask(t, p)
+	mia := dialTerm(t, p.addr, id, "Mia", "steer")
+	noticeUntil(t, mia, func(n seatNotice) bool { return n.Seat == "steer" })
+	for _, r := range []string{"\x1b]11;rgb:1717/1414/1111\x1b\\", "\x1b[?1;2c", "\x1b[O"} {
+		typeKeys(t, mia, r)
+	}
+	typeKeys(t, mia, "ls\r")
+	if got := string(nextMsg(t, mia, websocket.MessageBinary)); got != "echo:ls\r" {
+		t.Fatalf("the session got %q first, want only the typed keys", got)
+	}
+}
+
 func TestATerminalOnAnotherReplicaHopsToTheOneHoldingTheLink(t *testing.T) {
 	dsn := pgtest.SchemaDSN(t)
 	p := startReplica(t, dsn, "127.0.0.1:0")
