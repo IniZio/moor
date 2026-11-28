@@ -104,6 +104,11 @@ textarea { resize: vertical; display: block; width: 100%; line-height: 1.5; }
 .banner { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--sunken); }
 .banner.bad { border-color: var(--bad-soft); background: #fdf6f4; color: var(--bad); }
 .banner .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.runmenu { position: relative; }
+.runmenu > summary { list-style: none; }
+.runmenu > summary::-webkit-details-marker { display: none; }
+.runmenu > summary::marker { content: ""; }
+.runform { position: absolute; right: 0; top: 30px; z-index: 10; display: flex; flex-direction: column; gap: 6px; width: 340px; padding: 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); box-shadow: 0 4px 14px rgb(0 0 0 / 12%); }
 .lhead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--sunken); border-bottom: 1px solid var(--line); }
 .lhead select { border-color: transparent; background: transparent; color: var(--muted); }
 .lhead select:hover { border-color: var(--line-strong); }

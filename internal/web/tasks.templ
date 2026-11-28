@@ -82,12 +82,12 @@ templ specHead(v tasksView) {
 
 templ runMenu(e specEntry) {
 	<details class="runmenu">
-		<summary class="btn">Run ▾</summary>
+		<summary class="btn">Run</summary>
 		<form
 			class="runform"
 			hx-post={ runURL(e) }
 			hx-swap="none"
-			hx-on::after-request="if (event.detail.successful) { this.reset(); this.closest('details').open = false }"
+			hx-on::after-request="if (event.detail.xhr.status < 400) { this.reset(); this.closest('details').open = false }"
 		>
 			<label class="faint" for="runinput">{ runLabel(e.Spec) }</label>
 			<input id="runinput" name="input" type="text" required placeholder={ runPlaceholder(e.Spec) } autocomplete="off"/>

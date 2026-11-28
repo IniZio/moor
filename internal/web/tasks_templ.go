@@ -484,7 +484,7 @@ func runMenu(e specEntry) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<details class=\"runmenu\"><summary class=\"btn\">Run ▾</summary><form class=\"runform\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<details class=\"runmenu\"><summary class=\"btn\">Run</summary><form class=\"runform\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -497,7 +497,7 @@ func runMenu(e specEntry) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\" hx-swap=\"none\" hx-on::after-request=\"if (event.detail.successful) { this.reset(); this.closest('details').open = false }\"><label class=\"faint\" for=\"runinput\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\" hx-swap=\"none\" hx-on::after-request=\"if (event.detail.xhr.status < 400) { this.reset(); this.closest('details').open = false }\"><label class=\"faint\" for=\"runinput\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

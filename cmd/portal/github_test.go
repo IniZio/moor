@@ -397,12 +397,12 @@ func TestEventTasksAreTitledByTheirPullRequest(t *testing.T) {
 func TestTheSpecBannerOffersRunToASpecWithWorkflowDispatch(t *testing.T) {
 	r := newHookRig(t, defaultHome())
 	page := r.do(get("Mia", "/tasks?spec="+url.QueryEscape("PR evidence"))).body
-	for _, want := range []string{"Run ▾", "Pull request link", `hx-post="/api/task-specs/PR%20evidence/run"`} {
+	for _, want := range []string{"<summary class=\"btn\">Run</summary>", "Pull request link", `hx-post="/api/task-specs/PR%20evidence/run"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the spec page lacks %q", want)
 		}
 	}
-	if strings.Contains(r.do(get("Mia", "/tasks?spec="+url.QueryEscape("Code review"))).body, "Run ▾") {
+	if strings.Contains(r.do(get("Mia", "/tasks?spec="+url.QueryEscape("Code review"))).body, "runmenu") {
 		t.Errorf("a spec without workflow_dispatch has Run")
 	}
 }
