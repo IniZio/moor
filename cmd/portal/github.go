@@ -28,6 +28,8 @@ type githubApp struct {
 	mu  sync.Mutex
 	key []byte
 	a   *github.Adapter
+	// pushes hears the pushes the webhook carries, and is nil when nothing wants them.
+	pushes github.Pushes
 }
 
 // errNoApp is a GitHub call made while the settings hold no App.
@@ -107,7 +109,7 @@ func (g *githubApp) mount(next http.Handler, events *inbound.Service) http.Handl
 			http.Error(w, "the portal has no GitHub App in its settings", http.StatusServiceUnavailable)
 			return
 		}
-		a.Hook(events).ServeHTTP(w, req)
+		a.HookFor(events, g.pushes).ServeHTTP(w, req)
 	}))
 	r.Mount("/", next)
 	return r

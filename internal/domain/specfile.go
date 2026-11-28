@@ -7,6 +7,8 @@ type SpecFile struct {
 	File    string
 	Spec    TaskSpec
 	Problem string
+	// Commit is the home commit the file was read at, empty when the home has none, such as a plain folder.
+	Commit Commit
 }
 
 // Valid is true when the file holds a spec.

@@ -62,7 +62,7 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 	taskCfg := withOperations(taskConfig(), cfg)
 	tasks := task.New(db, systemClock{}, taskCfg)
 	rn := newRunners(ctx, cfg, db, tasks, svc)
-	specs := specSource(cfg.homeDir)
+	specs, closeHome := specSource(ctx, cfg, hub)
 	events := inbound.New(inbound.Deps{
 		Store: txStore{db}, Numbers: db, Tasks: tasks, Specs: specs, Allowed: svc, Link: links{hub},
 		Clock: systemClock{}, Config: taskCfg, Stop: rn.control.Stop,
@@ -77,10 +77,11 @@ func assemble(ctx context.Context, cfg config) (*portal, error) {
 		},
 	)
 	if err != nil {
+		closeHome()
 		db.Close()
 		return nil, fmt.Errorf("build the web handler: %w", err)
 	}
-	return &portal{handler: hub.mount(rn.mount(handler), events), answers: hub.answers(db, tasks), close: func() { rn.close(); db.Close() }}, nil
+	return &portal{handler: hub.mount(rn.mount(handler), events), answers: hub.answers(db, tasks), close: func() { closeHome(); rn.close(); db.Close() }}, nil
 }
 
 // noSpecs stands in for the team's home when none is configured.
@@ -88,11 +89,18 @@ type noSpecs struct{}
 
 func (noSpecs) TaskSpecs(context.Context) ([]domain.SpecFile, error) { return nil, nil }
 
-func specSource(homeDir string) web.SpecSource {
-	if homeDir == "" {
-		return noSpecs{}
+// specSource is the team's home: fetched from its repository, or read from a folder, or none. It gives what ends it.
+func specSource(ctx context.Context, cfg config, hub *githubApp) (web.SpecSource, func()) {
+	switch {
+	case cfg.home.repo.Complete():
+		home := newHomeRepo(cfg.home, hub)
+		hub.pushes = home
+		home.start(ctx, cfg.home.every)
+		return home, home.close
+	case cfg.homeDir != "":
+		return yamlfile.NewHome(os.DirFS(cfg.homeDir)), func() {}
 	}
-	return yamlfile.NewHome(os.DirFS(homeDir))
+	return noSpecs{}, func() {}
 }
 
 // yamlParser lets the settings service read documents through the yamlfile adapter.

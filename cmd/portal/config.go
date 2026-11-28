@@ -18,6 +18,7 @@ type config struct {
 	userHeader     string
 	orgName        string
 	homeDir        string
+	home           homeConfig
 	publicURL      string
 	internalURL    string
 	internalSecret string
@@ -63,6 +64,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&keep, "keep-window", orDefault(getenv("PORTAL_KEEP_WINDOW"), defaultKeepWindow), "how long a done or failed task keeps its containers, such as 24h (PORTAL_KEEP_WINDOW)")
 	c.bindStorage(fs, getenv)
 	fs.StringVar(&limit, "time-limit", orDefault(getenv("PORTAL_TIME_LIMIT"), defaultTimeLimit), "how long a task may run before it fails, such as 4h (PORTAL_TIME_LIMIT)")
+	c.home.bind(fs, getenv)
 	if err := fs.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w\n%s", err, usage)
 	}
@@ -70,6 +72,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, err
 	}
 	if err = c.checkStorage(); err != nil {
+		return config{}, err
+	}
+	if err = c.checkHome(); err != nil {
 		return config{}, err
 	}
 	c.trustedOrigins = splitList(origins)
