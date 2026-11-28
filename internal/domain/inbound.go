@@ -44,6 +44,10 @@ type Occurrence struct {
 	Incoming Incoming
 	Event    Event
 	Actor    string
+	// Ref and Commit are what the task checks out. Ref is fetched first, so a commit no branch holds, such as a
+	// fork's, resolves. Both are empty for an event that names no commit: the task checks out the default branch.
+	Ref    string
+	Commit Commit
 }
 
 // Inbound is one webhook delivery after its adapter has checked and read it. Occurrence is nil when the

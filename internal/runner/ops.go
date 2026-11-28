@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/IniZio/moor/internal/wire"
 )
@@ -89,15 +90,25 @@ func (r *Runner) start(st Stream) error {
 	if err := r.cfg.Host.Up(r.ctx, Box{Fence: s.Fence, Proxies: s.Proxies, Env: s.BoxEnv}); err != nil {
 		return fmt.Errorf("runner: up %s: %w", s.Task, err)
 	}
+	checkedOut, err := r.cfg.Host.Checkout(r.ctx, r.checkoutOf(s))
+	if err != nil {
+		return fmt.Errorf("check out %s/%s: %w", s.Repo.Host, s.Repo.Path, err)
+	}
 	if err := r.cfg.Sessions.Start(r.ctx, s); err != nil {
 		return fmt.Errorf("runner: start the session of %s: %w", s.Task, err)
 	}
 	r.watch(s.Fence)
-	r.note(j, s.Fence)
+	r.note(j, s.Fence, checkedOut)
 	if err := r.emitParts(s.Task); err != nil {
 		return err
 	}
 	return reply(st, struct{}{})
+}
+
+// checkoutOf is what the task's Box checks out: the event's ref and commit, or with none the default branch.
+func (r *Runner) checkoutOf(s wire.TaskStart) Checkout {
+	url := strings.NewReplacer("{host}", s.Repo.Host, "{path}", s.Repo.Path).Replace(r.cfg.CloneURL)
+	return Checkout{Task: s.Task, URL: url, Host: s.Repo.Host, Ref: s.Ref, Commit: s.Commit}
 }
 
 // stopTask removes the task's containers. A stop with an older fence than the host's is a no-op,

@@ -145,6 +145,7 @@ type Spec struct {
 type TaskStart struct {
 	Fence
 	Repo          Repo            `json:"repo"`
+	Ref           string          `json:"ref,omitempty"`
 	Commit        string          `json:"commit"`
 	Setup         string          `json:"setup,omitempty"`
 	Prompt        string          `json:"prompt"`

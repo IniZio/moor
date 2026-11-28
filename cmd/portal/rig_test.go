@@ -61,6 +61,17 @@ type fakeHost struct {
 	mu    sync.Mutex
 	tasks map[string]runner.Held
 	ups   map[string]int
+	// failCheckout, when set, is why every checkout fails.
+	failCheckout string
+}
+
+func (h *fakeHost) Checkout(context.Context, runner.Checkout) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.failCheckout != "" {
+		return "", errors.New(h.failCheckout)
+	}
+	return "main at 5f0e2b19c4d7", nil
 }
 
 func newFakeHost() *fakeHost {

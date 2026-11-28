@@ -262,7 +262,7 @@ func TestTheRunnersNotesBecomeTheSetUpNotesOfTheTask(t *testing.T) {
 	m.run(t, p.addr)
 	id := p.startTask("Fix the checkout")
 	eventually(t, "the task running", stateIs(t, db, id, domain.Running))
-	want := []string{domain.NoteText(domain.PhaseDesk, m.id), domain.PhaseBox, domain.PhasePrompt}
+	want := []string{domain.NoteText(domain.PhaseDesk, m.id), domain.PhaseBox, domain.NoteText(domain.PhaseCheckout, "main at 5f0e2b19c4d7"), domain.PhasePrompt}
 	eventually(t, "the runner's notes on the task", func() bool {
 		rows, err := db.EventsAfter(context.Background(), id, 0, 200)
 		if err != nil {
@@ -278,5 +278,5 @@ func TestTheRunnersNotesBecomeTheSetUpNotesOfTheTask(t *testing.T) {
 		return strings.Join(got, "|") == strings.Join(want, "|")
 	})
 	page := p.do(get("Mia", "/tasks/"+string(id)+"/setup"))
-	page.has(t, http.StatusOK, "Start desk and Box", "desk up: "+m.id)
+	page.has(t, http.StatusOK, "Start desk and Box", "desk up: "+m.id, "Check out example-org/shop-web")
 }

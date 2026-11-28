@@ -352,7 +352,8 @@ func TestRunOnALinkStartsTheTaskTheWebhookWould(t *testing.T) {
 		t.Fatal(err)
 	}
 	ran := r.load(out.Task.ID)
-	if ran.ID == hooked.ID || ran.Prompt != hooked.Prompt || ran.Repo != hooked.Repo || ran.Event.Group != hooked.Event.Group || ran.Spec.Name != hooked.Spec.Name {
+	if ran.ID == hooked.ID || ran.Prompt != hooked.Prompt || ran.Repo != hooked.Repo || ran.Event.Group != hooked.Event.Group || ran.Spec.Name != hooked.Spec.Name ||
+		ran.Ref != hooked.Ref || ran.Commit != hooked.Commit {
 		t.Errorf("run task %+v, webhook task %+v", ran, hooked)
 	}
 	if ran.StartedBy != "Ken" || ran.TokenOwner != "Ken" || !strings.HasPrefix(string(ran.Event.Rev), "5f0e2b19c4d7+run-") {

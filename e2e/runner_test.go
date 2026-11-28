@@ -78,7 +78,7 @@ func TestATaskRunsOnARealRunnerOutlivesAPortalRestartAndIsCancelled(t *testing.T
 	}
 	dsn := pgtest.SchemaDSN(t)
 	dir := t.TempDir()
-	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: freeAddr(t), dsn: dsn}
+	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: gatewayAddr(t), dsn: dsn}
 	runnerBin := build(t, dir, "cmd/runner")
 	prefix := "moore2e-" + randHex(t, 4)
 	t.Cleanup(func() {
@@ -86,14 +86,15 @@ func TestATaskRunsOnARealRunnerOutlivesAPortalRestartAndIsCancelled(t *testing.T
 			t.Errorf("left on the host: %v", left)
 		}
 	})
+	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": settingsDoc}, nil)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(settingsDoc, "")}, nil)
 	keyFile := dir + "/runner.key"
 	id := joined(t, pt, runnerBin, keyFile)
 	start(t, "runner", nil, runnerBin, append([]string{
 		"-portal", "ws://" + pt.addr + "/runner/link", "-id", id,
 		"-key", keyFile, "-prefix", prefix,
-	}, images...)...)
+	}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, id) == "linked" })
 
 	db, err := store.Open(context.Background(), dsn)

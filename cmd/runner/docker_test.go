@@ -32,7 +32,7 @@ func image(name string) string {
 
 // realHost gives the test a Docker adapter of its own prefix, and fails the test if anything of that
 // prefix is left after it, removing it so a failed run leaves nothing either.
-func realHost(t *testing.T) (host, string) {
+func realHost(t *testing.T) (uncloned, string) {
 	t.Helper()
 	if os.Getenv(dockerEnv) != "1" {
 		t.Skipf("%s is not 1: this test starts real containers, run it with make test-docker", dockerEnv)
@@ -50,7 +50,15 @@ func realHost(t *testing.T) (host, string) {
 		_ = d.Down(context.Background(), docker.Key{Task: "t1", Run: 1 << 40, Gen: 1 << 40})
 		nothingLeft(t, prefix)
 	})
-	return host{d}, prefix
+	return uncloned{host{d}}, prefix
+}
+
+// uncloned is the real host with the checkout left out: these tests run no portal for the Box egress proxy to read
+// its rules from, so nothing could be fetched. The e2e tests check out through a real one.
+type uncloned struct{ host }
+
+func (uncloned) Checkout(context.Context, runner.Checkout) (string, error) {
+	return "main at 000000000000", nil
 }
 
 func nothingLeft(t *testing.T, prefix string) {
@@ -130,7 +138,7 @@ func TestARunnerRestartLeavesTheTaskRunningAndReadoptsIt(t *testing.T) {
 func TestARevokedRunnerRemovesItsRealContainersNetworksAndVolumes(t *testing.T) {
 	h, prefix := realHost(t)
 	g := rigWithin(t, 3*time.Minute)
-	r := newRunner(g.portal.Agent(), h, sessions{connect: h.connect, attach: h.attach, clear: h.clear, argv: []string{"harness"}})
+	r := newRunner(g.portal.Agent(), h, sessions{connect: h.connect, attach: h.attach, clear: h.clear, argv: []string{"harness"}}, "")
 	done := make(chan error, 1)
 	go func() { done <- r.Run(g.ctx) }()
 	s, err := g.portal.Next(g.ctx)

@@ -99,8 +99,9 @@ func getJSON(t *testing.T, url string, out any) {
 	}
 }
 
-// openedPullRequest sends GitHub's signed pull_request delivery to the portal and returns the id of the task it started.
-func openedPullRequest(t *testing.T, pt *portal) string {
+// openedPullRequest sends GitHub's signed pull_request delivery for pull request 90 at head to the portal and returns
+// the id of the task it started.
+func openedPullRequest(t *testing.T, pt *portal, head string) string {
 	t.Helper()
 	repo := "example-org/shop-web"
 	body, _ := json.Marshal(map[string]any{
@@ -110,7 +111,7 @@ func openedPullRequest(t *testing.T, pt *portal) string {
 		"pull_request": map[string]any{
 			"number": 90, "title": "Add search to the shop", "state": "open", "html_url": "https://github.com/" + repo + "/pull/90",
 			"user": map[string]any{"login": "ana"},
-			"head": map[string]any{"sha": "5f0e2b19c4d7", "ref": "search", "repo": map[string]any{"full_name": repo}},
+			"head": map[string]any{"sha": head, "ref": "search", "repo": map[string]any{"full_name": repo}},
 			"base": map[string]any{"ref": "main"},
 		},
 	})

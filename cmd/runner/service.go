@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/IniZio/moor/internal/runner"
 )
 
 // errNoService means this host has no systemd user manager to keep the runner running.
@@ -31,6 +33,9 @@ func unitFor(exe string, o options) (unit, error) {
 	argv := []string{
 		exe, "-portal", o.portal, "-id", o.id, "-key", o.keyFile, "-prefix", o.prefix,
 		"-box-image", o.images.Box, "-desk-image", o.images.Desk, "-relay-image", o.images.Relay, "-proxy-image", o.images.Proxy,
+	}
+	if o.cloneURL != "" && o.cloneURL != runner.DefaultCloneURL {
+		argv = append(argv, "-clone-url", o.cloneURL)
 	}
 	return unit{name: "moor-runner-" + o.id + ".service", description: "moor runner " + o.id, argv: argv}, nil
 }

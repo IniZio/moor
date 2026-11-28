@@ -26,7 +26,7 @@ func TestAnEndedTaskKeepsItsContainersForTheWindowThenThePortalReleasesThemAndRe
 			t.Errorf("left on the host: %v", left)
 		}
 	})
-	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: freeAddr(t), dsn: dsn, env: []string{"PORTAL_KEEP_WINDOW=" + keepWindow.String()}}
+	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: gatewayAddr(t), dsn: dsn, env: []string{"PORTAL_KEEP_WINDOW=" + keepWindow.String()}}
 	pt.start(t)
 	id, _ := runningOn(t, pt, build(t, dir, "cmd/runner"), dir, prefix)
 	db, err := store.Open(context.Background(), dsn)

@@ -60,7 +60,7 @@ func (s *shell) closeShell(t *testing.T) {
 
 // addMachine is Add machine in the portal and the join line it shows, as the arguments of the runner, run in the
 // foreground so that the test owns the process. It returns the machine's id and the arguments.
-func addMachine(t *testing.T, pt *portal, dir, prefix string) (string, []string) {
+func addMachine(t *testing.T, pt *portal, dir, prefix string, args []string) (string, []string) {
 	t.Helper()
 	var added struct {
 		JoinCommand string `json:"join_command"`
@@ -70,7 +70,7 @@ func addMachine(t *testing.T, pt *portal, dir, prefix string) (string, []string)
 	if m == nil {
 		t.Fatalf("join command %q", added.JoinCommand)
 	}
-	return m[2], append([]string{"join", "-portal", m[1], "-id", m[2], "-token", m[3], "-key", filepath.Join(dir, "runner.key"), "-prefix", prefix, "-foreground"}, images...)
+	return m[2], append([]string{"join", "-portal", m[1], "-id", m[2], "-token", m[3], "-key", filepath.Join(dir, "runner.key"), "-prefix", prefix, "-foreground"}, args...)
 }
 
 func startPersonTask(t *testing.T, db *store.Store) domain.TaskID {
@@ -94,11 +94,12 @@ func TestOneJoinLineEnrolsAndRunsTheRunnerAndARevokeRemovesTheTaskAndEndsTheRunn
 			t.Errorf("left on the host: %v", left)
 		}
 	})
-	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: freeAddr(t), dsn: dsn}
+	pt := &portal{bin: build(t, dir, "cmd/portal"), addr: gatewayAddr(t), dsn: dsn}
 	runnerBin := build(t, dir, "cmd/runner")
+	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": settingsDoc}, nil)
-	id, line := addMachine(t, pt, dir, prefix)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(settingsDoc, "")}, nil)
+	id, line := addMachine(t, pt, dir, prefix, src.runnerArgs())
 
 	first := runInShell(t, dir, "join-1", runnerBin, line...)
 	eventually(t, time.Minute, "the machine linked after the one command", func() bool { return machineState(t, pt, id) == "linked" })

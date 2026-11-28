@@ -36,18 +36,16 @@ func TestStartNotesTheStepsTheRunnerTook(t *testing.T) {
 	if err := call(g.ctx, s, wire.KindTaskStart, startMsg("t1", 1, 1), nil); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{domain.NoteText(domain.PhaseDesk, string(g.portal.Agent().Runner)), domain.PhaseBox, domain.PhasePrompt} {
+	for _, want := range []string{
+		domain.NoteText(domain.PhaseDesk, string(g.portal.Agent().Runner)), domain.PhaseBox,
+		domain.NoteText(domain.PhaseCheckout, "main at "+fakeCommit), domain.PhasePrompt,
+	} {
 		l := await(t, g.ctx, lines, "the note "+want, noteIs("t1", want))
 		if l.Fence != (wire.Fence{Task: "t1", Run: 1, Gen: 1}) {
 			t.Fatalf("note line %+v carries another launch", l)
 		}
 	}
 	await(t, g.ctx, lines, "the session live", sessionIs("t1", "live"))
-	for _, line := range g.notesOn(t, s) {
-		if line.Part == wire.NotePart && line.Text == domain.PhaseCheckout {
-			t.Errorf("a checkout note, though the runner checks nothing out: %+v", line)
-		}
-	}
 }
 
 func TestANewWatchGetsTheNotesAgainAndARepeatedStartNotesNothingNew(t *testing.T) {
@@ -60,7 +58,7 @@ func TestANewWatchGetsTheNotesAgainAndARepeatedStartNotesNothingNew(t *testing.T
 		}
 	}
 	got := g.notesOn(t, s)
-	if len(got) != 3 {
-		t.Fatalf("a new watch got %d notes, want the 3 of the one launch: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("a new watch got %d notes, want the 4 of the one launch: %+v", len(got), got)
 	}
 }

@@ -173,6 +173,8 @@ func TestTaskLifecycle(t *testing.T) {
 	t.Run("box cannot reach the desk proxy", func(t *testing.T) { boxCannotReachDeskProxy(t, d, key.Task) })
 	t.Run("stand-in runs three commands in the box", func(t *testing.T) { standIn(t, d, key.Task) })
 	t.Run("nested container fetches and writes a bind mount", func(t *testing.T) { nested(t, d, key.Task) })
+	var checkedOut string
+	t.Run("the checkout runs once and keeps work in progress", func(t *testing.T) { checkedOut = checkoutOnce(t, d, key.Task) })
 	t.Run("up twice changes nothing", func(t *testing.T) {
 		if err := d.Up(ctx, spec); err != nil {
 			t.Fatal(err)
@@ -182,6 +184,7 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 	})
 	t.Run("recreate replaces only the box", func(t *testing.T) { recreate(t, d, spec, first) })
+	t.Run("a recreated Box keeps the work tree and checks out nothing", func(t *testing.T) { checkoutKept(t, d, key.Task, checkedOut) })
 	t.Run("another adapter lists the task and takes it down", func(t *testing.T) { readopt(t, cfg, Key{Task: key.Task, Run: 1, Gen: 2}) })
 }
 

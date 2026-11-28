@@ -17,6 +17,8 @@ type EventInput struct {
 	Repo             domain.Repo
 	Spec             domain.Spec
 	Event            domain.Event
+	Ref              string
+	Commit           domain.Commit
 	Prompt           string
 	ReviewPrompt     string
 	By               domain.Person
@@ -53,6 +55,7 @@ func eventTask(in EventInput) (domain.Task, error) {
 	return domain.Task{
 		ID: in.ID, Repo: in.Repo, Prompt: in.Prompt, ReviewPrompt: in.ReviewPrompt,
 		StartedBy: startedBy, Spec: &sp, Event: &ev, TokenOwner: in.TokenOwner, State: domain.Waiting,
+		Ref: in.Ref, Commit: in.Commit,
 	}, nil
 }
 
@@ -134,7 +137,7 @@ func supersede(rev domain.Revision) decide {
 
 func sameInputs(a, b domain.Task) bool {
 	return a.Repo == b.Repo && a.Prompt == b.Prompt && a.ReviewPrompt == b.ReviewPrompt &&
-		a.StartedBy == b.StartedBy && a.TokenOwner == b.TokenOwner && a.Ref == b.Ref &&
+		a.StartedBy == b.StartedBy && a.TokenOwner == b.TokenOwner && a.Ref == b.Ref && a.Commit == b.Commit &&
 		sameSpec(a.Spec, b.Spec) && sameEvent(a.Event, b.Event)
 }
 

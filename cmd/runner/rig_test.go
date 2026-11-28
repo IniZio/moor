@@ -25,6 +25,31 @@ type fakeHost struct {
 	mu    sync.Mutex
 	tasks map[string]runner.Held
 	ups   int
+	// checkouts are the checkouts asked for, in order. failCheckout, when set, is why each one fails.
+	checkouts    []runner.Checkout
+	failCheckout string
+}
+
+// fakeCommit is what the fake host says it checked out.
+const fakeCommit = "5f0e2b19c4d7"
+
+func (h *fakeHost) Checkout(_ context.Context, c runner.Checkout) (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.checkouts = append(h.checkouts, c)
+	if h.failCheckout != "" {
+		return "", errors.New(h.failCheckout)
+	}
+	if c.Ref != "" {
+		return strings.TrimPrefix(c.Ref, "refs/") + " at " + c.Commit, nil
+	}
+	return "main at " + fakeCommit, nil
+}
+
+func (h *fakeHost) asked() []runner.Checkout {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]runner.Checkout(nil), h.checkouts...)
 }
 
 func (h *fakeHost) Up(_ context.Context, b runner.Box) error {
@@ -121,7 +146,7 @@ func rigWithin(t *testing.T, limit time.Duration) *rig {
 // as a process exit would, and checks it returned cleanly.
 func (g *rig) start(h runner.Host, connect func(context.Context, string) (io.ReadWriteCloser, error)) (*link.Session, func()) {
 	g.t.Helper()
-	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, clear: g.clear, argv: []string{"harness"}})
+	r := newRunner(g.portal.Agent(), h, sessions{connect: connect, attach: g.ttys.attach, clear: g.clear, argv: []string{"harness"}}, "")
 	ctx, cancel := context.WithCancel(g.ctx)
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()
@@ -151,7 +176,7 @@ func call(ctx context.Context, s *link.Session, op wire.Kind, body, out any) err
 }
 
 func startMsg(task string, run, gen int64) wire.TaskStart {
-	return wire.TaskStart{Fence: wire.Fence{Task: task, Run: run, Gen: gen}, Prompt: "fix the build", Proxies: wire.ProxyAccess{Portal: "http://portal.invalid", BoxToken: "box.t", DeskToken: "desk.t"}, Harness: "stand-in"}
+	return wire.TaskStart{Fence: wire.Fence{Task: task, Run: run, Gen: gen}, Repo: wire.Repo{Host: "github.com", Path: "example-org/shop-web"}, Prompt: "fix the build", Proxies: wire.ProxyAccess{Portal: "http://portal.invalid", BoxToken: "box.t", DeskToken: "desk.t"}, Harness: "stand-in"}
 }
 
 // watch opens task.watch and delivers its lines until the test ends.

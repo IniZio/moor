@@ -1,5 +1,6 @@
 // Command fakegithub runs the fake GitHub that the tests use as a process, so a portal can be driven by hand against
-// it. It serves the endpoints the GitHub adapter calls and keeps its comments, which GET /_fake/comments lists. It
+// it. It serves the endpoints the GitHub adapter calls and keeps its comments, which GET /_fake/comments lists, and the
+// installation tokens it was asked for, which GET /_fake/tokens lists. It
 // makes a throwaway App key in a folder and never reaches the real API.
 package main
 

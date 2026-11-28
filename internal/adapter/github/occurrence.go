@@ -76,6 +76,7 @@ func (c prEvent) occurrence(name domain.EventName, action string, actor string) 
 		Incoming: domain.Incoming{Source: Source, Name: name, Action: action, Repo: repo, Payload: raw},
 		Event:    domain.Event{Source: Source, Group: group, Rev: domain.Revision(c.PullRequest.Head.SHA), Context: raw},
 		Actor:    actor,
+		Ref:      "refs/pull/" + strconv.Itoa(c.PullRequest.Number) + "/head", Commit: domain.Commit(c.PullRequest.Head.SHA),
 	}, nil
 }
 

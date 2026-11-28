@@ -142,6 +142,8 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, f.comments)
 	case r.Method == http.MethodGet && r.URL.Path == "/_fake/calls":
 		reply(w, http.StatusOK, f.calls)
+	case r.Method == http.MethodGet && r.URL.Path == "/_fake/tokens":
+		reply(w, http.StatusOK, f.tokens)
 	case r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "app" && parts[3] == "access_tokens":
 		f.token(w, r, parts[2])
 	case r.Method == http.MethodGet && len(parts) == 4 && parts[0] == "repos" && parts[3] == "installation":
@@ -169,7 +171,16 @@ func (f *Fake) token(w http.ResponseWriter, r *http.Request, installation string
 		}
 	}
 	f.tokens = append(f.tokens, req)
-	reply(w, http.StatusCreated, map[string]any{"token": "fake-token-" + installation, "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	reply(w, http.StatusCreated, map[string]any{"token": TokenFor(installation, req.Repositories), "expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+}
+
+// TokenFor is the token the fake mints: fake-token-<installation> for one limited to repositories, and
+// fake-app-token-<installation> for one that is not, so a test can tell from the value which kind went on the wire.
+func TokenFor(installation string, repositories []string) string {
+	if len(repositories) == 0 {
+		return "fake-app-token-" + installation
+	}
+	return "fake-token-" + installation
 }
 
 // SetDefaultBranch names the repository's default branch, which is main until it is set.

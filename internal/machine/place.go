@@ -78,7 +78,7 @@ func fenceOf(t domain.Task) wire.Fence { return wire.Fence{Task: string(t.ID), R
 func startOf(t domain.Task, access wire.ProxyAccess) wire.TaskStart {
 	s := wire.TaskStart{
 		Fence: fenceOf(t), Repo: wire.Repo{Host: string(t.Repo.Host), Path: string(t.Repo.Path)},
-		Commit: string(t.Commit), Prompt: t.Prompt, ReviewPrompt: t.ReviewPrompt, Proxies: access,
+		Ref: t.Ref, Commit: string(t.Commit), Prompt: t.Prompt, ReviewPrompt: t.ReviewPrompt, Proxies: access,
 	}
 	if t.Spec != nil {
 		s.Spec = &wire.Spec{Name: string(t.Spec.Name), File: t.Spec.File}

@@ -141,7 +141,7 @@ func TestARefusedRunnerStopsDialling(t *testing.T) {
 	g := newRig(t)
 	agent := g.portal.Agent()
 	_, agent.Key, _ = ed25519.GenerateKey(rand.Reader)
-	r := newRunner(agent, g.host, sessions{connect: g.desks.connect})
+	r := newRunner(agent, g.host, sessions{connect: g.desks.connect}, "")
 	ctx, cancel := context.WithCancel(g.ctx)
 	defer cancel()
 	if err := r.Run(ctx); !errors.Is(err, runner.ErrFatal) {
@@ -151,7 +151,7 @@ func TestARefusedRunnerStopsDialling(t *testing.T) {
 
 func TestARevokedRunnerRemovesTheContainersOfTheTasksItHoldsAndExits(t *testing.T) {
 	g := newRig(t)
-	r := newRunner(g.portal.Agent(), g.host, sessions{connect: g.desks.connect, attach: g.ttys.attach, clear: g.cleared.clear})
+	r := newRunner(g.portal.Agent(), g.host, sessions{connect: g.desks.connect, attach: g.ttys.attach, clear: g.cleared.clear}, "")
 	done := make(chan error, 1)
 	go func() { done <- r.Run(g.ctx) }()
 	s, err := g.portal.Next(g.ctx)
@@ -190,7 +190,7 @@ func TestAnUnknownRunnerIsRefusedAndTouchesNothing(t *testing.T) {
 	stop()
 	agent := g.portal.Agent()
 	_, agent.Key, _ = ed25519.GenerateKey(rand.Reader)
-	if err := newRunner(agent, g.host, sessions{connect: g.desks.connect}).Run(g.ctx); !errors.Is(err, runner.ErrFatal) || errors.Is(err, runner.ErrRevoked) {
+	if err := newRunner(agent, g.host, sessions{connect: g.desks.connect}, "").Run(g.ctx); !errors.Is(err, runner.ErrFatal) || errors.Is(err, runner.ErrRevoked) {
 		t.Fatalf("a runner with the wrong key ends with %v, want ErrFatal and not ErrRevoked", err)
 	}
 	if held, _ := g.host.List(g.ctx); len(held) != 1 {

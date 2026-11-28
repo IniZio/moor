@@ -68,6 +68,15 @@ func (h host) Up(ctx context.Context, b runner.Box) error {
 	return nil
 }
 
+// Checkout checks the task's repository out in its Box.
+func (h host) Checkout(ctx context.Context, c runner.Checkout) (string, error) {
+	got, err := h.d.Checkout(ctx, domain.TaskID(c.Task), docker.Checkout{URL: c.URL, Host: c.Host, Ref: c.Ref, Commit: c.Commit})
+	if err != nil {
+		return "", fmt.Errorf("in the Box: %w", err)
+	}
+	return got, nil
+}
+
 func (h host) Down(ctx context.Context, f wire.Fence) error {
 	if err := h.d.Down(ctx, keyOf(f)); err != nil {
 		return fmt.Errorf("down: %w", err)

@@ -29,10 +29,23 @@ type Box struct {
 	Env     []wire.EnvVar
 }
 
+// Checkout is what a task's Box checks out into its work tree. URL is the repository's clone URL and Host its
+// forge's host name. Ref, when set, is fetched first, so a commit no branch holds, such as a fork's, resolves. An
+// empty Commit is the tip of the default branch.
+type Checkout struct {
+	Task   string
+	URL    string
+	Host   string
+	Ref    string
+	Commit string
+}
+
 // Host starts, finds and removes the containers of tasks. Up and Down converge, so a repeat is
-// safe. Down of a task the host does not have succeeds.
+// safe. Down of a task the host does not have succeeds. Checkout converges too: a work tree checked out before
+// is kept as it is. It gives what was checked out, such as "main at 5f0e2b19c4d7", the first time and every time after.
 type Host interface {
 	Up(ctx context.Context, b Box) error
+	Checkout(ctx context.Context, c Checkout) (string, error)
 	Down(ctx context.Context, f wire.Fence) error
 	List(ctx context.Context) ([]Held, error)
 }

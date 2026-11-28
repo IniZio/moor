@@ -68,14 +68,15 @@ func TestAnAgentPublishesAndGetsTheReviewTurnAndTheCommentIsPostedOnceThenEdited
 			t.Errorf("left on the host: %v", left)
 		}
 	})
+	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": appSettings(t, fakeURL, keyFile)}, nil)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(appSettings(t, fakeURL, keyFile), "")}, nil)
 	keyPath := dir + "/runner.key"
 	mid := joined(t, pt, runnerBin, keyPath)
-	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyPath, "-prefix", prefix}, images...)...)
+	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyPath, "-prefix", prefix}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, mid) == "linked" })
 
-	id := openedPullRequest(t, pt)
+	id := openedPullRequest(t, pt, src.ref("refs/pull/90/head"))
 	db, err := store.Open(context.Background(), dsn)
 	must(t, err)
 	defer db.Close()
@@ -141,7 +142,7 @@ func reviewOnce(t *testing.T, pt *portal, id, desk string, snap snapshot) {
 func setUpNotes(s snapshot) []string {
 	var out []string
 	for _, n := range eventTexts(s, "note") {
-		if strings.HasPrefix(n, "desk up") || n == "box up" || n == "prompt sent" {
+		if strings.HasPrefix(n, "desk up") || n == "box up" || strings.HasPrefix(n, "checked out: ") || n == "prompt sent" {
 			out = append(out, n)
 		}
 	}
@@ -160,7 +161,7 @@ func commentCreated(t *testing.T, fakeURL, id string, snap snapshot) {
 
 func runShows(t *testing.T, snap snapshot) {
 	notes := setUpNotes(snap)
-	if len(notes) != 3 || !strings.HasPrefix(notes[0], "desk up: m-") || notes[1] != "box up" || notes[2] != "prompt sent" {
+	if len(notes) != 4 || !strings.HasPrefix(notes[0], "desk up: m-") || notes[1] != "box up" || !strings.HasPrefix(notes[2], "checked out: pull/90/head at ") || notes[3] != "prompt sent" {
 		t.Errorf("set up notes %v", notes)
 	}
 	if len(snap.Versions) != 2 || snap.Versions[0].Line != "Four of five flows passed." || snap.Versions[1].Line != "Five of five flows passed." {

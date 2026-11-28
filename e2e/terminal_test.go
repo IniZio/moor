@@ -25,7 +25,7 @@ func replicas(t *testing.T, dsn, bin string) (*portal, *portal) {
 	t.Helper()
 	var two [2]*portal
 	for i := range two {
-		addr := freeAddr(t)
+		addr := gatewayAddr(t)
 		two[i] = &portal{bin: bin, addr: addr, dsn: dsn, env: []string{"PORTAL_INTERNAL_URL=http://" + addr, "PORTAL_INTERNAL_SECRET=" + peerSecret}}
 		two[i].start(t)
 	}
@@ -109,13 +109,14 @@ func viewersInDesk(t *testing.T, prefix string, id domain.TaskID) int {
 // runningOn starts a task as Mia on a runner linked to pt and waits for it to run.
 func runningOn(t *testing.T, pt *portal, runnerBin, dir, prefix string) (domain.TaskID, *task.Service) {
 	t.Helper()
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": settingsDoc}, nil)
+	src := startSource(t, dir, gitKey)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(settingsDoc, "")}, nil)
 	keyFile := dir + "/runner.key"
 	id := joined(t, pt, runnerBin, keyFile)
 	start(t, "runner", nil, runnerBin, append([]string{
 		"-portal", "ws://" + pt.addr + "/runner/link", "-id", id,
 		"-key", keyFile, "-prefix", prefix,
-	}, images...)...)
+	}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, id) == "linked" })
 	db, err := store.Open(context.Background(), pt.dsn)
 	must(t, err)

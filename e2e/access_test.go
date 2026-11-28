@@ -110,11 +110,11 @@ func TestTheBoxReachesOnlyWhatThePolicyAllowsAndNeverHoldsAValue(t *testing.T) {
 			t.Errorf("left on the host: %v", left)
 		}
 	})
+	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": accessDoc}, nil)
-	keyFile := dir + "/runner.key"
-	mid := joined(t, pt, runnerBin, keyFile)
-	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyFile, "-prefix", prefix}, images...)...)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(accessDoc, "")}, nil)
+	mid := joined(t, pt, runnerBin, dir+"/runner.key")
+	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", dir + "/runner.key", "-prefix", prefix}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, mid) == "linked" })
 
 	db, err := store.Open(context.Background(), dsn)

@@ -42,8 +42,13 @@ type Config struct {
 	// Machine names this runner in the notes it writes.
 	Machine string
 	Slots   int
-	Log     *slog.Logger
+	// CloneURL is the clone URL of a task's repository, with {host} and {path} filled in. Empty is DefaultCloneURL.
+	CloneURL string
+	Log      *slog.Logger
 }
+
+// DefaultCloneURL clones over HTTPS, so the Box egress proxy adds the forge credential on the wire.
+const DefaultCloneURL = "https://{host}/{path}.git"
 
 // Runner serves the portal's ops for the tasks on one host.
 type Runner struct {
@@ -70,6 +75,9 @@ type job struct {
 func New(cfg Config) *Runner {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.DiscardHandler)
+	}
+	if cfg.CloneURL == "" {
+		cfg.CloneURL = DefaultCloneURL
 	}
 	return &Runner{cfg: cfg, jobs: map[string]*job{}, hub: hub{subs: map[chan wire.TaskWatchLine]struct{}{}}}
 }

@@ -36,6 +36,7 @@ type options struct {
 	portal, id, keyFile, prefix string
 	images                      docker.Images
 	slots                       int
+	cloneURL                    string
 }
 
 // flags adds the options' flags to fs. portalHelp says what -portal means to the command.
@@ -49,6 +50,7 @@ func (o *options) flags(fs *flag.FlagSet, portalHelp string) {
 	fs.StringVar(&o.images.Relay, "relay-image", "", "relay image")
 	fs.StringVar(&o.images.Proxy, "proxy-image", "", "proxy image")
 	fs.IntVar(&o.slots, "slots", 1, "tasks this machine runs at once")
+	fs.StringVar(&o.cloneURL, "clone-url", runner.DefaultCloneURL, "clone URL of a task's repository, {host} and {path} filled in")
 }
 
 func parse(args []string) (options, error) {
@@ -89,7 +91,7 @@ func serve(ctx context.Context, o options) error {
 		return fmt.Errorf("docker: %w", err)
 	}
 	agent := link.AgentConfig{URL: o.portal, Runner: domain.RunnerID(o.id), Key: key, Build: version}
-	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, clear: host{d}.clear, argv: []string{"harness"}})
+	r := newRunner(agent, host{d}, sessions{connect: host{d}.connect, attach: host{d}.attach, clear: host{d}.clear, argv: []string{"harness"}}, o.cloneURL)
 	err = r.Run(ctx)
 	if errors.Is(err, runner.ErrRevoked) {
 		slog.Warn("this machine was revoked in the portal; its task containers are removed and the runner ends")
@@ -102,9 +104,9 @@ func serve(ctx context.Context, o options) error {
 }
 
 // newRunner is where the adapters meet the runner.
-func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions) *runner.Runner {
+func newRunner(agent link.AgentConfig, h runner.Host, s runner.Sessions, cloneURL string) *runner.Runner {
 	return runner.New(runner.Config{
-		Dial: dialer(agent), Host: h, Sessions: s,
+		Dial: dialer(agent), Host: h, Sessions: s, CloneURL: cloneURL,
 		Build: agent.Build, Machine: string(agent.Runner), Slots: 1, Log: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	})
 }

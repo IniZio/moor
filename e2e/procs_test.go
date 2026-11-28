@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -43,16 +42,6 @@ func build(t *testing.T, dir, pkg string) string {
 		t.Fatalf("build %s: %v: %s", pkg, err, b)
 	}
 	return out
-}
-
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	return ln.Addr().String()
 }
 
 // proc is a started process whose output goes to a file the test prints when it fails.

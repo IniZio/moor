@@ -55,7 +55,8 @@ type Task struct {
 	Event   *Event
 	State   State
 	Version int64
-	// Ref is the ref a person named. Commit is what it resolved to, empty until it is.
+	// Ref and Commit are what the task checks out, from its event: the ref fetched first and the commit. Both are
+	// empty on a task that checks out its repository's default branch.
 	Ref       string
 	Commit    Commit
 	Runner    RunnerID

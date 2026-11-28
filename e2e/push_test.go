@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -49,12 +48,7 @@ func pushDoc(t *testing.T, fakeURL, keyFile string) string {
 // gitServer starts the git server on the task's egress network as git.shop.test.
 func gitServer(t *testing.T, dir, prefix string, id domain.TaskID) string {
 	t.Helper()
-	bin := dir + "/gitserver"
-	cmd := exec.Command("go", "build", "-o", bin, "./testdata/gitserver")
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build the git server: %v: %s", err, out)
-	}
+	bin := gitServerBin(t, dir)
 	name := prefix + "-gitserver"
 	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+gitKey))
 	mustRun(t, "docker", "run", "-d", "--name", name, "--network", "none", "-u", "0", "-e", "EXPECT_AUTH="+auth,
@@ -80,11 +74,12 @@ func TestATaskPushesItsBranchButNeverTheDefaultBranchADeleteOrATag(t *testing.T)
 			t.Errorf("left on the host: %v", left)
 		}
 	})
+	src := startSource(t, dir, gitKey)
 	pt.start(t)
-	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": pushDoc(t, fakeURL, keyFile)}, nil)
+	pt.call(t, "PUT", "/api/settings", map[string]any{"base": 0, "text": src.settings(pushDoc(t, fakeURL, keyFile), "")}, nil)
 	keyPath := dir + "/runner.key"
 	mid := joined(t, pt, runnerBin, keyPath)
-	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyPath, "-prefix", prefix}, images...)...)
+	start(t, "runner", nil, runnerBin, append([]string{"-portal", "ws://" + pt.addr + "/runner/link", "-id", mid, "-key", keyPath, "-prefix", prefix}, src.runnerArgs()...)...)
 	eventually(t, time.Minute, "the machine linked", func() bool { return machineState(t, pt, mid) == "linked" })
 	db, err := store.Open(context.Background(), dsn)
 	must(t, err)
